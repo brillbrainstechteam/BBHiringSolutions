@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "bbhs",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["--no-warnings", "server/server.js"],
+      "port": 4600
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "name": "bbhs-hiring",
+  "version": "1.0.0",
+  "description": "BBHS hiring software: client and candidate forms, accounts, team portal, WhatsApp records",
+  "main": "server/server.js",
+  "private": true,
+  "engines": { "node": ">=22.5" },
+  "scripts": {
+    "start": "node --no-warnings server/server.js",
+    "reset": "node -e \"require('fs').rmSync('data',{recursive:true,force:true})\" && node --no-warnings server/server.js"
+  }
+}
