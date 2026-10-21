@@ -140,6 +140,8 @@ function ensureSettings() {
   const ruleKeys = new Set(cur.auto_rules.map((r) => r.key));
   const missingRules = defs.auto_rules.filter((r) => !ruleKeys.has(r.key));
   if (missingRules.length) setSetting('auto_rules', [...cur.auto_rules, ...missingRules]);
+  // Copies made before the navy-and-mustard design keep the old emerald on papers; move them over.
+  if (cur.business && cur.business.primary === '#0E5E4E') setSetting('business', { ...cur.business, primary: '#101A3A', accent: '#D19B12' });
   const s = settings();
   const starts = { ...s.id_start, AG: 1, U: 1, WA: 1 };
   for (const [p, n] of Object.entries(starts)) {

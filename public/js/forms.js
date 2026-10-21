@@ -2,8 +2,19 @@
 (() => {
   const { $, esc, field } = BB;
 
-  function shell(title, sub, inner, label) {
-    return `<div class="pub">${BB.publicTop(label)}<div class="pub-hero"><img class="gem" src="/img/icon.svg" alt=""><h1>${title}</h1><p>${sub}</p></div><div class="card pub-card">${inner}</div><div class="pub-foot">${esc(BB.boot.business.name)} · Your details are kept safe and used only for hiring.</div></div>`;
+  // Split layout: heading and benefits on the left, the form card on the right. No menus (6.1).
+  const feeText = () => (BB.boot.fee.type === 'percent' ? `${BB.boot.fee.value}% of the yearly salary` : `a fixed fee per hire`);
+  const PAGES = {
+    hire: { label: 'For Employers', eyebrow: 'For employers', title: 'Hire the <em>right people</em>, without the chase', lead: 'Tell us who you need. Our recruiters call you, screen candidates and send you profiles that fit — on WhatsApp and in your account.',
+      perks: () => [['1', 'Screened profiles only', 'Every candidate is called and interviewed by us first.'], ['2', 'Interviews set up for you', 'Pick a time; we confirm it with the candidate on WhatsApp.'], ['₹', 'Pay only when they join', `${feeText()}, with a free replacement in the first 3 months.`]],
+      cardTitle: 'Tell us what you need', cardSub: 'Takes under a minute. Tap the mic to speak instead of typing.' },
+    apply: { label: 'For Candidates', eyebrow: 'For candidates', title: 'Your next <em>jewellery</em> job starts here', lead: 'Showrooms, workshops and offices across India are hiring sales staff, karigars, designers, accountants and more.',
+      perks: () => [['✓', 'Free for you', 'You never pay to get a job through us.'], ['★', 'Jobs that fit you', 'Matched on your city, skills, experience and salary.'], ['✆', 'Updates on WhatsApp', 'Interview times and offers come straight to your phone.']],
+      cardTitle: 'Share a few details', cardSub: 'Takes a minute. Tap the mic to speak in English or Hindi.' },
+  };
+  function shell(kind, inner) {
+    const p = PAGES[kind];
+    return BB.split({ top: BB.publicTop(p.label), eyebrow: p.eyebrow, title: p.title, lead: p.lead, perks: p.perks(), card: `<div class="card-title">${p.cardTitle}</div><p class="muted small" style="margin:0 0 14px">${p.cardSub}</p>${inner}` });
   }
   async function submit(form, url, body, done) {
     const btn = $('button[type=submit]', form); btn.disabled = true; btn.textContent = 'Sending…';
@@ -19,7 +30,7 @@
   // ---------- 6.1 client form ----------
   BB.views.hire = (r) => {
     const q = r.q;
-    $('#app').innerHTML = shell('Hire jewellery staff', 'Tell us who you need. Our team will call you and send matching profiles.', `
+    $('#app').innerHTML = shell('hire', `
       <form class="stack" novalidate data-label>
         ${BB.voiceSwitch()}
         <div class="grid g2">${field({ name: 'contact', label: 'Your name' })}${field({ name: 'company', label: 'Company name' })}</div>
@@ -27,9 +38,9 @@
         ${field({ name: 'business_type', label: 'Your business', type: 'choice', options: ['Showroom B2C', 'Manufacturer B2B', 'Both'] })}
         ${field({ name: 'need', label: 'When do you need staff?', type: 'choice', options: ['Hiring now', 'Hiring soon', 'Just exploring'] })}
         ${field({ name: 'roles', label: 'Which roles?', opt: true, placeholder: 'e.g. 2 sales executives, 1 cashier' })}
-        <button type="submit" class="btn primary lg block" data-label="Send request">Send request</button>
+        <button type="submit" class="btn gold lg block" data-label="Send request">Send request</button>
         <div class="consent">${esc(BB.boot.consent)}</div>
-      </form>`, 'Hire staff');
+      </form>`);
     const form = $('form');
     BB.attachMics(form);
     form.onsubmit = (e) => {
@@ -48,7 +59,7 @@
   // ---------- 6.2 candidate form ----------
   BB.views.apply = (r) => {
     const q = r.q; let cv = null;
-    $('#app').innerHTML = shell('Find a jewellery job', 'Showrooms, workshops and offices across India are hiring. Share a few details — it takes a minute.', `
+    $('#app').innerHTML = shell('apply', `
       <form class="stack" novalidate>
         ${BB.voiceSwitch()}
         ${q.job ? `<div class="notice gold small">You are applying for job <b>${esc(q.job.toUpperCase())}</b>. We will also show you other matching jobs.</div>` : ''}
@@ -59,9 +70,9 @@
         <div class="hidden" data-other>${field({ name: 'job_other', label: 'Type the job you want' })}</div>
         <label class="field" data-f="experience"><span class="lab">Experience <span class="opt">(optional)</span></span><div class="choice">${['Fresher', '1–3 years', '3–5 years', '5–10 years', '10+ years'].map((x) => `<label style="min-width:90px"><input type="radio" name="experience" value="${x}"> ${x}</label>`).join('')}</div></label>
         <div class="field" data-f="cv"><span class="lab" style="font-size:12px;font-weight:600;color:var(--muted)">CV <span class="opt">(optional — PDF, Word, JPG or PNG, up to 10 MB)</span></span><div class="row"><button type="button" class="btn" data-cv>Attach CV</button><span class="muted small" data-cv-name>No file chosen</span></div></div>
-        <button type="submit" class="btn primary lg block" data-label="Send">Send</button>
+        <button type="submit" class="btn gold lg block" data-label="Send my details">Send my details</button>
         <div class="consent">${esc(BB.boot.consent)}</div>
-      </form>`, 'Jobs');
+      </form>`);
     const form = $('form'); BB.attachMics(form);
     $('select[name=job_wanted]', form).onchange = (e) => $('[data-other]').classList.toggle('hidden', e.target.value !== 'Other');
     $('[data-cv]', form).onclick = async () => { cv = await BB.pickFile(); $('[data-cv-name]').textContent = cv ? cv.name : 'No file chosen'; };

@@ -299,13 +299,43 @@ BB.route = () => {
   document.body.dataset.view = view;
   (BB.views[view] || BB.views.landing)(r);
 };
-BB.views.landing = () => {
-  $('#app').innerHTML = `<div class="pub"><div class="pub-hero" style="padding-bottom:110px"><img class="gem" src="/img/icon.svg" alt=""><h1>${esc(BB.boot.business.name)}</h1><p>Hiring for the jewellery trade — one place for clients, candidates and the team.</p></div>
-  <div class="card pub-card"><div class="grid g2">
-    ${[['hire', 'I want to hire', 'Tell us the staff you need.'], ['apply', 'I want a job', 'Find jewellery jobs near you.'], ['my-account', 'Client account', 'Log in with your WhatsApp number.'], ['my-profile', 'Candidate profile', 'See your applications and offers.'], ['team', 'Team portal', 'BrillBrains and partner agencies.']].map(([h, t, s]) => `<a class="card pad" href="#${h}" style="text-decoration:none;color:inherit"><b>${t}</b><div class="muted small">${s}</div><div class="faint tiny mono" style="margin-top:4px">/${h}</div></a>`).join('')}
-  </div></div><div class="pub-foot">© ${new Date().getFullYear()} ${esc(BB.boot.business.name)}</div></div>`;
+// Brand lockup: mark | BrillBrains / Hiring Solutions / tagline (as on the website).
+BB.brand = (tagline, href = '#') => {
+  const name = BB.boot.business.name || 'BrillBrains Hiring Solutions';
+  const [first, ...rest] = name.split(' ');
+  return `<a class="brand" href="${href}"><img src="/img/icon.svg" alt=""><span class="bt"><b>${esc(first)}</b><span>${esc(rest.join(' '))}</span><small>${esc(tagline || 'Effective Recruitment Services')}</small></span></a>`;
 };
-BB.publicTop = (sub) => `<div class="pub-top"><a class="brand" href="#" onclick="return false"><img src="/img/icon.svg" alt=""><span>${esc(BB.boot.business.name)}<small>${esc(sub || '')}</small></span></a><span class="right"></span><a class="btn sm" style="background:transparent;color:#fff;border-color:rgba(255,255,255,.3)" href="https://wa.me/91${esc(BB.boot.business.support_phone)}" target="_blank" rel="noopener">${waIcon} Need help?</a></div>`;
+// Navy top bar. nav=false on the form links (they open only the form, no other menus).
+BB.publicTop = (sub, nav = false) => `<header class="pub-top">${BB.brand(sub)}${nav ? `<nav class="pub-nav"><a href="#hire">For Employers</a><a href="#apply">For Candidates</a><a href="#my-account">Client login</a><a href="#my-profile">My profile</a></nav><a class="btn gold" href="#team">Team login</a>` : `<a class="btn sm help" href="https://wa.me/91${esc(BB.boot.business.support_phone)}" target="_blank" rel="noopener">${waIcon} Need help?</a>`}</header>`;
+// Line art from the website: fine arcs bottom-left, a row of dots top-left.
+BB.deco = () => `<div class="deco-dots" aria-hidden="true"><i></i><i></i><i></i><i></i></div><svg class="deco-lines" viewBox="0 0 340 340" fill="none" stroke="currentColor" stroke-width="1.2" aria-hidden="true">${Array.from({ length: 9 }, (_, i) => `<path d="M0 ${110 + i * 26} C 90 ${150 + i * 20}, 170 ${230 + i * 10}, 260 340" opacity="${0.35 + i * 0.06}"/>`).join('')}</svg>`;
+// Split page: big heading + perks on the left, a card on the right.
+BB.split = ({ top, eyebrow, title, lead, perks, card, foot }) => `<div class="pub">${top}<main class="pub-split"><section class="pub-intro">${BB.deco()}<span class="eyebrow">${esc(eyebrow)}</span><h1>${title}</h1>${lead ? `<p class="lead">${lead}</p>` : ''}${perks && perks.length ? `<ul class="perks">${perks.map(([ic, b, s]) => `<li><span class="pi">${ic}</span><div><b>${esc(b)}</b><span>${esc(s)}</span></div></li>`).join('')}</ul>` : ''}</section><section class="card pub-card">${card}</section></main><div class="pub-foot">${foot || `© ${new Date().getFullYear()} ${esc(BB.boot.business.name)} · Your details are kept safe and used only for hiring.`}</div></div>`;
+BB.views.landing = () => {
+  const doors = [
+    ['hire', 'brief', 'I want to hire', 'Tell us the staff you need. We send matching profiles.'],
+    ['apply', 'users', 'I want a job', 'Showrooms, workshops and offices are hiring near you.'],
+    ['my-account', 'building', 'Client account', 'Job openings, candidates, interviews and bills.'],
+    ['my-profile', 'home', 'Candidate profile', 'Your applications, interviews and offers.'],
+    ['team', 'key', 'Team portal', 'BrillBrains and partner agencies.'],
+  ];
+  $('#app').innerHTML = `<div class="pub">${BB.publicTop('', true)}
+    <main class="hero">
+      <section class="pub-intro">${BB.deco()}
+        <span class="eyebrow">${esc(BB.boot.business.name)}</span>
+        <h1>Bringing the right <em>people</em> and companies together</h1>
+        <p class="lead">Recruitment for the jewellery trade — from the showroom floor to the karigar's bench. One place for businesses that hire, people who want work, and the teams that bring them together.</p>
+        <div class="row" style="gap:12px"><a class="btn gold lg" href="#hire">I want to hire</a><a class="btn primary lg" href="#apply">I want a job</a></div>
+      </section>
+      <div class="hero-art" aria-hidden="true"><div class="orb"></div>
+        <div class="float f1"><span class="av" style="background:var(--navy)">SE</span><div><b>Sales Executive</b><span>Mumbai · 6 profiles sent</span></div></div>
+        <div class="float f2"><span class="av" style="background:var(--mustard)">✓</span><div><b>Offer accepted</b><span>Joins on Monday</span></div></div>
+        <div class="float f3"><span class="av" style="background:var(--royal)">92</span><div><b>Strong match</b><span>Goldsmith · Jaipur</span></div></div>
+      </div>
+    </main>
+    <section class="doors">${doors.map(([h, ic, t, s]) => `<a class="card door" href="#${h}"><span class="ic">${icon(ic)}</span><b>${t}</b><span class="muted small">${s}</span><span class="go">Open →</span></a>`).join('')}</section>
+    <div class="pub-foot">© ${new Date().getFullYear()} ${esc(BB.boot.business.name)}</div></div>`;
+};
 BB.start = async () => {
   try { BB.boot = await (await fetch('/api/bootstrap')).json(); } catch { $('#app').innerHTML = '<div class="boot">Cannot reach the server.</div>'; return; }
   document.documentElement.style.setProperty('--brand', BB.boot.business.primary);

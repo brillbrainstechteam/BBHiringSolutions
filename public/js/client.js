@@ -4,9 +4,12 @@
 
   // Login: WhatsApp number → 6-digit code on WhatsApp → in.
   BB.otpLogin = (kind, title, after) => {
-    $('#app').innerHTML = `<div class="pub">${BB.publicTop(title)}<div class="card login-box"><h2>${esc(title)}</h2><p class="muted">Log in with your WhatsApp number. We send you a 6-digit code.</p><form class="stack" data-step1>${BB.field({ name: 'phone', label: 'WhatsApp number', type: 'tel', phone: true, attrs: 'inputmode="numeric" maxlength="14" autocomplete="tel"' })}<button class="btn primary block lg">Send code</button></form>
-      <form class="stack hidden" data-step2><div class="muted small" data-sent></div>${BB.field({ name: 'code', label: '6-digit code', voice: false, attrs: 'inputmode="numeric" maxlength="6" autocomplete="one-time-code" class="code-in"' })}<div data-dev></div><button class="btn primary block lg">Log in</button><a href="#" class="small" data-again>Use another number</a></form>
-      <p class="small muted" style="margin-top:16px">New here? ${kind === 'client' ? '<a href="#hire">Fill the hiring form</a>' : '<a href="#apply">Fill the job form</a>'}</p></div></div>`;
+    const intro = kind === 'client'
+      ? { eyebrow: 'For employers', title: 'Your hiring, <em>all in one place</em>', lead: 'Job openings, shortlisted candidates, interviews, offers and bills — always up to date.', perks: [['1', 'Review profiles', 'Choose who to interview in one tap.'], ['2', 'Give feedback', 'Selected, another round or not selected.'], ['₹', 'Pay by UPI', 'Bills and receipts in one tab.']] }
+      : { eyebrow: 'For candidates', title: 'Track every step <em>to your new job</em>', lead: 'See matching jobs, your interviews and your offers, and keep your profile up to date.', perks: [['★', 'Jobs for you', 'Matched on your city, skills and salary.'], ['✓', 'Confirm interviews', 'Or ask to move them — in one tap.'], ['✉', 'Accept your offer', 'Read the offer letter and upload joining papers.']] };
+    $('#app').innerHTML = BB.split({ top: BB.publicTop(title), ...intro, card: `<div class="card-title">${esc(title)}</div><p class="muted" style="margin:4px 0 16px">Log in with your WhatsApp number. We send you a 6-digit code.</p><form class="stack" data-step1>${BB.field({ name: 'phone', label: 'WhatsApp number', type: 'tel', phone: true, attrs: 'inputmode="numeric" maxlength="14" autocomplete="tel"' })}<button class="btn gold block lg">Send code</button></form>
+      <form class="stack hidden" data-step2><div class="muted small" data-sent></div>${BB.field({ name: 'code', label: '6-digit code', voice: false, attrs: 'inputmode="numeric" maxlength="6" autocomplete="one-time-code" class="code-in"' })}<div data-dev></div><button class="btn gold block lg">Log in</button><a href="#" class="small" data-again>Use another number</a></form>
+      <p class="small muted" style="margin-top:16px">New here? ${kind === 'client' ? '<a href="#hire">Fill the hiring form</a>' : '<a href="#apply">Fill the job form</a>'}</p>` });
     BB.attachMics($('#app'));
     let phone = '';
     $('[data-step1]').onsubmit = async (e) => {
@@ -40,8 +43,9 @@
     const c = D.client; const p = D.perms;
     const tabs = [['home', 'Home'], ['jobs', 'Job openings'], ...(p.candidates ? [['candidates', 'Candidates', D.counts.to_review]] : []), ['interviews', 'Interviews'], ...(p.bills ? [['bills', 'Bills']] : []), ['company', 'Company & papers']];
     $('#app').innerHTML = `<div class="pub">${BB.publicTop('Client account')}
-      <div class="acct"><div class="row between" style="margin-bottom:14px"><div><h1>${esc(c.company)}</h1><div class="muted small"><span class="mono">${esc(c.id)}</span> · ${esc(c.city || '')}${D.member ? ` · logged in as ${esc(D.member.name)} (${esc(D.member.role)})` : ''}</div></div>
-        <div class="row"><button class="btn" data-raise>${BB.icon('plus', 'wa-ico')} Raise a job opening</button><a class="btn ghost" href="/guides/client.html" target="_blank" rel="noopener">How to use</a><button class="btn ghost" data-out>Log out</button></div></div>
+      <div class="acct-band"><div class="in"><div class="grow"><span class="eyebrow">Client account</span><h1 style="margin-top:8px">${esc(c.company)}</h1><div class="meta"><span class="mono">${esc(c.id)}</span> · ${esc(c.city || '')}${D.member ? ` · logged in as ${esc(D.member.name)} (${esc(D.member.role)})` : ''}</div></div>
+        <div class="row"><button class="btn gold" data-raise>${BB.icon('plus', 'wa-ico')} Raise a job opening</button><a class="btn" href="/guides/client.html" target="_blank" rel="noopener">How to use</a><button class="btn" data-out>Log out</button></div></div></div>
+      <div class="acct">
         <div class="tabs">${tabs.map(([k, l, n]) => `<button data-tab="${k}" class="${tab === k ? 'on' : ''}">${l}${n ? ` <span class="n">${n}</span>` : ''}</button>`).join('')}</div>
         <div data-body></div></div></div>`;
     $$('[data-tab]').forEach((b) => (b.onclick = () => { tab = b.dataset.tab; history.replaceState(null, '', `#my-account/${tab}`); render(); }));

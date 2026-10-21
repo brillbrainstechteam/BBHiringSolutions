@@ -176,7 +176,7 @@ function makePdf(title, lines, brand) {
   const pages = []; let cur = []; let y = 740;
   for (const it of items) { const h = (it.size || 10) + 6; if (y - h < 70) { pages.push(cur); cur = []; y = 740; } cur.push({ ...it, y }); y -= h; }
   pages.push(cur);
-  const hex = (brand && brand.primary) || '#0E5E4E';
+  const hex = (brand && brand.primary) || '#101A3A';
   const rgb = [1, 3, 5].map((i) => (parseInt(hex.slice(i, i + 2), 16) / 255).toFixed(3)).join(' ');
   const objs = [];
   objs[1] = '<< /Type /Catalog /Pages 2 0 R >>';

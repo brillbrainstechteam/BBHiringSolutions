@@ -15,8 +15,7 @@
   function render() {
     const p = D.profile;
     const tabs = [['home', 'Home'], ['jobs', 'Jobs for you', D.jobs.length], ['apps', 'My applications'], ['profile', 'My profile']];
-    $('#app').innerHTML = `<div class="pub">${BB.publicTop('My profile')}<div class="acct">
-      <div class="row between" style="margin-bottom:14px"><div><h1>Hello, ${esc(p.name.split(' ')[0])}</h1><div class="muted small"><span class="mono">${esc(p.id)}</span> · ${esc(p.job_wanted || '')} · ${esc(p.city || '')}</div></div><button class="btn ghost" data-out>Log out</button></div>
+    $('#app').innerHTML = `<div class="pub">${BB.publicTop('My profile')}<div class="acct-band"><div class="in"><div class="grow"><span class="eyebrow">Candidate profile</span><h1 style="margin-top:8px">Hello, <span class="hl">${esc(p.name.split(' ')[0])}</span></h1><div class="meta"><span class="mono">${esc(p.id)}</span> · ${esc(p.job_wanted || '')} · ${esc(p.city || '')}</div></div><button class="btn" data-out>Log out</button></div></div><div class="acct">
       <div class="tabs">${tabs.map(([k, l, n]) => `<button data-tab="${k}" class="${tab === k ? 'on' : ''}">${l}${n ? ` <span class="n">${n}</span>` : ''}</button>`).join('')}</div><div data-body></div></div></div>`;
     $$('[data-tab]').forEach((b) => (b.onclick = () => { tab = b.dataset.tab; history.replaceState(null, '', `#my-profile/${tab}`); render(); }));
     $('[data-out]').onclick = async () => { await BB.post('/api/account/logout', {}).catch(() => {}); BB.setToken('candidate', null); BB.route(); };

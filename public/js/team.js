@@ -5,12 +5,12 @@
   const device = () => { let d = BB.store.get('bbhs.device'); if (!d) { d = Math.random().toString(36).slice(2) + Date.now().toString(36); BB.store.set('bbhs.device', d); } return d; };
 
   function loginView(msg) {
-    $('#app').innerHTML = `<div class="pub"><div class="pub-hero" style="padding-bottom:100px"><img class="gem" src="/img/icon.svg" alt=""><h1>Team portal</h1><p>BrillBrains and partner agencies</p></div>
-      <div class="card login-box" style="margin-top:-70px;position:relative"><form class="stack" data-login>${msg ? `<div class="notice warn small">${esc(msg)}</div>` : ''}
+    $('#app').innerHTML = BB.split({ top: BB.publicTop('Team portal'), eyebrow: 'Team portal', title: 'Good to see you <em>again</em>', lead: 'BrillBrains head office and partner agencies — leads, job openings, interviews, offers and bills in one place.', perks: [['1', 'Needs attention first', 'Your dashboard lists what to do next.'], ['2', 'WhatsApp built in', 'Every update goes out from the business number.'], ['3', 'Numbers count themselves', 'Performance comes from the work you record.']],
+      card: `<div class="card-title">Log in</div><p class="muted small" style="margin:0 0 16px">Use the username and password from your admin.</p><form class="stack" data-login>${msg ? `<div class="notice warn small">${esc(msg)}</div>` : ''}
         ${field({ name: 'username', label: 'Username', voice: false, attrs: 'autocomplete="username" autocapitalize="off"' })}
         <label class="field" data-f="password"><span class="lab">Password</span><div class="inp-wrap"><input name="password" type="password" autocomplete="current-password"><button type="button" class="mic" data-eye title="Show or hide" style="font-size:12px;width:44px">Show</button></div></label>
-        <button class="btn primary block lg">Log in</button><p class="small faint" style="margin:0">5 wrong tries lock the login for 15 minutes.</p></form>
-        <form class="stack hidden" data-2fa><h3>Check on a new device</h3><p class="small muted">We sent a 6-digit code to your WhatsApp.</p><div data-dev></div>${field({ name: 'code', label: 'Code', voice: false, attrs: 'inputmode="numeric" maxlength="6" class="code-in" autocomplete="one-time-code"' })}<button class="btn primary block">Verify</button></form></div></div>`;
+        <button class="btn gold block lg">Log in</button><p class="small faint" style="margin:0">5 wrong tries lock the login for 15 minutes.</p></form>
+        <form class="stack hidden" data-2fa><h3>Check on a new device</h3><p class="small muted">We sent a 6-digit code to your WhatsApp.</p><div data-dev></div>${field({ name: 'code', label: 'Code', voice: false, attrs: 'inputmode="numeric" maxlength="6" class="code-in" autocomplete="one-time-code"' })}<button class="btn gold block lg">Verify</button></form>` });
     $('[data-eye]').onclick = (e) => { const i = $('[name=password]'); i.type = i.type === 'password' ? 'text' : 'password'; e.target.textContent = i.type === 'password' ? 'Show' : 'Hide'; };
     $('[data-login]').onsubmit = async (e) => {
       e.preventDefault(); const v = BB.formValues(e.target);
@@ -31,6 +31,7 @@
     ['performance', 'Performance', 'chart'], ['logs', 'Daily logs', 'note'], ['bills', 'Bills', 'rupee', ['super', 'admin']], ['money', 'Money', 'money', ['super']],
     ['reports', 'Reports', 'report', ['super', 'admin']], ['logins', 'Logins & team', 'key'], ['settings', 'Settings', 'cog', ['super']],
   ];
+  const GROUP = { myday: 'Overview', dashboard: 'Overview', leads: 'Hiring', clients: 'Hiring', jobs: 'Hiring', candidates: 'Hiring', applications: 'Hiring', interviews: 'Hiring', whatsapp: 'Messages', performance: 'Team', logs: 'Team', bills: 'Money', money: 'Money', reports: 'Money', logins: 'Admin', settings: 'Admin' };
   const HELP = {
     myday: 'Everything you need to do today: interviews, results to record, follow-ups and stuck applications.',
     dashboard: 'Counts and the Needs attention list. Every item has a WhatsApp button to nudge the right person.',
@@ -65,12 +66,12 @@
 
   function shell() {
     const u = BB.me.user; const ag = BB.me.agency;
-    $('#app').innerHTML = `<div class="shell"><aside class="side"><a class="brand" href="#team"><img src="/img/icon.svg" alt=""><span>${esc(BB.boot.business.short)} Hiring<small>Team portal</small></span></a><nav class="nav" data-nav></nav>
+    $('#app').innerHTML = `<div class="shell"><aside class="side">${BB.brand('Team portal', '#team')}<nav class="nav" data-nav></nav>
       <div class="me"><b>${esc(u.name)}</b>${BB.levelName(u.level)}${ag ? ` · ${esc(ag.name)}` : ' · BrillBrains'}<div style="margin-top:6px"><a href="/guides/${{ super: 'super-admin', admin: 'admin', sub: 'sub-admin' }[u.level]}.html" target="_blank" rel="noopener" style="color:var(--gold)">1-page guide ↗</a></div></div></aside>
       <div class="main"><header class="topbar"><div class="search">${icon('search')}<input placeholder="Search ID, name, phone or company…" data-search><div class="search-res hidden" data-res></div></div>
         <button class="btn sm" data-addlead>${icon('plus', 'wa-ico')} Add lead</button>
         <div class="bell" style="position:relative"><button class="btn icon ghost" data-bell title="Alerts">${icon('bell', 'wa-ico')}</button><span class="n hidden" data-bell-n></span><div class="drop hidden" data-bell-drop></div></div>
-        <span class="small who"><b>${esc(u.name)}</b> <span class="muted">· ${BB.levelName(u.level)}${ag ? ' · ' + esc(ag.name) : ''}</span></span>
+        <span class="who-chip"><span class="av">${esc(u.name.split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase())}</span><span><b>${esc(u.name)}</b><span>${BB.levelName(u.level)}${ag ? ' · ' + esc(ag.name) : ''}</span></span></span>
         <button class="btn sm ghost" data-out>Log out</button></header><div class="page" data-page></div></div></div>`;
     updateNav();
     $('[data-out]').onclick = async () => { await BB.post('/api/team/logout').catch(() => {}); BB.setToken('team', null); BB.closePanels(); loginView(); };
@@ -79,7 +80,8 @@
   }
   function updateNav() {
     const u = BB.me.user; const c = BB.me.counts;
-    $('[data-nav]').innerHTML = MENU.filter((m) => !m[3] || m[3].includes(u.level)).map(([k, l, ic, , cnt]) => `<a href="#team/${k}" class="${k === pageName ? 'on' : ''}">${icon(ic)}<span>${l}</span>${cnt && c[cnt] ? `<span class="n">${c[cnt]}</span>` : ''}</a>`).join('');
+    let lastGroup = '';
+    $('[data-nav]').innerHTML = MENU.filter((m) => !m[3] || m[3].includes(u.level)).map(([k, l, ic, , cnt]) => { const g = GROUP[k]; const head = g !== lastGroup ? `<div class="grp">${g}</div>` : ''; lastGroup = g; return `${head}<a href="#team/${k}" class="${k === pageName ? 'on' : ''}">${icon(ic)}<span>${l}</span>${cnt && c[cnt] ? `<span class="n">${c[cnt]}</span>` : ''}</a>`; }).join('');
     const n = $('[data-bell-n]'); if (n) { n.textContent = c.alerts; n.classList.toggle('hidden', !c.alerts); }
   }
   BB.refreshCounts = async () => { try { BB.me = await BB.api('/api/me'); updateNav(); } catch { /* logged out */ } };
@@ -87,7 +89,7 @@
   async function renderPage() {
     const el = $('[data-page]'); const page = BB.pages[pageName];
     const m = MENU.find((x) => x[0] === pageName);
-    el.innerHTML = `<div class="page-h"><div class="grow"><div class="row"><h1>${m[1]}</h1><button class="help-btn" data-help title="What is this page?">?</button></div><div class="help hidden" data-help-t>${HELP[pageName] || ''}</div></div><div class="row" data-actions></div></div><div data-content><div class="empty">Loading…</div></div>`;
+    el.innerHTML = `<div class="page-h"><div class="grow"><span class="eyebrow">${GROUP[pageName]}</span><div class="row"><h1>${m[1]}</h1><button class="help-btn" data-help title="What is this page?">?</button></div><div class="help hidden" data-help-t>${HELP[pageName] || ''}</div></div><div class="row" data-actions></div></div><div data-content><div class="empty">Loading…</div></div>`;
     $('[data-help]').onclick = () => $('[data-help-t]').classList.toggle('hidden');
     BB.refreshPage = async () => { try { await page({ el: $('[data-content]'), actions: $('[data-actions]'), q: pageQ, me: BB.me.user }); } catch (e) { $('[data-content]').innerHTML = `<div class="card empty">${esc(e.message)}</div>`; } BB.refreshCounts(); };
     await BB.refreshPage();
