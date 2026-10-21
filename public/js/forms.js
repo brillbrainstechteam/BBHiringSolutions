@@ -38,6 +38,7 @@
         ${field({ name: 'business_type', label: 'Your business', type: 'choice', options: ['Showroom B2C', 'Manufacturer B2B', 'Both'] })}
         ${field({ name: 'need', label: 'When do you need staff?', type: 'choice', options: ['Hiring now', 'Hiring soon', 'Just exploring'] })}
         ${field({ name: 'roles', label: 'Which roles?', opt: true, placeholder: 'e.g. 2 sales executives, 1 cashier' })}
+        <label class="hp" aria-hidden="true">Leave this empty <input name="website" tabindex="-1" autocomplete="off"></label>
         <button type="submit" class="btn gold lg block" data-label="Send request">Send request</button>
         <div class="consent">${esc(BB.boot.consent)}</div>
       </form>`);
@@ -70,6 +71,7 @@
         <div class="hidden" data-other>${field({ name: 'job_other', label: 'Type the job you want' })}</div>
         <label class="field" data-f="experience"><span class="lab">Experience <span class="opt">(optional)</span></span><div class="choice">${['Fresher', '1–3 years', '3–5 years', '5–10 years', '10+ years'].map((x) => `<label style="min-width:90px"><input type="radio" name="experience" value="${x}"> ${x}</label>`).join('')}</div></label>
         <div class="field" data-f="cv"><span class="lab" style="font-size:12px;font-weight:600;color:var(--muted)">CV <span class="opt">(optional — PDF, Word, JPG or PNG, up to 10 MB)</span></span><div class="row"><button type="button" class="btn" data-cv>Attach CV</button><span class="muted small" data-cv-name>No file chosen</span></div></div>
+        <label class="hp" aria-hidden="true">Leave this empty <input name="website" tabindex="-1" autocomplete="off"></label>
         <button type="submit" class="btn gold lg block" data-label="Send my details">Send my details</button>
         <div class="consent">${esc(BB.boot.consent)}</div>
       </form>`);

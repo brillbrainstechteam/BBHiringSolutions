@@ -9,6 +9,19 @@ BBHS runs as **two copies** on one server: a **test** copy (sample data, test Wh
 
 Both web addresses open the five parts at `/hire`, `/apply`, `/my-account`, `/my-profile` and `/team`.
 
+## Quick install (one command)
+
+On a fresh Ubuntu 22.04/24.04 server, after the domain's DNS A record points at the server and ports 80/443 are open:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/brillbrainstechteam/BBHiringSolutions/main/deploy/install.sh -o install.sh
+sudo bash install.sh hire.brillbrainsconsultants.com
+```
+
+It installs Node 22, Caddy (HTTPS) and ClamAV, sets up the live copy as a service, writes `.env` with the right address, and prints the candidate form link. Add `TEST_DOMAIN=test-hire.… ` in front to also set up the test copy, `BRANCH=…` to run another branch, and `REPO=https://<token>@github.com/…` if the repository is private. Running it again updates the code and keeps `.env` and the data. Then make the first super admin as shown at the end of the output.
+
+The sections below explain the same steps by hand.
+
 ## 1. Server
 
 A small Linux server (Ubuntu 22.04+, 1 GB RAM is enough to start), the same one as the WhatsApp CRM or a separate one.

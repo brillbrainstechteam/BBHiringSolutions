@@ -17,12 +17,12 @@ route('GET', '/api/bootstrap', {}, () => {
     jobs: L.jobList().filter((j) => !j.hidden), industries: Object.fromEntries(Object.keys(s.industries).map((k) => [k, L.jobList(k).filter((j) => !j.hidden)])), default_industry: s.default_industry, departments: s.departments, cities: s.cities.map((c) => c.name), skills: s.skills, stages: s.client_stages,
     closing_reasons: s.closing_reasons, job_close_reasons: s.job_close_reasons, reopen_reasons: s.reopen_reasons, lead_sources: s.lead_sources, src_tags: s.src_tags,
     steps: L.STEPS, consent: L.CONSENT_WORDING, fee: s.fee, agency_share_pct: s.agency_share_pct, gst: s.gst, match: s.match, quiet: s.quiet, log_deadline: s.log_deadline,
-    test_mode: !s.crm.enabled, languages: s.languages, env: D.ENV.name,
+    test_mode: !s.crm.enabled, languages: s.languages, env: D.ENV.name, base_url: s.business.base_url,
   };
 });
 
 // ---------- team login (19.3) ----------
-route('POST', '/api/team/login', {}, (ctx) => {
+route('POST', '/api/team/login', { rate: { key: 'login', max: 30, minutes: 15 } }, (ctx) => {
   const { username, password, device } = ctx.body;
   const u = get('SELECT * FROM users WHERE username=?', String(username || '').trim().toLowerCase());
   const fail = (msg) => { D.history(username || '?', 'failed login', u ? u.id : null, null, null, msg, null, ctx.ip); throw httpError(401, msg); };
@@ -49,7 +49,9 @@ route('POST', '/api/team/login', {}, (ctx) => {
   if (u.level === 'super' && (!device || !devices.includes(device))) {
     const code = issueCode(u.whatsapp, 'team2fa');
     const token = newSession('team', u.id, null, { pending_2fa: true, device });
-    return { token, need2fa: true, dev_code: D.settings().crm.enabled ? undefined : code, must_change: !!u.must_change };
+    // Test copy without WhatsApp: the code is shown on screen. Live copy without WhatsApp: only in the server log.
+    if (!D.settings().crm.enabled && D.ENV.name === 'live') console.log(`[2-step code] ${u.username}: ${code} (WhatsApp not connected)`);
+    return { token, need2fa: true, dev_code: showCode() ? code : undefined, must_change: !!u.must_change };
   }
   return { token: newSession('team', u.id, null, { device }), must_change: !!u.must_change };
 });
@@ -70,6 +72,8 @@ route('POST', '/api/team/password', { auth: 'team' }, (ctx) => {
 });
 
 // ---------- one-time codes for clients and candidates ----------
+// Codes appear on screen only on the test copy while WhatsApp is not connected — never on the live copy.
+const showCode = () => !D.settings().crm.enabled && D.ENV.name !== 'live';
 function issueCode(phone, purpose) {
   const hourAgo = new Date(Date.now() - 3600000).toISOString();
   if (get('SELECT COUNT(*) c FROM otps WHERE phone=? AND created_at>?', phone, hourAgo).c >= 5) throw httpError(429, 'Too many codes asked for this number. Try again in an hour.');
@@ -88,13 +92,14 @@ function checkCode(phone, purpose, code) {
   if (o.code_hash !== L.sha(String(code || '').trim() + phone)) { update('otps', o.id, { tries: o.tries + 1 }); throw httpError(400, `Wrong code. ${2 - o.tries} tries left.`, 'code'); }
   update('otps', o.id, { used: 1 });
 }
-route('POST', '/api/otp/request', {}, (ctx) => {
+route('POST', '/api/otp/request', { rate: { key: 'otp', max: 10, minutes: 60 } }, (ctx) => {
   const phone = L.digits10(ctx.body.phone); const kind = ctx.body.kind;
   if (!L.validPhone(phone)) throw httpError(400, 'Enter your 10-digit WhatsApp number', 'phone');
   const found = kind === 'client' ? (get('SELECT id FROM clients WHERE whatsapp=? AND merged_into IS NULL AND removed=0', phone) || get('SELECT id FROM client_members WHERE whatsapp=?', phone)) : get('SELECT id FROM candidates WHERE whatsapp=? AND merged_into IS NULL AND removed=0', phone);
   if (!found) throw httpError(404, kind === 'client' ? 'No client account with this number. Fill the hiring form first.' : 'No profile with this number. Fill the job form first.', 'phone');
+  if (!showCode() && !D.settings().crm.enabled) throw httpError(400, 'Login codes are sent on WhatsApp, which is being set up. Please try again later or contact us on WhatsApp.', 'phone');
   const code = issueCode(phone, kind);
-  return { sent: true, dev_code: D.settings().crm.enabled ? undefined : code };
+  return { sent: true, dev_code: showCode() ? code : undefined };
 });
 route('POST', '/api/otp/verify', {}, (ctx) => {
   const phone = L.digits10(ctx.body.phone); const kind = ctx.body.kind;
@@ -123,8 +128,9 @@ function srcFrom(b) {
   if (b.src) return tags[b.src] || D.settings().lead_sources.find((x) => x.toLowerCase() === String(b.src).toLowerCase()) || b.src;
   return 'Website';
 }
-route('POST', '/api/public/hire', {}, (ctx) => {
+route('POST', '/api/public/hire', { rate: { key: 'form', max: 10, minutes: 60 } }, (ctx) => {
   const b = ctx.body;
+  if (b.website) throw httpError(400, 'Please try again.'); // hidden field only bots fill in
   if (!b.contact || !String(b.contact).trim()) throw httpError(400, 'Please enter your name', 'contact');
   if (!b.company || !String(b.company).trim()) throw httpError(400, 'Please enter your company name', 'company');
   if (!b.city) throw httpError(400, 'Please enter your city', 'city');
@@ -134,8 +140,9 @@ route('POST', '/api/public/hire', {}, (ctx) => {
   openedAccount('client', r.client.id);
   return { id: r.client.id, isNew: r.isNew, token: newSession('client', r.client.id) };
 });
-route('POST', '/api/public/apply', {}, async (ctx) => {
+route('POST', '/api/public/apply', { rate: { key: 'form', max: 10, minutes: 60 } }, async (ctx) => {
   const b = ctx.body;
+  if (b.website) throw httpError(400, 'Please try again.'); // hidden field only bots fill in
   if (!b.name || !String(b.name).trim()) throw httpError(400, 'Please enter your name', 'name');
   if (!b.city) throw httpError(400, 'Please enter the city you want to work in', 'city');
   if (!b.job_wanted) throw httpError(400, 'Pick the job you want', 'job_wanted');

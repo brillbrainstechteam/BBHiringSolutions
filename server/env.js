@@ -26,4 +26,6 @@ module.exports = {
   alertWebhook: e.ALERT_WEBHOOK_URL || '',
   clamd: { host: e.CLAMD_HOST || '', port: Number(e.CLAMD_PORT) || 3310 },
   backupDir: e.BACKUP_DIR || '',
+  // Behind Caddy/Nginx the visitor's address comes in X-Forwarded-For.
+  trustProxy: flag(e.TRUST_PROXY) === true,
 };

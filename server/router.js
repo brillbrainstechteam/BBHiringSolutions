@@ -30,12 +30,14 @@ function loadSession(req) {
 function actorOf(u) { return { uid: u.id, name: u.name, label: u.name, level: u.level, agency_id: u.agency_id }; }
 
 async function dispatch(req, res, url, body) {
-  const ip = req.socket.remoteAddress;
+  const fwd = D.ENV.trustProxy && String(req.headers['x-forwarded-for'] || '').split(',')[0].trim();
+  const ip = fwd || req.socket.remoteAddress;
   for (const r of routes) {
     if (r.method !== req.method) continue;
     const m = r.re.exec(url.pathname); if (!m) continue;
     const params = {}; r.keys.forEach((k, i) => (params[k] = decodeURIComponent(m[i + 1])));
     const ctx = { req, res, params, query: Object.fromEntries(url.searchParams), body: body || {}, ip };
+    if (r.opts.rate) rateCheck(`${r.opts.rate.key}:${ip}`, r.opts.rate.max, r.opts.rate.minutes);
     const need = r.opts.auth;
     if (need) {
       const s = loadSession(req);
@@ -66,6 +68,16 @@ async function dispatch(req, res, url, body) {
     return r.handler(ctx);
   }
   throw D.httpError(404, 'Not found');
+}
+
+// Simple per-address limit for public endpoints (forms, codes, logins), kept in memory.
+const hits = new Map();
+function rateCheck(key, max, minutes) {
+  const now = Date.now(); const since = now - minutes * 60000;
+  const list = (hits.get(key) || []).filter((t) => t > since);
+  if (list.length >= max) throw D.httpError(429, 'Too many tries from this connection. Please wait a few minutes and try again.');
+  list.push(now); hits.set(key, list);
+  if (hits.size > 5000) for (const [k, v] of hits) if (!v.length || v[v.length - 1] < since) hits.delete(k);
 }
 
 // ---------- access rules (section 4) ----------

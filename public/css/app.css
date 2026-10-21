@@ -399,3 +399,5 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
 .pub-intro { isolation: isolate; }
 .deco-lines { left: -70px; bottom: -90px; width: 380px; height: 380px; opacity: .55; }
 @media (max-width: 560px) { .deco-lines { display: none; } }
+/* hidden field that only bots fill in */
+.hp { position: absolute !important; left: -10000px; width: 1px; height: 1px; overflow: hidden; }
