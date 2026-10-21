@@ -57,12 +57,18 @@ The contract:
 
 Failed sends retry 3 times, then show in Inbox → Failed and Settings → Health with a Retry button.
 
-## Notes and things to finish before go-live
+## Settings file (.env), going live, testing
 
-- **Virus check**: `server/files.js` has a hook (`virusCheck`) that only blocks the EICAR test file. Connect a real scanner (for example ClamAV) on the server.
-- **Backups**: a daily copy goes to `data/backups` (kept 30 days) with a *Test restore* button in Settings → Health. For the live copy, also copy backups off the server.
-- **HTTPS**: run behind a web server with HTTPS (for example Nginx or Caddy) at the live address.
+- Copy `.env.example` to `.env` and fill it in: copy name (test / live), web address, CRM link and token, email inbox (IMAP), error-alert webhook, ClamAV virus scanner, off-server backup folder. Values in `.env` win over Settings and show there as "Set in the .env file". Settings → Health shows what is set.
+- The **test** copy adds sample data and shows a TEST COPY marker; the **live** copy starts empty — make the first super admin with `npm run make-admin -- "Name" username 98XXXXXXXX`.
+- [docs/DEPLOY.md](docs/DEPLOY.md): server, two copies, HTTPS (Caddy), ClamAV, backups, connecting the CRM, the go-live checklist. Server files are in [deploy/](deploy/).
+- [docs/TEST-LIST.md](docs/TEST-LIST.md): the hand test list for all 49 rows of section 7.
+- 1-page guides per level open from the app: `/guides/super-admin.html`, `admin.html`, `sub-admin.html`, `client.html`.
+
+## Notes
+
 - **Voice typing** uses the browser's speech recognition (Chrome). Spoken numbers like "nine eight double two…" or Hindi digits become 10 digits.
 - **Offer letter / contract signing** is the simple in-app "I agree" with name, time and IP (open decision in section 23).
 - The poster QR code is drawn by api.qrserver.com from the apply link.
+- **Email inbox**: CVs are read for name, phone, email, city and job. PDF reading works for normal text PDFs; scanned (photo) CVs have no text, so those leads land in Leads → Needs checking.
 - Open decisions from section 23 use the suggested starting values (18% GST in one state, in-house team = AG-01 with 0% share, quiet hours 9 pm–9 am, 3 messages a day, 7 pm log deadline).

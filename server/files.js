@@ -8,8 +8,8 @@ const D = require('./db');
 const ALLOWED = { pdf: 'application/pdf', doc: 'application/msword', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png' };
 const MAX = 10 * 1024 * 1024;
 
-// Checks type by extension and by the first bytes, size up to 10 MB. Old versions are kept.
-function saveFile({ recordId, type, name, base64, by }) {
+// Checks type by extension and by the first bytes, size up to 10 MB, virus scan. Old versions are kept.
+async function saveFile({ recordId, type, name, base64, by }) {
   const ext = String(name || '').split('.').pop().toLowerCase();
   if (!ALLOWED[ext]) throw D.httpError(400, 'Only PDF, Word, JPG and PNG files are allowed.');
   const buf = Buffer.from(String(base64 || '').replace(/^data:[^,]*,/, ''), 'base64');
@@ -19,11 +19,38 @@ function saveFile({ recordId, type, name, base64, by }) {
   const ok = (ext === 'pdf' && buf.slice(0, 4).toString() === '%PDF') || (['jpg', 'jpeg'].includes(ext) && magic.startsWith('ffd8')) || (ext === 'png' && magic === '89504e47') ||
     (ext === 'docx' && magic === '504b0304') || (ext === 'doc' && magic === 'd0cf11e0');
   if (!ok) throw D.httpError(400, 'The file does not look like a real ' + ext.toUpperCase() + ' file.');
-  if (virusCheck(buf)) throw D.httpError(400, 'The file failed the virus check.');
+  const scan = await virusScan(buf);
+  if (!scan.clean) throw D.httpError(400, `The file failed the virus check${scan.virus ? ` (${scan.virus})` : ''}.`);
   return storeBuffer({ recordId, type, name, buf, mime: ALLOWED[ext], by });
 }
-// Virus check hook: blocks the EICAR test string. Connect a real scanner (e.g. ClamAV) here on the server.
-const virusCheck = (buf) => buf.includes('EICAR-STANDARD-ANTIVIRUS-TEST-FILE');
+// Virus scan through ClamAV's clamd (CLAMD_HOST / CLAMD_PORT in .env), using its INSTREAM command.
+// Without clamd only the EICAR test string is blocked, and Settings → Health says so.
+function virusScan(buf) {
+  if (buf.includes('EICAR-STANDARD-ANTIVIRUS-TEST-FILE')) return Promise.resolve({ clean: false, virus: 'EICAR test file' });
+  const { host, port } = D.ENV.clamd;
+  if (!host) return Promise.resolve({ clean: true, scanned: false });
+  return new Promise((resolve, reject) => {
+    const sock = require('net').createConnection({ host, port });
+    let out = '';
+    sock.setTimeout(30000, () => { sock.destroy(); reject(D.httpError(503, 'The virus scanner did not answer. Please try again.')); });
+    sock.on('connect', () => {
+      sock.write('zINSTREAM\0');
+      for (let i = 0; i < buf.length; i += 64 * 1024) {
+        const chunk = buf.subarray(i, i + 64 * 1024); const len = Buffer.alloc(4); len.writeUInt32BE(chunk.length);
+        sock.write(len); sock.write(chunk);
+      }
+      sock.write(Buffer.alloc(4));
+    });
+    sock.on('data', (d) => { out += d.toString(); });
+    sock.on('end', () => {
+      const res = out.replace(/\0/g, '').trim();
+      if (/OK$/.test(res)) resolve({ clean: true, scanned: true });
+      else if (/FOUND$/.test(res)) resolve({ clean: false, virus: res.replace(/^stream:\s*/, '').replace(/\s*FOUND$/, '') });
+      else reject(D.httpError(503, `The virus scanner could not check the file (${res || 'no answer'}).`));
+    });
+    sock.on('error', (e) => { require('./alerts').devAlert('Virus scanner unreachable', e.message); reject(D.httpError(503, 'The virus scanner is not reachable. Please try again later.')); });
+  });
+}
 
 function storeBuffer({ recordId, type, name, buf, mime, by }) {
   const prev = D.get('SELECT * FROM files WHERE record_id=? AND type=? AND replaced=0 ORDER BY version DESC LIMIT 1', recordId, type);
@@ -97,6 +124,39 @@ function readSpreadsheet(name, base64) {
   if (/\.(csv|txt)$/i.test(name)) return parseCSV(buf.toString('utf8').replace(/^﻿/, ''));
   throw D.httpError(400, 'Upload an Excel (.xlsx) or CSV file.');
 }
+// ---------- Excel (.xlsx) writer: one sheet, stored (uncompressed) zip ----------
+const CRC_TABLE = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+function crc32(buf) { let c = 0xffffffff; for (const b of buf) c = CRC_TABLE[(c ^ b) & 0xff] ^ (c >>> 8); return (c ^ 0xffffffff) >>> 0; }
+function zipStore(files) {
+  const locals = []; const centrals = []; let offset = 0;
+  for (const [name, content] of Object.entries(files)) {
+    const data = Buffer.from(content, 'utf8'); const nameBuf = Buffer.from(name); const crc = crc32(data);
+    const lh = Buffer.alloc(30); lh.writeUInt32LE(0x04034b50, 0); lh.writeUInt16LE(20, 4); lh.writeUInt32LE(crc, 14); lh.writeUInt32LE(data.length, 18); lh.writeUInt32LE(data.length, 22); lh.writeUInt16LE(nameBuf.length, 26);
+    const ch = Buffer.alloc(46); ch.writeUInt32LE(0x02014b50, 0); ch.writeUInt16LE(20, 4); ch.writeUInt16LE(20, 6); ch.writeUInt32LE(crc, 16); ch.writeUInt32LE(data.length, 20); ch.writeUInt32LE(data.length, 24); ch.writeUInt16LE(nameBuf.length, 28); ch.writeUInt32LE(offset, 42);
+    locals.push(lh, nameBuf, data); centrals.push(ch, nameBuf); offset += 30 + nameBuf.length + data.length;
+  }
+  const cd = Buffer.concat(centrals); const end = Buffer.alloc(22); const n = Object.keys(files).length;
+  end.writeUInt32LE(0x06054b50, 0); end.writeUInt16LE(n, 8); end.writeUInt16LE(n, 10); end.writeUInt32LE(cd.length, 12); end.writeUInt32LE(offset, 16);
+  return Buffer.concat([...locals, cd, end]);
+}
+function toXLSX(rows, sheetName = 'Sheet1') {
+  const x = (v) => String(v).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])).replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '');
+  const col = (i) => { let s = ''; i += 1; while (i) { const m = (i - 1) % 26; s = String.fromCharCode(65 + m) + s; i = Math.floor((i - 1) / 26); } return s; };
+  const sheetRows = rows.map((r, ri) => `<row r="${ri + 1}">${r.map((v, ci) => {
+    const ref = `${col(ci)}${ri + 1}`;
+    if (v === null || v === undefined || v === '') return '';
+    if (typeof v === 'number' && isFinite(v)) return `<c r="${ref}"><v>${v}</v></c>`;
+    return `<c r="${ref}" t="inlineStr"${ri === 0 ? ' s="1"' : ''}><is><t xml:space="preserve">${x(v)}</t></is></c>`;
+  }).join('')}</row>`).join('');
+  return zipStore({
+    '[Content_Types].xml': '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>',
+    '_rels/.rels': '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>',
+    'xl/workbook.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="${x(sheetName).slice(0, 31)}" sheetId="1" r:id="rId1"/></sheets></workbook>`,
+    'xl/_rels/workbook.xml.rels': '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>',
+    'xl/styles.xml': '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="2"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>',
+    'xl/worksheets/sheet1.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews><sheetData>${sheetRows}</sheetData></worksheet>`,
+  });
+}
 function toCSV(rows) {
   const esc = (v) => { const s = v === null || v === undefined ? '' : String(v); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
   return '﻿' + rows.map((r) => r.map(esc).join(',')).join('\r\n');
@@ -142,4 +202,4 @@ function makePdf(title, lines, brand) {
   return Buffer.from(out, 'latin1');
 }
 
-module.exports = { saveFile, storeBuffer, readStored, readSpreadsheet, parseCSV, toCSV, makePdf };
+module.exports = { unzip, toXLSX, saveFile, storeBuffer, readStored, readSpreadsheet, parseCSV, toCSV, makePdf };

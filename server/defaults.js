@@ -72,7 +72,7 @@ const FORMATS = {
   bbhs_log_reminder: { type: 'Utility', approved: true, buttons: [],
     en: 'Hello {name}, please submit today\'s daily log before {deadline}: {link}',
     hi: 'नमस्ते {name}, कृपया {deadline} से पहले आज का डेली लॉग भरें: {link}' },
-  bbhs_day_summary: { type: 'Utility', approved: false, buttons: [],
+  bbhs_day_summary: { type: 'Utility', approved: true, buttons: [],
     en: 'Hello {name}, summary for {date}: {summary}. Details: {link}',
     hi: 'नमस्ते {name}, {date} का सारांश: {summary}। विवरण: {link}' },
   bbhs_login_code: { type: 'Authentication', approved: true, buttons: ['Copy code'],
@@ -81,6 +81,9 @@ const FORMATS = {
   bbhs_still_looking: { type: 'Utility', approved: false, buttons: ['Still looking', 'Not looking'],
     en: 'Hello {name}, are you still looking for a job? Tap to update your profile: {link}',
     hi: 'नमस्ते {name}, क्या आप अभी भी नौकरी ढूंढ रहे हैं? प्रोफ़ाइल अपडेट करें: {link}' },
+  bbhs_monthly_summary: { type: 'Utility', approved: false, buttons: [],
+    en: 'Hello {name}, your hiring summary for {month} is ready: {summary}. Download it from your account: {link}',
+    hi: 'नमस्ते {name}, {month} का आपका हायरिंग सारांश तैयार है: {summary}। अपने अकाउंट से डाउनलोड करें: {link}' },
   bbhs_consent_request: { type: 'Utility', approved: false, buttons: ['I agree', 'Stop messages'],
     en: 'Hello {name}, BrillBrains Hiring would like to send you job updates on WhatsApp. Do you agree?',
     hi: 'नमस्ते {name}, BrillBrains Hiring आपको WhatsApp पर नौकरी की जानकारी भेजना चाहता है। क्या आप सहमत हैं?' },
@@ -104,6 +107,7 @@ const AUTO_RULES = [
   { key: 'team_task_alert', when: 'Lead assigned, result pending, application stuck 7 days', to: 'Owner', format: 'bbhs_team_task_alert', on: true },
   { key: 'log_reminder', when: '30 minutes before log deadline', to: 'Anyone without a log', format: 'bbhs_log_reminder', on: true },
   { key: 'day_summary', when: 'Every evening', to: 'Each admin and super admin', format: 'bbhs_day_summary', on: true },
+  { key: 'monthly_summary', when: '1st of every month', to: 'Client', format: 'bbhs_monthly_summary', on: true },
   { key: 'still_looking', when: 'Weekly, candidates not updated in 90 days', to: 'Candidate', format: 'bbhs_still_looking', on: true },
 ];
 
@@ -132,7 +136,7 @@ module.exports.defaultSettings = () => ({
   gst: { on: true, rate: 18 },
   replacement_days: 90,
   payment_days: 15,
-  targets: { screened: 20, sent: 6, joined: 1 },
+  targets: { screened: 20, sent: 6, joined: 1, roles: {} },
   log_deadline: '19:00',
   quiet: { from: 21, to: 9 },
   daily_limit: 3,
@@ -160,5 +164,6 @@ module.exports.defaultSettings = () => ({
     joining_form: 'Joining form - {company}\n\nName: {candidate}\nPosition: {job}\nJoining date: {joining_date}\n\nPermanent address:\nEmergency contact:\nBank account and IFSC:\nPAN:\nAadhaar:\n\nSignature: ______________',
     joining_checklist: 'Documents received\nID card issued\nSystem login made\nIntroduced to team',
   },
+  jd_templates: {},
   jd_template: { summary: 'We are hiring a {job} for our {city} team.', duties: '', must: '', good: '', timings: '10:30 am - 8:00 pm, 6 days a week', benefits: 'Incentives on sales, festival bonus', incentives: '', location: '{city}' },
 });

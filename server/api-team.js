@@ -12,12 +12,15 @@ const T = { auth: 'team' };
 const SUPER = { auth: 'team', levels: ['super'] };
 const ADMINS = { auth: 'team', levels: ['super', 'admin'] };
 
-// Lists: 50 rows a page; filters run on the full data. format=csv downloads with filters on.
+// Lists: 50 rows a page; filters run on the full data. format=xlsx (or csv) downloads with filters on.
 function page(ctx, rows, name, columns) {
-  if (ctx.query.format === 'csv') {
+  const fmt = ctx.query.format;
+  if (fmt === 'csv' || fmt === 'xlsx') {
     D.history(ctx.actor.label, 'download', null, name, null, `${rows.length} rows`, null, ctx.ip);
     const cols = columns || Object.keys(rows[0] || {}).filter((k) => typeof rows[0][k] !== 'object');
-    return { __file: { name: `${name}-${L.istDay()}.csv`, mime: 'text/csv', buf: Buffer.from(F.toCSV([cols.map((c) => (Array.isArray(c) ? c[1] : c)), ...rows.map((r) => cols.map((c) => (Array.isArray(c) ? (typeof c[0] === 'function' ? c[0](r) : r[c[0]]) : r[c])))]), 'utf8') } };
+    const table = [cols.map((c) => (Array.isArray(c) ? c[1] : c)), ...rows.map((r) => cols.map((c) => (Array.isArray(c) ? (typeof c[0] === 'function' ? c[0](r) : r[c[0]]) : r[c])))];
+    if (fmt === 'xlsx') return { __file: { name: `${name}-${L.istDay()}.xlsx`, mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', buf: F.toXLSX(table, name) } };
+    return { __file: { name: `${name}-${L.istDay()}.csv`, mime: 'text/csv', buf: Buffer.from(F.toCSV(table), 'utf8') } };
   }
   const size = 50; const p = Math.max(1, Number(ctx.query.page) || 1);
   return { rows: rows.slice((p - 1) * size, p * size), total: rows.length, page: p, pages: Math.max(1, Math.ceil(rows.length / size)) };
@@ -78,9 +81,15 @@ function perfOf(userId, fromISO, toISO = now()) {
   const joined = h.filter((x) => x.kind === 'step' && x.step === 'Joined').length;
   const interviews = all("SELECT completed_at FROM interviews WHERE completed_by=? AND status='Completed'", userId).filter((i) => inRange(i.completed_at)).length;
   const days = Math.max(1, Math.round((new Date(toISO) - new Date(fromISO)) / 86400000));
-  const k = days / 30; const t = D.settings().targets;
+  const k = days / 30; const t = targetsFor(userId);
   const target = Math.round(((Math.min(1, screened / (t.screened * k)) + Math.min(1, sent / (t.sent * k)) + Math.min(1, joined / (t.joined * k))) / 3) * 100);
   return { added, screened, interviews, sent, offers, joined, target };
+}
+// Recruiter targets per role tag (Settings → Fees & limits); the standard targets apply to any other role.
+function targetsFor(userId) {
+  const all = D.settings().targets; const u = get('SELECT role FROM users WHERE id=?', userId);
+  const byRole = (all.roles || {})[(u && u.role) || ''];
+  return byRole || { screened: all.screened, sent: all.sent, joined: all.joined };
 }
 function logDots(userId, n = 7) {
   const out = [];
@@ -236,6 +245,11 @@ route('GET', '/api/leads', SUPER, (ctx) => {
   for (const r of [...all('SELECT source, created_at FROM clients'), ...all('SELECT source, created_at FROM candidates')]) if (r.created_at >= since) srcCount[r.source || 'Other'] = (srcCount[r.source || 'Other'] || 0) + 1;
   const hires = {};
   for (const a of all("SELECT a.source, a.joined_at FROM applications a WHERE a.result='Hired'")) if (a.joined_at >= since) hires[a.source || 'Other'] = (hires[a.source || 'Other'] || 0) + 1;
+  if (q.format) {
+    if (q.tab === 'candidate') return page(ctx, cands, 'candidate-leads', ['id', 'name', 'whatsapp', 'job_wanted', 'city', 'source', 'created_at', 'agency_id']);
+    if (q.tab === 'check') return page(ctx, check, 'leads-to-check', ['id', 'type', 'label', 'whatsapp', 'email', 'source', 'needs_check', 'possible_repeat_of']);
+    return page(ctx, clients, 'client-leads', ['id', 'company', 'contact', 'whatsapp', 'city', 'need', 'roles', 'source', 'created_at', 'agency_name']);
+  }
   return { clients, candidates: cands, check, sources: srcCount, hires, agencies: all("SELECT id, name FROM agencies WHERE status='Active'") };
 });
 route('POST', '/api/leads/assign', SUPER, (ctx) => {
@@ -313,6 +327,13 @@ route('POST', '/api/clients/:id/onboarding', T, (ctx) => {
   if (done && note) insert('notes', { record_id: c.id, text: `${it.label}: ${note}`, author: ctx.actor.label, at: now() });
   return { ok: true, stage: patch.stage || c.stage };
 });
+route('POST', '/api/clients/:id/summary', T, (ctx) => {
+  const c = get('SELECT * FROM clients WHERE id=?', ctx.params.id); mustSee(seeClient(ctx.user, c), 'client');
+  const key = /^\d{4}-\d{2}$/.test(ctx.body.month || '') ? ctx.body.month : require('./monthly').prevMonthKey();
+  const r = require('./monthly').makeSummary(c.id, key, ctx.actor);
+  if (ctx.body.send) L.sendWA({ ptype: 'client', pid: c.id, format: 'bbhs_monthly_summary', vars: { month: r.label, summary: r.short, link: L.link('my-account/company') }, by: ctx.actor });
+  return { file_id: r.file.id, label: r.label };
+});
 route('POST', '/api/clients/:id/members', T, (ctx) => {
   const c = get('SELECT * FROM clients WHERE id=?', ctx.params.id); mustSee(seeClient(ctx.user, c), 'client');
   return addMember(c, ctx.body, ctx.actor.label);
@@ -368,7 +389,7 @@ route('GET', '/api/jobs/:id', T, (ctx) => {
     matches: L.bestMatches(j, 10).map((m) => ({ ...candidateOut(ctx.user, m.c), score: m.score, reasons: m.reasons, status: V.candStatus(m.c.id) })),
     history: all('SELECT * FROM job_history WHERE job_id=? ORDER BY at DESC, id DESC', j.id), postings: all('SELECT * FROM postings WHERE job_id=?', j.id).map((p) => ({ ...p, apply_link: L.link('apply', `?src=${p.tag}&job=${j.id}`), apps: apps.filter((a) => a.source === (D.settings().src_tags[p.tag] || p.tag)).length })),
     recruiters: all("SELECT id, name FROM users WHERE agency_id=? AND status='On'", j.agency_id), files: all('SELECT * FROM files WHERE record_id=? AND replaced=0', j.id),
-    notes: all('SELECT * FROM notes WHERE record_id=? ORDER BY at DESC', j.id), jd_template: D.settings().jd_template, salary_text: L.salaryText(j),
+    notes: all('SELECT * FROM notes WHERE record_id=? ORDER BY at DESC', j.id), jd_template: (D.settings().jd_templates || {})[j.title] || D.settings().jd_template, salary_text: L.salaryText(j),
   };
 });
 route('PATCH', '/api/jobs/:id', T, (ctx) => {
@@ -450,7 +471,7 @@ route('GET', '/api/candidates', T, (ctx) => {
       && like(q.q, c.id, c.name, R.phoneVisible(u, c) ? c.whatsapp : '', c.job_wanted, c.city, c.current_company, c.old_code))
     .map((c) => ({ ...candidateOut(u, c), status: V.candStatus(c.id) }))
     .filter((c) => !q.status || c.status.startsWith(q.status));
-  if (ctx.query.format === 'csv' && !isSuper(u) && rows.length > 500) throw httpError(403, 'Agencies cannot download the whole resume bank. Narrow the filters first.');
+  if (['csv', 'xlsx'].includes(ctx.query.format) && !isSuper(u) && rows.length > 500) throw httpError(403, 'Agencies cannot download the whole resume bank. Narrow the filters first.');
   return page(ctx, rows, 'candidates', ['id', 'name', 'whatsapp', 'job_wanted', 'department', 'city', 'exp_total', [(r) => r.exp_salary ? Math.round(r.exp_salary / 12) : '', 'expected_per_month'], 'notice_days', 'source', 'looking', 'status']);
 });
 route('POST', '/api/candidates', T, (ctx) => {
@@ -501,6 +522,13 @@ route('GET', '/api/gap', T, (ctx) => {
     const key = `${c.city}|${c.department}`; grid[key] = (grid[key] || 0) + 1;
   }
   return { cities, depts, grid, targets: s.gap_targets || {} };
+});
+// Target count for one city × department box of the gap view (empty clears it).
+route('POST', '/api/gap/target', ADMINS, (ctx) => {
+  const { cell, target } = ctx.body; if (!cell || !cell.includes('|')) throw httpError(400, 'Pick a box');
+  const t = { ...(D.settings().gap_targets || {}) }; const n = Number(target);
+  if (!target || !n) delete t[cell]; else t[cell] = Math.round(n);
+  D.setSetting('gap_targets', t); D.history(ctx.actor.label, 'gap target', null, cell, null, target || 'cleared'); return { ok: true };
 });
 route('GET', '/api/tieups', T, () => all('SELECT t.*, (SELECT COUNT(*) FROM candidates c WHERE c.tieup_id=t.id) AS candidates FROM tieups t ORDER BY name').map((t) => ({ ...t, owner_name: V.userName(t.owner_id) })));
 route('POST', '/api/tieups', T, (ctx) => {
@@ -630,6 +658,13 @@ route('POST', '/api/applications/bulk', T, (ctx) => {
     try {
       const a = get('SELECT * FROM applications WHERE id=?', id); mustSee(a && seeApp(ctx.user, a), 'application');
       if (action === 'step') L.moveStep(id, step, ctx.actor, 'Bulk move'); else if (action === 'close') L.closeApplication(id, reason, ctx.actor, 'Bulk close');
+      else if (action === 'wa') {
+        const ptype = ctx.body.to === 'client' ? 'client' : 'candidate'; const job = get('SELECT * FROM jobs WHERE id=?', a.job_id);
+        const pid = ptype === 'client' ? job.client_id : a.candidate_id; const p = L.person(ptype, pid);
+        const r = L.sendWA({ ptype, pid, format: ctx.body.format, vars: composeVars({ ptype, pid, ap: id }, p), ap: id, jb: a.job_id, by: ctx.actor, bulk: true });
+        if (r.skipped) throw new Error(r.skipped);
+        L.appHist(id, a.step, ctx.actor, `WhatsApp ${ctx.body.format} to ${ptype} (bulk)`, 'wa');
+      }
       else if (action === 'owner') { update('applications', id, { owner_id: ctx.body.owner_id }); L.appHist(id, a.step, ctx.actor, `Owner → ${V.userName(ctx.body.owner_id)}`, 'owner'); }
       out.done++;
     } catch (e) { out.errors.push(`${id}: ${e.message}`); }
@@ -695,9 +730,8 @@ route('GET', '/api/wa/thread/:ptype/:pid', T, (ctx) => {
   };
 });
 // Everything the one message window needs: who, window, suggested formats, filled-in details.
-route('POST', '/api/wa/compose', T, (ctx) => {
-  const b = ctx.body; const p = L.person(b.ptype, b.pid); if (!p) throw httpError(404, 'Person not found');
-  if (b.ptype !== 'candidate') mustSee(seeThread(ctx.user, b.ptype, b.pid) || isSuper(ctx.user) || b.ptype === 'user', 'person');
+// The filled-in details for a message (name, job, date, amount, link …) from the linked records.
+function composeVars(b, p) {
   const s = D.settings(); const vars = { name: p.name };
   let job = b.jb ? get('SELECT * FROM jobs WHERE id=?', b.jb) : null; const app = b.ap ? get('SELECT * FROM applications WHERE id=?', b.ap) : null;
   if (app && !job) job = get('SELECT * FROM jobs WHERE id=?', app.job_id);
@@ -710,6 +744,12 @@ route('POST', '/api/wa/compose', T, (ctx) => {
   if (b.ptype === 'candidate') Object.assign(vars, { candidate_id: p.id, link: vars.link || L.link('my-profile') });
   if (b.ptype === 'user') Object.assign(vars, { link: L.link('team'), deadline: s.log_deadline, date: L.istFmt(now(), false), username: p.record.username });
   Object.assign(vars, b.vars || {});
+  return vars;
+}
+route('POST', '/api/wa/compose', T, (ctx) => {
+  const b = ctx.body; const p = L.person(b.ptype, b.pid); if (!p) throw httpError(404, 'Person not found');
+  if (b.ptype !== 'candidate') mustSee(seeThread(ctx.user, b.ptype, b.pid) || isSuper(ctx.user) || b.ptype === 'user', 'person');
+  const s = D.settings(); const vars = composeVars(b, p); const app = b.ap ? get('SELECT * FROM applications WHERE id=?', b.ap) : null;
   const forType = { client: ['bbhs_client_welcome', 'bbhs_shortlist_ready', 'bbhs_feedback_request', 'bbhs_bill_raised', 'bbhs_payment_reminder', 'bbhs_team_task_alert'], candidate: ['bbhs_candidate_welcome', 'bbhs_details_request', 'bbhs_interview_scheduled', 'bbhs_interview_reminder', 'bbhs_offer', 'bbhs_joining_reminder', 'bbhs_post_join_checkin', 'bbhs_job_alert', 'bbhs_still_looking', 'bbhs_consent_request'], user: ['bbhs_team_task_alert', 'bbhs_log_reminder', 'bbhs_day_summary'] }[b.ptype];
   const suggested = [b.format, ...(app ? [suggestFor(app)].filter((x) => x && x.ptype === b.ptype).map((x) => x.format) : [])].filter(Boolean);
   const showPhone = b.ptype !== 'candidate' || R.phoneVisible(ctx.user, p.record);
@@ -878,7 +918,7 @@ route('GET', '/api/earnings', ADMINS, (ctx) => {
   const months = {};
   for (const b of bills) { const k = String(b.issued_at || b.date).slice(0, 7); months[k] = months[k] || { bills: 0, billed: 0, shares: 0, paid: 0, due: 0, not_due: 0 }; const m = months[k]; m.bills++; m.billed += b.fee; m.shares += b.agency_share; if (b.payout_status === 'Paid') m.paid += b.agency_share; else if (b.payout_status === 'Due') m.due += b.agency_share; else m.not_due += b.agency_share; }
   const rows = Object.entries(months).sort((a, b) => (a[0] < b[0] ? 1 : -1)).map(([k, v]) => ({ month: k, ...v }));
-  if (ctx.query.format === 'csv') return page(ctx, rows, `earnings-${ag}`, ['month', 'bills', 'billed', 'shares', 'paid', 'due', 'not_due']);
+  if (['csv', 'xlsx'].includes(ctx.query.format)) return page(ctx, rows, `earnings-${ag}`, ['month', 'bills', 'billed', 'shares', 'paid', 'due', 'not_due']);
   return { agency: get('SELECT * FROM agencies WHERE id=?', ag), months: rows, bills: bills.map((b) => ({ ...b, client_name: get('SELECT company FROM clients WHERE id=?', b.client_id).company })) };
 });
 
@@ -886,6 +926,7 @@ route('GET', '/api/earnings', ADMINS, (ctx) => {
 route('GET', '/api/users', ADMINS, (ctx) => {
   const u = ctx.user;
   const users = all('SELECT * FROM users ORDER BY id').filter((x) => isSuper(u) || x.agency_id === u.agency_id).map((x) => ({ id: x.id, name: x.name, whatsapp: x.whatsapp, level: x.level, agency_id: x.agency_id, agency_name: V.agencyName(x.agency_id), role: x.role, username: x.username, status: x.status, last_login: x.last_login, locked: x.locked_until && x.locked_until > now(), created_by: x.created_by, view_status: personStatus(x) }));
+  if (ctx.query.format) return page(ctx, users, 'logins', ['id', 'name', 'username', 'level', 'agency_name', 'role', 'status', 'view_status', 'last_login', 'created_by']);
   return { users, agencies: isSuper(u) ? all('SELECT * FROM agencies ORDER BY id').map((a) => ({ ...a, view_status: agencyStatus(a), people: all('SELECT 1 FROM users WHERE agency_id=?', a.id).length })) : [] };
 });
 const usernameFrom = (name) => String(name).trim().toLowerCase().replace(/[^a-z0-9]+/g, '.').replace(/^\.|\.$/g, '');
@@ -962,16 +1003,63 @@ route('POST', '/api/agencies/:id/toggle', SUPER, (ctx) => {
 });
 
 // ---------- settings (super admin) ----------
-const EDITABLE = ['business', 'industries', 'default_industry', 'hidden_jobs', 'departments', 'cities', 'skills', 'client_stages', 'closing_reasons', 'job_close_reasons', 'reopen_reasons', 'lead_sources', 'src_tags', 'fee', 'agency_share_pct', 'gst', 'replacement_days', 'payment_days', 'targets', 'log_deadline', 'quiet', 'daily_limit', 'bulk_budget', 'match', 'languages', 'id_start', 'bill_prefix', 'retention_years', 'team_idle_hours', 'formats', 'auto_rules', 'crm', 'posting_channels', 'gap_targets', 'templates', 'jd_template'];
-route('GET', '/api/settings', SUPER, () => { const s = { ...D.settings() }; s.crm = { ...s.crm, token: s.crm.token ? '••••••••' : '' }; return s; });
+const EDITABLE = ['business', 'industries', 'default_industry', 'hidden_jobs', 'departments', 'cities', 'skills', 'client_stages', 'closing_reasons', 'job_close_reasons', 'reopen_reasons', 'lead_sources', 'src_tags', 'fee', 'agency_share_pct', 'gst', 'replacement_days', 'payment_days', 'targets', 'log_deadline', 'quiet', 'daily_limit', 'bulk_budget', 'match', 'languages', 'id_start', 'bill_prefix', 'retention_years', 'team_idle_hours', 'formats', 'auto_rules', 'crm', 'posting_channels', 'gap_targets', 'templates', 'jd_template', 'jd_templates'];
+route('GET', '/api/settings', SUPER, () => { const s = { ...D.settings() }; s.crm = { ...s.crm, token: s.crm.token ? '••••••••' : '', webhook_secret: s.crm.from_env && s.crm.from_env.webhook_secret ? '••••••••' : s.crm.webhook_secret }; return s; });
+route('POST', '/api/health/mail', SUPER, async () => require('./mailbox').check());
 route('PUT', '/api/settings/:key', SUPER, (ctx) => {
   const k = ctx.params.key; if (!EDITABLE.includes(k)) throw httpError(400, 'This setting cannot be changed here.');
   const old = D.settings()[k]; let v = ctx.body.value;
-  if (k === 'crm' && v.token === '••••••••') v = { ...v, token: old.token };
+  if (k === 'crm') { const raw = JSON.parse(D.db.prepare('SELECT value FROM settings WHERE key=?').get('crm').value); if (v.token === '••••••••') v = { ...v, token: raw.token }; if (v.webhook_secret === '••••••••') v = { ...v, webhook_secret: raw.webhook_secret }; delete v.from_env; }
   if (k === 'id_start') { for (const [p, n] of Object.entries(v)) { const cur = get('SELECT next FROM counters WHERE name=?', p); if (cur && Number(n) > cur.next) D.run('UPDATE counters SET next=? WHERE name=?', Number(n), p); } }
   D.setSetting(k, v); D.history(ctx.actor.label, 'setting', 'settings', k, k === 'crm' ? '(hidden)' : old, k === 'crm' ? '(hidden)' : v);
   return { ok: true };
 });
+// ---------- formats → Meta templates through the CRM ----------
+function crmBase() {
+  const c = D.settings().crm;
+  if (!c.send_url || !c.token) throw httpError(400, 'Set the CRM send link and token first (Settings → WhatsApp).');
+  return c.send_url.replace(/\/send\/?$/, '');
+}
+async function crmCall(path, method, body) {
+  const res = await fetch(crmBase() + path, { method, headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${D.settings().crm.token}` }, body: body ? JSON.stringify(body) : undefined });
+  const out = await res.json().catch(() => ({}));
+  if (!res.ok) throw httpError(502, `CRM answered ${res.status}: ${out.error || 'no details'}`);
+  return out;
+}
+// "Hello {name}, … {link}" → "Hello {{1}}, … {{2}}." — Meta numbers blanks by position and rejects a body that ends with one.
+function metaBody(text) {
+  const order = [...new Set((text.match(/\{(\w+)\}/g) || []).map((x) => x.slice(1, -1)))];
+  let body = text.replace(/\{(\w+)\}/g, (m, k) => `{{${order.indexOf(k) + 1}}}`);
+  if (/\}\}\s*$/.test(body)) body = body.replace(/\s*$/, '.');
+  return { body, order };
+}
+route('POST', '/api/settings/formats/push', SUPER, async (ctx) => {
+  const s = D.settings(); const names = ctx.body.names && ctx.body.names.length ? ctx.body.names : Object.keys(s.formats);
+  const templates = [];
+  for (const name of names) {
+    const f = s.formats[name]; if (!f) continue;
+    for (const lang of s.languages) if (f[lang]) templates.push({ name, category: f.type.toUpperCase(), language: lang, body: metaBody(f[lang]).body, buttons: f.buttons });
+  }
+  const out = await crmCall('/templates', 'POST', { templates });
+  D.history(ctx.actor.label, 'templates sent to Meta', null, null, null, `${templates.length} templates`);
+  return out;
+});
+route('POST', '/api/settings/formats/sync', SUPER, async (ctx) => {
+  const out = await crmCall('/templates', 'GET');
+  const s = D.settings(); const formats = JSON.parse(JSON.stringify(s.formats)); const seen = {};
+  for (const t of out.templates || []) {
+    if (!formats[t.name]) continue;
+    (seen[t.name] = seen[t.name] || {})[t.language] = t.status;
+  }
+  for (const [name, langs] of Object.entries(seen)) {
+    formats[name].meta_status = langs;
+    formats[name].approved = Object.values(langs).length > 0 && Object.values(langs).every((st) => st === 'APPROVED');
+  }
+  D.setSetting('formats', formats);
+  D.history(ctx.actor.label, 'templates status from Meta', null, null, null, `${Object.keys(seen).length} formats`);
+  return { formats: Object.fromEntries(Object.entries(seen).map(([k, v]) => [k, v])), missing: Object.keys(formats).filter((k) => !seen[k]) };
+});
+
 route('POST', '/api/settings/remove-sample', SUPER, (ctx) => {
   D.tx(() => {
     for (const t of ['interviews', 'bills']) D.run(`DELETE FROM ${t} WHERE is_sample=1`);
@@ -989,7 +1077,8 @@ route('GET', '/api/health', SUPER, () => {
   const fs = require('fs'); const path = require('path');
   let bytes = 0; for (const f of fs.readdirSync(path.join(D.DATA_DIR, 'files'))) bytes += fs.statSync(path.join(D.DATA_DIR, 'files', f)).size;
   const dbBytes = fs.statSync(path.join(D.DATA_DIR, 'bbhs.db')).size;
-  return { ...h, failed: all("SELECT * FROM messages WHERE status='failed' ORDER BY at DESC LIMIT 50"), scheduled: get("SELECT COUNT(*) c FROM messages WHERE status='scheduled'").c, files_mb: (bytes / 1048576).toFixed(2), db_mb: (dbBytes / 1048576).toFixed(2), backups: fs.readdirSync(path.join(D.DATA_DIR, 'backups')).sort().reverse().slice(0, 30), crm_enabled: D.settings().crm.enabled };
+  return { ...h, failed: all("SELECT * FROM messages WHERE status='failed' ORDER BY at DESC LIMIT 50"), scheduled: get("SELECT COUNT(*) c FROM messages WHERE status='scheduled'").c, files_mb: (bytes / 1048576).toFixed(2), db_mb: (dbBytes / 1048576).toFixed(2), backups: fs.readdirSync(path.join(D.DATA_DIR, 'backups')).sort().reverse().slice(0, 30), crm_enabled: D.settings().crm.enabled,
+    setup: { copy: D.ENV.name, virus_scanner: D.ENV.clamd.host ? `ClamAV at ${D.ENV.clamd.host}:${D.ENV.clamd.port}` : 'Not set — only the EICAR test file is blocked (set CLAMD_HOST)', alerts: D.ENV.alertWebhook ? 'Alert webhook set' : 'Not set (ALERT_WEBHOOK_URL)', offsite_backup: D.ENV.backupDir || 'Not set (BACKUP_DIR)', email_inbox: D.ENV.imap.host ? `${D.ENV.imap.user} on ${D.ENV.imap.host}` : 'Not set (IMAP_HOST, IMAP_USER, IMAP_PASS)' } };
 });
 route('POST', '/api/health/backup', SUPER, (ctx) => { const f = D.backup(); D.history(ctx.actor.label, 'backup'); return { file: require('path').basename(f) }; });
 route('POST', '/api/health/restore-test', SUPER, (ctx) => { const r = D.testRestore(); D.setHealth('last_restore_test', `${now()} ${r.ok ? 'OK' : 'failed'}`); D.history(ctx.actor.label, 'restore test', null, null, null, JSON.stringify(r)); return r; });
@@ -1025,8 +1114,8 @@ route('POST', '/api/followups', T, (ctx) => {
 });
 route('POST', '/api/followups/:id/done', T, (ctx) => { D.run('UPDATE followups SET done=1 WHERE id=? AND for_user=?', ctx.params.id, ctx.user.id); return { ok: true }; });
 route('GET', '/api/history/:id', T, (ctx) => all('SELECT * FROM history WHERE record_id=? ORDER BY id DESC LIMIT 200', ctx.params.id));
-route('POST', '/api/files', T, (ctx) => {
-  const b = ctx.body; const f = F.saveFile({ recordId: b.record_id, type: b.type || 'file', name: b.name, base64: b.base64, by: ctx.actor.label });
+route('POST', '/api/files', T, async (ctx) => {
+  const b = ctx.body; const f = await F.saveFile({ recordId: b.record_id, type: b.type || 'file', name: b.name, base64: b.base64, by: ctx.actor.label });
   if (b.type === 'cv') update('candidates', b.record_id, { cv_file: String(f.id), last_updated: now() });
   if (b.type === 'short_cv') update('candidates', b.record_id, { short_cv_file: String(f.id) });
   if (['gst', 'pan', 'owner_id'].includes(b.type)) { const c = get('SELECT * FROM clients WHERE id=?', b.record_id); update('clients', c.id, { kyc: { ...(c.kyc || {}), [b.type]: f.id } }); }
@@ -1099,7 +1188,7 @@ route('GET', '/api/reports/:name', ADMINS, (ctx) => {
     const days = Math.min(92, Math.max(1, Math.round((new Date(to) - new Date(from)) / 86400000)));
     rows = people.map((x) => { const logs = all('SELECT day, status FROM logs WHERE user_id=?', x.id).filter((l) => l.day >= from.slice(0, 10) && l.day <= to.slice(0, 10)); return { person: `${x.id} ${x.name}`, agency: V.agencyName(x.agency_id), days, submitted: logs.length, approved: logs.filter((l) => l.status === 'Approved').length, missing: Math.max(0, days - logs.length) }; });
   } else throw httpError(404, 'Unknown report');
-  if (q.format === 'csv') return page(ctx, rows, `report-${name}`, cols || Object.keys(rows[0] || { empty: '' }));
+  if (['csv', 'xlsx'].includes(q.format)) return page(ctx, rows, `report-${name}`, cols || Object.keys(rows[0] || { empty: '' }));
   return { rows };
 });
 module.exports.removePerson = removePerson;

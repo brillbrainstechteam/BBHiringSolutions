@@ -11,7 +11,8 @@ require('./crm');
 const { seed } = require('./seed');
 const timer = require('./timer');
 
-const PORT = Number(process.env.PORT) || 4600;
+const PORT = D.ENV.port;
+const { devAlert } = require('./alerts');
 const PUBLIC = path.join(__dirname, '..', 'public');
 const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.json': 'application/json' };
 // The five web addresses each open the one page; the page shows only that part.
@@ -49,11 +50,14 @@ const server = http.createServer(async (req, res) => {
     return send(res, 200, fs.readFileSync(file), { 'Content-Type': TYPES[path.extname(file)] || 'application/octet-stream', 'Cache-Control': 'no-cache' });
   } catch (e) {
     const code = e.status || 500;
-    if (code >= 500) { console.error(e); D.setHealth('last_failure', `${D.now()} ${req.method} ${url.pathname}: ${e.message}`); }
+    if (code >= 500) { console.error(e); devAlert(`Error on ${req.method} ${url.pathname}`, e.message); }
     return send(res, code, JSON.stringify({ error: code >= 500 ? 'Something went wrong on our side. Please try again.' : e.message, field: e.field }), { 'Content-Type': 'application/json; charset=utf-8' });
   }
 });
 
-if (process.env.BBHS_NO_SEED !== '1' && seed()) console.log('Sample data added (test copy). Logins are listed at the top of server/seed.js.');
+// Sample data only on the test copy. The live copy starts empty (create the super admin with npm run make-admin).
+if (D.ENV.name !== 'live' && process.env.BBHS_NO_SEED !== '1' && seed()) console.log('Sample data added (test copy). Logins are listed at the top of server/seed.js.');
+process.on('uncaughtException', (e) => { console.error(e); devAlert('Server error', e.stack || e.message); });
+process.on('unhandledRejection', (e) => { console.error(e); devAlert('Server error', (e && e.message) || String(e)); });
 timer.start();
-server.listen(PORT, () => console.log(`BBHS hiring software on http://localhost:${PORT}  (forms: /hire /apply · accounts: /my-account /my-profile · team: /team)`));
+server.listen(PORT, () => console.log(`BBHS hiring software (${D.ENV.name} copy) on http://localhost:${PORT}  (forms: /hire /apply · accounts: /my-account /my-profile · team: /team)`));

@@ -2,9 +2,10 @@
 const fs = require('fs');
 const path = require('path');
 const { DatabaseSync } = require('node:sqlite');
+const ENV = require('./env');
 const { defaultSettings } = require('./defaults');
 
-const DATA_DIR = process.env.BBHS_DATA || path.join(__dirname, '..', 'data');
+const DATA_DIR = ENV.dataDir;
 fs.mkdirSync(path.join(DATA_DIR, 'files'), { recursive: true });
 fs.mkdirSync(path.join(DATA_DIR, 'backups'), { recursive: true });
 const DB_FILE = path.join(DATA_DIR, 'bbhs.db');
@@ -46,6 +47,8 @@ CREATE TABLE IF NOT EXISTS saved_searches (id INTEGER PRIMARY KEY AUTOINCREMENT,
 CREATE TABLE IF NOT EXISTS merges (old_id TEXT PRIMARY KEY, kept_id TEXT, by TEXT, at TEXT);
 CREATE TABLE IF NOT EXISTS data_requests (id INTEGER PRIMARY KEY AUTOINCREMENT, person_type TEXT, person_id TEXT, kind TEXT, status TEXT DEFAULT 'Waiting', at TEXT, decided_by TEXT, decided_at TEXT);
 CREATE TABLE IF NOT EXISTS health (key TEXT PRIMARY KEY, value TEXT);
+CREATE TABLE IF NOT EXISTS bot_sessions (phone TEXT PRIMARY KEY, kind TEXT, person_id TEXT, step TEXT, data TEXT DEFAULT '{}', updated_at TEXT);
+CREATE TABLE IF NOT EXISTS mail_seen (uid TEXT PRIMARY KEY, at TEXT);
 CREATE TABLE IF NOT EXISTS history (id INTEGER PRIMARY KEY AUTOINCREMENT, at TEXT, who TEXT, action TEXT, record_id TEXT, field TEXT, old TEXT, new TEXT, ids TEXT, ip TEXT);
 CREATE TRIGGER IF NOT EXISTS history_no_update BEFORE UPDATE ON history BEGIN SELECT RAISE(ABORT, 'history cannot be edited'); END;
 CREATE TRIGGER IF NOT EXISTS history_no_delete BEFORE DELETE ON history BEGIN SELECT RAISE(ABORT, 'history cannot be deleted'); END;
@@ -109,6 +112,16 @@ function settings() {
   const rows = db.prepare('SELECT key, value FROM settings').all();
   const s = {};
   for (const r of rows) s[r.key] = JSON.parse(r.value);
+  // Secrets and addresses set in .env win over the saved values (Settings shows them as "from .env").
+  if (s.crm) {
+    const c = ENV.crm; const crm = { ...s.crm, from_env: {} };
+    if (c.enabled !== undefined) { crm.enabled = c.enabled; crm.from_env.enabled = true; }
+    if (c.sendUrl) { crm.send_url = c.sendUrl; crm.from_env.send_url = true; }
+    if (c.token) { crm.token = c.token; crm.from_env.token = true; }
+    if (c.secret) { crm.webhook_secret = c.secret; crm.from_env.webhook_secret = true; }
+    s.crm = crm;
+  }
+  if (s.business && ENV.baseUrl) s.business = { ...s.business, base_url: ENV.baseUrl.replace(/\/+$/, '') };
   settingsCache = s;
   return s;
 }
@@ -120,6 +133,13 @@ function ensureSettings() {
   const defs = defaultSettings();
   const have = new Set(db.prepare('SELECT key FROM settings').all().map((r) => r.key));
   for (const [k, v] of Object.entries(defs)) if (!have.has(k)) setSetting(k, v);
+  // New message formats and automatic rules added in later versions reach existing copies too.
+  const cur = settings();
+  const missingFormats = Object.keys(defs.formats).filter((k) => !cur.formats[k]);
+  if (missingFormats.length) setSetting('formats', { ...cur.formats, ...Object.fromEntries(missingFormats.map((k) => [k, defs.formats[k]])) });
+  const ruleKeys = new Set(cur.auto_rules.map((r) => r.key));
+  const missingRules = defs.auto_rules.filter((r) => !ruleKeys.has(r.key));
+  if (missingRules.length) setSetting('auto_rules', [...cur.auto_rules, ...missingRules]);
   const s = settings();
   const starts = { ...s.id_start, AG: 1, U: 1, WA: 1 };
   for (const [p, n] of Object.entries(starts)) {
@@ -159,6 +179,14 @@ function backup() {
   // keep 30 days
   const files = fs.readdirSync(path.join(DATA_DIR, 'backups')).filter((f) => f.endsWith('.db')).sort();
   while (files.length > 30) fs.unlinkSync(path.join(DATA_DIR, 'backups', files.shift()));
+  // Second copy off this server (a mounted drive or a cloud-synced folder), also kept 30 days.
+  if (ENV.backupDir) {
+    fs.mkdirSync(ENV.backupDir, { recursive: true });
+    const off = path.join(ENV.backupDir, path.basename(file));
+    if (!fs.existsSync(off)) fs.copyFileSync(file, off);
+    const offs = fs.readdirSync(ENV.backupDir).filter((f) => /^bbhs-.*\.db$/.test(f)).sort();
+    while (offs.length > 30) fs.unlinkSync(path.join(ENV.backupDir, offs.shift()));
+  }
   return file;
 }
 function testRestore() {
@@ -173,4 +201,4 @@ function testRestore() {
 }
 function setHealth(key, value) { run('INSERT INTO health (key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value', key, String(value)); }
 
-module.exports = { db, DATA_DIR, all, get, run, insert, update, tx, nextId, settings, setSetting, history, edit, httpError, now, backup, testRestore, setHealth };
+module.exports = { db, ENV, DATA_DIR, all, get, run, insert, update, tx, nextId, settings, setSetting, history, edit, httpError, now, backup, testRestore, setHealth };

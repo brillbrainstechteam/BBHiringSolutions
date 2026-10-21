@@ -66,7 +66,7 @@
   function shell() {
     const u = BB.me.user; const ag = BB.me.agency;
     $('#app').innerHTML = `<div class="shell"><aside class="side"><a class="brand" href="#team"><img src="/img/icon.svg" alt=""><span>${esc(BB.boot.business.short)} Hiring<small>Team portal</small></span></a><nav class="nav" data-nav></nav>
-      <div class="me"><b>${esc(u.name)}</b>${BB.levelName(u.level)}${ag ? ` · ${esc(ag.name)}` : ' · BrillBrains'}</div></aside>
+      <div class="me"><b>${esc(u.name)}</b>${BB.levelName(u.level)}${ag ? ` · ${esc(ag.name)}` : ' · BrillBrains'}<div style="margin-top:6px"><a href="/guides/${{ super: 'super-admin', admin: 'admin', sub: 'sub-admin' }[u.level]}.html" target="_blank" rel="noopener" style="color:var(--gold)">1-page guide ↗</a></div></div></aside>
       <div class="main"><header class="topbar"><div class="search">${icon('search')}<input placeholder="Search ID, name, phone or company…" data-search><div class="search-res hidden" data-res></div></div>
         <button class="btn sm" data-addlead>${icon('plus', 'wa-ico')} Add lead</button>
         <div class="bell" style="position:relative"><button class="btn icon ghost" data-bell title="Alerts">${icon('bell', 'wa-ico')}</button><span class="n hidden" data-bell-n></span><div class="drop hidden" data-bell-drop></div></div>

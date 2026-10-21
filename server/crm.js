@@ -37,7 +37,7 @@ function retryLater(id, error, tries) {
   const n = tries ?? (m.tries || 0) + 1;
   if (n >= 3) {
     D.update('messages', id, { status: 'failed', tries: n, error: error || 'Failed' });
-    D.setHealth('last_failure', `${D.now()} ${id}: ${error}`);
+    require('./alerts').devAlert("WhatsApp messages failing", `${id}: ${error}`);
     for (const s of L.superAdmins()) D.insert('alerts', { user_id: s.id, text: `WhatsApp ${id} failed 3 times: ${error}`, record_id: id, read: 0, at: D.now() });
     return;
   }

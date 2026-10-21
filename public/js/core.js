@@ -311,12 +311,15 @@ BB.start = async () => {
   document.documentElement.style.setProperty('--brand', BB.boot.business.primary);
   document.title = BB.boot.business.short + ' Hiring';
   const dl = document.createElement('datalist'); dl.id = 'cities'; dl.innerHTML = BB.boot.cities.map((c) => `<option value="${esc(c)}">`).join(''); document.body.appendChild(dl);
+  // The test copy says so on every page, so nobody mistakes it for the live one.
+  if (BB.boot.env !== 'live') document.body.insertAdjacentHTML('beforeend', `<div class="env-ribbon" title="Sample data and test WhatsApp — not the live copy">${esc(BB.boot.env)} copy</div>`);
   window.addEventListener('hashchange', BB.route);
   BB.route();
 };
 // Job list grouped by its 11 groups, for selects.
-BB.jobOptions = (selected, withOther = true) => {
-  const groups = {}; for (const j of BB.boot.jobs) (groups[j.group] = groups[j.group] || []).push(j.title);
+BB.jobOptions = (selected, withOther = true, industry) => {
+  const list = (industry && BB.boot.industries && BB.boot.industries[industry]) || BB.boot.jobs;
+  const groups = {}; for (const j of list) (groups[j.group] = groups[j.group] || []).push(j.title);
   return `<option value="">Choose…</option>${Object.entries(groups).map(([g, list]) => `<optgroup label="${esc(g)}">${list.map((t) => `<option ${t === selected ? 'selected' : ''}>${esc(t)}</option>`).join('')}</optgroup>`).join('')}${withOther ? `<option value="Other" ${selected === 'Other' ? 'selected' : ''}>Other</option>` : ''}`;
 };
 BB.tracker = (step, result) => {

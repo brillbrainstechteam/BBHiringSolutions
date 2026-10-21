@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Super admin — 1-page guide</title>
+<style>
+:root{--p:#0E5E4E;--g:#C9A23A;--ink:#1B2A26;--m:#5d6b66;--b:#E4E0D6;--bg:#fff}
+@media (prefers-color-scheme:dark){:root{--p:#3FB59A;--ink:#E5EEEA;--m:#9AAEA7;--b:#26322E;--bg:#0F1513}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:13.5px/1.5 system-ui,-apple-system,'Segoe UI',sans-serif}
+.w{max-width:820px;margin:0 auto;padding:24px 16px}
+header{display:flex;align-items:center;gap:12px;border-bottom:3px solid var(--g);padding-bottom:10px;margin-bottom:14px}
+header img{width:34px}h1{font:600 22px Georgia,serif;margin:0;color:var(--p)}header p{margin:0;color:var(--m)}
+.g{display:grid;grid-template-columns:1fr 1fr;gap:12px 22px}h2{font-size:13px;text-transform:uppercase;letter-spacing:.05em;color:var(--p);margin:0 0 4px}
+ul,ol{margin:0;padding-left:18px}li{margin:2px 0}b{font-weight:650}
+.print{float:right;font:inherit;padding:5px 12px;border:1px solid var(--b);border-radius:6px;background:transparent;color:inherit;cursor:pointer}
+@media (max-width:640px){.g{grid-template-columns:1fr}}@media print{.print{display:none}.w{padding:0}body{font-size:12px}}
+</style></head><body><div class="w"><button class="print" onclick="window.print()">Print</button>
+<header><img src="/img/icon.svg" alt=""><div><h1>Super admin — 1-page guide</h1><p>BrillBrains head office. You see and control everything.</p></div></header>
+<div class="g"><section><h2>Every morning</h2><ul><li>Open <b>Dashboard</b>: work down <b>Needs attention</b> — each line has Open and a green WhatsApp button.</li><li>Open <b>Leads</b>: assign each new client and candidate to an agency (the agency admin gets a task alert).</li><li>Check <b>WhatsApp</b> for unread replies (number in the menu).</li></ul></section><section><h2>Agencies and logins</h2><b>Logins &amp; team</b> → Add agency (with its admin) or Add login.
+The password shows <b>once</b> and goes once on WhatsApp. Reset password the same way.
+Pause an agency or turn a login off — records stay, they just cannot log in.
+Locked after 5 wrong passwords? Press <b>Unlock</b>.</section><section><h2>Money</h2><b>Bills</b>: a draft is made when someone is marked Joined. Check it, then <b>Issue</b>.
+Record each payment (part payments and TDS allowed). When fully paid, the agency payout becomes <b>Due</b>.
+Tick due payouts and <b>Mark selected payouts paid</b> with the bank reference.
+<b>Money</b> shows billed, received, overdue and shares by week and month.</section><section><h2>Watching the teams</h2><b>Performance</b>: agencies table (On track / Needs attention / Inactive); click an agency to see its people.
+<b>Daily logs</b>: approve the admins’ logs.
+<b>Reports</b>: funnel, per client, per job, sources, money, replacements — each downloads to Excel.</section><section><h2>Settings (only you)</h2><ul><li>Lists (jobs, cities, skills, stages, reasons, sources), fees, GST, targets, limits.</li><li><b>Message formats</b>: send to Meta for approval, then <b>Check approval status</b>.</li><li><b>Automatic messages</b>: turn each rule on or off.</li><li>A change applies to <b>new</b> records only.</li></ul></section><section><h2>Health and privacy</h2><ul><li>Settings → <b>Health</b>: last WhatsApp sent / reply / timer run, failed messages (Retry), backups, test restore.</li><li>Settings → <b>Data requests</b>: approve “delete my data” requests.</li><li>Before go-live: Settings → Business → <b>Remove sample data</b>.</li></ul></section></div>
+</div></body></html>

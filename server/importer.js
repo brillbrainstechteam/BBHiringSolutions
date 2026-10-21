@@ -183,4 +183,4 @@ function matchJobTitle(t) {
   return part || t;
 }
 
-module.exports = { FIELDS, guessMap, runImport, cleanCTC, cleanNotice, cleanExp, cleanDate, cleanSalaryRange };
+module.exports = { matchJobTitle, FIELDS, guessMap, runImport, cleanCTC, cleanNotice, cleanExp, cleanDate, cleanSalaryRange };

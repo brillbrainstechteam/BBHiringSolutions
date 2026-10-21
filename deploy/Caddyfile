@@ -1,0 +1,14 @@
+# HTTPS for both copies. Caddy gets and renews the certificates itself.
+# Replace the names with the real ones and point their DNS at this server.
+
+hire.brillbrainsconsultants.com {
+	encode gzip
+	reverse_proxy 127.0.0.1:4600
+	header Strict-Transport-Security "max-age=31536000"
+}
+
+test-hire.brillbrainsconsultants.com {
+	encode gzip
+	reverse_proxy 127.0.0.1:4601
+	header X-Robots-Tag "noindex, nofollow"
+}

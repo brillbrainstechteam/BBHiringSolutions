@@ -98,13 +98,20 @@ function runTimer() {
   const old = all('SELECT id FROM candidates WHERE removed=0 AND merged_into IS NULL').filter((c) => { const r = get('SELECT last_updated, created_at FROM candidates WHERE id=?', c.id); return L.daysBetween(r.last_updated || r.created_at) > yrs * 365; });
   if (old.length) for (const s of L.superAdmins()) if (!get('SELECT 1 FROM alerts WHERE user_id=? AND text LIKE ? AND at>?', s.id, 'Retention:%', new Date(t - 7 * 86400000).toISOString())) D.insert('alerts', { user_id: s.id, text: `Retention: ${old.length} candidate(s) inactive for ${yrs}+ years can be removed`, record_id: null, read: 0, at: now() });
   // Daily backup.
-  try { D.backup(); } catch (e) { D.setHealth('last_failure', `${now()} backup: ${e.message}`); }
+  try { D.backup(); D.setHealth('last_backup', now()); } catch (e) { require('./alerts').devAlert('Backup failed', e.message); }
+  // Monthly summary to each client on the 1st.
+  const monthly = require('./monthly').runMonthly(); if (monthly) done.monthly_summary = monthly;
+  // Email inbox door: unread CV emails become candidate leads.
+  if (D.ENV.imap.host) require('./mailbox').check().catch((e) => require('./alerts').devAlert('Email inbox check failed', e.message));
   D.setHealth('timer_last_run', now());
   return { ran_at: now(), ...done };
 }
 
+function safeRun() { try { runTimer(); } catch (e) { console.error('timer', e); require('./alerts').devAlert('Timer run failed', e.message); } }
 function start() {
-  setTimeout(() => { try { runTimer(); } catch (e) { console.error('timer', e); D.setHealth('last_failure', `${now()} timer: ${e.message}`); } }, 5000);
-  setInterval(() => { try { runTimer(); } catch (e) { console.error('timer', e); D.setHealth('last_failure', `${now()} timer: ${e.message}`); } }, 10 * 60 * 1000);
+  setTimeout(safeRun, 5000);
+  setInterval(safeRun, 10 * 60 * 1000);
+  // Watchdog: alert if the timer has not finished a run for 30 minutes.
+  setInterval(() => { const r = get("SELECT value FROM health WHERE key='timer_last_run'"); if (r && Date.now() - new Date(r.value) > 30 * 60000) require('./alerts').devAlert('Timer stopped', `Last run ${r.value}`); }, 5 * 60 * 1000);
 }
 module.exports = { runTimer, start };

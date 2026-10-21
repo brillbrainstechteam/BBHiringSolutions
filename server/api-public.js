@@ -14,10 +14,10 @@ route('GET', '/api/bootstrap', {}, () => {
   const s = D.settings();
   return {
     business: { name: s.business.name, short: s.business.short, support_phone: s.business.support_phone, primary: s.business.primary, accent: s.business.accent },
-    jobs: L.jobList().filter((j) => !j.hidden), departments: s.departments, cities: s.cities.map((c) => c.name), skills: s.skills, stages: s.client_stages,
+    jobs: L.jobList().filter((j) => !j.hidden), industries: Object.fromEntries(Object.keys(s.industries).map((k) => [k, L.jobList(k).filter((j) => !j.hidden)])), default_industry: s.default_industry, departments: s.departments, cities: s.cities.map((c) => c.name), skills: s.skills, stages: s.client_stages,
     closing_reasons: s.closing_reasons, job_close_reasons: s.job_close_reasons, reopen_reasons: s.reopen_reasons, lead_sources: s.lead_sources, src_tags: s.src_tags,
     steps: L.STEPS, consent: L.CONSENT_WORDING, fee: s.fee, agency_share_pct: s.agency_share_pct, gst: s.gst, match: s.match, quiet: s.quiet, log_deadline: s.log_deadline,
-    test_mode: !s.crm.enabled, languages: s.languages,
+    test_mode: !s.crm.enabled, languages: s.languages, env: D.ENV.name,
   };
 });
 
@@ -134,7 +134,7 @@ route('POST', '/api/public/hire', {}, (ctx) => {
   openedAccount('client', r.client.id);
   return { id: r.client.id, isNew: r.isNew, token: newSession('client', r.client.id) };
 });
-route('POST', '/api/public/apply', {}, (ctx) => {
+route('POST', '/api/public/apply', {}, async (ctx) => {
   const b = ctx.body;
   if (!b.name || !String(b.name).trim()) throw httpError(400, 'Please enter your name', 'name');
   if (!b.city) throw httpError(400, 'Please enter the city you want to work in', 'city');
@@ -146,7 +146,7 @@ route('POST', '/api/public/apply', {}, (ctx) => {
   const jobOk = b.job ? get('SELECT * FROM jobs WHERE id=?', String(b.job).toUpperCase()) : null;
   const r = L.intakeCandidate({ name: b.name, whatsapp: b.whatsapp, city: b.city, work_cities: [b.city], job_wanted: b.job_wanted === 'Other' ? b.job_other : b.job_wanted, exp_total: b.experience ? expMap[b.experience] : null, ref_by: refBy, apply_job: jobOk && ['Open', 'Sourcing', 'Interviewing', 'Offer stage'].includes(V.jobView(jobOk).status) ? jobOk.id : null }, { source: srcFrom(b) });
   if (refBy && r.isNew) insert('notes', { record_id: r.candidate.id, text: `Referred by ${refBy}`, author: 'Form', at: now() });
-  if (b.cv && b.cv.base64) { try { const f = F.saveFile({ recordId: r.candidate.id, type: 'cv', name: b.cv.name, base64: b.cv.base64, by: 'Candidate form' }); update('candidates', r.candidate.id, { cv_file: String(f.id) }); } catch (e) { insert('notes', { record_id: r.candidate.id, text: `CV not saved: ${e.message}`, author: 'Form', at: now() }); } }
+  if (b.cv && b.cv.base64) { try { const f = await F.saveFile({ recordId: r.candidate.id, type: 'cv', name: b.cv.name, base64: b.cv.base64, by: 'Candidate form' }); update('candidates', r.candidate.id, { cv_file: String(f.id) }); } catch (e) { insert('notes', { record_id: r.candidate.id, text: `CV not saved: ${e.message}`, author: 'Form', at: now() }); } }
   openedAccount('candidate', r.candidate.id);
   return { id: r.candidate.id, isNew: r.isNew, token: newSession('candidate', r.candidate.id) };
 });
@@ -270,16 +270,16 @@ route('POST', '/api/client/bills/:id/replacement', { auth: 'client', perm: 'bill
   L.alertUser(job.recruiter_id || a.owner_id, `${ctx.client.company} asked for a free replacement on ${a.id}. Check the reason and mark "Left the job".`, a.id);
   return { ok: true };
 });
-route('POST', '/api/client/files', C, (ctx) => {
+route('POST', '/api/client/files', C, async (ctx) => {
   const b = ctx.body; const allowedTypes = ['gst', 'pan', 'owner_id', 'contract_signed', 'logo'];
   if (b.app_id) {
     ctx.params.id = b.app_id; const a = clientApp(ctx);
-    const f = F.saveFile({ recordId: a.id, type: b.type || 'joining_doc', name: b.name, base64: b.base64, by: ctx.actor.label });
+    const f = await F.saveFile({ recordId: a.id, type: b.type || 'joining_doc', name: b.name, base64: b.base64, by: ctx.actor.label });
     if (b.type === 'offer_signed') L.appHist(a.id, a.step, ctx.actor, 'Signed offer letter uploaded', 'paper');
     return f;
   }
   if (!allowedTypes.includes(b.type)) throw httpError(400, 'Unknown paper');
-  const f = F.saveFile({ recordId: ctx.client.id, type: b.type, name: b.name, base64: b.base64, by: ctx.actor.label });
+  const f = await F.saveFile({ recordId: ctx.client.id, type: b.type, name: b.name, base64: b.base64, by: ctx.actor.label });
   const c = get('SELECT * FROM clients WHERE id=?', ctx.client.id);
   if (['gst', 'pan', 'owner_id'].includes(b.type)) {
     const kyc = { ...(c.kyc || {}), [b.type]: f.id, ...(b.gstin ? { gstin: b.gstin } : {}) }; update('clients', c.id, { kyc });
@@ -385,17 +385,17 @@ route('POST', '/api/cand/interviews/:iv/:action', K, (ctx) => {
 });
 route('POST', '/api/cand/apps/:id/accept', K, (ctx) => { const a = candApp(ctx); if (a.step !== 'Offer made' || a.result !== 'open') throw httpError(400, 'There is no offer waiting.'); return L.moveStep(a.id, 'Offer accepted', ctx.actor, 'Accepted in candidate account'); });
 route('POST', '/api/cand/apps/:id/decline', K, (ctx) => { const a = candApp(ctx); if (a.step !== 'Offer made' || a.result !== 'open') throw httpError(400, 'There is no offer waiting.'); return L.closeApplication(a.id, 'Offer declined', ctx.actor, ctx.body.note || 'Declined in candidate account'); });
-route('POST', '/api/cand/files', K, (ctx) => {
+route('POST', '/api/cand/files', K, async (ctx) => {
   const b = ctx.body;
   if (b.app_id) {
     ctx.params.id = b.app_id; const a = candApp(ctx);
-    const f = F.saveFile({ recordId: a.id, type: b.type || 'joining_doc', name: b.name, base64: b.base64, by: ctx.actor.label });
+    const f = await F.saveFile({ recordId: a.id, type: b.type || 'joining_doc', name: b.name, base64: b.base64, by: ctx.actor.label });
     const docs = [...(a.joining_docs || []), { file: f.id, label: b.label || b.type, at: now() }];
     update('applications', a.id, { joining_docs: docs }); L.appHist(a.id, a.step, ctx.actor, `Uploaded ${b.label || b.type}`, 'paper');
     if (b.type === 'offer_signed') L.appHist(a.id, a.step, ctx.actor, 'Signed offer letter uploaded', 'paper');
     return f;
   }
-  const f = F.saveFile({ recordId: ctx.candidate.id, type: b.type === 'short_cv' ? 'short_cv' : 'cv', name: b.name, base64: b.base64, by: ctx.actor.label });
+  const f = await F.saveFile({ recordId: ctx.candidate.id, type: b.type === 'short_cv' ? 'short_cv' : 'cv', name: b.name, base64: b.base64, by: ctx.actor.label });
   update('candidates', ctx.candidate.id, { [b.type === 'short_cv' ? 'short_cv_file' : 'cv_file']: String(f.id), last_updated: now() });
   return f;
 });
@@ -448,14 +448,24 @@ function crmCheck(ctx) {
   const want = Buffer.from(String(D.settings().crm.webhook_secret || '')); const got = Buffer.from(String(ctx.req.headers['x-bbhs-secret'] || ''));
   if (!want.length || want.length !== got.length || !crypto.timingSafeEqual(want, got)) { D.history('CRM', 'rejected webhook', null, null, null, null, null, ctx.ip); throw httpError(401, 'Not from the CRM'); }
 }
-route('POST', '/api/crm/inbound', {}, (ctx) => {
+route('POST', '/api/crm/inbound', {}, async (ctx) => {
   crmCheck(ctx); const b = ctx.body;
   if (b.kind === 'email') {
-    const r = L.intakeCandidate({ name: b.name || '', whatsapp: b.phone, email: b.email, city: b.city, job_wanted: b.job }, { source: 'Email', allowNoPhone: true, needsCheck: !L.validPhone(L.digits10(b.phone)) || !b.name ? 'Name or phone not found in CV' : null });
-    if (b.cv && b.cv.base64) { try { F.saveFile({ recordId: r.candidate.id, type: 'cv', name: b.cv.name, base64: b.cv.base64, by: 'Email inbox' }); } catch (e) { /* kept as lead without CV */ } }
-    return { id: r.candidate.id };
+    return require('./mailbox').intakeEmail({ fromName: b.name, fromEmail: b.email, subject: b.subject || '', text: [b.text, b.phone, b.city, b.job].filter(Boolean).join('\n'), attachments: b.cv && b.cv.base64 ? [{ name: b.cv.name, buf: Buffer.from(String(b.cv.base64).replace(/^data:[^,]*,/, ''), 'base64') }] : [] });
   }
-  return L.receiveReply(b.phone, b.text, b.button, { reply_to: b.reply_to, bot: b.bot, name: b.name, company: b.company, city: b.city, job: b.job, roles: b.roles });
+  const r = L.receiveReply(b.phone, b.text, b.button, { reply_to: b.reply_to, bot: b.bot, name: b.name, company: b.company, city: b.city, job: b.job, roles: b.roles, hasMedia: !!(b.media && b.media.base64) });
+  // A CV sent as a WhatsApp file is saved on the candidate (PDF, Word, JPG or PNG).
+  if (b.media && b.media.base64 && r.ptype === 'candidate') {
+    const ext = { 'application/pdf': 'pdf', 'application/msword': 'doc', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx', 'image/jpeg': 'jpg', 'image/png': 'png' }[b.media.mime];
+    let name = b.media.name || `whatsapp-file.${ext || 'bin'}`;
+    if (ext && !/\.(pdf|docx?|jpe?g|png)$/i.test(name)) name += `.${ext}`;
+    try {
+      const f = await F.saveFile({ recordId: r.pid, type: 'cv', name, base64: b.media.base64, by: 'WhatsApp' });
+      update('candidates', r.pid, { cv_file: String(f.id), last_updated: now() });
+      r.effect = `${r.effect}; CV saved`;
+    } catch (e) { insert('notes', { record_id: r.pid, text: `File on WhatsApp not saved as CV: ${e.message}`, author: 'WhatsApp', at: now() }); }
+  }
+  return r;
 });
 route('POST', '/api/crm/status', {}, (ctx) => {
   crmCheck(ctx); const b = ctx.body; const m = get('SELECT * FROM messages WHERE id=?', b.ref || b.id); if (!m) throw httpError(404, 'Message not found');

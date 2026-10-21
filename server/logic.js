@@ -151,7 +151,7 @@ function sendWA(o) {
   const id = nextId('WA');
   const msg = {
     id, person_type: p.type, person_id: p.id, phone: p.phone, direction: 'out', format: o.format || null, lang, text,
-    buttons: fmt ? fmt.buttons : [], ap: o.ap || null, jb: o.jb || null, iv: o.iv || null, bl: o.bl || null,
+    buttons: fmt ? fmt.buttons : (o.buttons || []), ap: o.ap || null, jb: o.jb || null, iv: o.iv || null, bl: o.bl || null,
     sent_by: o.auto ? 'Auto' : actorName(o.by), status: scheduled ? 'scheduled' : (s.crm.enabled ? 'sending' : 'would send'),
     read_by_us: 1, auto: o.auto ? 1 : 0, rule: o.rule || null, dedupe: o.dedupe || null, scheduled_at: scheduled, at: now(),
   };
@@ -692,16 +692,22 @@ function receiveReply(phone, text, button, opts = {}) {
   const usr = get('SELECT id FROM users WHERE whatsapp=?', p10);
   if (opts.ptype && opts.pid) { ptype = opts.ptype; pid = opts.pid; }
   else if (cli) { ptype = 'client'; pid = cli.id; } else if (cand) { ptype = 'candidate'; pid = cand.id; } else if (usr) { ptype = 'user'; pid = usr.id; }
+  let botNew = false;
   if (!pid) {
-    // Unknown number: the bot decides client or candidate (11.1)
-    if (opts.bot === 'client') { const r = intakeClient({ contact: opts.name || '', company: opts.company || '', whatsapp: p10, city: opts.city, roles: opts.roles }, { source: 'WhatsApp bot' }); ptype = 'client'; pid = r.client.id; }
-    else { const r = intakeCandidate({ name: opts.name || `WhatsApp ${p10}`, whatsapp: p10, city: opts.city, job_wanted: opts.job }, { source: 'WhatsApp bot', needsCheck: opts.name ? null : 'Name missing' }); ptype = 'candidate'; pid = r.candidate.id; }
+    // Unknown number: the bot decides client or candidate (11.1); the bot conversation fills the details.
+    const label = opts.name || `WhatsApp ${p10}`;
+    if (opts.bot === 'client') { const r = intakeClient({ contact: label, company: opts.company || '', whatsapp: p10, city: opts.city, roles: opts.roles }, { source: 'WhatsApp bot', silent: true, needsCheck: 'Bot: details coming' }); ptype = 'client'; pid = r.client.id; }
+    else { const r = intakeCandidate({ name: label, whatsapp: p10, city: opts.city, job_wanted: opts.job }, { source: 'WhatsApp bot', silent: true, needsCheck: 'Bot: details coming' }); ptype = 'candidate'; pid = r.candidate.id; }
+    botNew = true;
   }
   const last = get("SELECT * FROM messages WHERE person_type=? AND person_id=? AND direction='out' ORDER BY at DESC LIMIT 1", ptype, pid);
   const ref = opts.reply_to ? get('SELECT * FROM messages WHERE id=?', opts.reply_to) : last;
   const id = nextId('WA');
   insert('messages', { id, person_type: ptype, person_id: pid, phone: p10, direction: 'in', text: text || button, buttons: [], ap: ref && ref.ap, jb: ref && ref.jb, iv: ref && ref.iv, bl: ref && ref.bl, sent_by: 'them', status: 'received', read_by_us: 0, reply_to: ref ? ref.id : null, at: now() });
   D.setHealth('last_wa_received', now());
+  const bot = require('./bot');
+  if (opts.bot && (ptype === 'client' || ptype === 'candidate')) { bot.start(p10, ptype, pid, botNew); return { id, ptype, pid, effect: botNew ? `Bot started for new ${ptype} ${pid}` : 'Bot: already known' }; }
+  if (bot.session(p10)) return { id, ptype, pid, effect: bot.answer(p10, button || text, opts.hasMedia) };
   const by = { label: `${ptype === 'client' ? 'Client' : 'Candidate'} on WhatsApp` };
   const t = String(button || text || '').trim().toLowerCase();
   let effect = 'Saved in inbox';

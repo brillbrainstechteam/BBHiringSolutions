@@ -41,7 +41,7 @@
     const tabs = [['home', 'Home'], ['jobs', 'Job openings'], ...(p.candidates ? [['candidates', 'Candidates', D.counts.to_review]] : []), ['interviews', 'Interviews'], ...(p.bills ? [['bills', 'Bills']] : []), ['company', 'Company & papers']];
     $('#app').innerHTML = `<div class="pub">${BB.publicTop('Client account')}
       <div class="acct"><div class="row between" style="margin-bottom:14px"><div><h1>${esc(c.company)}</h1><div class="muted small"><span class="mono">${esc(c.id)}</span> · ${esc(c.city || '')}${D.member ? ` · logged in as ${esc(D.member.name)} (${esc(D.member.role)})` : ''}</div></div>
-        <div class="row"><button class="btn" data-raise>${BB.icon('plus', 'wa-ico')} Raise a job opening</button><button class="btn ghost" data-out>Log out</button></div></div>
+        <div class="row"><button class="btn" data-raise>${BB.icon('plus', 'wa-ico')} Raise a job opening</button><a class="btn ghost" href="/guides/client.html" target="_blank" rel="noopener">How to use</a><button class="btn ghost" data-out>Log out</button></div></div>
         <div class="tabs">${tabs.map(([k, l, n]) => `<button data-tab="${k}" class="${tab === k ? 'on' : ''}">${l}${n ? ` <span class="n">${n}</span>` : ''}</button>`).join('')}</div>
         <div data-body></div></div></div>`;
     $$('[data-tab]').forEach((b) => (b.onclick = () => { tab = b.dataset.tab; history.replaceState(null, '', `#my-account/${tab}`); render(); }));
@@ -84,7 +84,7 @@
 
   function raiseJob() {
     BB.ask({ title: 'Raise a job opening', ok: 'Raise job opening', fields: [
-      `<label class="field" data-f="title"><span class="lab">Job</span><select name="title">${BB.jobOptions('')}</select></label>`,
+      `<label class="field" data-f="title"><span class="lab">Job</span><select name="title">${BB.jobOptions('', true, D.client.industry)}</select></label>`,
       { name: 'title_other', label: 'If Other, type the job', opt: true },
       `<div class="grid g2">${field({ name: 'city', label: 'City', list: 'cities', value: D.client.city })}${field({ name: 'openings', label: 'How many people?', type: 'number', value: 1 })}</div>`,
       `<div class="grid g2">${field({ name: 'sal_from', label: 'Salary from (per month)', type: 'number' })}${field({ name: 'sal_to', label: 'Salary to (per month)', type: 'number' })}</div>`,
@@ -158,6 +158,7 @@
         <div class="grid g2">${field({ name: 'joining_form', label: 'Joining form', type: 'textarea', value: t.joining_form, attrs: 'rows="7"' })}${field({ name: 'joining_checklist', label: 'Joining checklist (one item per line)', type: 'textarea', value: t.joining_checklist, attrs: 'rows="7"' })}</div>
         <div class="row"><button class="btn primary">Save templates</button><button type="button" class="btn" data-std>Back to standard</button></div></form></div>
       ${!D.member ? `<div class="card" style="margin-top:14px"><div class="card-h"><h3>People from your company</h3><button class="btn sm right" data-add-m>+ Add person</button></div><div class="tbl-wrap"><table class="tbl"><thead><tr><th>Name</th><th>WhatsApp</th><th>Role</th><th>See candidates</th><th>Give feedback</th><th>Approve JD & offers</th><th>See bills</th><th></th></tr></thead><tbody>${D.members.map((m) => `<tr><td>${esc(m.name)}</td><td class="mono">${esc(m.whatsapp)}</td><td>${esc(m.role)}</td>${['candidates', 'feedback', 'approve', 'bills'].map((p) => `<td><input type="checkbox" data-perm="${m.id}" data-p="${p}" ${m.perms[p] ? 'checked' : ''}></td>`).join('')}<td><button class="btn sm danger" data-rm="${m.id}">Remove</button></td></tr>`).join('') || '<tr><td colspan="8" class="empty">Only you can log in now. Add HR or store managers — each logs in with their own WhatsApp number.</td></tr>'}</tbody></table></div></div>` : ''}
+      <div class="card pad" style="margin-top:14px"><h3>Monthly summaries</h3><div class="row" style="margin-top:8px">${D.files.filter((f) => f.type.startsWith('monthly_summary')).sort((a, b) => (a.name < b.name ? 1 : -1)).map((f) => `<button class="btn sm" data-file="${f.id}">${esc(f.name.replace(/^Summary-|\.pdf$/g, ''))}</button>`).join('') || '<span class="muted small">Your first summary comes on the 1st of next month.</span>'}</div></div>
       <div class="card pad" style="margin-top:14px"><h3>Your data</h3><div class="row" style="margin-top:8px"><button class="btn" data-export>Download my data</button><button class="btn danger" data-del>Ask to delete my data</button></div></div>`;
     $('[data-co]', el).onsubmit = (e) => { e.preventDefault(); const v = BB.formValues(e.target); act(() => BB.put('/api/client/company', { ...v, extra: { branches: v.branches, website: v.website } }), 'Saved'); };
     $$('[data-kyc]', el).forEach((b) => (b.onclick = async () => { const f = await BB.pickFile(); if (f) act(() => BB.post('/api/client/files', { type: b.dataset.kyc, ...f }), 'Uploaded'); }));
@@ -168,6 +169,7 @@
     const am = $('[data-add-m]', el); if (am) am.onclick = () => BB.ask({ title: 'Add a person', fields: [{ name: 'name', label: 'Name' }, { name: 'whatsapp', label: 'WhatsApp number', type: 'tel', phone: true }, { name: 'role', label: 'Role', type: 'select', options: ['HR', 'Store manager', 'Owner', 'Accounts'], value: 'HR' }], ok: 'Add', submit: (v) => BB.post('/api/client/members', { ...v, whatsapp: BB.spokenToDigits(v.whatsapp) || v.whatsapp }) }).then((x) => x && reload());
     $$('[data-perm]', el).forEach((cb) => (cb.onchange = () => { const m = D.members.find((x) => String(x.id) === cb.dataset.perm); const perms = { ...m.perms, [cb.dataset.p]: cb.checked }; act(() => BB.patch(`/api/client/members/${m.id}`, { perms }), 'Saved'); }));
     $$('[data-rm]', el).forEach((b) => (b.onclick = async () => { if (await BB.confirm('Remove person', 'They will no longer be able to log in.', 'Remove')) act(() => BB.patch(`/api/client/members/${b.dataset.rm}`, { remove: true })); }));
+    $$('[data-file]', el).forEach((b) => (b.onclick = () => BB.openFile(b.dataset.file)));
     $('[data-export]', el).onclick = () => BB.download('/api/client/export');
     $('[data-del]', el).onclick = async () => { if (await BB.confirm('Delete my data', 'BrillBrains will remove your personal details and files after checking. Bills stay for tax records with your name removed.', 'Send request')) act(() => BB.post('/api/client/delete-request'), 'Request sent'); };
   }

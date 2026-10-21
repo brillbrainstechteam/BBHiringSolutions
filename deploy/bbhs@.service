@@ -1,0 +1,19 @@
+# systemd template: one service per copy — bbhs@live and bbhs@test.
+# Each copy lives in /opt/bbhs-<copy> with its own .env (BBHS_ENV, PORT, BBHS_DATA, …).
+[Unit]
+Description=BBHS hiring software (%i copy)
+After=network.target clamav-daemon.service
+
+[Service]
+Type=simple
+User=bbhs
+WorkingDirectory=/opt/bbhs-%i
+ExecStart=/usr/bin/node --no-warnings server/server.js
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+ProtectSystem=full
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
