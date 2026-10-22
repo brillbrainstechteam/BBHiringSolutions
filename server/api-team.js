@@ -1123,7 +1123,7 @@ route('POST', '/api/followups/:id/done', T, (ctx) => { D.run('UPDATE followups S
 route('GET', '/api/history/:id', T, (ctx) => all('SELECT * FROM history WHERE record_id=? ORDER BY id DESC LIMIT 200', ctx.params.id));
 route('POST', '/api/files', T, async (ctx) => {
   const b = ctx.body; const f = await F.saveFile({ recordId: b.record_id, type: b.type || 'file', name: b.name, base64: b.base64, by: ctx.actor.label });
-  if (b.type === 'cv') update('candidates', b.record_id, { cv_file: String(f.id), last_updated: now() });
+  if (b.type === 'cv') { update('candidates', b.record_id, { cv_file: String(f.id), last_updated: now() }); f.filled = require('./cvparse').fillCandidate(b.record_id, b.name, b.base64, ctx.actor.label); }
   if (b.type === 'short_cv') update('candidates', b.record_id, { short_cv_file: String(f.id) });
   if (['gst', 'pan', 'owner_id'].includes(b.type)) { const c = get('SELECT * FROM clients WHERE id=?', b.record_id); update('clients', c.id, { kyc: { ...(c.kyc || {}), [b.type]: f.id } }); }
   if (b.type === 'contract_signed') update('clients', b.record_id, { contract: JSON.stringify({ file: f.id, by: ctx.actor.label, at: now(), method: 'Signed copy uploaded' }) });

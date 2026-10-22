@@ -24,6 +24,7 @@
         ${BB.voiceSwitch()}
         ${q.job ? `<div class="notice gold small" data-only="job">You are applying for job <b>${esc(String(q.job).toUpperCase())}</b>. We will also show you other matching jobs.</div>` : ''}
         ${q.ref ? `<div class="notice small" data-only="job">Referred by a friend (${esc(String(q.ref).toUpperCase())}).</div>` : ''}
+        <div class="cv-first stack-sm" data-only="job" data-f="cv"><div><b>Start with your CV</b> <span class="opt">(optional)</span><div class="muted small">We read it and fill in the form for you. PDF or Word, up to 10 MB.</div></div><div class="row"><button type="button" class="btn" data-cv>Attach CV</button><span class="muted small" data-cv-name>No file chosen</span></div><div class="small" data-cv-msg></div></div>
         <div class="grid g2">${field({ name: 'name', label: 'Your name' })}<div data-only="hire">${field({ name: 'company', label: 'Company name' })}</div><div data-only="job">${field({ name: 'email', label: 'Email', type: 'email', opt: true, placeholder: 'For a confirmation email', attrs: 'autocomplete="email"' })}</div></div>
         <div class="grid g2">${field({ name: 'whatsapp', label: 'WhatsApp number', type: 'tel', phone: true, placeholder: '10 digits', attrs: 'inputmode="numeric" maxlength="14" autocomplete="tel"' })}<div data-only="hire">${field({ name: 'email_hire', label: 'Email', type: 'email', opt: true, placeholder: 'For a confirmation email', attrs: 'autocomplete="email"' })}</div><div data-only="job"><label class="field" data-f="job_wanted"><span class="lab">Job you want</span><select name="job_wanted">${BB.jobOptions('', true, q.ind)}</select></label></div></div>
         <div class="hidden" data-other>${field({ name: 'job_other', label: 'Type the job you want' })}</div>
@@ -35,7 +36,6 @@
         </div>
         <div data-only="job" class="stack">
           <label class="field" data-f="experience"><span class="lab">Experience <span class="opt">(optional)</span></span><div class="choice">${['Fresher', '1–3 years', '3–5 years', '5–10 years', '10+ years'].map((x) => `<label style="min-width:96px"><input type="radio" name="experience" value="${x}"> ${x}</label>`).join('')}</div></label>
-          <div class="field" data-f="cv"><span class="lab" style="font-size:12px;font-weight:600;color:var(--muted)">CV <span class="opt">(optional — PDF, Word, JPG or PNG, up to 10 MB)</span></span><div class="row"><button type="button" class="btn" data-cv>Attach CV</button><span class="muted small" data-cv-name>No file chosen</span></div></div>
         </div>
         <label class="hp" aria-hidden="true">Leave this empty <input name="website" tabindex="-1" autocomplete="off"></label>
         <button type="submit" class="btn gold lg block" data-send>${MODES[mode].send}</button>
@@ -58,7 +58,10 @@
     };
     $$('[data-mode]', card).forEach((b) => (b.onclick = () => { mode = b.dataset.mode; apply(); }));
     $('[name=job_wanted]', card).onchange = (e) => $('[data-other]', card).classList.toggle('hidden', e.target.value !== 'Other');
-    $('[data-cv]', card).onclick = async () => { cv = await BB.pickFile(); $('[data-cv-name]', card).textContent = cv ? cv.name : 'No file chosen'; };
+    $('[data-cv]', card).onclick = async () => {
+      cv = await BB.pickFile(); $('[data-cv-name]', card).textContent = cv ? cv.name : 'No file chosen';
+      if (cv) fillFromCv(card, cv);
+    };
     BB.attachMics(card); apply();
     form.onsubmit = async (e) => {
       e.preventDefault();
@@ -82,6 +85,25 @@
         BB.showErr(form, er);
       } finally { btn.disabled = false; btn.textContent = MODES[mode].send; }
     };
+  }
+  // Reads the chosen CV on the server and fills the fields that are still empty.
+  async function fillFromCv(card, cv) {
+    const msg = $('[data-cv-msg]', card);
+    if (!/\.(pdf|docx|txt)$/i.test(cv.name)) { msg.innerHTML = '<span class="muted">Photos of a CV cannot be read — please fill in the form. We will still attach your CV.</span>'; return; }
+    msg.innerHTML = '<span class="muted">Reading your CV…</span>';
+    let f = {};
+    try { f = (await BB.post('/api/public/cv-read', { name: cv.name, base64: cv.base64 }, { kind: null })).fields || {}; } catch { msg.textContent = ''; return; }
+    const form = $('form', card); const done = [];
+    const put = (name, val, label) => { const el = $(`[name="${name}"]`, form); if (!el || val === undefined || val === null || val === '' || String(el.value).trim()) return; el.value = val; el.dispatchEvent(new Event('input', { bubbles: true })); done.push(label); };
+    put('name', f.name, 'name'); put('email', f.email, 'email'); put('whatsapp', f.whatsapp, 'WhatsApp'); put('city', f.city, 'city'); put('state', f.state, 'state');
+    const sel = $('[name=job_wanted]', form);
+    if (f.job_wanted && !sel.value) { sel.value = f.job_wanted; if (sel.value !== f.job_wanted) { sel.value = 'Other'; $('[name=job_other]', form).value = f.job_wanted; } sel.dispatchEvent(new Event('change')); done.push('job'); }
+    if (f.exp_total !== undefined && !$('[name=experience]:checked', form)) {
+      const y = f.exp_total; const pick = y < 1 ? 'Fresher' : y < 3 ? '1–3 years' : y < 5 ? '3–5 years' : y < 10 ? '5–10 years' : '10+ years';
+      const r = $(`[name=experience][value="${pick}"]`, form); if (r) { r.checked = true; done.push('experience'); }
+    }
+    const more = ['cur_salary', 'exp_salary', 'notice_days', 'skills', 'current_company'].some((k) => f[k] !== undefined);
+    msg.innerHTML = done.length ? `<span class="ok-text">✓ Filled from your CV: ${esc(done.join(', '))}.</span> <span class="muted">Please check before sending.${more ? ' Salary, notice period and skills go to your profile.' : ''}</span>` : '<span class="muted">We could not read details from this file — please fill in the form.</span>';
   }
   function restore(card, v) { for (const [k, val] of Object.entries(v)) { const el = $(`[name="${k}"]`, card); if (!el || el.type === 'radio') continue; el.value = val; } for (const k of ['business_type', 'need', 'experience']) if (v[k]) { const r = $(`[name="${k}"][value="${v[k]}"]`, card); if (r) r.checked = true; } }
 

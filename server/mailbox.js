@@ -121,6 +121,7 @@ function textOfDocx(buf) {
   try { const z = F.unzip(buf); const xml = (z['word/document.xml'] || Buffer.alloc(0)).toString('utf8'); return xml.replace(/<\/w:p>/g, '\n').replace(/<[^>]+>/g, '').replace(/&amp;/g, '&'); } catch { return ''; }
 }
 function cvText(att) {
+  const better = require('./cvparse').cvText(att.name, att.content); if (better) return better; // reads Word/Chrome/Canva PDFs too
   const n = String(att.name || '').toLowerCase();
   if (n.endsWith('.pdf')) return textOfPdf(att.content);
   if (n.endsWith('.docx')) return textOfDocx(att.content);
@@ -162,7 +163,7 @@ async function intakeEmail({ fromName, fromEmail, subject, text, attachments }) 
   for (const a of cvs) {
     try {
       const f = await F.saveFile({ recordId: id, type: first ? 'cv' : 'file', name: a.name, base64: a.buf.toString('base64'), by: 'Email inbox' });
-      if (first) D.update('candidates', id, { cv_file: String(f.id) });
+      if (first) { D.update('candidates', id, { cv_file: String(f.id) }); require('./cvparse').fillCandidate(id, a.name, a.buf, 'Email inbox'); }
       first = false;
     } catch (e) { D.insert('notes', { record_id: id, text: `Attachment ${a.name} not saved: ${e.message}`, author: 'Email inbox', at: D.now() }); }
   }

@@ -104,3 +104,13 @@ Watch Settings → Health daily for two weeks. Once a month: test restore, faile
 cd /opt/bbhs-test && sudo git pull && sudo systemctl restart bbhs@test   # check on the test copy first
 cd /opt/bbhs-live && sudo git pull && sudo systemctl restart bbhs@live
 ```
+
+## Automatic deploy (GitHub → server)
+
+The live copy updates itself after every push to GitHub:
+
+1. On this PC: commit, then `git push`.
+2. GitHub Actions (`.github/workflows/deploy.yml`) logs in to the server with a key that can **only** run `/usr/local/bin/bbhs-deploy live` (it is locked to that command in `/root/.ssh/authorized_keys`).
+3. `bbhs-deploy` (from `deploy/bbhs-deploy.sh`) fetches the branch named in `/opt/bbhs-live/.deploy-branch`, restarts the app and checks it answers. If it does not, it goes back to the previous version. It never moves the server to an older commit than it has.
+
+One-time setup: in GitHub → the repository → Settings → Secrets and variables → Actions → **New repository secret**, name `VPS_DEPLOY_KEY`, value = the whole private key file `bbhs_github_deploy` (made on the developer PC in `~/.ssh/`). To deploy by hand on the server: `sudo bbhs-deploy`. To switch branch: write its name into `/opt/bbhs-live/.deploy-branch`.

@@ -4,6 +4,7 @@ const D = require('./db');
 const L = require('./logic');
 const V = require('./views');
 const F = require('./files');
+const CV = require('./cvparse');
 const R = require('./router');
 const TEAM = require('./api-team');
 const { route, newSession } = R;
@@ -146,6 +147,14 @@ route('POST', '/api/public/hire', { rate: { key: 'form', max: 10, minutes: 60 } 
   mailer.confirmToPerson('client', r.client);
   return formDone('client', r.isNew, r.client.id, r.client.whatsapp);
 });
+// The job form's first step: read the chosen CV and hand back the details to fill in. Nothing is saved here.
+route('POST', '/api/public/cv-read', { rate: { key: 'cvread', max: 30, minutes: 60 } }, (ctx) => {
+  const b = ctx.body || {};
+  if (!b.base64 || !/\.(pdf|docx|txt)$/i.test(String(b.name || ''))) return { fields: {}, readable: false };
+  const buf = Buffer.from(String(b.base64).replace(/^data:[^,]*,/, ''), 'base64');
+  if (buf.length > 10 * 1024 * 1024) throw httpError(400, 'The file is bigger than 10 MB.');
+  return { fields: CV.read(b.name, buf), readable: true };
+});
 route('POST', '/api/public/apply', { rate: { key: 'form', max: 10, minutes: 60 } }, async (ctx) => {
   const b = ctx.body;
   if (b.website) throw httpError(400, 'Please try again.'); // hidden field only bots fill in
@@ -163,7 +172,7 @@ route('POST', '/api/public/apply', { rate: { key: 'form', max: 10, minutes: 60 }
   const r = L.intakeCandidate({ name: b.name, whatsapp: b.whatsapp, email: b.email || '', city: b.city, state: b.state, work_cities: [b.city], job_wanted: b.job_wanted === 'Other' ? b.job_other : b.job_wanted, exp_total: b.experience ? expMap[b.experience] : null, ref_by: refBy, apply_job: jobOk && ['Open', 'Sourcing', 'Interviewing', 'Offer stage'].includes(V.jobView(jobOk).status) ? jobOk.id : null }, { source: srcFrom(b) });
   { const mailer = require('./mailer'); const rec = get('SELECT * FROM candidates WHERE id=?', r.candidate.id); if (r.isNew) mailer.newLead('candidate', rec); mailer.confirmToPerson('candidate', rec); }
   if (refBy && r.isNew) insert('notes', { record_id: r.candidate.id, text: `Referred by ${refBy}`, author: 'Form', at: now() });
-  if (b.cv && b.cv.base64) { try { const f = await F.saveFile({ recordId: r.candidate.id, type: 'cv', name: b.cv.name, base64: b.cv.base64, by: 'Candidate form' }); update('candidates', r.candidate.id, { cv_file: String(f.id) }); } catch (e) { insert('notes', { record_id: r.candidate.id, text: `CV not saved: ${e.message}`, author: 'Form', at: now() }); } }
+  if (b.cv && b.cv.base64) { try { const f = await F.saveFile({ recordId: r.candidate.id, type: 'cv', name: b.cv.name, base64: b.cv.base64, by: 'Candidate form' }); update('candidates', r.candidate.id, { cv_file: String(f.id) }); CV.fillCandidate(r.candidate.id, b.cv.name, b.cv.base64, 'Candidate form'); } catch (e) { insert('notes', { record_id: r.candidate.id, text: `CV not saved: ${e.message}`, author: 'Form', at: now() }); } }
   return formDone('candidate', r.isNew, r.candidate.id, r.candidate.whatsapp);
 });
 // A new sign-up opens its own fresh account straight away: it holds only what this person just typed.
@@ -420,7 +429,8 @@ route('POST', '/api/cand/files', K, async (ctx) => {
   }
   const f = await F.saveFile({ recordId: ctx.candidate.id, type: b.type === 'short_cv' ? 'short_cv' : 'cv', name: b.name, base64: b.base64, by: ctx.actor.label });
   update('candidates', ctx.candidate.id, { [b.type === 'short_cv' ? 'short_cv_file' : 'cv_file']: String(f.id), last_updated: now() });
-  return f;
+  const filled = b.type === 'short_cv' ? [] : CV.fillCandidate(ctx.candidate.id, b.name, b.base64, ctx.actor.label);
+  return { ...f, filled };
 });
 route('GET', '/api/cand/export', K, (ctx) => {
   const c = ctx.candidate; D.history(ctx.actor.label, 'download own data', c.id);
@@ -485,7 +495,8 @@ route('POST', '/api/crm/inbound', {}, async (ctx) => {
     try {
       const f = await F.saveFile({ recordId: r.pid, type: 'cv', name, base64: b.media.base64, by: 'WhatsApp' });
       update('candidates', r.pid, { cv_file: String(f.id), last_updated: now() });
-      r.effect = `${r.effect}; CV saved`;
+      const filled = CV.fillCandidate(r.pid, name, b.media.base64, 'WhatsApp');
+      r.effect = `${r.effect}; CV saved${filled.length ? ` (filled ${filled.join(', ')})` : ''}`;
     } catch (e) { insert('notes', { record_id: r.pid, text: `File on WhatsApp not saved as CV: ${e.message}`, author: 'WhatsApp', at: now() }); }
   }
   return r;

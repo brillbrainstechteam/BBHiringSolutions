@@ -436,3 +436,7 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
 .signin-row a { font-weight: 700; color: var(--navy-700); }
 @media (max-width: 1080px) { .hero .pub-card { justify-self: stretch; max-width: none; } .hero .pub-intro { padding-top: 0; } }
 @media (max-width: 560px) { .trust { display: none; } .mode-seg button { font-size: 13px; padding: 10px 6px; } }
+
+/* ---------- job form: CV first ---------- */
+.cv-first { border: 1px dashed var(--mustard); background: var(--mustard-50); border-radius: 12px; padding: 12px 14px; }
+.ok-text { color: var(--green); font-weight: 600; }

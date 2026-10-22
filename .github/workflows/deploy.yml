@@ -1,0 +1,25 @@
+# After every push to the live branch, update the server (runs deploy/bbhs-deploy.sh there).
+# Needs one repository secret: VPS_DEPLOY_KEY — the private key whose public half is in the
+# server's authorized_keys, locked to the deploy command (see docs/DEPLOY.md, "Automatic deploy").
+name: Deploy to server
+
+on:
+  push:
+    branches: [feat/ui-refresh, main]
+  workflow_dispatch:
+
+concurrency: deploy-live
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run the deploy on the server
+        env:
+          KEY: ${{ secrets.VPS_DEPLOY_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/deploy_key && chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H 187.127.176.187 >> ~/.ssh/known_hosts 2>/dev/null
+          # The key can only run bbhs-deploy on the server, whatever is asked here.
+          ssh -i ~/.ssh/deploy_key root@187.127.176.187 deploy
