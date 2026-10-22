@@ -353,7 +353,7 @@ BB.brand = (tagline, href = '#') => {
   return `<a class="brand" href="${href}"><img src="/img/icon.svg" alt=""><span class="bt"><b>${esc(first)}</b><span>${esc(rest.join(' '))}</span><small>${esc(tagline || 'Effective Recruitment Services')}</small></span></a>`;
 };
 // Navy top bar. nav=false on the form links (they open only the form, no other menus).
-BB.publicTop = (sub, nav = false) => `<header class="pub-top">${BB.brand(sub)}${nav ? `<nav class="pub-nav"><a href="#hire">For Employers</a><a href="#apply">For Candidates</a><a href="#my-account">Client login</a><a href="#my-profile">My profile</a></nav><a class="btn gold" href="#team">Team login</a>` : `<a class="btn sm help" href="https://wa.me/91${esc(BB.boot.business.support_phone)}" target="_blank" rel="noopener">${waIcon} Need help?</a>`}</header>`;
+BB.publicTop = (sub, nav = false) => `<header class="pub-top">${BB.brand(sub)}${nav ? `<nav class="pub-nav"><a href="#hire">For Employers</a><a href="#apply">For Candidates</a><a href="#my-account">Client login</a><a href="#my-profile">My profile</a></nav>` : `<a class="btn sm help" href="https://wa.me/91${esc(BB.boot.business.support_phone)}" target="_blank" rel="noopener">${waIcon} Need help?</a>`}</header>`;
 // Line art from the website: fine arcs bottom-left, a row of dots top-left.
 BB.deco = () => `<div class="deco-dots" aria-hidden="true"><i></i><i></i><i></i><i></i></div><svg class="deco-lines" viewBox="0 0 340 340" fill="none" stroke="currentColor" stroke-width="1.2" aria-hidden="true">${Array.from({ length: 9 }, (_, i) => `<path d="M0 ${110 + i * 26} C 90 ${150 + i * 20}, 170 ${230 + i * 10}, 260 340" opacity="${0.35 + i * 0.06}"/>`).join('')}</svg>`;
 // Split page: big heading + perks on the left, a card on the right.
@@ -371,7 +371,7 @@ BB.views.landing = (r) => {
       </section>
       <section class="card pub-card" data-leadcard></section>
     </main>
-    <div class="signin-row"><span class="muted">Already registered?</span><a href="#my-account">Client login</a><a href="#my-profile">Candidate login</a><a href="#team">Team login</a></div>
+    <div class="signin-row"><span class="muted">Already registered?</span><a href="#my-account">Client login</a><a href="#my-profile">Candidate login</a></div>
     <div class="pub-foot">© ${new Date().getFullYear()} ${esc(BB.boot.business.name)}</div></div>`;
   BB.leadFormCard($('[data-leadcard]'), 'job', (r && r.q) || {});
 };

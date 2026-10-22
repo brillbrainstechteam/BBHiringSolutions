@@ -44,6 +44,8 @@ const server = http.createServer(async (req, res) => {
       return send(res, 200, JSON.stringify(out === undefined ? { ok: true } : out), { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
     }
     let p = url.pathname;
+    // The team portal is internal: reachable by its address, but kept out of search engines.
+    if (p.replace(/\/$/, '') === '/team') return send(res, 200, fs.readFileSync(path.join(PUBLIC, 'index.html')), { 'Content-Type': TYPES['.html'], 'Cache-Control': 'no-cache', 'X-Robots-Tag': 'noindex, nofollow' });
     if (PAGES.includes(p.replace(/\/$/, '') || '/')) p = '/index.html';
     const file = path.normalize(path.join(PUBLIC, p));
     if (!file.startsWith(PUBLIC) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) return send(res, 404, 'Not found', { 'Content-Type': 'text/plain' });

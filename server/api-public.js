@@ -144,8 +144,7 @@ route('POST', '/api/public/hire', { rate: { key: 'form', max: 10, minutes: 60 } 
   const mailer = require('./mailer');
   if (r.isNew) mailer.newLead('client', r.client);
   mailer.confirmToPerson('client', r.client);
-  // No session here: the account opens only after the WhatsApp code (someone could type another person's number).
-  return { id: r.client.id, isNew: r.isNew, phone: r.client.whatsapp, can_verify: canSendCodes() };
+  return formDone('client', r.isNew, r.client.id, r.client.whatsapp);
 });
 route('POST', '/api/public/apply', { rate: { key: 'form', max: 10, minutes: 60 } }, async (ctx) => {
   const b = ctx.body;
@@ -165,8 +164,15 @@ route('POST', '/api/public/apply', { rate: { key: 'form', max: 10, minutes: 60 }
   { const mailer = require('./mailer'); const rec = get('SELECT * FROM candidates WHERE id=?', r.candidate.id); if (r.isNew) mailer.newLead('candidate', rec); mailer.confirmToPerson('candidate', rec); }
   if (refBy && r.isNew) insert('notes', { record_id: r.candidate.id, text: `Referred by ${refBy}`, author: 'Form', at: now() });
   if (b.cv && b.cv.base64) { try { const f = await F.saveFile({ recordId: r.candidate.id, type: 'cv', name: b.cv.name, base64: b.cv.base64, by: 'Candidate form' }); update('candidates', r.candidate.id, { cv_file: String(f.id) }); } catch (e) { insert('notes', { record_id: r.candidate.id, text: `CV not saved: ${e.message}`, author: 'Form', at: now() }); } }
-  return { id: r.candidate.id, isNew: r.isNew, phone: r.candidate.whatsapp, can_verify: canSendCodes() };
+  return formDone('candidate', r.isNew, r.candidate.id, r.candidate.whatsapp);
 });
+// A new sign-up opens its own fresh account straight away: it holds only what this person just typed.
+// A number we already know never opens without the WhatsApp code (someone could type another person's number).
+function formDone(kind, isNew, id, phone) {
+  const out = { id, isNew, phone, can_verify: canSendCodes() };
+  if (isNew) { openedAccount(kind, id); out.token = newSession(kind, id); }
+  return out;
+}
 
 // ---------- client account (6.3) ----------
 const C = { auth: 'client' };

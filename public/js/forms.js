@@ -91,7 +91,17 @@
     const next = mode === 'hire'
       ? ['Our team calls you within one working day to understand your needs.', 'We share a simple agreement and set up your first job opening.', 'You get matching profiles on WhatsApp and in your account.']
       : ['Complete your profile — salary, notice period and skills help us match you.', 'When a job matches, we call you and set up the interview.', 'Interview times and offers come on WhatsApp.'];
+    // New sign-up: the account is already open, one tap takes them in.
+    if (res.token) {
+      BB.setToken(m.kind, res.token);
+      card.innerHTML = `<div class="thanks"><h2>Thank you, ${esc(first)}!</h2><div class="muted">${m.idLabel}</div><div class="big-id">${esc(res.id)}</div></div>
+        <div class="verify stack"><div><b>Your ${m.account} is ready</b><div class="muted small">Next time, log in with your WhatsApp number and a 6-digit code.</div></div>
+        <a class="btn gold lg block" href="#${m.go}">Open my ${m.account}</a></div>
+        <ol class="steps-list">${next.map((x) => `<li>${x}</li>`).join('')}</ol>`;
+      return;
+    }
     card.innerHTML = `<div class="thanks"><h2>Thank you, ${esc(first)}!</h2><div class="muted">${m.idLabel}</div><div class="big-id">${esc(res.id)}</div></div>
+      ${res.isNew ? '' : `<div class="notice small">This WhatsApp number is already registered with us, so we have added these details to your existing ${m.account}.</div>`}
       ${res.can_verify ? `<div class="verify stack" data-verify>
         <div><b>Open your ${m.account}</b><div class="muted small">We send a 6-digit code to your WhatsApp to check it is your number.</div></div>
         <div class="phone-line"><span class="muted small">WhatsApp</span><b class="mono" style="font-size:16px">+91 ${esc(res.phone.slice(0, 5))} ${esc(res.phone.slice(5))}</b><a href="#" class="small right" data-edit>Wrong number?</a></div>
