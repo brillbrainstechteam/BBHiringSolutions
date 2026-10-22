@@ -53,6 +53,7 @@ CREATE TABLE IF NOT EXISTS history (id INTEGER PRIMARY KEY AUTOINCREMENT, at TEX
 CREATE TRIGGER IF NOT EXISTS history_no_update BEFORE UPDATE ON history BEGIN SELECT RAISE(ABORT, 'history cannot be edited'); END;
 CREATE TRIGGER IF NOT EXISTS history_no_delete BEFORE DELETE ON history BEGIN SELECT RAISE(ABORT, 'history cannot be deleted'); END;
 CREATE INDEX IF NOT EXISTS ix_apps_job ON applications(job_id);
+
 CREATE INDEX IF NOT EXISTS ix_apps_cand ON applications(candidate_id);
 CREATE INDEX IF NOT EXISTS ix_msg_person ON messages(person_type, person_id);
 CREATE INDEX IF NOT EXISTS ix_hist_rec ON history(record_id);
@@ -60,6 +61,9 @@ CREATE INDEX IF NOT EXISTS ix_apph ON app_history(app_id);
 CREATE INDEX IF NOT EXISTS ix_cand_phone ON candidates(whatsapp);
 CREATE INDEX IF NOT EXISTS ix_client_phone ON clients(whatsapp);
 `);
+
+// Columns added after the first version.
+for (const [table, col] of [['candidates', 'state TEXT']]) { try { db.exec(`ALTER TABLE ${table} ADD COLUMN ${col}`); } catch { /* already there */ } }
 
 // ---------- small helpers ----------
 const now = () => new Date().toISOString();

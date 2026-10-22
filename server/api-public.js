@@ -14,7 +14,7 @@ route('GET', '/api/bootstrap', {}, () => {
   const s = D.settings();
   return {
     business: { name: s.business.name, short: s.business.short, support_phone: s.business.support_phone, primary: s.business.primary, accent: s.business.accent },
-    jobs: L.jobList().filter((j) => !j.hidden), industries: Object.fromEntries(Object.keys(s.industries).map((k) => [k, L.jobList(k).filter((j) => !j.hidden)])), default_industry: s.default_industry, departments: s.departments, cities: s.cities.map((c) => c.name), skills: s.skills, stages: s.client_stages,
+    jobs: L.jobList().filter((j) => !j.hidden), places: (() => { const seen = new Set(); const out = []; for (const p of [...s.cities, ...require('./places').PLACES]) { const k = p.name.toLowerCase(); if (!seen.has(k)) { seen.add(k); out.push({ name: p.name, state: p.state || L.stateOf(p.name) }); } } return out; })(), industries: Object.fromEntries(Object.keys(s.industries).map((k) => [k, L.jobList(k).filter((j) => !j.hidden)])), default_industry: s.default_industry, departments: s.departments, cities: s.cities.map((c) => c.name), skills: s.skills, stages: s.client_stages,
     closing_reasons: s.closing_reasons, job_close_reasons: s.job_close_reasons, reopen_reasons: s.reopen_reasons, lead_sources: s.lead_sources, src_tags: s.src_tags,
     steps: L.STEPS, consent: L.CONSENT_WORDING, fee: s.fee, agency_share_pct: s.agency_share_pct, gst: s.gst, match: s.match, quiet: s.quiet, log_deadline: s.log_deadline,
     test_mode: !s.crm.enabled, languages: s.languages, env: D.ENV.name, base_url: s.business.base_url,
@@ -151,7 +151,7 @@ route('POST', '/api/public/apply', { rate: { key: 'form', max: 10, minutes: 60 }
   let refBy = null;
   if (b.ref) { const rc = get('SELECT id FROM candidates WHERE id=?', L.resolveId(String(b.ref).toUpperCase())); refBy = rc ? rc.id : null; }
   const jobOk = b.job ? get('SELECT * FROM jobs WHERE id=?', String(b.job).toUpperCase()) : null;
-  const r = L.intakeCandidate({ name: b.name, whatsapp: b.whatsapp, city: b.city, work_cities: [b.city], job_wanted: b.job_wanted === 'Other' ? b.job_other : b.job_wanted, exp_total: b.experience ? expMap[b.experience] : null, ref_by: refBy, apply_job: jobOk && ['Open', 'Sourcing', 'Interviewing', 'Offer stage'].includes(V.jobView(jobOk).status) ? jobOk.id : null }, { source: srcFrom(b) });
+  const r = L.intakeCandidate({ name: b.name, whatsapp: b.whatsapp, city: b.city, state: b.state, work_cities: [b.city], job_wanted: b.job_wanted === 'Other' ? b.job_other : b.job_wanted, exp_total: b.experience ? expMap[b.experience] : null, ref_by: refBy, apply_job: jobOk && ['Open', 'Sourcing', 'Interviewing', 'Offer stage'].includes(V.jobView(jobOk).status) ? jobOk.id : null }, { source: srcFrom(b) });
   if (refBy && r.isNew) insert('notes', { record_id: r.candidate.id, text: `Referred by ${refBy}`, author: 'Form', at: now() });
   if (b.cv && b.cv.base64) { try { const f = await F.saveFile({ recordId: r.candidate.id, type: 'cv', name: b.cv.name, base64: b.cv.base64, by: 'Candidate form' }); update('candidates', r.candidate.id, { cv_file: String(f.id) }); } catch (e) { insert('notes', { record_id: r.candidate.id, text: `CV not saved: ${e.message}`, author: 'Form', at: now() }); } }
   openedAccount('candidate', r.candidate.id);
@@ -374,7 +374,7 @@ route('POST', '/api/cand/apply', K, (ctx) => {
 });
 route('PUT', '/api/cand/profile', K, (ctx) => {
   const b = ctx.body; const patch = {};
-  for (const k of ['name', 'email', 'city', 'job_wanted', 'exp_total', 'exp_jewellery', 'notice_days', 'skills', 'current_company', 'looking', 'work_cities']) if (b[k] !== undefined) patch[k] = b[k] === '' ? null : b[k];
+  for (const k of ['name', 'email', 'city', 'state', 'job_wanted', 'exp_total', 'exp_jewellery', 'notice_days', 'skills', 'current_company', 'looking', 'work_cities']) if (b[k] !== undefined) patch[k] = b[k] === '' ? null : b[k];
   if (b.cur_month !== undefined) patch.cur_salary = b.cur_month === '' ? null : Number(b.cur_month) * 12;
   if (b.exp_month !== undefined) patch.exp_salary = b.exp_month === '' ? null : Number(b.exp_month) * 12;
   if (patch.name !== undefined && !String(patch.name || '').trim()) throw httpError(400, 'Please enter your name', 'name');

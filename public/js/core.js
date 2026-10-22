@@ -103,7 +103,7 @@ BB.field = (d) => {
   else if (d.type === 'choice') inner = `<div class="choice">${d.options.map((o) => { const [val, text] = Array.isArray(o) ? o : [o, o]; return `<label><input type="radio" name="${d.name}" value="${esc(val)}" ${String(val) === String(v) ? 'checked' : ''}> ${esc(text)}</label>`; }).join('')}</div>`;
   else {
     const voice = d.voice !== false && ['text', undefined, 'tel', 'search'].includes(d.type);
-    inner = `<div class="inp-wrap"><input name="${d.name}" type="${d.type || 'text'}" value="${esc(v)}" ${voice ? `data-voice ${d.phone ? 'data-phone' : ''}` : ''} ${d.list ? `list="${d.list}"` : ''} placeholder="${esc(d.placeholder || '')}" ${d.attrs || ''}></div>`;
+    inner = `<div class="inp-wrap"><input name="${d.name}" type="${d.type || 'text'}" value="${esc(v)}" ${voice ? `data-voice ${d.phone ? 'data-phone' : ''}` : ''} ${d.list === 'cities' ? 'data-city' : d.list ? `list="${d.list}"` : ''} placeholder="${esc(d.placeholder || '')}" ${d.attrs || ''}></div>`;
   }
   return `<label class="field" data-f="${d.name}">${lab}${inner}${d.hint ? `<div class="faint small" style="margin-top:3px">${d.hint}</div>` : ''}</label>`;
 };
@@ -170,7 +170,54 @@ BB.spokenToDigits = (text) => {
   if (d.length === 11 && d.startsWith('0')) d = d.slice(1);
   return d;
 };
+// ---------- city type-ahead (any town allowed); fills the State field next to it ----------
+BB.placeOf = (name) => { const n = String(name || '').trim().toLowerCase(); return n ? (BB.boot.places || []).find((p) => p.name.toLowerCase() === n) : null; };
+BB.attachCities = (root) => {
+  for (const inp of $$('input[data-city]', root)) {
+    if (inp.dataset.ta) continue; inp.dataset.ta = '1'; inp.setAttribute('autocomplete', 'off');
+    inp.setAttribute('role', 'combobox'); inp.setAttribute('aria-autocomplete', 'list'); inp.setAttribute('aria-expanded', 'false');
+    const list = document.createElement('div'); list.className = 'ta-list hidden'; list.setAttribute('role', 'listbox');
+    inp.parentElement.appendChild(list);
+    let items = []; let at = -1;
+    const scope = () => inp.closest('form, .modal, .card') || document;
+    const setState = () => {
+      const st = $('[name=state]', scope()); if (!st) return;
+      const p = BB.placeOf(inp.value);
+      if (p) { if (!st.value || st.dataset.auto) { st.value = p.state; st.dataset.auto = '1'; } }
+      else if (st.dataset.auto) { st.value = ''; delete st.dataset.auto; }
+    };
+    const close = () => { list.classList.add('hidden'); inp.setAttribute('aria-expanded', 'false'); at = -1; };
+    const pick = (p) => { inp.value = p.name; close(); setState(); inp.dispatchEvent(new Event('input', { bubbles: true })); inp.dispatchEvent(new Event('change', { bubbles: true })); };
+    const draw = () => {
+      list.innerHTML = items.map((p, i) => `<div class="ta-item ${i === at ? 'on' : ''}" role="option" data-i="${i}"><b>${esc(p.name)}</b><span>${esc(p.state)}</span></div>`).join('');
+      list.classList.toggle('hidden', !items.length); inp.setAttribute('aria-expanded', items.length ? 'true' : 'false');
+    };
+    const search = () => {
+      const q = inp.value.trim().toLowerCase(); if (!q) { items = []; return close(); }
+      const all = BB.boot.places || [];
+      const starts = all.filter((p) => p.name.toLowerCase().startsWith(q));
+      const has = all.filter((p) => !p.name.toLowerCase().startsWith(q) && (p.name.toLowerCase().includes(q) || p.state.toLowerCase().startsWith(q)));
+      items = [...starts, ...has].slice(0, 8); at = items.length ? 0 : -1;
+      if (items.length === 1 && items[0].name.toLowerCase() === q) { items = []; close(); return; }
+      draw();
+    };
+    inp.addEventListener('input', (e) => { if (e.isTrusted) search(); setState(); });
+    inp.addEventListener('focus', () => { if (inp.value) search(); });
+    inp.addEventListener('keydown', (e) => {
+      if (list.classList.contains('hidden')) return;
+      if (e.key === 'ArrowDown') { e.preventDefault(); at = (at + 1) % items.length; draw(); }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); at = (at - 1 + items.length) % items.length; draw(); }
+      else if (e.key === 'Enter' && at >= 0) { e.preventDefault(); pick(items[at]); }
+      else if (e.key === 'Escape') close();
+      else if (e.key === 'Tab' && at >= 0 && inp.value.trim()) pick(items[at]);
+    });
+    list.addEventListener('mousedown', (e) => { const it = e.target.closest('[data-i]'); if (it) { e.preventDefault(); pick(items[Number(it.dataset.i)]); } });
+    inp.addEventListener('blur', () => setTimeout(() => { close(); setState(); }, 120));
+    const st = $('[name=state]', scope()); if (st) st.addEventListener('input', () => delete st.dataset.auto);
+  }
+};
 BB.attachMics = (root) => {
+  BB.attachCities(root);
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   for (const inp of $$('[data-voice]', root)) {
     if (inp.dataset.mic) continue; inp.dataset.mic = '1';
@@ -310,7 +357,9 @@ BB.publicTop = (sub, nav = false) => `<header class="pub-top">${BB.brand(sub)}${
 // Line art from the website: fine arcs bottom-left, a row of dots top-left.
 BB.deco = () => `<div class="deco-dots" aria-hidden="true"><i></i><i></i><i></i><i></i></div><svg class="deco-lines" viewBox="0 0 340 340" fill="none" stroke="currentColor" stroke-width="1.2" aria-hidden="true">${Array.from({ length: 9 }, (_, i) => `<path d="M0 ${110 + i * 26} C 90 ${150 + i * 20}, 170 ${230 + i * 10}, 260 340" opacity="${0.35 + i * 0.06}"/>`).join('')}</svg>`;
 // Split page: big heading + perks on the left, a card on the right.
-BB.split = ({ top, eyebrow, title, lead, perks, card, foot }) => `<div class="pub">${top}<main class="pub-split"><section class="pub-intro">${BB.deco()}<span class="eyebrow">${esc(eyebrow)}</span><h1>${title}</h1>${lead ? `<p class="lead">${lead}</p>` : ''}${perks && perks.length ? `<ul class="perks">${perks.map(([ic, b, s]) => `<li><span class="pi">${ic}</span><div><b>${esc(b)}</b><span>${esc(s)}</span></div></li>`).join('')}</ul>` : ''}</section><section class="card pub-card">${card}</section></main><div class="pub-foot">${foot || `© ${new Date().getFullYear()} ${esc(BB.boot.business.name)} · Your details are kept safe and used only for hiring.`}</div></div>`;
+BB.split = ({ top, eyebrow, title, lead, perks, card, foot, centered }) => centered
+  ? `<div class="pub">${top}<main class="pub-center"><section class="pub-intro"><div class="deco-dots" aria-hidden="true"><i></i><i></i><i></i><i></i></div><span class="eyebrow">${esc(eyebrow)}</span><h1>${title}</h1></section><section class="card pub-card">${card}</section></main><div class="pub-foot">${foot || `© ${new Date().getFullYear()} ${esc(BB.boot.business.name)} · Your details are kept safe and used only for hiring.`}</div></div>`
+  : `<div class="pub">${top}<main class="pub-split"><section class="pub-intro">${BB.deco()}<span class="eyebrow">${esc(eyebrow)}</span><h1>${title}</h1>${lead ? `<p class="lead">${lead}</p>` : ''}${perks && perks.length ? `<ul class="perks">${perks.map(([ic, b, s]) => `<li><span class="pi">${ic}</span><div><b>${esc(b)}</b><span>${esc(s)}</span></div></li>`).join('')}</ul>` : ''}</section><section class="card pub-card">${card}</section></main><div class="pub-foot">${foot || `© ${new Date().getFullYear()} ${esc(BB.boot.business.name)} · Your details are kept safe and used only for hiring.`}</div></div>`;
 BB.views.landing = () => {
   const doors = [
     ['hire', 'brief', 'I want to hire', 'Tell us the staff you need. We send matching profiles.'],

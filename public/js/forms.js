@@ -2,19 +2,16 @@
 (() => {
   const { $, esc, field } = BB;
 
-  // Split layout: heading and benefits on the left, the form card on the right. No menus (6.1).
-  const feeText = () => (BB.boot.fee.type === 'percent' ? `${BB.boot.fee.value}% of the yearly salary` : `a fixed fee per hire`);
+  // Centred layout: eyebrow and heading, then the form card. No menus (6.1).
   const PAGES = {
-    hire: { label: 'For Employers', eyebrow: 'For employers', title: 'Hire the <em>right people</em>, without the chase', lead: 'Tell us who you need. Our recruiters call you, screen candidates and send you profiles that fit — on WhatsApp and in your account.',
-      perks: () => [['1', 'Screened profiles only', 'Every candidate is called and interviewed by us first.'], ['2', 'Interviews set up for you', 'Pick a time; we confirm it with the candidate on WhatsApp.'], ['₹', 'Pay only when they join', `${feeText()}, with a free replacement in the first 3 months.`]],
+    hire: { label: 'For Employers', eyebrow: 'For employers', title: 'Hire the <em>right people</em>, without the chase',
       cardTitle: 'Tell us what you need', cardSub: 'Takes under a minute. Tap the mic to speak instead of typing.' },
-    apply: { label: 'For Candidates', eyebrow: 'For candidates', title: 'Your next <em>jewellery</em> job starts here', lead: 'Showrooms, workshops and offices across India are hiring sales staff, karigars, designers, accountants and more.',
-      perks: () => [['✓', 'Free for you', 'You never pay to get a job through us.'], ['★', 'Jobs that fit you', 'Matched on your city, skills, experience and salary.'], ['✆', 'Updates on WhatsApp', 'Interview times and offers come straight to your phone.']],
+    apply: { label: 'For Candidates', eyebrow: 'For candidates', title: 'Your next <em>jewellery</em> job starts here',
       cardTitle: 'Share a few details', cardSub: 'Takes a minute. Tap the mic to speak in English or Hindi.' },
   };
   function shell(kind, inner) {
     const p = PAGES[kind];
-    return BB.split({ top: BB.publicTop(p.label), eyebrow: p.eyebrow, title: p.title, lead: p.lead, perks: p.perks(), card: `<div class="card-title">${p.cardTitle}</div><p class="muted small" style="margin:0 0 14px">${p.cardSub}</p>${inner}` });
+    return BB.split({ top: BB.publicTop(p.label), eyebrow: p.eyebrow, title: p.title, centered: true, card: `<div class="card-title">${p.cardTitle}</div><p class="muted small" style="margin:0 0 14px">${p.cardSub}</p>${inner}` });
   }
   async function submit(form, url, body, done) {
     const btn = $('button[type=submit]', form); btn.disabled = true; btn.textContent = 'Sending…';
@@ -34,7 +31,8 @@
       <form class="stack" novalidate data-label>
         ${BB.voiceSwitch()}
         <div class="grid g2">${field({ name: 'contact', label: 'Your name' })}${field({ name: 'company', label: 'Company name' })}</div>
-        <div class="grid g2">${field({ name: 'whatsapp', label: 'WhatsApp number', type: 'tel', phone: true, placeholder: '10 digits', attrs: 'inputmode="numeric" maxlength="14"' })}${field({ name: 'city', label: 'City', list: 'cities', placeholder: 'Start typing…' })}</div>
+        ${field({ name: 'whatsapp', label: 'WhatsApp number', type: 'tel', phone: true, placeholder: '10 digits', attrs: 'inputmode="numeric" maxlength="14"' })}
+        <div class="grid g2">${field({ name: 'city', label: 'City', list: 'cities', placeholder: 'Start typing your city…' })}${field({ name: 'state', label: 'State', placeholder: 'Fills in from the city', voice: false })}</div>
         ${field({ name: 'business_type', label: 'Your business', type: 'choice', options: ['Showroom B2C', 'Manufacturer B2B', 'Both'] })}
         ${field({ name: 'need', label: 'When do you need staff?', type: 'choice', options: ['Hiring now', 'Hiring soon', 'Just exploring'] })}
         ${field({ name: 'roles', label: 'Which roles?', opt: true, placeholder: 'e.g. 2 sales executives, 1 cashier' })}
@@ -66,7 +64,7 @@
         ${q.job ? `<div class="notice gold small">You are applying for job <b>${esc(q.job.toUpperCase())}</b>. We will also show you other matching jobs.</div>` : ''}
         ${q.ref ? `<div class="notice small">Referred by a friend (${esc(q.ref.toUpperCase())}).</div>` : ''}
         <div class="grid g2">${field({ name: 'name', label: 'Your name' })}${field({ name: 'whatsapp', label: 'WhatsApp number', type: 'tel', phone: true, placeholder: '10 digits', attrs: 'inputmode="numeric" maxlength="14"' })}</div>
-        ${field({ name: 'city', label: 'City you want to work in', list: 'cities', placeholder: 'Start typing…' })}
+        <div class="grid g2">${field({ name: 'city', label: 'City you want to work in', list: 'cities', placeholder: 'Start typing your city…' })}${field({ name: 'state', label: 'State', placeholder: 'Fills in from the city', voice: false })}</div>
         <label class="field" data-f="job_wanted"><span class="lab">Job you want</span><select name="job_wanted">${BB.jobOptions('', true, q.ind)}</select></label>
         <div class="hidden" data-other>${field({ name: 'job_other', label: 'Type the job you want' })}</div>
         <label class="field" data-f="experience"><span class="lab">Experience <span class="opt">(optional)</span></span><div class="choice">${['Fresher', '1–3 years', '3–5 years', '5–10 years', '10+ years'].map((x) => `<label style="min-width:90px"><input type="radio" name="experience" value="${x}"> ${x}</label>`).join('')}</div></label>

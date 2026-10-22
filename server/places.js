@@ -1,0 +1,40 @@
+// Indian cities and towns with their states, for the city type-ahead on forms.
+// The cities in Settings come first; this list fills in the rest so most towns are suggested.
+const BY_STATE = {
+  'Andhra Pradesh': 'Visakhapatnam, Vijayawada, Guntur, Nellore, Kurnool, Tirupati, Rajahmundry, Kakinada, Kadapa, Anantapur, Eluru, Ongole, Machilipatnam',
+  'Arunachal Pradesh': 'Itanagar',
+  'Assam': 'Guwahati, Silchar, Dibrugarh, Jorhat, Nagaon, Tezpur, Tinsukia',
+  'Bihar': 'Patna, Gaya, Bhagalpur, Muzaffarpur, Darbhanga, Purnia, Arrah, Begusarai',
+  'Chandigarh': 'Chandigarh',
+  'Chhattisgarh': 'Raipur, Bhilai, Bilaspur, Korba, Durg, Rajnandgaon',
+  'Delhi': 'Delhi NCR, New Delhi, Delhi',
+  'Goa': 'Panaji, Margao, Vasco da Gama, Mapusa',
+  'Gujarat': 'Ahmedabad, Surat, Vadodara, Rajkot, Bhavnagar, Jamnagar, Junagadh, Gandhinagar, Anand, Navsari, Morbi, Mehsana, Bharuch, Vapi, Gandhidham, Bhuj, Porbandar, Palanpur, Valsad, Nadiad',
+  'Haryana': 'Gurugram, Faridabad, Panipat, Ambala, Karnal, Hisar, Rohtak, Sonipat, Yamunanagar, Panchkula, Rewari, Bhiwani, Sirsa',
+  'Himachal Pradesh': 'Shimla, Dharamshala, Mandi, Solan, Kullu',
+  'Jammu and Kashmir': 'Srinagar, Jammu, Anantnag, Baramulla',
+  'Jharkhand': 'Ranchi, Jamshedpur, Dhanbad, Bokaro, Deoghar, Hazaribagh',
+  'Karnataka': 'Bengaluru, Mysuru, Mangaluru, Hubballi, Dharwad, Belagavi, Kalaburagi, Ballari, Davanagere, Shivamogga, Tumakuru, Udupi, Vijayapura, Hassan',
+  'Kerala': 'Kochi, Thiruvananthapuram, Kozhikode, Thrissur, Kollam, Kannur, Alappuzha, Palakkad, Kottayam, Malappuram, Kasaragod',
+  'Ladakh': 'Leh',
+  'Madhya Pradesh': 'Indore, Bhopal, Jabalpur, Gwalior, Ujjain, Sagar, Ratlam, Satna, Rewa, Dewas, Burhanpur, Khandwa, Chhindwara',
+  'Maharashtra': 'Mumbai, Pune, Nagpur, Thane, Navi Mumbai, Nashik, Aurangabad, Solapur, Kolhapur, Amravati, Nanded, Sangli, Jalgaon, Akola, Latur, Ahmednagar, Dhule, Chandrapur, Kalyan, Vasai-Virar, Bhiwandi, Panvel, Satara, Ratnagiri, Ichalkaranji',
+  'Manipur': 'Imphal',
+  'Meghalaya': 'Shillong',
+  'Mizoram': 'Aizawl',
+  'Nagaland': 'Kohima, Dimapur',
+  'Odisha': 'Bhubaneswar, Cuttack, Rourkela, Berhampur, Sambalpur, Puri, Balasore',
+  'Puducherry': 'Puducherry',
+  'Punjab': 'Ludhiana, Amritsar, Jalandhar, Patiala, Bathinda, Mohali, Hoshiarpur, Pathankot, Moga',
+  'Rajasthan': 'Jaipur, Jodhpur, Udaipur, Kota, Bikaner, Ajmer, Bhilwara, Alwar, Sikar, Bharatpur, Sri Ganganagar, Pali, Barmer, Jhunjhunu, Tonk, Chittorgarh, Nagaur, Beawar',
+  'Sikkim': 'Gangtok',
+  'Tamil Nadu': 'Chennai, Coimbatore, Madurai, Tiruchirappalli, Salem, Tirunelveli, Tiruppur, Erode, Vellore, Thoothukudi, Thanjavur, Dindigul, Hosur, Nagercoil, Kanchipuram, Karur, Kumbakonam',
+  'Telangana': 'Hyderabad, Secunderabad, Warangal, Nizamabad, Karimnagar, Khammam, Ramagundam, Mahbubnagar',
+  'Tripura': 'Agartala',
+  'Uttar Pradesh': 'Lucknow, Kanpur, Agra, Varanasi, Prayagraj, Ghaziabad, Noida, Greater Noida, Meerut, Bareilly, Aligarh, Moradabad, Gorakhpur, Saharanpur, Jhansi, Mathura, Firozabad, Ayodhya, Muzaffarnagar, Shahjahanpur, Rampur',
+  'Uttarakhand': 'Dehradun, Haridwar, Roorkee, Haldwani, Rishikesh, Rudrapur',
+  'West Bengal': 'Kolkata, Howrah, Durgapur, Asansol, Siliguri, Bardhaman, Kharagpur, Haldia, Malda',
+};
+const PLACES = [];
+for (const [state, list] of Object.entries(BY_STATE)) for (const name of list.split(',').map((x) => x.trim())) PLACES.push({ name, state });
+module.exports = { PLACES };

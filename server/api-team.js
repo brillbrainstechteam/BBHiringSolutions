@@ -495,7 +495,7 @@ route('GET', '/api/candidates/:id', T, (ctx) => {
 route('PATCH', '/api/candidates/:id', T, (ctx) => {
   const c = get('SELECT * FROM candidates WHERE id=?', ctx.params.id); if (!c) throw httpError(404, 'Not found');
   if (!R.phoneVisible(ctx.user, c)) throw httpError(403, 'Only the candidate\'s own agency can edit this profile.');
-  const allowed = ['name', 'whatsapp', 'email', 'city', 'work_cities', 'job_wanted', 'exp_total', 'exp_jewellery', 'cur_salary', 'exp_salary', 'notice_days', 'skills', 'current_company', 'looking', 'tieup_id', 'archived', 'recruiter_id'];
+  const allowed = ['name', 'whatsapp', 'email', 'city', 'state', 'work_cities', 'job_wanted', 'exp_total', 'exp_jewellery', 'cur_salary', 'exp_salary', 'notice_days', 'skills', 'current_company', 'looking', 'tieup_id', 'archived', 'recruiter_id'];
   const patch = {}; for (const k of allowed) if (ctx.body[k] !== undefined) patch[k] = ctx.body[k];
   if (patch.whatsapp) { patch.whatsapp = L.digits10(patch.whatsapp); if (!L.validPhone(patch.whatsapp)) throw httpError(400, 'Enter a 10-digit WhatsApp number', 'whatsapp'); }
   if (patch.job_wanted) patch.department = L.deptOf(patch.job_wanted);

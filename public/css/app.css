@@ -401,3 +401,16 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
 @media (max-width: 560px) { .deco-lines { display: none; } }
 /* hidden field that only bots fill in */
 .hp { position: absolute !important; left: -10000px; width: 1px; height: 1px; overflow: hidden; }
+/* city type-ahead */
+.ta-list { position: absolute; left: 0; right: 0; top: calc(100% + 6px); z-index: 70; background: var(--surface); border: 1px solid var(--border); border-radius: 14px; box-shadow: var(--shadow-lg); padding: 6px; max-height: 300px; overflow-y: auto; }
+.ta-item { display: flex; justify-content: space-between; gap: 12px; padding: 9px 11px; border-radius: 10px; cursor: pointer; font-size: 14px; }
+.ta-item span { color: var(--muted); font-size: 12.5px; }
+.ta-item:hover, .ta-item.on { background: var(--mustard-50); }
+.ta-item.on b { color: var(--navy); }
+/* centred form pages: heading on top, the form card centred below */
+.pub-center { flex: 1; width: 100%; max-width: 760px; margin: 0 auto; padding: clamp(28px, 5vw, 56px) 16px 24px; display: flex; flex-direction: column; align-items: center; }
+.pub-center .pub-intro { text-align: center; display: flex; flex-direction: column; align-items: center; margin-bottom: 26px; }
+.pub-center .deco-dots { position: static; margin-bottom: 18px; }
+.pub-center .eyebrow::after { content: ''; width: 34px; height: 1.5px; background: currentColor; }
+.pub-center .pub-intro h1 { margin: 14px 0 0; font-size: clamp(32px, 5vw, 56px); }
+.pub-center .pub-card { max-width: 680px; }

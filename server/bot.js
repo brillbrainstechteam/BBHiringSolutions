@@ -70,7 +70,7 @@ function answer(phone, text, hasMedia) {
   }
   if (step.key === 'name') { if (s.kind === 'client') patch.contact = t; else patch.name = t; }
   if (step.key === 'company') patch.company = t;
-  if (step.key === 'city') { patch.city = t; patch.state = s.kind === 'client' ? L().stateOf(t) : undefined; if (s.kind === 'candidate') patch.work_cities = [t]; }
+  if (step.key === 'city') { patch.city = t; patch.state = L().stateOf(t) || undefined; if (s.kind === 'candidate') patch.work_cities = [t]; }
   if (step.key === 'roles') patch.roles = t;
   if (step.key === 'need') patch.need = t;
   if (step.key === 'experience') patch.exp_total = EXP_YEARS[t];
