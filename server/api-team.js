@@ -1006,6 +1006,13 @@ route('POST', '/api/agencies/:id/toggle', SUPER, (ctx) => {
 const EDITABLE = ['business', 'industries', 'default_industry', 'hidden_jobs', 'departments', 'cities', 'skills', 'client_stages', 'closing_reasons', 'job_close_reasons', 'reopen_reasons', 'lead_sources', 'src_tags', 'fee', 'agency_share_pct', 'gst', 'replacement_days', 'payment_days', 'targets', 'log_deadline', 'quiet', 'daily_limit', 'bulk_budget', 'match', 'languages', 'id_start', 'bill_prefix', 'retention_years', 'team_idle_hours', 'formats', 'auto_rules', 'crm', 'posting_channels', 'gap_targets', 'templates', 'jd_template', 'jd_templates'];
 route('GET', '/api/settings', SUPER, () => { const s = { ...D.settings() }; s.crm = { ...s.crm, token: s.crm.token ? '••••••••' : '', webhook_secret: s.crm.from_env && s.crm.from_env.webhook_secret ? '••••••••' : s.crm.webhook_secret }; return s; });
 route('POST', '/api/health/mail', SUPER, async () => require('./mailbox').check());
+route('POST', '/api/health/email', SUPER, (ctx) => {
+  const M = require('./mailer'); if (!M.configured()) throw httpError(400, 'Outgoing email is not set up yet (SMTP_HOST and SMTP_FROM in .env).');
+  const to = ctx.body.to || D.ENV.notifyEmails[0]; if (!to) throw httpError(400, 'Type an address to send the test to', 'to');
+  const id = M.testEmail(to); if (!id) throw httpError(400, 'That email address does not look right', 'to');
+  return { id, to };
+});
+route('GET', '/api/health/emails', SUPER, () => all('SELECT id, to_addr, subject, kind, status, tries, error, at, sent_at FROM emails ORDER BY id DESC LIMIT 50'));
 route('PUT', '/api/settings/:key', SUPER, (ctx) => {
   const k = ctx.params.key; if (!EDITABLE.includes(k)) throw httpError(400, 'This setting cannot be changed here.');
   const old = D.settings()[k]; let v = ctx.body.value;
@@ -1078,7 +1085,7 @@ route('GET', '/api/health', SUPER, () => {
   let bytes = 0; for (const f of fs.readdirSync(path.join(D.DATA_DIR, 'files'))) bytes += fs.statSync(path.join(D.DATA_DIR, 'files', f)).size;
   const dbBytes = fs.statSync(path.join(D.DATA_DIR, 'bbhs.db')).size;
   return { ...h, failed: all("SELECT * FROM messages WHERE status='failed' ORDER BY at DESC LIMIT 50"), scheduled: get("SELECT COUNT(*) c FROM messages WHERE status='scheduled'").c, files_mb: (bytes / 1048576).toFixed(2), db_mb: (dbBytes / 1048576).toFixed(2), backups: fs.readdirSync(path.join(D.DATA_DIR, 'backups')).sort().reverse().slice(0, 30), crm_enabled: D.settings().crm.enabled,
-    setup: { copy: D.ENV.name, virus_scanner: D.ENV.clamd.host ? `ClamAV at ${D.ENV.clamd.host}:${D.ENV.clamd.port}` : 'Not set — only the EICAR test file is blocked (set CLAMD_HOST)', alerts: D.ENV.alertWebhook ? 'Alert webhook set' : 'Not set (ALERT_WEBHOOK_URL)', offsite_backup: D.ENV.backupDir || 'Not set (BACKUP_DIR)', email_inbox: D.ENV.imap.host ? `${D.ENV.imap.user} on ${D.ENV.imap.host}` : 'Not set (IMAP_HOST, IMAP_USER, IMAP_PASS)' } };
+    setup: { copy: D.ENV.name, virus_scanner: D.ENV.clamd.host ? `ClamAV at ${D.ENV.clamd.host}:${D.ENV.clamd.port}` : 'Not set — only the EICAR test file is blocked (set CLAMD_HOST)', alerts: D.ENV.alertWebhook ? 'Alert webhook set' : 'Not set (ALERT_WEBHOOK_URL)', offsite_backup: D.ENV.backupDir || 'Not set (BACKUP_DIR)', email_inbox: D.ENV.imap.host ? `${D.ENV.imap.user} on ${D.ENV.imap.host}` : 'Not set (IMAP_HOST, IMAP_USER, IMAP_PASS)', outgoing_email: D.ENV.smtp.host ? `${D.ENV.smtp.from} via ${D.ENV.smtp.host}:${D.ENV.smtp.port}` : 'Not set (SMTP_HOST, SMTP_FROM, SMTP_USER, SMTP_PASS)', notify_emails: D.ENV.notifyEmails.join(', ') || 'Not set (NOTIFY_EMAILS)', whatsapp: D.settings().crm.enabled ? `Connected via ${D.settings().crm.send_url}` : 'Not connected (CRM_ENABLED, CRM_SEND_URL, CRM_TOKEN, CRM_WEBHOOK_SECRET)' } };
 });
 route('POST', '/api/health/backup', SUPER, (ctx) => { const f = D.backup(); D.history(ctx.actor.label, 'backup'); return { file: require('path').basename(f) }; });
 route('POST', '/api/health/restore-test', SUPER, (ctx) => { const r = D.testRestore(); D.setHealth('last_restore_test', `${now()} ${r.ok ? 'OK' : 'failed'}`); D.history(ctx.actor.label, 'restore test', null, null, null, JSON.stringify(r)); return r; });

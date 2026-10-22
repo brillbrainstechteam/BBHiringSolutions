@@ -166,6 +166,7 @@ async function intakeEmail({ fromName, fromEmail, subject, text, attachments }) 
       first = false;
     } catch (e) { D.insert('notes', { record_id: id, text: `Attachment ${a.name} not saved: ${e.message}`, author: 'Email inbox', at: D.now() }); }
   }
+  if (r.isNew) require('./mailer').newLead('candidate', D.get('SELECT * FROM candidates WHERE id=?', id));
   return { id, isNew: r.isNew, found: { name: !!name, phone: !!phone, email: !!email, city, job } };
 }
 

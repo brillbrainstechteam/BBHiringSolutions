@@ -22,6 +22,7 @@
     for (const [name, ok, msg] of rules) if (!ok) { const e = new Error(msg); e.field = name; BB.showErr(form, e); return false; }
     return true;
   }
+  const emailOk = (v) => !v || /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(v);
   const phoneOk = (v) => /^[6-9]\d{9}$/.test(BB.spokenToDigits(v) || v.replace(/\D/g, ''));
 
   // ---------- 6.1 client form ----------
@@ -31,7 +32,7 @@
       <form class="stack" novalidate data-label>
         ${BB.voiceSwitch()}
         <div class="grid g2">${field({ name: 'contact', label: 'Your name' })}${field({ name: 'company', label: 'Company name' })}</div>
-        ${field({ name: 'whatsapp', label: 'WhatsApp number', type: 'tel', phone: true, placeholder: '10 digits', attrs: 'inputmode="numeric" maxlength="14"' })}
+        <div class="grid g2">${field({ name: 'whatsapp', label: 'WhatsApp number', type: 'tel', phone: true, placeholder: '10 digits', attrs: 'inputmode="numeric" maxlength="14"' })}${field({ name: 'email', label: 'Email', type: 'email', opt: true, placeholder: 'For a confirmation email', attrs: 'autocomplete="email"' })}</div>
         <div class="grid g2">${field({ name: 'city', label: 'City', list: 'cities', placeholder: 'Start typing your city…' })}${field({ name: 'state', label: 'State', placeholder: 'Fills in from the city', voice: false })}</div>
         ${field({ name: 'business_type', label: 'Your business', type: 'choice', options: ['Showroom B2C', 'Manufacturer B2B', 'Both'] })}
         ${field({ name: 'need', label: 'When do you need staff?', type: 'choice', options: ['Hiring now', 'Hiring soon', 'Just exploring'] })}
@@ -45,7 +46,7 @@
     form.onsubmit = (e) => {
       e.preventDefault();
       const v = BB.formValues(form); v.whatsapp = BB.spokenToDigits(v.whatsapp) || v.whatsapp.replace(/\D/g, '');
-      if (!check(form, [['contact', v.contact, 'Please enter your name'], ['company', v.company, 'Please enter your company name'], ['whatsapp', phoneOk(v.whatsapp), 'Enter a 10-digit WhatsApp number starting with 6, 7, 8 or 9'], ['city', v.city, 'Please enter your city'], ['business_type', v.business_type, 'Pick your type of business'], ['need', v.need, 'Tell us when you need staff']])) return;
+      if (!check(form, [['contact', v.contact, 'Please enter your name'], ['company', v.company, 'Please enter your company name'], ['whatsapp', phoneOk(v.whatsapp), 'Enter a 10-digit WhatsApp number starting with 6, 7, 8 or 9'], ['email', emailOk(v.email), 'Enter a valid email, or leave it empty'], ['city', v.city, 'Please enter your city'], ['business_type', v.business_type, 'Pick your type of business'], ['need', v.need, 'Tell us when you need staff']])) return;
       submit(form, '/api/public/hire', { ...v, src: q.src }, (res) => {
         BB.setToken('client', res.token);
         $('.pub-card').innerHTML = `<div class="thanks"><h2>Thank you!${res.isNew ? '' : ' We added this to your request.'}</h2><div class="muted">Your client ID</div><div class="big-id">${esc(res.id)}</div>
@@ -64,6 +65,7 @@
         ${q.job ? `<div class="notice gold small">You are applying for job <b>${esc(q.job.toUpperCase())}</b>. We will also show you other matching jobs.</div>` : ''}
         ${q.ref ? `<div class="notice small">Referred by a friend (${esc(q.ref.toUpperCase())}).</div>` : ''}
         <div class="grid g2">${field({ name: 'name', label: 'Your name' })}${field({ name: 'whatsapp', label: 'WhatsApp number', type: 'tel', phone: true, placeholder: '10 digits', attrs: 'inputmode="numeric" maxlength="14"' })}</div>
+        ${field({ name: 'email', label: 'Email', type: 'email', opt: true, placeholder: 'For a confirmation email', attrs: 'autocomplete="email"' })}
         <div class="grid g2">${field({ name: 'city', label: 'City you want to work in', list: 'cities', placeholder: 'Start typing your city…' })}${field({ name: 'state', label: 'State', placeholder: 'Fills in from the city', voice: false })}</div>
         <label class="field" data-f="job_wanted"><span class="lab">Job you want</span><select name="job_wanted">${BB.jobOptions('', true, q.ind)}</select></label>
         <div class="hidden" data-other>${field({ name: 'job_other', label: 'Type the job you want' })}</div>
@@ -79,7 +81,7 @@
     form.onsubmit = (e) => {
       e.preventDefault();
       const v = BB.formValues(form); v.whatsapp = BB.spokenToDigits(v.whatsapp) || v.whatsapp.replace(/\D/g, '');
-      if (!check(form, [['name', v.name, 'Please enter your name'], ['whatsapp', phoneOk(v.whatsapp), 'Enter a 10-digit WhatsApp number starting with 6, 7, 8 or 9'], ['city', v.city, 'Please enter the city you want to work in'], ['job_wanted', v.job_wanted, 'Pick the job you want'], ['job_other', v.job_wanted !== 'Other' || v.job_other, 'Type the job you want']])) return;
+      if (!check(form, [['name', v.name, 'Please enter your name'], ['whatsapp', phoneOk(v.whatsapp), 'Enter a 10-digit WhatsApp number starting with 6, 7, 8 or 9'], ['email', emailOk(v.email), 'Enter a valid email, or leave it empty'], ['city', v.city, 'Please enter the city you want to work in'], ['job_wanted', v.job_wanted, 'Pick the job you want'], ['job_other', v.job_wanted !== 'Other' || v.job_other, 'Type the job you want']])) return;
       submit(form, '/api/public/apply', { ...v, cv, src: q.src, job: q.job, ref: q.ref }, (res) => {
         BB.setToken('candidate', res.token);
         $('.pub-card').innerHTML = `<div class="thanks"><h2>Thank you, ${esc(v.name.split(' ')[0])}!</h2><div class="muted">Your candidate ID</div><div class="big-id">${esc(res.id)}</div>

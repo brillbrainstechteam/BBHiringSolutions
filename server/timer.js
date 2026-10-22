@@ -101,6 +101,8 @@ function runTimer() {
   try { D.backup(); D.setHealth('last_backup', now()); } catch (e) { require('./alerts').devAlert('Backup failed', e.message); }
   // Monthly summary to each client on the 1st.
   const monthly = require('./monthly').runMonthly(); if (monthly) done.monthly_summary = monthly;
+  // Outgoing emails waiting to be sent (or retried).
+  const mails = require('./mailer').retryQueued(); if (mails) done.emails_retried = mails;
   // Email inbox door: unread CV emails become candidate leads.
   if (D.ENV.imap.host) require('./mailbox').check().catch((e) => require('./alerts').devAlert('Email inbox check failed', e.message));
   D.setHealth('timer_last_run', now());

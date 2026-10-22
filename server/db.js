@@ -49,6 +49,7 @@ CREATE TABLE IF NOT EXISTS data_requests (id INTEGER PRIMARY KEY AUTOINCREMENT, 
 CREATE TABLE IF NOT EXISTS health (key TEXT PRIMARY KEY, value TEXT);
 CREATE TABLE IF NOT EXISTS bot_sessions (phone TEXT PRIMARY KEY, kind TEXT, person_id TEXT, step TEXT, data TEXT DEFAULT '{}', updated_at TEXT);
 CREATE TABLE IF NOT EXISTS mail_seen (uid TEXT PRIMARY KEY, at TEXT);
+CREATE TABLE IF NOT EXISTS emails (id INTEGER PRIMARY KEY AUTOINCREMENT, to_addr TEXT, subject TEXT, kind TEXT, record_id TEXT, text TEXT, html TEXT, status TEXT DEFAULT 'queued', tries INTEGER DEFAULT 0, error TEXT, at TEXT, sent_at TEXT);
 CREATE TABLE IF NOT EXISTS history (id INTEGER PRIMARY KEY AUTOINCREMENT, at TEXT, who TEXT, action TEXT, record_id TEXT, field TEXT, old TEXT, new TEXT, ids TEXT, ip TEXT);
 CREATE TRIGGER IF NOT EXISTS history_no_update BEFORE UPDATE ON history BEGIN SELECT RAISE(ABORT, 'history cannot be edited'); END;
 CREATE TRIGGER IF NOT EXISTS history_no_delete BEFORE DELETE ON history BEGIN SELECT RAISE(ABORT, 'history cannot be deleted'); END;

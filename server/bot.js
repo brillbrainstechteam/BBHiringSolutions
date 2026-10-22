@@ -90,6 +90,7 @@ function answer(phone, text, hasMedia) {
   const rec = get(`SELECT * FROM ${table} WHERE id=?`, s.person_id);
   if (s.kind === 'client') say('client', s.person_id, `Thank you, ${rec.contact}! Your client ID is ${rec.id}. Our team will call you soon. Your account: ${L().link('my-account')}`);
   else say('candidate', s.person_id, `Thank you, ${rec.name}! Your candidate ID is ${rec.id}. See matching jobs and your profile: ${L().link('my-profile')}`);
+  require('./mailer').newLead(s.kind, rec);
   return 'Bot: all details saved';
 }
 
