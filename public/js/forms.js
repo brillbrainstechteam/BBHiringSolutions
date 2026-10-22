@@ -17,9 +17,10 @@
   }
 
   // The form card. Shared fields stay put when the toggle switches, so nothing typed is lost.
-  function formHtml(mode, q) {
-    return `<div class="seg mode-seg" role="tablist" aria-label="What do you want to do?">${Object.entries(MODES).map(([k, m]) => `<button type="button" role="tab" data-mode="${k}" class="${k === mode ? 'on' : ''}" aria-selected="${k === mode}">${m.label}</button>`).join('')}</div>
-      <form class="stack" novalidate style="margin-top:18px">
+  // single: the separate client (/hire) or candidate (/apply) form, with no toggle.
+  function formHtml(mode, q, single) {
+    return `${single ? `<div class="card-title">${mode === 'hire' ? 'Tell us what you need' : 'Share a few details'}</div><p class="muted small" style="margin:0 0 14px">Takes a minute. Tap the mic to speak in English or Hindi.</p>` : `<div class="seg mode-seg" role="tablist" aria-label="What do you want to do?">${Object.entries(MODES).map(([k, m]) => `<button type="button" role="tab" data-mode="${k}" class="${k === mode ? 'on' : ''}" aria-selected="${k === mode}">${m.label}</button>`).join('')}</div>`}
+      <form class="stack" novalidate${single ? '' : ' style="margin-top:18px"'}>
         ${BB.voiceSwitch()}
         ${q.job ? `<div class="notice gold small" data-only="job">You are applying for job <b>${esc(String(q.job).toUpperCase())}</b>. We will also show you other matching jobs.</div>` : ''}
         ${q.ref ? `<div class="notice small" data-only="job">Referred by a friend (${esc(String(q.ref).toUpperCase())}).</div>` : ''}
@@ -43,7 +44,7 @@
   }
 
   // Wires a rendered form card. onMode lets the page change its heading with the toggle.
-  function mountForm(card, startMode, q, onMode) {
+  function mountForm(card, startMode, q, onMode, single) {
     let mode = startMode; let cv = null;
     const form = $('form', card);
     const apply = () => {
@@ -74,7 +75,7 @@
       const btn = $('[data-send]', card); btn.disabled = true; btn.textContent = 'Sending…';
       try {
         const res = await BB.post(mode === 'hire' ? '/api/public/hire' : '/api/public/apply', body, { kind: null });
-        showVerify(card, mode, res, v.name, () => { card.innerHTML = formHtml(mode, q); restore(card, v); mountForm(card, mode, q, onMode); });
+        showVerify(card, mode, res, v.name, () => { card.innerHTML = formHtml(mode, q, single); restore(card, v); mountForm(card, mode, q, onMode, single); });
       } catch (er) {
         // Server field names differ for the hiring side; point the error at the visible field.
         if (er.field === 'contact') er.field = 'name'; if (er.field === 'email' && mode === 'hire') er.field = 'email_hire';
@@ -121,17 +122,12 @@
     };
   }
 
-  // /hire and /apply: centred page, heading follows the toggle, no menus.
-  function page(startMode, r) {
-    const q = r.q; const m = MODES[startMode];
+  // /hire (clients) and /apply (candidates): two separate forms, each on its own link, no menus and no toggle.
+  function page(mode, r) {
+    const q = r.q; const m = MODES[mode];
     $('#app').innerHTML = BB.split({ top: BB.publicTop(m.top), eyebrow: m.eyebrow, title: m.title, centered: true, card: '<div data-leadcard></div>' });
-    const card = $('[data-leadcard]'); card.innerHTML = formHtml(startMode, q);
-    mountForm(card, startMode, q, (mode) => {
-      const mm = MODES[mode]; const intro = $('.pub-intro');
-      $('.eyebrow', intro).textContent = mm.eyebrow; $('h1', intro).innerHTML = mm.title;
-      // Keep the address in step with the toggle, so a copied link opens the same side.
-      history.replaceState(null, '', `${location.pathname}#${mode === 'hire' ? 'hire' : 'apply'}${Object.keys(q).length ? '?' + new URLSearchParams(q) : ''}`);
-    });
+    const card = $('[data-leadcard]'); card.innerHTML = formHtml(mode, q, true);
+    mountForm(card, mode, q, null, true);
   }
   BB.views.hire = (r) => page('hire', r);
   BB.views.apply = (r) => page('job', r);
