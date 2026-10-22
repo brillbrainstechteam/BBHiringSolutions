@@ -5,8 +5,8 @@ const L = require('./logic');
 const FIELDS = {
   candidates: [
     ['name', 'Candidate name', ['candidate name', 'name', 'full name']], ['whatsapp', 'WhatsApp / mobile', ['mobile', 'phone', 'whatsapp', 'contact', 'mobile no']], ['email', 'Email', ['email', 'e-mail', 'mail']],
-    ['city', 'City / location', ['location', 'city', 'current location']], ['job_wanted', 'Job wanted', ['job wanted', 'desired role', 'role', 'designation']], ['current_company', 'Current company', ['current company', 'company']],
-    ['cur_salary', 'Current CTC', ['current ctc', 'current salary', 'ctc']], ['exp_salary', 'Expected CTC', ['expected ctc', 'expected salary']], ['notice_days', 'Notice period', ['notice period', 'notice']],
+    ['city', 'City / location', ['location', 'city', 'current location']], ['job_wanted', 'Job wanted', ['job wanted', 'desired role', 'role', 'designation']], ['current_company', 'Current company', ['current company', 'current / latest', 'company']],
+    ['cur_salary', 'Current CTC', ['current ctc', 'current salary', 'displayed salary', 'ctc']], ['exp_salary', 'Expected CTC', ['expected ctc', 'expected salary']], ['notice_days', 'Notice period', ['notice period', 'notice']],
     ['exp_total', 'Experience', ['experience years', 'experience', 'exp', 'total experience']], ['source', 'Source', ['source']], ['cv_file', 'Resume / CV link', ['resume', 'cv', 'resume / cv']],
     ['recruiter', 'Recruiter', ['recruiter']], ['created_at', 'Date added', ['date added', 'date']], ['client_name', 'Client name', ['client name', 'client']], ['job_code', 'Job code', ['job code', 'code']],
     ['position', 'Position title', ['position title', 'position']], ['status', 'Status', ['status']], ['remarks', 'Remarks', ['remarks', 'remark', 'notes']],
@@ -105,7 +105,7 @@ function runImport(kind, rows, map, opts) {
         const rec = userByName(val(r, 'recruiter'));
         const d = {
           name: val(r, 'name'), whatsapp: L.digits10(val(r, 'whatsapp')), email: val(r, 'email'), city: val(r, 'city'), job_wanted: matchJobTitle(val(r, 'job_wanted') || val(r, 'position')),
-          current_company: val(r, 'current_company'), cur_salary: ctc.value, exp_salary: ectc.value, notice_days: nt.value, exp_total: cleanExp(val(r, 'exp_total')), cv_file: val(r, 'cv_file') || null,
+          current_company: val(r, 'current_company'), cur_salary: ctc.value, exp_salary: ectc.value, notice_days: nt.value, exp_total: cleanExp(val(r, 'exp_total')), cv_file: /^https?:\/\//i.test(val(r, 'cv_file')) ? val(r, 'cv_file') : null, // a link only, not a Yes/No column
           created_at: cleanDate(val(r, 'created_at')) || undefined, tieup_id: opts.tieup_id || null,
         };
         if (!d.name) throw new Error('Name missing');

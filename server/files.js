@@ -93,13 +93,15 @@ function unzip(buf) {
   }
   return out;
 }
+// Some exporters write prefixed tags (<x:row>, <x:c>) instead of Excel's plain ones; drop the prefix.
+const unprefix = (xml) => xml.replace(/<(\/?)[A-Za-z][\w.-]*:/g, '<$1');
 const xmlText = (s) => s.replace(/<[^>]+>/g, '').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, '&');
 function parseXLSX(buf) {
   const z = unzip(buf);
   const shared = [];
-  if (z['xl/sharedStrings.xml']) for (const m of z['xl/sharedStrings.xml'].toString().matchAll(/<si>([\s\S]*?)<\/si>/g)) shared.push(xmlText(m[1].replace(/<rPh[\s\S]*?<\/rPh>/g, '')));
+  if (z['xl/sharedStrings.xml']) for (const m of unprefix(z['xl/sharedStrings.xml'].toString()).matchAll(/<si>([\s\S]*?)<\/si>/g)) shared.push(xmlText(m[1].replace(/<rPh[\s\S]*?<\/rPh>/g, '')));
   const sheetName = Object.keys(z).filter((n) => /^xl\/worksheets\/sheet\d+\.xml$/.test(n)).sort()[0];
-  const xml = z[sheetName].toString();
+  const xml = unprefix(z[sheetName].toString());
   const rows = [];
   for (const rm of xml.matchAll(/<row[^>]*>([\s\S]*?)<\/row>/g)) {
     const row = [];
