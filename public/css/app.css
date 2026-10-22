@@ -264,7 +264,6 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
 /* ---------- team portal ---------- */
 .shell { display: grid; grid-template-columns: 252px 1fr; min-height: 100vh; }
 .side { background: var(--side); color: var(--side-ink); padding: 18px 12px; position: sticky; top: 0; height: 100vh; overflow-y: auto; display: flex; flex-direction: column; scrollbar-width: thin; }
-.side::after { content: ''; position: absolute; left: -60px; bottom: -60px; width: 220px; height: 220px; border-radius: 50%; border: 34px solid rgba(209, 155, 18, .07); pointer-events: none; }
 .side .brand { padding: 2px 8px 20px; color: #fff; }
 .side .brand img { width: 36px; height: 36px; } .side .brand .bt b, .side .brand .bt span { font-size: 16px; }
 .nav a { display: flex; align-items: center; gap: 11px; padding: 9px 12px; border-radius: 12px; color: var(--side-ink); font-weight: 500; font-size: 13.5px; text-decoration: none; margin-bottom: 2px; transition: background .15s, color .15s; }
@@ -298,7 +297,7 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
 .help-btn { width: 24px; height: 24px; border-radius: 50%; border: 1.5px solid var(--border-strong); background: var(--surface); color: var(--muted); font-weight: 700; font-size: 12px; cursor: pointer; }
 .help-btn:hover { border-color: var(--mustard); color: var(--mustard-600); }
 .filters { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 14px; }
-.filters input, .filters select { width: auto; min-width: 150px; padding: 8px 12px; font-size: 13px; border-radius: 999px; }
+.filters input:not([type=checkbox]):not([type=radio]), .filters select { width: auto; min-width: 150px; padding: 8px 12px; font-size: 13px; border-radius: 999px; }
 .attn { display: flex; gap: 12px; align-items: center; padding: 11px 18px; border-bottom: 1px solid var(--border); transition: background .12s; }
 .attn:hover { background: var(--sky-50); }
 .attn:last-child { border-bottom: 0; } .attn .k { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; min-width: 150px; display: flex; align-items: center; gap: 7px; }
@@ -386,7 +385,7 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
 @media (max-width: 560px) {
   .g2 { grid-template-columns: 1fr; } .pub-card { padding: 20px 16px; }
   .brand .bt small { display: none; } .brand .bt b, .brand .bt span { font-size: 15px; }
-  .filters input, .filters select { min-width: 0; flex: 1 1 140px; }
+  .filters input:not([type=checkbox]):not([type=radio]), .filters select { min-width: 0; flex: 1 1 140px; }
   .attn { flex-wrap: wrap; } .attn .k { min-width: 0; width: 100%; }
   .modal-back { padding: 10px; } .hide-sm { display: none; }
   .perks { display: none; }
@@ -414,3 +413,8 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
 .pub-center .eyebrow::after { content: ''; width: 34px; height: 1.5px; background: currentColor; }
 .pub-center .pub-intro h1 { margin: 14px 0 0; font-size: clamp(32px, 5vw, 56px); }
 .pub-center .pub-card { max-width: 680px; }
+
+/* short cells that should not wrap ("2 days ago"), compact row actions */
+.nw { white-space: nowrap; }
+.tbl select.mini { width: auto; max-width: 190px; padding: 6px 30px 6px 10px; font-size: 12.5px; border-radius: 999px; }
+.filters label.row { gap: 8px; font-weight: 500; }
