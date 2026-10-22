@@ -74,6 +74,8 @@ route('POST', '/api/team/password', { auth: 'team' }, (ctx) => {
 // ---------- one-time codes for clients and candidates ----------
 // Codes appear on screen only on the test copy while WhatsApp is not connected — never on the live copy.
 const showCode = () => !D.settings().crm.enabled && D.ENV.name !== 'live';
+// Codes can reach the person: WhatsApp is connected, or this is the test copy (code on screen).
+const canSendCodes = () => D.settings().crm.enabled || showCode();
 function issueCode(phone, purpose) {
   const hourAgo = new Date(Date.now() - 3600000).toISOString();
   if (get('SELECT COUNT(*) c FROM otps WHERE phone=? AND created_at>?', phone, hourAgo).c >= 5) throw httpError(429, 'Too many codes asked for this number. Try again in an hour.');
@@ -142,8 +144,8 @@ route('POST', '/api/public/hire', { rate: { key: 'form', max: 10, minutes: 60 } 
   const mailer = require('./mailer');
   if (r.isNew) mailer.newLead('client', r.client);
   mailer.confirmToPerson('client', r.client);
-  openedAccount('client', r.client.id);
-  return { id: r.client.id, isNew: r.isNew, token: newSession('client', r.client.id) };
+  // No session here: the account opens only after the WhatsApp code (someone could type another person's number).
+  return { id: r.client.id, isNew: r.isNew, phone: r.client.whatsapp, can_verify: canSendCodes() };
 });
 route('POST', '/api/public/apply', { rate: { key: 'form', max: 10, minutes: 60 } }, async (ctx) => {
   const b = ctx.body;
@@ -163,8 +165,7 @@ route('POST', '/api/public/apply', { rate: { key: 'form', max: 10, minutes: 60 }
   { const mailer = require('./mailer'); const rec = get('SELECT * FROM candidates WHERE id=?', r.candidate.id); if (r.isNew) mailer.newLead('candidate', rec); mailer.confirmToPerson('candidate', rec); }
   if (refBy && r.isNew) insert('notes', { record_id: r.candidate.id, text: `Referred by ${refBy}`, author: 'Form', at: now() });
   if (b.cv && b.cv.base64) { try { const f = await F.saveFile({ recordId: r.candidate.id, type: 'cv', name: b.cv.name, base64: b.cv.base64, by: 'Candidate form' }); update('candidates', r.candidate.id, { cv_file: String(f.id) }); } catch (e) { insert('notes', { record_id: r.candidate.id, text: `CV not saved: ${e.message}`, author: 'Form', at: now() }); } }
-  openedAccount('candidate', r.candidate.id);
-  return { id: r.candidate.id, isNew: r.isNew, token: newSession('candidate', r.candidate.id) };
+  return { id: r.candidate.id, isNew: r.isNew, phone: r.candidate.whatsapp, can_verify: canSendCodes() };
 });
 
 // ---------- client account (6.3) ----------

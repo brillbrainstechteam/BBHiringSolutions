@@ -418,3 +418,21 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
 .nw { white-space: nowrap; }
 .tbl select.mini { width: auto; max-width: 190px; padding: 6px 30px 6px 10px; font-size: 12.5px; border-radius: 999px; }
 .filters label.row { gap: 8px; font-weight: 500; }
+/* one form for both doors */
+.mode-seg { display: flex; width: 100%; padding: 4px; background: var(--surface-2); }
+.mode-seg button { flex: 1; padding: 11px 12px; font: 700 14.5px var(--display); letter-spacing: -.01em; }
+.mode-seg button.on { background: var(--navy); color: #fff; box-shadow: 0 4px 14px rgba(16, 26, 58, .18); }
+.verify { margin-top: 18px; padding: 16px; border: 1.5px solid var(--mustard-300); background: var(--mustard-50); border-radius: 16px; }
+.phone-line { display: flex; align-items: baseline; gap: 10px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; }
+/* landing: headline left, the form right */
+.hero { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; }
+.hero .pub-intro { padding-top: 24px; }
+.hero .pub-card { max-width: 600px; justify-self: end; }
+.trust { list-style: none; padding: 0; margin: 26px 0 0; display: grid; gap: 10px; max-width: 520px; }
+.trust li { padding-left: 30px; position: relative; color: var(--muted); font-size: 14px; }
+.trust li::before { content: '✓'; position: absolute; left: 0; top: 0; width: 20px; height: 20px; border-radius: 6px; background: var(--navy); color: var(--mustard-300); font-size: 12px; display: flex; align-items: center; justify-content: center; font-weight: 700; }
+.trust li b { color: var(--ink); margin-right: 4px; }
+.signin-row { display: flex; gap: 22px; justify-content: center; align-items: center; flex-wrap: wrap; padding: 6px 16px 10px; font-size: 14px; }
+.signin-row a { font-weight: 700; color: var(--navy-700); }
+@media (max-width: 1080px) { .hero .pub-card { justify-self: stretch; max-width: none; } .hero .pub-intro { padding-top: 0; } }
+@media (max-width: 560px) { .trust { display: none; } .mode-seg button { font-size: 13px; padding: 10px 6px; } }

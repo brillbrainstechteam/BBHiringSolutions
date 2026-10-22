@@ -360,30 +360,20 @@ BB.deco = () => `<div class="deco-dots" aria-hidden="true"><i></i><i></i><i></i>
 BB.split = ({ top, eyebrow, title, lead, perks, card, foot, centered }) => centered
   ? `<div class="pub">${top}<main class="pub-center"><section class="pub-intro"><div class="deco-dots" aria-hidden="true"><i></i><i></i><i></i><i></i></div><span class="eyebrow">${esc(eyebrow)}</span><h1>${title}</h1></section><section class="card pub-card">${card}</section></main><div class="pub-foot">${foot || `© ${new Date().getFullYear()} ${esc(BB.boot.business.name)} · Your details are kept safe and used only for hiring.`}</div></div>`
   : `<div class="pub">${top}<main class="pub-split"><section class="pub-intro">${BB.deco()}<span class="eyebrow">${esc(eyebrow)}</span><h1>${title}</h1>${lead ? `<p class="lead">${lead}</p>` : ''}${perks && perks.length ? `<ul class="perks">${perks.map(([ic, b, s]) => `<li><span class="pi">${ic}</span><div><b>${esc(b)}</b><span>${esc(s)}</span></div></li>`).join('')}</ul>` : ''}</section><section class="card pub-card">${card}</section></main><div class="pub-foot">${foot || `© ${new Date().getFullYear()} ${esc(BB.boot.business.name)} · Your details are kept safe and used only for hiring.`}</div></div>`;
-BB.views.landing = () => {
-  const doors = [
-    ['hire', 'brief', 'I want to hire', 'Tell us the staff you need. We send matching profiles.'],
-    ['apply', 'users', 'I want a job', 'Showrooms, workshops and offices are hiring near you.'],
-    ['my-account', 'building', 'Client account', 'Job openings, candidates, interviews and bills.'],
-    ['my-profile', 'home', 'Candidate profile', 'Your applications, interviews and offers.'],
-    ['team', 'key', 'Team portal', 'BrillBrains and partner agencies.'],
-  ];
+BB.views.landing = (r) => {
   $('#app').innerHTML = `<div class="pub">${BB.publicTop('', true)}
     <main class="hero">
       <section class="pub-intro">${BB.deco()}
         <span class="eyebrow">${esc(BB.boot.business.name)}</span>
         <h1>Bringing the right <em>people</em> and companies together</h1>
-        <p class="lead">Recruitment for the jewellery trade — from the showroom floor to the karigar's bench. One place for businesses that hire, people who want work, and the teams that bring them together.</p>
-        <div class="row" style="gap:12px"><a class="btn gold lg" href="#hire">I want to hire</a><a class="btn primary lg" href="#apply">I want a job</a></div>
+        <p class="lead">Recruitment for the jewellery trade — from the showroom floor to the karigar's bench. Tell us who you need, or the job you want, and our recruiters take it from there.</p>
+        <ul class="trust"><li><b>Screened</b> every candidate is called and interviewed first</li><li><b>On WhatsApp</b> interviews, offers and updates on your phone</li><li><b>Free for candidates</b> employers pay only when someone joins</li></ul>
       </section>
-      <div class="hero-art" aria-hidden="true"><div class="orb"></div>
-        <div class="float f1"><span class="av" style="background:var(--navy)">SE</span><div><b>Sales Executive</b><span>Mumbai · 6 profiles sent</span></div></div>
-        <div class="float f2"><span class="av" style="background:var(--mustard)">✓</span><div><b>Offer accepted</b><span>Joins on Monday</span></div></div>
-        <div class="float f3"><span class="av" style="background:var(--royal)">92</span><div><b>Strong match</b><span>Goldsmith · Jaipur</span></div></div>
-      </div>
+      <section class="card pub-card" data-leadcard></section>
     </main>
-    <section class="doors">${doors.map(([h, ic, t, s]) => `<a class="card door" href="#${h}"><span class="ic">${icon(ic)}</span><b>${t}</b><span class="muted small">${s}</span><span class="go">Open →</span></a>`).join('')}</section>
+    <div class="signin-row"><span class="muted">Already registered?</span><a href="#my-account">Client login</a><a href="#my-profile">Candidate login</a><a href="#team">Team login</a></div>
     <div class="pub-foot">© ${new Date().getFullYear()} ${esc(BB.boot.business.name)}</div></div>`;
+  BB.leadFormCard($('[data-leadcard]'), 'job', (r && r.q) || {});
 };
 BB.start = async () => {
   try { BB.boot = await (await fetch('/api/bootstrap')).json(); } catch { $('#app').innerHTML = '<div class="boot">Cannot reach the server.</div>'; return; }
