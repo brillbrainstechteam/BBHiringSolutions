@@ -622,3 +622,19 @@ a.disabled { pointer-events: none; color: var(--faint); }
 .cp-iv .row { align-items: center; }
 .cp-iv .row > .btn, .cp-iv .row > .cp-ok, .cp-iv .row > .badge { height: 32px; box-sizing: border-box; display: inline-flex; align-items: center; padding-top: 0; padding-bottom: 0; }
 .cp-ok { font: 600 13px var(--font); color: var(--green); background: var(--green-50); border: 1px solid color-mix(in srgb, var(--green) 35%, transparent); border-radius: 999px; padding: 0 14px; }
+/* candidate header: one line of details, a quiet status, a slim strength ring; Log out in the top bar */
+.cp-meta { display: flex; flex-wrap: wrap; align-items: center; margin-top: 8px; color: var(--side-ink); font-size: 14.5px; }
+.cp-meta > span + span::before { content: '·'; margin: 0 9px; color: var(--side-muted); }
+.cp-meta .mono { color: var(--mustard-300); font-size: 13.5px; }
+.cp-hero .cp-status { margin-top: 10px; height: auto; padding: 0 0 0 16px; border: 0; background: none; font: 600 13px var(--font); color: #8EE0B4; cursor: pointer; }
+.cp-hero .cp-status::before { left: 0; }
+.cp-hero .cp-status:hover { text-decoration: underline; }
+.cp-hero .cp-status.off { color: var(--side-muted); background: none; }
+.cp-hero .cp-strength { background: none; border: 0; padding: 0; gap: 12px; color: var(--side-muted); font-size: 12.5px; line-height: 1.35; }
+.cp-hero .cp-strength b { color: #fff; font-size: 14px; }
+.cp-hero .cp-strength:hover b { text-decoration: underline; }
+.cp-hero .cp-strength .cp-ring span { font-size: 14px; }
+.pub-top .top-out { border: 1.5px solid rgba(255, 255, 255, .28); color: #fff; background: transparent; }
+.pub-top .top-out:hover { background: rgba(255, 255, 255, .1); }
+.pub-top .help + .top-out { margin-left: 0; }
+@media (max-width: 560px) { .cp-meta { font-size: 13px; } .cp-hero .cp-strength > span:last-child { display: none; } .pub-top .top-out { padding: 5px 10px; } }
