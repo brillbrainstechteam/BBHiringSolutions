@@ -797,3 +797,12 @@ label.field > span.lab:has(.pw-show) { display: flex; justify-content: space-bet
 /* Filter dropdowns fit the text they show (not their longest option), with a small gap before the arrow. */
 .filters select { field-sizing: content; min-width: 0; max-width: 220px; padding-right: 30px; background-position: right 10px center; }
 .filters input[data-q] { min-width: 200px; }
+
+/* Client · Candidates: stage chips and a job picker above the list; closed candidates are dimmed. */
+.cand-bar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+.cand-bar .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.cand-bar .chip { border: 1px solid var(--border); background: var(--surface); border-radius: 999px; padding: 7px 12px; font: 600 13px var(--font); color: var(--ink); cursor: pointer; min-height: 34px; }
+.cand-bar .chip span { color: var(--muted); font-weight: 500; margin-left: 2px; }
+.cand-bar .chip.on { background: var(--navy); border-color: var(--navy); color: #fff; } .cand-bar .chip.on span { color: var(--side-muted); }
+.card.is-closed { opacity: .72; }
+.cand-bar select { width: auto; max-width: 280px; padding: 7px 30px 7px 12px; border-radius: 999px; font-size: 13px; }

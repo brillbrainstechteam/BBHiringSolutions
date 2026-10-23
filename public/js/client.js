@@ -246,18 +246,40 @@
     }, 30);
   }
 
+  // Where each shared candidate stands, in the client's words (our step names are internal).
+  const CLOSED_AS = { 'Client rejected': 'Not selected', 'Not suitable': 'Not selected', 'Offer declined': 'Offer declined', 'Position filled': 'Position filled', 'Joined elsewhere': 'No longer available', 'Candidate withdrew': 'No longer available', 'Did not join': 'Did not join', 'No response': 'No longer available' };
+  const stage = (a) => {
+    const next = (a.interviews || []).filter((i) => ['Scheduled', 'Rescheduled'].includes(i.status) && i.at > new Date().toISOString()).sort((x, y) => (x.at < y.at ? -1 : 1))[0];
+    if (a.result === 'Hired') return { key: 'joined', label: 'Joined', cls: 'b-green' };
+    if (a.result !== 'open') return { key: 'closed', label: CLOSED_AS[a.result] || 'Closed', cls: 'b-outline' };
+    if (a.step === 'Offer accepted') return { key: 'offer', label: 'Offer accepted', cls: 'b-green' };
+    if (a.step === 'Offer made') return { key: 'offer', label: 'Offer made', cls: 'b-gold' };
+    if (next) return { key: 'interview', label: 'Interview fixed', cls: 'b-primary', next };
+    if (a.step === 'Client interview') return { key: 'interview', label: 'Interview stage', cls: 'b-primary' };
+    if (a.availability) return { key: 'interview', label: 'Times shared, confirming', cls: 'b-primary' };
+    return { key: 'waiting', label: 'Waiting for your times', cls: 'b-amber' };
+  };
+  let candFilter = 'active'; let candJob = '';
   function candidates(el) {
-    const list = D.candidates;
-    el.innerHTML = list.length ? `<div class="stack">${list.map((a) => `<div class="card pad stack-sm">
-      <div class="row between"><div><h3 style="font-size:16px">${esc(a.name)} ${scoreBadge(a.score)}</h3><div class="small muted">for <b>${esc(a.job_title)}</b> <span class="mono">${a.job_id}</span> · ${esc(a.city || '')}</div></div><div>${a.result !== 'open' && a.result !== 'Hired' ? BB.resultBadge(a.result) : `<span class="badge b-primary">${esc(a.step)}</span>`}</div></div>
+    const all = D.candidates.map((a) => ({ ...a, st: stage(a) }));
+    const groups = [['active', 'All active', (a) => a.st.key !== 'closed'], ['waiting', 'Waiting for you', (a) => a.st.key === 'waiting'], ['interview', 'Interviews', (a) => a.st.key === 'interview'], ['offer', 'Offers', (a) => a.st.key === 'offer'], ['joined', 'Joined', (a) => a.st.key === 'joined'], ['closed', 'Closed', (a) => a.st.key === 'closed']];
+    const jobsIn = [...new Map(all.map((a) => [a.job_id, a.job_title])).entries()];
+    const list = all.filter(groups.find((g) => g[0] === candFilter)[2]).filter((a) => !candJob || a.job_id === candJob);
+    el.innerHTML = `<div class="cand-bar"><div class="chips">${groups.map(([k, l, f]) => { const n = all.filter(f).filter((a) => !candJob || a.job_id === candJob).length; return `<button class="chip ${candFilter === k ? 'on' : ''}" data-cf="${k}">${l} <span>${n}</span></button>`; }).join('')}</div>
+      ${jobsIn.length > 1 ? `<select data-cj class="mini">${[['', 'All job openings'], ...jobsIn].map(([v, l]) => `<option value="${esc(v)}" ${v === candJob ? 'selected' : ''}>${esc(l)}${v ? ` (${esc(v)})` : ''}</option>`).join('')}</select>` : ''}</div>
+      ${list.length ? `<div class="stack">${list.map((a) => `<div class="card pad stack-sm ${a.st.key === 'closed' ? 'is-closed' : ''}">
+      <div class="row between"><div><h3 style="font-size:16px">${esc(a.name)} ${scoreBadge(a.score)}</h3><div class="small muted">for <b>${esc(a.job_title)}</b> <span class="mono">${a.job_id}</span> · ${esc(a.city || '')}</div></div><div><span class="badge ${a.st.cls}">${esc(a.st.label)}</span></div></div>
+      ${a.st.next ? `<div class="notice small"><b>Interview:</b> ${fmtDT(a.st.next.at)}${a.st.next.place ? ` · ${esc(a.st.next.place)}` : ''}${a.st.next.status === 'Rescheduled' ? ' <span class="badge b-amber">Rescheduled</span>' : ''}</div>` : ''}
       <div class="grid g4 small"><div><div class="muted">Experience</div><b>${a.exp_total ?? '—'} yrs</b>${a.exp_jewellery ? ` <span class="faint">(${a.exp_jewellery} in jewellery)</span>` : ''}</div><div><div class="muted">Current salary</div><b>${a.cur_salary ? inr(a.cur_salary / 12) + '/mo' : '—'}</b></div><div><div class="muted">Expected</div><b>${a.exp_salary ? inr(a.exp_salary / 12) + '/mo' : '—'}</b></div><div><div class="muted">Notice</div><b>${a.notice_days ?? '—'} days</b></div></div>
       <div class="row small">${a.skills.map((s) => `<span class="badge ${s.match ? 'b-green' : 'b-outline'}">${s.match ? '✓ ' : ''}${esc(s.s)}</span>`).join('') || '<span class="faint">No skills listed</span>'}</div>
       ${a.reasons.length ? `<div class="small muted">Why it matches: ${a.reasons.map(esc).join(' · ')}</div>` : ''}
       ${a.our_notes.length ? `<div class="notice small"><b>Our interview notes</b>${a.our_notes.map((n) => `<div>${n.rating ? '★'.repeat(n.rating) + ' ' : ''}${esc(n.remark || '')}</div>${(n.qa || []).map((q) => `<div class="faint">Q: ${esc(q.q)} — ${esc(q.a)}</div>`).join('')}`).join('')}</div>` : ''}
       ${a.short_cv ? `<div class="row small"><button class="btn sm" data-file="${a.short_cv}">Short CV</button><span class="faint">Contact details stay with our team, who arrange everything.</span></div>` : ''}
       ${a.result === 'open' && ['Sent to client', 'Client interview'].includes(a.step) ? (a.availability ? `<div class="notice small"><b>✓ Availability shared</b> · ${fmtD(a.availability.at)}<div>${esc(a.availability.text.replace(/^Interview availability from [^:]*: /, ''))}</div><a href="#" data-avail="${a.id}" data-name="${esc(a.name)}">Change times</a></div>` : `<div class="row"><button class="btn primary" data-avail="${a.id}" data-name="${esc(a.name)}">Share interview availability</button><span class="small muted">Our team fixes the interview with the candidate.</span></div>`) : ''}
-      ${a.step === 'Offer made' || a.step === 'Offer accepted' || a.result === 'Hired' ? offerBox(a) : ''}
-    </div>`).join('')}</div>` : '<div class="card empty">No profiles yet. When our team sends you profiles, they show here and on WhatsApp.</div>';
+      ${(a.result === 'open' && ['Offer made', 'Offer accepted'].includes(a.step)) || a.result === 'Hired' ? offerBox(a) : ''}
+    </div>`).join('')}</div>` : `<div class="card empty">${D.candidates.length ? 'Nobody here right now.' : 'No profiles yet. When our team sends you profiles, they show here and on WhatsApp.'}</div>`}`;
+    $$('[data-cf]', el).forEach((b) => (b.onclick = () => { candFilter = b.dataset.cf; candidates(el); }));
+    const cj = $('[data-cj]', el); if (cj) cj.onchange = () => { candJob = cj.value; candidates(el); };
     $$('[data-file]', el).forEach((b) => (b.onclick = () => BB.openFile(b.dataset.file)));
     // Each option is a window on one day: date, from, to (e.g. 25 Oct, 11:00 am – 1:00 pm).
     $$('[data-avail]', el).forEach((b) => (b.onclick = (e) => { e.preventDefault(); BB.ask({ title: `When can you meet ${b.dataset.name}?`, wide: true,

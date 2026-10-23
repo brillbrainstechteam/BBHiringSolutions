@@ -344,7 +344,8 @@ route('GET', '/api/client/me', C, (ctx) => {
   const c = ctx.client; const perms = ctx.member ? ctx.member.perms || {} : { candidates: true, feedback: true, approve: true, bills: true, admin: true };
   const jobs = all('SELECT * FROM jobs WHERE client_id=? AND archived=0 ORDER BY created_at DESC', c.id).map((j) => V.jobView(j));
   const apps = all('SELECT a.* FROM applications a JOIN jobs j ON j.id=a.job_id WHERE j.client_id=?', c.id);
-  const sent = apps.filter((a) => L.stepIdx(a.step) >= 3 && (a.result === 'open' || a.result === 'Hired' || a.client_choice));
+  // Everyone shared with the client stays on their list, closed ones too (with a plain reason), so nobody just disappears.
+  const sent = apps.filter((a) => L.stepIdx(a.step) >= 3);
   const candidates = perms.candidates ? sent.map((a) => clientAppView(a, c)) : [];
   const ivs = all("SELECT i.* FROM interviews i JOIN applications a ON a.id=i.app_id JOIN jobs j ON j.id=a.job_id WHERE j.client_id=? AND i.round='client' ORDER BY i.at DESC", c.id).map(L.interviewView)
     .map((i) => { const a = apps.find((x) => x.id === i.app_id); const cand = get('SELECT name FROM candidates WHERE id=?', a.candidate_id); return { ...i, candidate: cand.name, job: get('SELECT title FROM jobs WHERE id=?', a.job_id).title }; });
