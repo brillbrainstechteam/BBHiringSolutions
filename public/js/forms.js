@@ -106,51 +106,118 @@
   }
   function restore(card, v) { for (const [k, val] of Object.entries(v)) { const el = $(`[name="${k}"]`, card); if (!el || el.type === 'radio') continue; el.value = val; } for (const k of ['business_type', 'need', 'experience']) if (v[k]) { const r = $(`[name="${k}"][value="${v[k]}"]`, card); if (r) r.checked = true; } }
 
-  // After sending: show the ID, then verify the number with a WhatsApp code to open the account.
+  // ---------- after sending: thank-you page that also opens the account ----------
+  const svg = (d, w = 1.8) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
+  const TY_ICON = {
+    doc: svg('<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h6"/>'),
+    users: svg('<circle cx="9" cy="8" r="3"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><circle cx="17" cy="9" r="2.5"/><path d="M16 14.2c2.8.4 5 2.8 5 5.8"/>'),
+    chat: svg('<path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/><path d="M8.5 12h.01M12 12h.01M15.5 12h.01" stroke-width="2.6"/>'),
+    phone: svg('<path d="M5 4h3l2 5-2.5 1.5a11 11 0 0 0 6 6L15 14l5 2v3a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2"/>'),
+    brief: svg('<rect x="3" y="7" width="18" height="13" rx="2"/><path d="M9 7V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2M3 13h18"/>'),
+    cal: svg('<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 10h18"/>'),
+    star: svg('<path d="m12 3 2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z"/>'),
+    search: svg('<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>'),
+    grid: `<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="8" height="8" rx="2.2" fill="currentColor"/><rect x="13" y="3" width="8" height="8" rx="2.2" fill="currentColor"/><rect x="3" y="13" width="8" height="8" rx="2.2" fill="currentColor"/><rect x="13" y="13" width="8" height="8" rx="2.2" fill="currentColor"/></svg>`,
+    headset: svg('<path d="M4 14v-2a8 8 0 0 1 16 0v2"/><rect x="3" y="14" width="4" height="6" rx="1.5"/><rect x="17" y="14" width="4" height="6" rx="1.5"/><path d="M19 20a3 3 0 0 1-3 2h-2"/>'),
+    arrow: svg('<path d="M5 12h14M13 6l6 6-6 6"/>', 2),
+  };
+  const TY = {
+    hire: { head: 'Your hiring request has been submitted.', sub: 'Our team will connect with you within 1 working day.', access: 'Access your client dashboard', open: 'Open my dashboard',
+      features: [['doc', 'Track requests'], ['users', 'View shortlisted profiles'], ['chat', 'Manage communication']],
+      steps: [['doc', 'Request received'], ['phone', 'Team connects'], ['doc', 'Agreement & activation'], ['users', 'Receive candidates']] },
+    job: { head: 'Your application has been submitted.', sub: 'Our team will call you as soon as a matching job opens.', access: 'Access your candidate profile', open: 'Open my profile',
+      features: [['brief', 'See jobs that match you'], ['doc', 'Track your applications'], ['cal', 'Interview & offer updates']],
+      steps: [['doc', 'Application received'], ['search', 'Profile check'], ['cal', 'Interview'], ['star', 'Offer & joining']] },
+  };
+  // A soft illustration: a laptop with profile cards being picked (no images to load).
+  const tyArt = `<svg class="ty-art" viewBox="0 0 360 260" aria-hidden="true">
+    <path d="M60 60C110 10 230 0 300 40s70 140 20 180-200 40-250 0S10 110 60 60z" style="fill:var(--mustard-50)"/>
+    <circle cx="70" cy="44" r="4" style="fill:var(--mustard-300)"/><circle cx="318" cy="70" r="3" style="fill:var(--mustard)"/><circle cx="46" cy="190" r="3" style="fill:var(--sky)"/>
+    <g transform="translate(62 128)"><rect width="150" height="96" rx="10" style="fill:var(--navy)"/><rect x="10" y="10" width="130" height="76" rx="5" style="fill:var(--navy-700)"/>
+      <rect x="22" y="24" width="60" height="7" rx="3.5" style="fill:var(--mustard-300)"/><rect x="22" y="40" width="96" height="5" rx="2.5" fill="#fff" opacity=".35"/><rect x="22" y="52" width="80" height="5" rx="2.5" fill="#fff" opacity=".35"/><rect x="22" y="64" width="50" height="5" rx="2.5" fill="#fff" opacity=".35"/>
+      <path d="M-14 96h178l-10 14H-4z" style="fill:var(--navy-800)"/></g>
+    ${[[188, 40, true], [204, 102, false], [196, 160, false]].map(([x, y, ok], i) => `<g transform="translate(${x} ${y})"><rect width="128" height="48" rx="12" fill="#fff" stroke="#E5E8F1"/>
+      <circle cx="24" cy="24" r="13" style="fill:${['var(--mustard-300)', 'var(--sky)', 'var(--mustard-50)'][i]}"/><circle cx="24" cy="20" r="5" style="fill:var(--navy)"/><path d="M15 33a9 9 0 0 1 18 0" style="fill:var(--navy)"/>
+      <rect x="46" y="15" width="${ok ? 52 : 60}" height="6" rx="3" style="fill:var(--navy)" opacity=".75"/><rect x="46" y="28" width="40" height="5" rx="2.5" style="fill:var(--faint)" opacity=".6"/>
+      ${ok ? '<circle cx="110" cy="24" r="10" style="fill:var(--green)"/><path d="m105 24 3.5 3.5L115 21" stroke="#fff" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/>' : ''}</g>`).join('')}
+  </svg>`;
+
   function showVerify(card, mode, res, name, editAgain) {
-    const m = MODES[mode]; const first = String(name || '').trim().split(' ')[0];
-    const next = mode === 'hire'
-      ? ['Our team calls you within one working day to understand your needs.', 'We share a simple agreement and set up your first job opening.', 'You get matching profiles on WhatsApp and in your account.']
-      : ['Complete your profile — salary, notice period and skills help us match you.', 'When a job matches, we call you and set up the interview.', 'Interview times and offers come on WhatsApp.'];
-    // New sign-up: the account is already open, one tap takes them in.
+    const m = MODES[mode]; const t = TY[mode]; const first = String(name || '').trim().split(' ')[0];
+    const support = BB.boot.business.support_phone;
+    // The thank-you page uses the full width: the form's heading goes, the card widens.
+    const main = card.closest('main'); if (main) main.classList.add('ty-mode');
+    const pubCard = card.closest('.pub-card'); if (pubCard) pubCard.classList.add('ty-card');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    card.innerHTML = `<div class="ty">
+      <div class="ty-top">
+        <div class="ty-msg">
+          <div class="ty-check"><span class="ty-burst" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>${svg('<path d="m6 12.5 4 4 8-9"/>', 3)}</div>
+          <h1>Thank you${first ? `, ${esc(first)}` : ''}!</h1>
+          <h2>${t.head}</h2>
+          <p>${t.sub}</p>
+          <div class="ty-id"><span>${m.idLabel}</span><b class="mono">${esc(res.id)}</b><button type="button" class="btn sm" data-copyid>Copy</button></div>
+        </div>
+        ${tyArt}
+      </div>
+      <div class="ty-access">
+        <div class="ty-access-main"><div class="ty-tile">${TY_ICON.grid}</div><div class="grow stack-sm"><h3>${t.access}</h3><div data-access></div></div></div>
+        <ul class="ty-features">${t.features.map(([ic, l]) => `<li><span class="ty-ic">${TY_ICON[ic]}</span>${l}</li>`).join('')}</ul>
+      </div>
+      <h3 class="ty-next-h">What happens next?</h3>
+      <ol class="ty-steps">${t.steps.map(([ic, l], i) => `<li><span class="ty-n">${i + 1}</span><span class="ty-ic soft">${TY_ICON[ic]}</span><span class="ty-l">${l}</span>${i < t.steps.length - 1 ? `<span class="ty-arrow">${TY_ICON.arrow}</span>` : ''}</li>`).join('')}</ol>
+      <div class="ty-help"><span class="ty-help-ic">${TY_ICON.headset}</span><b class="grow">Need help with your ${mode === 'hire' ? 'request' : 'application'}?</b>
+        <a class="btn" href="https://wa.me/91${esc(support)}" target="_blank" rel="noopener">Contact support ${TY_ICON.arrow}</a></div>
+    </div>`;
+    $('[data-copyid]', card).onclick = () => BB.copy(res.id);
+    const acc = $('[data-access]', card);
+
+    // 1) New sign-up: the account was made with the form, one tap opens it.
     if (res.token) {
       BB.setToken(m.kind, res.token);
-      card.innerHTML = `<div class="thanks"><h2>Thank you, ${esc(first)}!</h2><div class="muted">${m.idLabel}</div><div class="big-id">${esc(res.id)}</div></div>
-        <div class="verify stack"><div><b>Your ${m.account} is ready</b><div class="muted small">Next time, log in with your WhatsApp number and a 6-digit code.</div></div>
-        <a class="btn gold lg block" href="#${m.go}">Open my ${m.account}</a></div>
-        <ol class="steps-list">${next.map((x) => `<li>${x}</li>`).join('')}</ol>`;
+      acc.innerHTML = `<div class="small ty-ok">${svg('<path d="m6 12.5 4 4 8-9"/>', 3)} Your ${m.account} is ready</div>
+        <a class="btn gold lg ty-go" href="#${m.go}">${t.open} ${TY_ICON.arrow}</a>
+        <div class="small muted">Next time, log in with your WhatsApp number and a 6-digit code.</div>`;
       return;
     }
-    card.innerHTML = `<div class="thanks"><h2>Thank you, ${esc(first)}!</h2><div class="muted">${m.idLabel}</div><div class="big-id">${esc(res.id)}</div></div>
-      ${res.isNew ? '' : `<div class="notice small">This WhatsApp number is already registered with us, so we have added these details to your existing ${m.account}.</div>`}
-      ${res.can_verify ? `<div class="verify stack" data-verify>
-        <div><b>Open your ${m.account}</b><div class="muted small">We send a 6-digit code to your WhatsApp to check it is your number.</div></div>
-        <div class="phone-line"><span class="muted small">WhatsApp</span><b class="mono" style="font-size:16px">+91 ${esc(res.phone.slice(0, 5))} ${esc(res.phone.slice(5))}</b><a href="#" class="small right" data-edit>Wrong number?</a></div>
-        <button class="btn gold lg block" data-sendcode>Send code on WhatsApp</button>
-        <form class="stack hidden" data-codeform novalidate>${field({ name: 'code', label: '6-digit code', voice: false, attrs: 'inputmode="numeric" maxlength="6" autocomplete="one-time-code" class="code-in"' })}<div data-dev></div><button class="btn primary lg block">Verify and open my ${m.account}</button><a href="#" class="small" data-resend>Send the code again</a></form>
-      </div>` : `<div class="notice small">We will message you on WhatsApp with a link to your ${m.account}.</div>`}
-      <ol class="steps-list">${next.map((x) => `<li>${x}</li>`).join('')}</ol>`;
-    if (!res.can_verify) return;
-    const v = $('[data-verify]', card); const codeForm = $('[data-codeform]', v);
-    $('[data-edit]', v).onclick = (e) => { e.preventDefault(); editAgain(); };
+    // 3) WhatsApp codes cannot go out yet.
+    if (!res.can_verify) { acc.innerHTML = `<div class="notice small">We will message you on WhatsApp with a link to your ${m.account}.</div>`; return; }
+    // 2) A number we already know: one WhatsApp code proves it is theirs, then the account opens.
+    const pretty = `+91 ${esc(res.phone.slice(0, 5))} ${esc(res.phone.slice(5))}`;
+    acc.innerHTML = `<div class="small muted">Welcome back! This number already has a ${m.account} with us${res.isNew ? '' : ' — we added these details to it'}. Confirm it is you to open it.</div>
+      <div class="phone-line"><span class="muted small">WhatsApp</span><b class="mono" style="font-size:16px">${pretty}</b><a href="#" class="small right" data-edit>Wrong number?</a></div>
+      <button class="btn gold lg ty-go" data-sendcode>Send code on WhatsApp</button>
+      <form class="stack-sm hidden" data-codeform novalidate>
+        ${field({ name: 'code', label: '6-digit code from WhatsApp', voice: false, attrs: 'inputmode="numeric" maxlength="6" autocomplete="one-time-code" class="code-in"' })}
+        <div data-dev class="small"></div>
+        <button class="btn primary lg ty-go">Verify and ${t.open.toLowerCase()}</button>
+        <div class="small"><a href="#" data-resend>Send the code again</a> <span class="muted" data-wait></span></div>
+      </form>`;
+    const codeForm = $('[data-codeform]', acc); const code = $('[name=code]', acc); let timer;
+    $('[data-edit]', acc).onclick = (e) => { e.preventDefault(); if (main) main.classList.remove('ty-mode'); if (pubCard) pubCard.classList.remove('ty-card'); editAgain(); };
+    const wait = (s) => { clearInterval(timer); const a = $('[data-resend]', acc); a.classList.add('disabled'); const w = $('[data-wait]', acc);
+      const tick = () => { w.textContent = s > 0 ? `(in ${s} s)` : ''; if (s-- <= 0) { clearInterval(timer); a.classList.remove('disabled'); } }; tick(); timer = setInterval(tick, 1000); };
     const request = async (btn) => {
+      if (btn.classList.contains('disabled')) return;
       btn.disabled = true;
       try {
         const r = await BB.post('/api/otp/request', { phone: res.phone, kind: m.kind }, { kind: null });
-        $('[data-sendcode]', v).classList.add('hidden'); codeForm.classList.remove('hidden');
-        $('[data-dev]', v).innerHTML = r.dev_code ? `<div class="test-code">Test copy (WhatsApp not connected): your code is <b class="mono">${r.dev_code}</b></div>` : '<div class="muted small">Code sent. It is valid for 10 minutes.</div>';
-        $('[name=code]', v).focus();
+        $('[data-sendcode]', acc).classList.add('hidden'); codeForm.classList.remove('hidden');
+        $('[data-dev]', acc).innerHTML = r.dev_code ? `<div class="test-code">Test copy (WhatsApp not connected): your code is <b class="mono">${r.dev_code}</b></div>` : `<span class="muted">Code sent to ${pretty}. It is valid for 10 minutes.</span>`;
+        code.value = ''; code.focus(); wait(30);
       } catch (er) { BB.toast(er.message, true); } finally { btn.disabled = false; }
     };
-    $('[data-sendcode]', v).onclick = (e) => request(e.currentTarget);
-    $('[data-resend]', v).onclick = (e) => { e.preventDefault(); request(e.currentTarget); };
-    codeForm.onsubmit = async (e) => {
-      e.preventDefault();
+    $('[data-sendcode]', acc).onclick = (e) => request(e.currentTarget);
+    $('[data-resend]', acc).onclick = (e) => { e.preventDefault(); request(e.currentTarget); };
+    const verify = async () => {
       try {
-        const r = await BB.post('/api/otp/verify', { phone: res.phone, kind: m.kind, code: BB.formValues(codeForm).code }, { kind: null });
+        const r = await BB.post('/api/otp/verify', { phone: res.phone, kind: m.kind, code: code.value }, { kind: null });
         BB.setToken(m.kind, r.token); location.hash = m.go;
       } catch (er) { BB.showErr(codeForm, { message: er.message, field: 'code' }); }
     };
+    // The 6th digit opens the account; no extra tap (phones fill it from the WhatsApp message).
+    code.addEventListener('input', () => { code.value = code.value.replace(/\D/g, '').slice(0, 6); if (code.value.length === 6) verify(); });
+    codeForm.onsubmit = (e) => { e.preventDefault(); verify(); };
   }
 
   // /hire (clients) and /apply (candidates): two separate forms, each on its own link, no menus and no toggle.
