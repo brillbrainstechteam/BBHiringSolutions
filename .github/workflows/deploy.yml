@@ -29,4 +29,6 @@ jobs:
             code=$?; [ "$code" -ne 255 ] && exit "$code"   # 255 = could not connect; anything else is the deploy's own answer
             echo "Could not reach the server (try $try of 3)"; sleep 15
           done
-          exit 1
+          # The server also checks GitHub every 2 minutes (bbhs-deploy.timer), so the push still goes live.
+          echo "::warning::Could not reach the server from GitHub; it picks up this push by itself within 2 minutes."
+          exit 0
