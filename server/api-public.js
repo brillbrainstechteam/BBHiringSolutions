@@ -95,7 +95,7 @@ function checkCode(phone, purpose, code) {
   if (o.code_hash !== L.sha(String(code || '').trim() + phone)) { update('otps', o.id, { tries: o.tries + 1 }); throw httpError(400, `Wrong code. ${2 - o.tries} tries left.`, 'code'); }
   update('otps', o.id, { used: 1 });
 }
-route('POST', '/api/otp/request', { rate: { key: 'otp', max: 10, minutes: 60 } }, (ctx) => {
+route('POST', '/api/otp/request', { rate: { key: 'otp', max: 40, minutes: 60 } }, (ctx) => {
   const phone = L.digits10(ctx.body.phone); const kind = ctx.body.kind;
   if (!L.validPhone(phone)) throw httpError(400, 'Enter your 10-digit WhatsApp number', 'phone');
   const found = kind === 'client' ? (get('SELECT id FROM clients WHERE whatsapp=? AND merged_into IS NULL AND removed=0', phone) || get('SELECT id FROM client_members WHERE whatsapp=?', phone)) : get('SELECT id FROM candidates WHERE whatsapp=? AND merged_into IS NULL AND removed=0', phone);
@@ -131,7 +131,7 @@ function srcFrom(b) {
   if (b.src) return tags[b.src] || D.settings().lead_sources.find((x) => x.toLowerCase() === String(b.src).toLowerCase()) || b.src;
   return 'Website';
 }
-route('POST', '/api/public/hire', { rate: { key: 'form', max: 10, minutes: 60 } }, (ctx) => {
+route('POST', '/api/public/hire', { rate: { key: 'form', max: 60, minutes: 60 } }, (ctx) => {
   const b = ctx.body;
   if (b.website) throw httpError(400, 'Please try again.'); // hidden field only bots fill in
   if (!b.contact || !String(b.contact).trim()) throw httpError(400, 'Please enter your name', 'contact');
@@ -148,14 +148,14 @@ route('POST', '/api/public/hire', { rate: { key: 'form', max: 10, minutes: 60 } 
   return formDone('client', r.isNew, r.client.id, r.client.whatsapp);
 });
 // The job form's first step: read the chosen CV and hand back the details to fill in. Nothing is saved here.
-route('POST', '/api/public/cv-read', { rate: { key: 'cvread', max: 30, minutes: 60 } }, (ctx) => {
+route('POST', '/api/public/cv-read', { rate: { key: 'cvread', max: 80, minutes: 60 } }, (ctx) => {
   const b = ctx.body || {};
   if (!b.base64 || !/\.(pdf|docx|txt)$/i.test(String(b.name || ''))) return { fields: {}, readable: false };
   const buf = Buffer.from(String(b.base64).replace(/^data:[^,]*,/, ''), 'base64');
   if (buf.length > 10 * 1024 * 1024) throw httpError(400, 'The file is bigger than 10 MB.');
   return { fields: CV.read(b.name, buf), readable: true };
 });
-route('POST', '/api/public/apply', { rate: { key: 'form', max: 10, minutes: 60 } }, async (ctx) => {
+route('POST', '/api/public/apply', { rate: { key: 'form', max: 60, minutes: 60 } }, async (ctx) => {
   const b = ctx.body;
   if (b.website) throw httpError(400, 'Please try again.'); // hidden field only bots fill in
   if (!b.name || !String(b.name).trim()) throw httpError(400, 'Please enter your name', 'name');
@@ -397,7 +397,8 @@ function profileGaps(c) {
   return { pct: Math.round(((items.length - missing.length) / items.length) * 100), missing: missing.map(([key, label]) => ({ key, label })) };
 }
 const profilePct = (c) => profileGaps(c).pct;
-function companyShown(a, cl) { return cl.hide_name_until === 'Always show' || L.stepIdx(a.step) >= L.stepIdx('Client interview'); }
+// Candidates never see the employer's name in their account, only a description ("Jewellery showroom, Jaipur").
+function companyShown() { return false; }
 route('GET', '/api/cand/me', K, (ctx) => {
   const c = ctx.candidate; const s = D.settings();
   const apps = all('SELECT * FROM applications WHERE candidate_id=? ORDER BY created_at DESC', c.id).map((a) => {
@@ -409,7 +410,7 @@ route('GET', '/api/cand/me', K, (ctx) => {
   const onJob = new Set(apps.filter((a) => a.result === 'open' || a.result === 'Hired').map((a) => a.id));
   const appliedJobs = new Set(all("SELECT job_id FROM applications WHERE candidate_id=? AND result='open'", c.id).map((r) => r.job_id));
   const jobs = all('SELECT * FROM jobs WHERE archived=0').map((j) => V.jobView(j)).filter((j) => ['Open', 'Sourcing', 'Interviewing', 'Offer stage'].includes(j.status) && !appliedJobs.has(j.id))
-    .map((j) => { const m = L.matchScore(c, j, rating); const cl = get('SELECT * FROM clients WHERE id=?', j.client_id); return { id: j.id, title: j.title, city: j.city, company: cl.hide_name_until === 'Always show' ? cl.company : companyLabel(cl), salary: L.salaryText(j), exp: j.exp_from !== null ? `${j.exp_from}–${j.exp_to ?? '+'} yrs` : '', score: m.score, reasons: m.reasons }; })
+    .map((j) => { const m = L.matchScore(c, j, rating); const cl = get('SELECT * FROM clients WHERE id=?', j.client_id); return { id: j.id, title: j.title, city: j.city, company: companyLabel(cl), salary: L.salaryText(j), exp: j.exp_from !== null ? `${j.exp_from}–${j.exp_to ?? '+'} yrs` : '', score: m.score, reasons: m.reasons }; })
     .filter((j) => j.score >= s.match.show).sort((a, b) => b.score - a.score);
   const next = apps.flatMap((a) => a.interviews.filter((i) => ['Scheduled', 'Rescheduled'].includes(i.status) && i.at > now()).map((i) => ({ ...i, app: a.id, job_title: a.job_title, company: a.company }))).sort((a, b) => (a.at < b.at ? -1 : 1))[0] || null;
   const offer = apps.find((a) => a.result === 'open' && a.step === 'Offer made') || null;

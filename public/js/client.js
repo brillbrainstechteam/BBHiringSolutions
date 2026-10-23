@@ -3,28 +3,40 @@
   const { $, $$, esc, inr, fmtD, fmtDT, field, statusBadge, scoreBadge } = BB;
 
   // Login: WhatsApp number → 6-digit code on WhatsApp → in.
+  const lastPhone = () => { try { return localStorage.getItem('bbhs.lastPhone') || ''; } catch { return ''; } };
   BB.otpLogin = (kind, title, after) => {
     const intro = kind === 'client'
-      ? { eyebrow: 'For employers', title: 'Your hiring, <em>all in one place</em>', lead: 'Job openings, shortlisted candidates, interviews, offers and bills — always up to date.', perks: [['1', 'Review profiles', 'Choose who to interview in one tap.'], ['2', 'Give feedback', 'Selected, another round or not selected.'], ['₹', 'Pay by UPI', 'Bills and receipts in one tab.']] }
+      ? { eyebrow: 'For employers', title: 'Your hiring, <em>all in one place</em>', lead: 'Job openings, shortlisted candidates, interviews, offers and bills — always up to date.', perks: [['1', 'Review profiles', 'Share interview times in one step.'], ['2', 'Give feedback', 'Selected, another round or not selected.'], ['₹', 'Pay by UPI', 'Bills and receipts in one tab.']] }
       : { eyebrow: 'For candidates', title: 'Track every step <em>to your new job</em>', lead: 'See matching jobs, your interviews and your offers, and keep your profile up to date.', perks: [['★', 'Jobs for you', 'Matched on your city, skills and salary.'], ['✓', 'Confirm interviews', 'Or ask to move them — in one tap.'], ['✉', 'Accept your offer', 'Read the offer letter and upload joining papers.']] };
-    $('#app').innerHTML = BB.split({ top: BB.publicTop(title), ...intro, card: `<div class="card-title">${esc(title)}</div><p class="muted" style="margin:4px 0 16px">Log in with your WhatsApp number. We send you a 6-digit code.</p><form class="stack" data-step1>${BB.field({ name: 'phone', label: 'WhatsApp number', type: 'tel', phone: true, attrs: 'inputmode="numeric" maxlength="14" autocomplete="tel"' })}<button class="btn gold block lg">Send code</button></form>
-      <form class="stack hidden" data-step2><div class="muted small" data-sent></div>${BB.field({ name: 'code', label: '6-digit code', voice: false, attrs: 'inputmode="numeric" maxlength="6" autocomplete="one-time-code" class="code-in"' })}<div data-dev></div><button class="btn gold block lg">Log in</button><a href="#" class="small" data-again>Use another number</a></form>
+    $('#app').innerHTML = BB.split({ top: BB.publicTop(title), ...intro, card: `<div class="card-title">${esc(title)}</div><p class="muted" style="margin:4px 0 16px">Log in with your WhatsApp number. We send you a 6-digit code.</p><form class="stack" data-step1>${BB.field({ name: 'phone', label: 'WhatsApp number', type: 'tel', phone: true, value: lastPhone(), placeholder: '10 digits', attrs: 'inputmode="numeric" maxlength="14" autocomplete="tel"' })}<button class="btn gold block lg">Send code</button></form>
+      <form class="stack hidden" data-step2><div class="muted small" data-sent></div>${BB.field({ name: 'code', label: '6-digit code', voice: false, attrs: 'inputmode="numeric" maxlength="6" autocomplete="one-time-code" class="code-in"' })}<div data-dev></div><button class="btn gold block lg">Log in</button><div class="row small between"><a href="#" data-resend>Send the code again</a><span class="muted" data-wait></span><a href="#" data-again>Use another number</a></div></form>
       <p class="small muted" style="margin-top:16px">New here? ${kind === 'client' ? '<a href="#hire">Fill the hiring form</a>' : '<a href="#apply">Fill the job form</a>'}</p>` });
     BB.attachMics($('#app'));
-    let phone = '';
-    $('[data-step1]').onsubmit = async (e) => {
-      e.preventDefault(); const f = e.target; phone = BB.spokenToDigits(BB.formValues(f).phone) || BB.formValues(f).phone;
+    let phone = ''; let timer;
+    const pretty = (p) => `+91 ${p.slice(0, 5)} ${p.slice(5)}`;
+    const wait = (sec) => { clearInterval(timer); const a = $('[data-resend]'); a.classList.add('disabled'); const w = $('[data-wait]');
+      const tick = () => { w.textContent = sec > 0 ? `in ${sec} s` : ''; if (sec-- <= 0) { clearInterval(timer); a.classList.remove('disabled'); } }; tick(); timer = setInterval(tick, 1000); };
+    const send = async (btn, f) => {
+      if (btn.disabled || btn.classList.contains('disabled')) return; btn.disabled = true; const label = btn.textContent; if (btn.tagName === 'BUTTON') btn.textContent = 'Sending…';
       try {
         const r = await BB.post('/api/otp/request', { phone, kind }, { kind: null });
-        f.classList.add('hidden'); $('[data-step2]').classList.remove('hidden'); $('[data-sent]').textContent = `Code sent on WhatsApp to ${phone}. It is valid for 10 minutes.`;
-        if (r.dev_code) $('[data-dev]').innerHTML = `<div class="test-code">Test mode (WhatsApp not connected): your code is <b class="mono">${r.dev_code}</b></div>`;
-        $('[name=code]').focus();
-      } catch (er) { BB.showErr(f, er); }
+        try { localStorage.setItem('bbhs.lastPhone', phone); } catch { /* private window */ }
+        $('[data-step1]').classList.add('hidden'); $('[data-step2]').classList.remove('hidden');
+        $('[data-sent]').textContent = `Code sent on WhatsApp to ${pretty(phone)}. It is valid for 10 minutes.`;
+        $('[data-dev]').innerHTML = r.dev_code ? `<div class="test-code">Test mode (WhatsApp not connected): your code is <b class="mono">${r.dev_code}</b></div>` : '';
+        const c = $('[name=code]'); c.value = ''; c.focus(); wait(30);
+      } catch (er) { BB.showErr(f, er); } finally { btn.disabled = false; if (btn.tagName === 'BUTTON') btn.textContent = label; }
     };
-    $('[data-step2]').onsubmit = async (e) => {
-      e.preventDefault(); const f = e.target;
-      try { const r = await BB.post('/api/otp/verify', { phone, kind, code: BB.formValues(f).code }, { kind: null }); BB.setToken(kind, r.token); after(); } catch (er) { BB.showErr(f, er); }
+    $('[data-step1]').onsubmit = (e) => { e.preventDefault(); const f = e.target; phone = BB.spokenToDigits(BB.formValues(f).phone) || BB.formValues(f).phone.replace(/D/g, '').slice(-10); send($('button[type=submit], button:not([type=button])', f), f); };
+    $('[data-resend]').onclick = (e) => { e.preventDefault(); send(e.currentTarget, $('[data-step2]')); };
+    let busy = false;
+    const verify = async () => {
+      const f = $('[data-step2]'); if (busy) return; busy = true;
+      try { const r = await BB.post('/api/otp/verify', { phone, kind, code: BB.formValues(f).code }, { kind: null }); clearInterval(timer); BB.setToken(kind, r.token); after(); } catch (er) { BB.showErr(f, er); } finally { busy = false; }
     };
+    // The 6th digit logs in; no extra tap (phones fill the code from the WhatsApp message).
+    $('[name=code]').addEventListener('input', (e) => { e.target.value = e.target.value.replace(/D/g, '').slice(0, 6); if (e.target.value.length === 6) verify(); });
+    $('[data-step2]').onsubmit = (e) => { e.preventDefault(); verify(); };
     $('[data-again]').onclick = (e) => { e.preventDefault(); BB.otpLogin(kind, title, after); };
   };
   BB.onLogout = (kind, msg) => { if (BB.portal === kind) { if (msg) BB.toast(msg, true); BB.route(); } };

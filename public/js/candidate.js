@@ -57,7 +57,7 @@
   const ivCard = (i, title) => {
     const upcoming = ['Scheduled', 'Rescheduled'].includes(i.status) && i.at > new Date().toISOString();
     return `<div class="cp-iv">${dateTile(i.at)}<div class="grow"><div class="cp-iv-t">${title ? `${esc(title)} · ` : ''}${esc(i.name || 'Interview')}</div><div class="small muted">${fmtDT(i.at)} · ${esc(i.place || '')}</div>
-      <div class="row" style="margin-top:8px">${upcoming ? `${i.confirmed ? '<span class="badge b-green">✓ Confirmed</span>' : `<button class="btn sm primary" data-confirm="${i.id}">I'll be there</button>`}<button class="btn sm" data-resch="${i.id}">Ask to reschedule</button>` : `<span class="badge b-outline">${esc(i.view_status)}</span>`}</div></div></div>`;
+      <div class="row" style="margin-top:8px">${upcoming ? `${i.confirmed ? '<span class="cp-ok">✓ Confirmed</span>' : `<button class="btn sm primary" data-confirm="${i.id}">I'll be there</button>`}<button class="btn sm" data-resch="${i.id}">Ask to reschedule</button>` : `<span class="badge b-outline">${esc(i.view_status)}</span>`}</div></div></div>`;
   };
   const jobCard = (j) => `<div class="cp-job"><div class="cp-match" style="--p:${j.score}" title="How well this job matches your profile"><b>${j.score}%</b><span>match</span></div>
     <div class="grow"><h3>${esc(j.title)}</h3><div class="small muted">${[j.company, j.city, j.salary, j.exp].filter(Boolean).map(esc).join(' · ')}</div>
@@ -73,7 +73,7 @@
     el.innerHTML = `<div class="cp-grid">
       <div class="stack-lg">
         ${o ? `<div class="cp-offer"><div class="cp-offer-ic">🎉</div><div class="grow"><span class="eyebrow">You have an offer</span><h2>${esc(o.job_title)} at ${esc(o.company)}</h2><div>${inr(o.offer_ctc)} a year · joining ${fmtD(o.joining_date)}</div></div><div class="row">${o.offer_letter ? `<button class="btn" data-file="${o.offer_letter}">Read offer letter</button>` : ''}<button class="btn gold" data-accept="${o.id}">Accept offer</button><button class="btn ghost" data-decline="${o.id}">Decline</button></div></div>` : ''}
-        ${n ? `<div class="card pad stack-sm"><div class="cp-h">${icon('cal')}<h3>Your next interview</h3></div>${ivCard(n, n.job_title)}<div class="small muted">With ${esc(n.company)}.</div></div>` : ''}
+        ${n ? `<div class="card pad stack-sm"><div class="cp-h">${icon('cal')}<h3>Your next interview</h3></div>${ivCard(n, n.job_title)}</div>` : ''}
         <div class="card pad stack-sm"><div class="cp-h">${icon('flow')}<h3>Your applications</h3>${active().length ? `<a href="#" class="small right" data-goto="apps">See all</a>` : ''}</div>
           ${active().map(step).join('') || `<div class="cp-empty">${icon('brief')}<div><b>No applications yet</b><div class="small muted">Apply to a matching job below, or wait for your recruiter's call.</div></div></div>`}</div>
         <div class="card pad stack-sm"><div class="cp-h">${icon('brief')}<h3>Top matches for you</h3>${D.jobs.length > 3 ? `<a href="#" class="small right" data-goto="jobs">See all ${D.jobs.length}</a>` : ''}</div>
@@ -119,7 +119,7 @@
       <div class="stack-lg">
         <div class="card pad stack"><div class="cp-h">${icon('users')}<h3>About you</h3><div class="right">${BB.voiceSwitch()}</div></div>
           ${field({ name: 'name', label: 'Name', value: p.name })}
-          <div class="grid g2"><label class="field"><span class="lab">WhatsApp number</span><div class="inp-wrap has-cc"><span class="cc">+91</span><input value="${esc(String(p.whatsapp || '').replace(/(\d{5})(\d{5})/, '$1 $2'))}" readonly class="cp-locked" aria-label="WhatsApp number"><button type="button" class="btn sm cp-change" data-chphone>Change</button></div><div class="faint small" style="margin-top:3px">Your login number. Changing it needs a code sent to the new number.</div></label>
+          <div class="grid g2"><label class="field"><span class="lab">WhatsApp number</span><div class="inp-wrap has-cc"><span class="cc">+91</span><input value="${esc(String(p.whatsapp || '').replace(/(\d{5})(\d{5})/, '$1 $2'))}" readonly class="cp-locked" aria-label="WhatsApp number"><button type="button" class="btn sm cp-change" data-chphone>Change</button></div></label>
             ${field({ name: 'email', label: 'Email', value: p.email, type: 'email', opt: true })}</div>
           ${field({ name: 'city', label: 'City', value: p.city, list: 'cities' })}
         </div>
@@ -139,7 +139,7 @@
         </div>
       </div>
       <div class="stack-lg">
-        <div class="card pad stack-sm"><div class="cp-h">${icon('search')}<h3>Job search</h3></div>
+        <div class="card pad stack-sm"><div class="cp-h">${icon('search')}<h3>Are you looking for a new job?</h3></div>
           <div class="cp-looking" data-looking>${['Actively looking', 'Open to offers', 'Not looking'].map((v) => `<label><input type="radio" name="looking" value="${v}" ${(p.looking === 'Placed' ? 'Not looking' : p.looking || 'Actively looking') === v ? 'checked' : ''}><span>${v}</span></label>`).join('')}</div></div>
         <div class="card pad stack-sm"><div class="cp-h">${icon('note')}<h3>Your CV</h3></div>${D.files.filter((f) => f.type === 'cv').map((f) => `<button type="button" class="cp-file" data-file="${f.id}"><span class="cp-file-ic">CV</span><span class="grow"><b>${esc(f.name)}</b><span class="small muted">Version ${f.version} · ${fmtD(f.at)}</span></span></button>`).join('') || '<div class="small muted">No CV yet. Upload one and we fill in your details from it.</div>'}<button type="button" class="btn sm" data-cv>Upload CV</button></div>
       </div></div>

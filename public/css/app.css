@@ -617,3 +617,8 @@ a.disabled { pointer-events: none; color: var(--faint); }
 .seat.on { border-style: solid; border-color: var(--green); background: var(--green-50); color: var(--green); }
 .avail-opt { border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; background: var(--surface-2); }
 .avail-opt .grid { margin-top: 6px; }
+/* candidate account: header chips and interview actions share one height */
+.cp-chips > span, .cp-chips > .cp-status { display: inline-flex; align-items: center; height: 30px; padding-top: 0; padding-bottom: 0; font-size: 12.5px; line-height: 1; }
+.cp-iv .row { align-items: center; }
+.cp-iv .row > .btn, .cp-iv .row > .cp-ok, .cp-iv .row > .badge { height: 32px; box-sizing: border-box; display: inline-flex; align-items: center; padding-top: 0; padding-bottom: 0; }
+.cp-ok { font: 600 13px var(--font); color: var(--green); background: var(--green-50); border: 1px solid color-mix(in srgb, var(--green) 35%, transparent); border-radius: 999px; padding: 0 14px; }
