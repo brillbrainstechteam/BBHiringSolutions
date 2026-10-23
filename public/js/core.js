@@ -450,7 +450,7 @@ BB.views.landing = (r) => {
 BB.start = async () => {
   try { BB.boot = await (await fetch('/api/bootstrap')).json(); } catch { $('#app').innerHTML = '<div class="boot">Cannot reach the server.</div>'; return; }
   document.documentElement.style.setProperty('--brand', BB.boot.business.primary);
-  document.title = BB.boot.business.short + ' Hiring';
+  if (!document.title) document.title = BB.boot.business.name;
   const dl = document.createElement('datalist'); dl.id = 'cities'; dl.innerHTML = BB.boot.cities.map((c) => `<option value="${esc(c)}">`).join(''); document.body.appendChild(dl);
   // The test copy says so on every page, so nobody mistakes it for the live one.
   if (BB.boot.env !== 'live') document.body.insertAdjacentHTML('beforeend', `<div class="env-ribbon" title="Sample data and test WhatsApp — not the live copy">${esc(BB.boot.env)} copy</div>`);

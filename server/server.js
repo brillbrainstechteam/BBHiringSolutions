@@ -18,6 +18,30 @@ const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; ch
 // The five web addresses each open the one page; the page shows only that part.
 const PAGES = ['/', '/hire', '/apply', '/my-account', '/my-profile', '/team'];
 
+// The page with its title and link-preview tags (WhatsApp, Facebook, Google read these, not the app's script).
+// The preview always says the business name; the line under it says what this link is for.
+const META = {
+  '/': ['BrillBrains Hiring Solutions', 'Hiring for the jewellery business: hire screened staff, or find your next jewellery job.'],
+  '/apply': ['Jewellery jobs · BrillBrains Hiring Solutions', 'Apply for jewellery jobs in a minute: showroom sales, cashier, karigar, CAD and more. Free for job seekers.'],
+  '/hire': ['Hire jewellery staff · BrillBrains Hiring Solutions', 'Tell us who you need. We send screened, interviewed candidates for your jewellery business.'],
+  '/my-account': ['Client login · BrillBrains Hiring Solutions', 'Log in to see your job openings, shortlisted candidates, interviews and bills.'],
+  '/my-profile': ['Candidate login · BrillBrains Hiring Solutions', 'Log in to see matching jobs, your interviews and your offers.'],
+  '/team': ['Team portal · BrillBrains Hiring Solutions', 'BrillBrains Hiring Solutions team portal.'],
+};
+const escAttr = (s) => String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+function pageHtml(page) {
+  const name = D.settings().business.name || 'BrillBrains Hiring Solutions';
+  const base = String(D.settings().business.base_url || '').replace(/\/$/, '');
+  const [title, desc] = META[page] || META['/'];
+  const url = base + (page === '/' ? '/' : page);
+  const tags = [`<title>${escAttr(title)}</title>`, `<meta name="description" content="${escAttr(desc)}">`,
+    `<meta property="og:site_name" content="${escAttr(name)}">`, `<meta property="og:title" content="${escAttr(name)}">`, `<meta property="og:description" content="${escAttr(desc)}">`,
+    `<meta property="og:type" content="website">`, `<meta property="og:url" content="${escAttr(url)}">`,
+    ...(/^https?:\/\//.test(base) ? [`<meta property="og:image" content="${escAttr(base)}/img/icon.png">`, '<meta property="og:image:width" content="192">', '<meta property="og:image:height" content="192">'] : []),
+    `<meta name="twitter:card" content="summary">`, `<meta name="twitter:title" content="${escAttr(name)}">`, `<meta name="twitter:description" content="${escAttr(desc)}">`];
+  return fs.readFileSync(path.join(PUBLIC, 'index.html'), 'utf8').replace('<!--META-->', tags.join('\n  '));
+}
+
 function send(res, code, body, headers = {}) {
   res.writeHead(code, { 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'same-origin', 'X-Frame-Options': 'SAMEORIGIN', ...headers });
   res.end(body);
@@ -45,8 +69,9 @@ const server = http.createServer(async (req, res) => {
     }
     let p = url.pathname;
     // The team portal is internal: reachable by its address, but kept out of search engines.
-    if (p === '/team' || p.startsWith('/team/')) return send(res, 200, fs.readFileSync(path.join(PUBLIC, 'index.html')), { 'Content-Type': TYPES['.html'], 'Cache-Control': 'no-cache', 'X-Robots-Tag': 'noindex, nofollow' });
-    if (PAGES.includes('/' + (p.split('/')[1] || ''))) p = '/index.html'; // the app's own pages, e.g. /my-account/jobs
+    if (p === '/team' || p.startsWith('/team/')) return send(res, 200, pageHtml('/team'), { 'Content-Type': TYPES['.html'], 'Cache-Control': 'no-cache', 'X-Robots-Tag': 'noindex, nofollow' });
+    const page = '/' + (p.split('/')[1] || '');
+    if (PAGES.includes(page) || p === '/index.html') return send(res, 200, pageHtml(PAGES.includes(page) ? page : '/'), { 'Content-Type': TYPES['.html'], 'Cache-Control': 'no-cache' }); // the app's own pages, e.g. /my-account/jobs
     const file = path.normalize(path.join(PUBLIC, p));
     if (!file.startsWith(PUBLIC) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) return send(res, 404, 'Not found', { 'Content-Type': 'text/plain' });
     return send(res, 200, fs.readFileSync(file), { 'Content-Type': TYPES[path.extname(file)] || 'application/octet-stream', 'Cache-Control': 'no-cache' });
