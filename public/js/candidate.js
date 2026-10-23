@@ -16,6 +16,7 @@
   const ring = (pct, size = 64) => `<div class="cp-ring" style="--p:${pct};width:${size}px;height:${size}px"><span>${pct}<small>%</small></span></div>`;
   const dateTile = (iso) => { const d = new Date(iso); return `<div class="cp-date"><b>${d.toLocaleDateString('en-IN', { day: 'numeric', timeZone: 'Asia/Kolkata' })}</b><span>${d.toLocaleDateString('en-IN', { month: 'short', timeZone: 'Asia/Kolkata' })}</span></div>`; };
   const active = () => D.apps.filter((a) => a.result === 'open');
+  const skillChip = (s) => `${esc(s)}<span class="x" data-x role="button" aria-label="Remove ${esc(s)}" title="Remove">×</span>`;
 
   function render() {
     const p = D.profile; const first = esc(String(p.name || '').split(' ')[0]);
@@ -130,7 +131,7 @@
           ${field({ name: 'exp_month', label: 'Expected salary (₹ per month)', type: 'number', value: p.exp_month ?? '', attrs: 'min="0"' })}
         </div>
         <div class="card pad stack-sm"><div class="cp-h">${icon('chart')}<h3>Skills</h3></div><div class="small muted">Tap the ones you have.</div>
-          <div class="cp-skills" data-skills>${[...new Set([...BB.boot.skills, ...skills])].map((s) => `<button type="button" class="${skills.has(s) ? 'on' : ''}" data-skill="${esc(s)}">${esc(s)}</button>`).join('')}</div>
+          <div class="cp-skills" data-skills>${[...new Set([...BB.boot.skills, ...skills])].map((s) => `<button type="button" class="${skills.has(s) ? 'on' : ''}" data-skill="${esc(s)}">${skillChip(s)}</button>`).join('')}</div>
           <div class="row"><input class="grow" data-skill-new placeholder="Add another skill"><button type="button" class="btn sm" data-skill-add>${icon('plus')} Add</button></div>
         </div>
       </div>
@@ -145,11 +146,20 @@
     form.addEventListener('input', dirty); form.addEventListener('change', dirty);
     let isFresher = fresher;
     $$('[data-fresher] button', el).forEach((b) => (b.onclick = () => { isFresher = b.dataset.v === 'yes'; $$('[data-fresher] button', el).forEach((x) => x.classList.toggle('on', x === b)); $('[data-exp]', el).hidden = isFresher; dirty(); }));
-    $$('[data-skill]', el).forEach((b) => (b.onclick = () => { b.classList.toggle('on'); dirty(); }));
+    // Tap a skill to pick it; the × on a picked skill removes it (a skill they typed in themselves disappears).
+    const listed = new Set(BB.boot.skills);
+    const wireSkill = (b) => (b.onclick = (e) => {
+      if (e.target.closest('[data-x]')) { if (listed.has(b.dataset.skill)) b.classList.remove('on'); else b.remove(); }
+      else b.classList.toggle('on');
+      dirty();
+    });
+    $$('[data-skill]', el).forEach(wireSkill);
     $('[data-skill-add]', el).onclick = () => {
       const inp = $('[data-skill-new]', el); const v = inp.value.trim(); if (!v) return;
-      const b = document.createElement('button'); b.type = 'button'; b.className = 'on'; b.dataset.skill = v; b.textContent = v; b.onclick = () => { b.classList.toggle('on'); dirty(); };
-      $('[data-skills]', el).appendChild(b); inp.value = ''; dirty();
+      const same = $$('[data-skill]', el).find((x) => x.dataset.skill.toLowerCase() === v.toLowerCase());
+      if (same) same.classList.add('on');
+      else { const b = document.createElement('button'); b.type = 'button'; b.className = 'on'; b.dataset.skill = v; b.innerHTML = skillChip(v); wireSkill(b); $('[data-skills]', el).appendChild(b); }
+      inp.value = ''; dirty();
     };
     $('[data-skill-new]', el).onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); $('[data-skill-add]', el).click(); } };
     // New WhatsApp number: a code goes to the new number; it is saved only when that code is right.

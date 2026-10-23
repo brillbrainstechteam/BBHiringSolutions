@@ -544,3 +544,7 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
 @media (max-width: 560px) { .cp-hero .grow { flex: 1 1 calc(100% - 64px); min-width: 0; } .cp-hero h1 { font-size: 26px; } .cp-strength { margin-left: auto; } .cp-hero .eyebrow { letter-spacing: .18em; } }
 .inp-wrap .cp-change { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); }
 .inp-wrap .cp-locked { padding-right: 84px; }
+.cp-skills button { display: inline-flex; align-items: center; gap: 6px; }
+.cp-skills button .x { display: none; width: 18px; height: 18px; margin-right: -4px; border-radius: 50%; place-items: center; font-size: 14px; line-height: 1; background: rgba(255, 255, 255, .16); color: #fff; }
+.cp-skills button.on .x { display: inline-grid; }
+.cp-skills button.on .x:hover { background: var(--red); }
