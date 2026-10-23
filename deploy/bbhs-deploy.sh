@@ -14,7 +14,7 @@ DIR="/opt/bbhs-$COPY"
 BRANCH="$(cat "$DIR/.deploy-branch" 2>/dev/null || echo main)"
 
 cd "$DIR"
-git config --global --add safe.directory "$DIR" 2>/dev/null || true
+git config --system --get-all safe.directory 2>/dev/null | grep -qx "$DIR" || git config --system --add safe.directory "$DIR"
 OLD="$(git rev-parse HEAD)"
 git fetch --quiet origin "$BRANCH"
 NEW="$(git rev-parse "origin/$BRANCH")"

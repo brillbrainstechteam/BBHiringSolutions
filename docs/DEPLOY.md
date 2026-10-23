@@ -112,5 +112,6 @@ The live copy updates itself after every push to GitHub:
 1. On this PC: commit, then `git push`.
 2. GitHub Actions (`.github/workflows/deploy.yml`) logs in to the server with a key that can **only** run `/usr/local/bin/bbhs-deploy live` (it is locked to that command in `/root/.ssh/authorized_keys`).
 3. `bbhs-deploy` (from `deploy/bbhs-deploy.sh`) fetches the branch named in `/opt/bbhs-live/.deploy-branch`, restarts the app and checks it answers. If it does not, it goes back to the previous version. It never moves the server to an older commit than it has.
+4. Backup route: the server also checks GitHub every 2 minutes (`bbhs-deploy.timer`) and runs the same deploy, so a push still goes live if GitHub cannot reach the server. `systemctl list-timers bbhs-deploy.timer` shows it; `journalctl -u bbhs-deploy.service` shows what it did.
 
 One-time setup: in GitHub → the repository → Settings → Secrets and variables → Actions → **New repository secret**, name `VPS_DEPLOY_KEY`, value = the whole private key file `bbhs_github_deploy` (made on the developer PC in `~/.ssh/`). To deploy by hand on the server: `sudo bbhs-deploy`. To switch branch: write its name into `/opt/bbhs-live/.deploy-branch`.
