@@ -55,6 +55,8 @@ CREATE TABLE IF NOT EXISTS history (id INTEGER PRIMARY KEY AUTOINCREMENT, at TEX
 CREATE TRIGGER IF NOT EXISTS history_no_update BEFORE UPDATE ON history BEGIN SELECT RAISE(ABORT, 'history cannot be edited'); END;
 CREATE TRIGGER IF NOT EXISTS history_no_delete BEFORE DELETE ON history BEGIN SELECT RAISE(ABORT, 'history cannot be deleted'); END;
 CREATE INDEX IF NOT EXISTS ix_apps_job ON applications(job_id);
+CREATE INDEX IF NOT EXISTS ix_cand_email ON candidates(lower(email));
+CREATE INDEX IF NOT EXISTS ix_client_email ON clients(lower(email));
 
 CREATE INDEX IF NOT EXISTS ix_apps_cand ON applications(candidate_id);
 CREATE INDEX IF NOT EXISTS ix_msg_person ON messages(person_type, person_id);

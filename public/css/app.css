@@ -434,7 +434,8 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
 .trust li b { color: var(--ink); margin-right: 4px; }
 .signin-row { display: flex; gap: 22px; justify-content: center; align-items: center; flex-wrap: wrap; padding: 6px 16px 10px; font-size: 14px; }
 .signin-row a { font-weight: 700; color: var(--navy-700); }
-@media (max-width: 1080px) { .hero .pub-card { justify-self: stretch; max-width: none; } .hero .pub-intro { padding-top: 0; } }
+@media (max-width: 1080px) { .hero { grid-template-columns: minmax(0, 1fr); gap: 24px; } .hero .pub-card { justify-self: stretch; max-width: none; } .hero .pub-intro { padding-top: 0; } }
+@media (max-width: 560px) { .hero { padding-top: 24px; } .hero h1 { font-size: 38px; margin: 12px 0; } .hero .lead { font-size: 15.5px; margin-bottom: 8px; } .hero .deco-dots, .hero .dots { display: none; } }
 @media (max-width: 560px) { .trust { display: none; } .mode-seg button { font-size: 13px; padding: 10px 6px; } }
 
 /* ---------- job form: CV first ---------- */
@@ -686,3 +687,13 @@ a.disabled { pointer-events: none; color: var(--faint); }
 .login-switch { margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--border); text-align: center; font-size: 13.5px; font-weight: 600; }
 .ty-login .login-switch { margin-top: 0; }
 .pw-card .btn { align-self: flex-start; }
+/* Phones and tablets: the menu links are hidden, so a small "Log in" menu takes their place. */
+.pub-login { display: none; margin-left: auto; position: relative; }
+.pub-login summary { list-style: none; cursor: pointer; border-color: var(--mustard); color: #fff; background: transparent; min-height: 36px; }
+.pub-login summary::-webkit-details-marker { display: none; }
+.pub-login-menu { position: absolute; right: 0; top: calc(100% + 8px); background: var(--surface); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow-lg); padding: 6px; min-width: 180px; z-index: 20; display: grid; }
+.pub-login-menu a { padding: 11px 12px; border-radius: 8px; color: var(--ink); font-weight: 600; text-decoration: none; }
+.pub-login-menu a:hover { background: var(--sky-50); }
+@media (max-width: 1080px) { .pub-login { display: block; } }
+.phone-line { flex-wrap: wrap; row-gap: 4px; } .phone-line b, .phone-line a { white-space: nowrap; }
+@media (max-width: 560px) { .ty-login .phone-line > .muted { display: none; } }

@@ -173,7 +173,7 @@
     acc.innerHTML = `<div data-byphone class="stack-sm">${phoneLine}
       <button class="btn primary lg ty-go" data-sendcode>Send code on WhatsApp</button>
       <form class="stack-sm hidden" data-codeform novalidate>
-        ${field({ name: 'code', label: '6-digit code from WhatsApp', voice: false, attrs: 'inputmode="numeric" maxlength="6" autocomplete="one-time-code" class="code-in"' })}
+        ${field({ name: 'code', label: 'Enter 6 digit code received on WhatsApp', voice: false, attrs: 'inputmode="numeric" maxlength="6" autocomplete="one-time-code" class="code-in"' })}
         <div data-dev class="small"></div>
         <button class="btn primary lg ty-go">Verify and ${t.open.toLowerCase()}</button>
         <div class="small"><a href="#" data-resend>Send the code again</a> <span class="muted" data-wait></span></div>

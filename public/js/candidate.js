@@ -177,7 +177,7 @@
         submit: (v) => BB.post('/api/cand/phone/request', { phone: BB.spokenToDigits(v.phone) || v.phone }) });
       if (!a) return;
       const b = await BB.ask({ title: 'Enter the code', note: `Sent on WhatsApp to +91 ${esc(a.phone.slice(0, 5))} ${esc(a.phone.slice(5))}. It is valid for 10 minutes.${a.dev_code ? ` <b>Test copy:</b> the code is <b class="mono">${a.dev_code}</b>.` : ''}`, ok: 'Verify and save',
-        fields: [field({ name: 'code', label: '6-digit code', voice: false, attrs: 'inputmode="numeric" maxlength="6" autocomplete="one-time-code"' })],
+        fields: [field({ name: 'code', label: 'Enter 6 digit code received on WhatsApp', voice: false, attrs: 'inputmode="numeric" maxlength="6" autocomplete="one-time-code"' })],
         submit: (v) => BB.post('/api/cand/phone/verify', { phone: a.phone, code: v.code }) });
       if (b) { BB.toast('WhatsApp number updated. Use it to log in from now on.'); reload(); }
     };

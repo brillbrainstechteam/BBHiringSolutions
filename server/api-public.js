@@ -142,6 +142,9 @@ function setPassword(kind, rec, b, actor, ip) {
   if (pw.length < 8) throw httpError(400, 'Use at least 8 characters.', 'password');
   const email = String(b.email || rec.email || '').trim().toLowerCase();
   if (!/^\S+@\S+\.\S+$/.test(email)) throw httpError(400, 'Add your email first — you log in with it.', 'email');
+  // One email logs in to one account: refuse if another account of the same kind already has a password on it.
+  const table = kind === 'client' ? 'clients' : 'candidates';
+  if (get(`SELECT 1 FROM ${table} r JOIN account_passwords p ON p.kind=? AND p.subject_id=r.id WHERE lower(r.email)=? AND r.id<>? AND r.merged_into IS NULL AND r.removed=0`, kind, email, rec.id)) throw httpError(400, 'This email is already used to log in to another account. Use a different email.', 'email');
   if (email !== String(rec.email || '').toLowerCase()) D.edit(kind === 'client' ? 'clients' : 'candidates', rec.id, { email }, actor.label, ip);
   D.run('INSERT INTO account_passwords (kind, subject_id, pass_hash, updated_at) VALUES (?,?,?,?) ON CONFLICT(kind, subject_id) DO UPDATE SET pass_hash=excluded.pass_hash, updated_at=excluded.updated_at', kind, rec.id, L.hashPassword(pw), now());
   D.history(actor.label, 'password set', rec.id);

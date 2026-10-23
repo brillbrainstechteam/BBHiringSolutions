@@ -10,7 +10,7 @@
         ${field({ name: 'username', label: 'Username', voice: false, attrs: 'autocomplete="username" autocapitalize="off"' })}
         <label class="field" data-f="password"><span class="lab">Password</span><div class="inp-wrap"><input name="password" type="password" autocomplete="current-password"><button type="button" class="mic" data-eye title="Show or hide" style="font-size:12px;width:44px">Show</button></div></label>
         <button class="btn gold block lg">Log in</button><p class="small faint" style="margin:0">5 wrong tries lock the login for 15 minutes.</p></form>
-        <form class="stack hidden" data-2fa><h3>Check on a new device</h3><p class="small muted">We sent a 6-digit code to your WhatsApp.</p><div data-dev></div>${field({ name: 'code', label: 'Code', voice: false, attrs: 'inputmode="numeric" maxlength="6" class="code-in" autocomplete="one-time-code"' })}<button class="btn gold block lg">Verify</button></form>` });
+        <form class="stack hidden" data-2fa><h3>Check on a new device</h3><p class="small muted">We sent a 6-digit code to your WhatsApp.</p><div data-dev></div>${field({ name: 'code', label: 'Enter 6 digit code received on WhatsApp', voice: false, attrs: 'inputmode="numeric" maxlength="6" class="code-in" autocomplete="one-time-code"' })}<button class="btn gold block lg">Verify</button></form>` });
     $('[data-eye]').onclick = (e) => { const i = $('[name=password]'); i.type = i.type === 'password' ? 'text' : 'password'; e.target.textContent = i.type === 'password' ? 'Show' : 'Hide'; };
     $('[data-login]').onsubmit = async (e) => {
       e.preventDefault(); const v = BB.formValues(e.target);
