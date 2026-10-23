@@ -347,10 +347,10 @@ BB.route = () => {
   (BB.views[view] || BB.views.landing)(r);
 };
 // Brand lockup: mark | BrillBrains / Hiring Solutions / tagline (as on the website).
+// The full logo on wide screens, the BB mark where space is tight; the tagline names the part of the site.
 BB.brand = (tagline, href = '#') => {
   const name = BB.boot.business.name || 'BrillBrains Hiring Solutions';
-  const [first, ...rest] = name.split(' ');
-  return `<a class="brand" href="${href}"><img src="/img/icon.svg" alt=""><span class="bt"><b>${esc(first)}</b><span>${esc(rest.join(' '))}</span><small>${esc(tagline || 'Effective Recruitment Services')}</small></span></a>`;
+  return `<a class="brand" href="${href}"><img class="brand-logo" src="/img/logo.png" alt="${esc(name)}"><img class="brand-mark" src="/img/icon.png" alt="${esc(name)}">${tagline ? `<span class="brand-tag">${esc(tagline)}</span>` : ''}</a>`;
 };
 // Navy top bar. nav=false on the form links (they open only the form, no other menus).
 BB.publicTop = (sub, nav = false) => `<header class="pub-top">${BB.brand(sub)}${nav ? `<nav class="pub-nav"><a href="#hire">For Employers</a><a href="#apply">For Candidates</a><a href="#my-account">Client login</a><a href="#my-profile">My profile</a></nav>` : `<a class="btn sm help" href="https://wa.me/91${esc(BB.boot.business.support_phone)}" target="_blank" rel="noopener">${waIcon} Need help?</a>`}</header>`;

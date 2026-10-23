@@ -84,7 +84,7 @@ function layout(title, bodyHtml, cta) {
   return `<!doctype html><html><body style="margin:0;background:#F6F7FB;font-family:Arial,Helvetica,sans-serif;color:#101A3A">
 <table width="100%" cellpadding="0" cellspacing="0" style="background:#F6F7FB;padding:24px 12px"><tr><td align="center">
 <table width="560" cellpadding="0" cellspacing="0" style="max-width:560px;width:100%;background:#fff;border-radius:14px;overflow:hidden;border:1px solid #E5E8F1">
-<tr><td style="background:#101A3A;padding:18px 24px;border-bottom:4px solid #D19B12"><span style="color:#fff;font-size:18px;font-weight:bold">${esc(b.name)}</span><br><span style="color:#8D97B8;font-size:11px">Effective Recruitment Services</span></td></tr>
+<tr><td style="background:#101A3A;padding:18px 24px;border-bottom:4px solid #D19B12">${/^https:\/\//.test(D.ENV.baseUrl) ? `<img src="${esc(D.ENV.baseUrl)}/img/logo.png" alt="${esc(b.name)}" height="52" style="height:52px;width:auto;display:block;border:0;color:#fff;font-size:18px;font-weight:bold">` : `<span style="color:#fff;font-size:18px;font-weight:bold">${esc(b.name)}</span><br><span style="color:#8D97B8;font-size:11px">Effective Recruitment Services</span>`}</td></tr>
 <tr><td style="padding:24px"><h1 style="margin:0 0 12px;font-size:20px;color:#101A3A">${esc(title)}</h1>${bodyHtml}
 ${cta ? `<p style="margin:22px 0 4px"><a href="${esc(cta.url)}" style="background:#D19B12;color:#1A1404;text-decoration:none;font-weight:bold;padding:11px 20px;border-radius:999px;display:inline-block">${esc(cta.label)}</a></p>` : ''}</td></tr>
 <tr><td style="padding:14px 24px;background:#F9FAFD;color:#959DB5;font-size:11px">${esc(b.name)}${b.support_phone ? ` · WhatsApp ${esc(b.support_phone)}` : ''}</td></tr>

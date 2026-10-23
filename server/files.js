@@ -171,7 +171,15 @@ function wrap(line, max = 92) {
   for (const w of String(line).split(' ')) { if ((cur + ' ' + w).trim().length > max) { out.push(cur); cur = w; } else cur = (cur + ' ' + w).trim(); }
   out.push(cur); return out;
 }
-// lines: strings, or {text, size, bold}. Brand bar at the top in the primary colour.
+// The logo for the PDF brand bar: raw RGB on navy, already deflated (made from docs/bbhs-logo-combined.png).
+let pdfLogo;
+function logoForPdf() {
+  if (pdfLogo === undefined) {
+    try { pdfLogo = { ...JSON.parse(fs.readFileSync(path.join(__dirname, 'assets', 'logo-pdf.json'), 'utf8')), data: fs.readFileSync(path.join(__dirname, 'assets', 'logo-pdf.bin')) }; } catch { pdfLogo = null; }
+  }
+  return pdfLogo;
+}
+// lines: strings, or {text, size, bold}. Brand bar at the top in the primary colour, with the logo.
 function makePdf(title, lines, brand) {
   const items = [];
   for (const l of lines) { const o = typeof l === 'string' ? { text: l } : l; for (const w of wrap(o.text, o.size && o.size > 12 ? 60 : 92)) items.push({ ...o, text: w }); }
@@ -184,17 +192,19 @@ function makePdf(title, lines, brand) {
   objs[1] = '<< /Type /Catalog /Pages 2 0 R >>';
   objs[3] = '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>';
   objs[4] = '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>';
-  const kids = [];
+  const kids = []; const logo = logoForPdf(); const logoId = 5 + pages.length * 2;
+  const head = logo ? `q ${(30 * logo.w / logo.h).toFixed(1)} 0 0 30 40 757 cm /Im1 Do Q` : `1 1 1 rg BT /F2 13 Tf 40 766 Td (${pdfSafe((brand && brand.name) || 'BrillBrains Hiring Solutions')}) Tj ET`;
   pages.forEach((pg, i) => {
     const pid = 5 + i * 2; const cid = pid + 1; kids.push(`${pid} 0 R`);
-    let s = `${rgb} rg 0 792 612 -40 re f 1 1 1 rg BT /F2 13 Tf 40 766 Td (${pdfSafe((brand && brand.name) || 'BrillBrains Hiring Solutions')}) Tj ET 0 0 0 rg\n`;
+    let s = `${rgb} rg 0 792 612 -40 re f ${head} 0 0 0 rg\n`;
     s += `BT /F2 15 Tf 40 724 Td (${pdfSafe(i === 0 ? title : title + ' (cont.)')}) Tj ET\n`;
     for (const it of pg) s += `BT /${it.bold ? 'F2' : 'F1'} ${it.size || 10} Tf 40 ${it.y - 34} Td (${pdfSafe(it.text)}) Tj ET\n`;
     s += `BT /F1 8 Tf 40 30 Td (Page ${i + 1} of ${pages.length}) Tj ET`;
-    objs[pid] = `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents ${cid} 0 R >>`;
+    objs[pid] = `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R /F2 4 0 R >>${logo ? ` /XObject << /Im1 ${logoId} 0 R >>` : ''} >> /Contents ${cid} 0 R >>`;
     objs[cid] = `<< /Length ${Buffer.byteLength(s, 'latin1')} >>\nstream\n${s}\nendstream`;
   });
   objs[2] = `<< /Type /Pages /Kids [${kids.join(' ')}] /Count ${kids.length} >>`;
+  if (logo) objs[logoId] = `<< /Type /XObject /Subtype /Image /Width ${logo.w} /Height ${logo.h} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /FlateDecode /Length ${logo.data.length} >>\nstream\n${logo.data.toString('latin1')}\nendstream`;
   let out = '%PDF-1.4\n'; const offs = [];
   for (let i = 1; i < objs.length; i++) { offs[i] = Buffer.byteLength(out, 'latin1'); out += `${i} 0 obj\n${objs[i]}\nendobj\n`; }
   const xref = Buffer.byteLength(out, 'latin1');
