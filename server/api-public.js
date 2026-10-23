@@ -166,8 +166,10 @@ function checkNewPassword(b) {
   if (b.confirm !== undefined && b.confirm !== pw) throw httpError(400, 'The two passwords do not match.', 'confirm');
   return pw;
 }
-// Create an account: the person proves the WhatsApp number is theirs (the session they got from the form, or a
-// WhatsApp code), then picks an email and password. They log in with it afterwards.
+// Create an account with email and password. Right after the form, the session from the form is proof enough.
+// From the login page: step 1 (/register-start) finds the profile by its email and sends a 6-digit code to that
+// email (and its WhatsApp, while email sending is being set up); step 2 sends the code back with the password.
+// Without the code, anyone who knows someone's email could open their account.
 route('POST', '/api/account/register', { rate: { key: 'pwset', max: 10, minutes: 60 } }, (ctx) => {
   const kind = kindOf(ctx.body.kind); const b = ctx.body;
   const email = cleanEmail(b.email);
@@ -176,7 +178,10 @@ route('POST', '/api/account/register', { rate: { key: 'pwset', max: 10, minutes:
   let rec = null;
   const sess = ctx.req.headers['x-session'] ? get('SELECT * FROM sessions WHERE token=? AND kind=?', ctx.req.headers['x-session'], kind) : null;
   if (sess && !sess.member_id) rec = get(`SELECT * FROM ${KINDS[kind]} WHERE id=?`, L.resolveId(sess.subject_id));
-  else {
+  else if (b.code && !b.phone) {
+    rec = signupRecord(kind, email);
+    checkCode(rec.whatsapp, `signup:${kind}`, b.code);
+  } else {
     const phone = L.digits10(b.phone);
     if (!L.validPhone(phone)) throw httpError(400, 'Enter your 10-digit WhatsApp number', 'phone');
     rec = get(`SELECT * FROM ${KINDS[kind]} WHERE whatsapp=? AND merged_into IS NULL AND removed=0`, phone);
@@ -190,6 +195,26 @@ route('POST', '/api/account/register', { rate: { key: 'pwset', max: 10, minutes:
   savePassword(kind, rec.id, pw, kind === 'client' ? 'Client' : 'Candidate');
   return { ok: true, email };
 });
+function signupRecord(kind, email) {
+  const rec = get(`SELECT * FROM ${KINDS[kind]} WHERE lower(email)=? AND merged_into IS NULL AND removed=0 ORDER BY created_at DESC`, email);
+  if (!rec) throw httpError(404, kind === 'client' ? 'We could not find this email. Use the email you gave in the hiring form, or fill the form first.' : 'We could not find this email. Use the email you gave in the job form, or fill the form first.', 'email');
+  return rec;
+}
+route('POST', '/api/account/register-start', { rate: { key: 'pwsignup', max: 10, minutes: 60 } }, (ctx) => {
+  const kind = kindOf(ctx.body.kind); const email = cleanEmail(ctx.body.email);
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) throw httpError(400, 'Enter a valid email', 'email');
+  checkNewPassword(ctx.body);
+  const rec = signupRecord(kind, email);
+  if (hasPassword(kind, rec.id)) throw httpError(400, 'This email already has an account. Log in, or use Forgot password.', 'email');
+  emailFree(kind, email, rec.id);
+  const mailer = require('./mailer');
+  if (!L.validPhone(rec.whatsapp) && !mailer.configured()) throw httpError(400, 'We cannot send you a code right now. Please log in with your WhatsApp number.', 'email');
+  let code;
+  if (L.validPhone(rec.whatsapp)) code = issueCode(rec.whatsapp, `signup:${kind}`);
+  else { code = String(crypto.randomInt(0, 1000000)).padStart(6, '0'); insert('otps', { phone: rec.whatsapp || '', purpose: `signup:${kind}`, code_hash: L.sha(code + (rec.whatsapp || '')), expires: new Date(Date.now() + 10 * 60000).toISOString(), tries: 0, used: 0, created_at: now() }); }
+  mailer.accountCode(email, code, rec.id, 'signup');
+  return { sent: true, by_email: mailer.configured(), by_whatsapp: L.validPhone(rec.whatsapp), dev_code: showCode() ? code : undefined };
+});
 // Forgot password: a 6-digit code goes to the account's WhatsApp and to its email. The answer is the same
 // whether or not the email is known, so nobody can use this to find out who has an account.
 route('POST', '/api/account/forgot', { rate: { key: 'pwforgot', max: 10, minutes: 60 } }, (ctx) => {
@@ -199,7 +224,7 @@ route('POST', '/api/account/forgot', { rate: { key: 'pwforgot', max: 10, minutes
   let dev;
   if (rec && L.validPhone(rec.whatsapp)) {
     const code = issueCode(rec.whatsapp, `reset:${kind}`);
-    require('./mailer').resetCode(email, code, rec.id);
+    require('./mailer').accountCode(email, code, rec.id, 'reset');
     dev = showCode() ? code : undefined;
   }
   return { sent: true, dev_code: dev };

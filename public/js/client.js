@@ -15,7 +15,6 @@
       <p class="small muted" style="margin-top:16px" data-newhere>New here? ${kind === 'client' ? '<a href="/hire">Fill the hiring form</a>' : '<a href="/apply">Fill the job form</a>'}</p>` });
     BB.attachMics($('#app'));
     let phone = ''; let timer;
-    const pretty = (p) => `+91 ${p.slice(0, 5)} ${p.slice(5)}`;
     const wait = (sec) => { clearInterval(timer); const a = $('[data-resend]'); a.classList.add('disabled'); const w = $('[data-wait]');
       const tick = () => { w.textContent = sec > 0 ? `in ${sec} s` : ''; if (sec-- <= 0) { clearInterval(timer); a.classList.remove('disabled'); } }; tick(); timer = setInterval(tick, 1000); };
     const send = async (btn, f) => {
@@ -52,11 +51,11 @@
     };
   };
   // Email accounts, one box: log in, create an account, forgot password, set a new password.
-  // o: { kind, email, phone, session (true when the form just signed them in), start, onLogin(token), onView(view) }.
-  // Creating an account from the login page first checks the WhatsApp number with a code (it proves the account
-  // is theirs); right after the form there is no need, the form already signed them in.
+  // o: { kind, email, session (true when the form just signed them in), start, onLogin(token), onView(view) }.
+  // Create an account = email + password. From the login page a 6-digit code then confirms the email is theirs
+  // (sent to that email, and to the WhatsApp on the profile); right after the form no code is needed.
   BB.emailAuth = (el, o) => {
-    const F = BB.field; let email = o.email || ''; let phone = o.phone || '';
+    const F = BB.field; let email = o.email || ''; let pending = ''; // the new password, held only until the code is confirmed
     const pwF = (label, auto, hint) => F({ name: 'password', label, type: 'password', voice: false, hint, attrs: `autocomplete="${auto}"` });
     const emF = () => F({ name: 'email', label: 'Email', type: 'email', voice: false, value: email, attrs: 'autocomplete="email" inputmode="email"' });
     const codeF = (label) => F({ name: 'code', label, voice: false, attrs: 'inputmode="numeric" maxlength="6" autocomplete="one-time-code"' });
@@ -70,15 +69,12 @@
       login: (msg) => `${note(msg)}${emF()}${pwF('Password', 'current-password')}
         <button class="btn gold block lg">Log in</button>
         <div class="row between small ea-links"><a href="#" data-ea="forgot">Forgot password?</a><a href="#" data-ea="register">Create an account</a></div>`,
-      register: () => (o.session
-        ? `${head('Create your account', 'Pick the email and password you will log in with.')}${emF()}${pwF('Password', 'new-password', 'At least 8 characters')}
-          <button class="btn gold block lg">Create account</button>${back}`
-        : `${head('Create your account', 'Step 1 of 2 · we check your WhatsApp number')}
-          ${F({ name: 'phone', label: 'WhatsApp number', type: 'tel', phone: true, value: phone, placeholder: '10 digits', voice: false, attrs: 'inputmode="numeric" maxlength="14" autocomplete="tel"' })}
-          <button class="btn gold block lg">Continue</button>${back}`),
-      register2: (devCode) => `${head('Create your account', `Step 2 of 2 · code sent to ${pretty(phone)} · <a href="#" data-ea="register">change</a>`)}${dev(devCode)}
-        ${codeF('6 digit code from WhatsApp')}${emF()}${pwF('Password', 'new-password', 'At least 8 characters')}
-        <button class="btn gold block lg">Create account</button>${back}`,
+      register: () => `${head('Create your account', 'Use the email you gave us and pick a password.')}${emF()}${pwF('Password', 'new-password', 'At least 8 characters')}
+          <button class="btn gold block lg">Create account</button>${back}`,
+      register2: (r) => `${head('Confirm your email', `We sent a 6-digit code to ${[r.by_email ? BB.esc(email) : '', r.by_whatsapp ? 'your WhatsApp' : ''].filter(Boolean).join(' and ')}.`)}${dev(r.dev_code)}
+        ${codeF('Enter the 6 digit code')}
+        <button class="btn gold block lg">Confirm and finish</button>
+        <div class="row between small ea-links"><a href="#" data-ea="register">Send the code again</a><a href="#" data-ea="login">Back to log in</a></div>`,
       forgot: () => `${head('Forgot password', 'We send a 6-digit code to your WhatsApp and email.')}${emF()}
         <button class="btn gold block lg">Send reset code</button>${back}`,
       reset: (devCode) => `${head('Set a new password', `If ${BB.esc(email)} has an account, the code is on its way.`)}${dev(devCode)}
@@ -91,19 +87,18 @@
     const submit = {
       login: (v) => BB.post('/api/account/login', { kind: o.kind, email: v.email, password: v.password }, { kind: null }).then((r) => o.onLogin(r.token)),
       register: async (v) => {
-        if (!o.session) {
-          phone = BB.spokenToDigits(v.phone) || String(v.phone || '').replace(/\D/g, '').slice(-10);
-          if (!/^[6-9]\d{9}$/.test(phone)) throw err('phone', 'Enter your 10-digit WhatsApp number');
-          const r = await BB.post('/api/otp/request', { phone, kind: o.kind }, { kind: null });
-          return show('register2', r.dev_code);
-        }
         okEmail(v); okPw(v);
-        await BB.post('/api/account/register', { kind: o.kind, email: v.email, password: v.password }, { kind: o.kind });
-        return show('login', 'Account created. Log in with your email and password.');
+        if (o.session) {
+          await BB.post('/api/account/register', { kind: o.kind, email: v.email, password: v.password }, { kind: o.kind });
+          return show('login', 'Account created. Log in with your email and password.');
+        }
+        pending = v.password;
+        const r = await BB.post('/api/account/register-start', { kind: o.kind, email: v.email, password: v.password }, { kind: null });
+        return show('register2', r);
       },
       register2: async (v) => {
-        okEmail(v); okPw(v);
-        await BB.post('/api/account/register', { kind: o.kind, phone, code: v.code, email: v.email, password: v.password }, { kind: null });
+        await BB.post('/api/account/register', { kind: o.kind, email, code: v.code, password: pending }, { kind: null });
+        pending = '';
         show('login', 'Account created. Log in with your email and password.');
       },
       forgot: (v) => { okEmail(v); return BB.post('/api/account/forgot', { kind: o.kind, email: v.email }, { kind: null }).then((r) => show('reset', r.dev_code)); },
