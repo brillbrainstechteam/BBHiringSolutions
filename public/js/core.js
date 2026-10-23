@@ -269,6 +269,11 @@ BB.attachCities = (root) => {
     const st = $('[name=state]', scope()); if (st) st.addEventListener('input', () => delete st.dataset.auto);
   }
 };
+// Tables marked "cards" show one card per row on phones; each cell gets its column name as a label.
+BB.cardTables = (root) => root.querySelectorAll('table.cards').forEach((t) => {
+  const heads = [...t.querySelectorAll('thead th')].map((th) => th.textContent.trim());
+  t.querySelectorAll('tbody tr').forEach((tr) => [...tr.children].forEach((td, i) => { if (!td.colSpan || td.colSpan < 2) td.dataset.label = heads[i] || ''; }));
+});
 BB.attachMics = (root) => {
   BB.attachCities(root);
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
