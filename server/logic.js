@@ -4,6 +4,9 @@ const D = require('./db');
 const { all, get, run, insert, update, nextId, settings, history, now, httpError } = D;
 
 const STEPS = ['Applied', 'Screening', 'Our interview', 'Sent to client', 'Client interview', 'Offer made', 'Offer accepted', 'Joined'];
+// Routine messages go by email only (WhatsApp costs per message); everything someone must act on or know at once keeps WhatsApp too.
+const EMAIL_ONLY_RULES = ['log_reminder', 'day_summary', 'monthly_summary', 'still_looking'];
+const ruleChannel = (r) => (r && r.channel) || (r && EMAIL_ONLY_RULES.includes(r.key) ? 'email' : 'both');
 const ACTION_RULES = ['client_welcome', 'candidate_welcome', 'interview_scheduled', 'offer', 'shortlist_ready', 'bill_raised', 'jd_approval'];
 const stepIdx = (s) => STEPS.indexOf(s);
 const INTERVIEW_STEPS = ['Our interview', 'Sent to client', 'Client interview'];
@@ -130,6 +133,7 @@ function sendWA(o) {
     if (!fmt) return { skipped: 'Unknown format' };
     if (!fmt.approved) { if (o.auto) waOnlyStop = 'Format waiting for Meta approval'; else throw httpError(400, 'This format is waiting for Meta approval and cannot be sent.'); }
   }
+  if (o.toPhone) p.phone = o.toPhone; // a one-off number, e.g. the code that proves a new number is theirs
   if (!p.phone) waOnlyStop = 'No WhatsApp number';
   if (o.rule) {
     const r = s.auto_rules.find((x) => x.key === o.rule);
@@ -140,12 +144,15 @@ function sendWA(o) {
   if (o.dedupe && get('SELECT 1 FROM messages WHERE dedupe=?', o.dedupe)) return { skipped: 'Already sent before' };
   // Email copy of the same message, under the same rules (on in Settings, not after STOP, never twice) and the
   // same timing (held to 9 am in quiet hours). Codes and passwords never go by email.
-  const email = p.record && p.record.email;
-  if (o.format && !o.secret && email) {
+  const email = p.record && p.record.email; let emailed = false;
+  if (o.format && !o.secret && email && D.ENV.emailCopies !== false) {
     const mailAt = o.sendLater && o.sendLater !== true ? o.sendLater : (o.auto || o.sendLater) && inQuiet() && p.type !== 'user' ? next9am() : null;
+    emailed = require('./mailer').configured(); // only counts once email is really set up
     require('./mailer').copyOfWhatsApp({ to: email, personType: p.type, format: o.format, text: fillFormat(o.format, o.lang || p.lang || 'en', { name: p.name, ...(o.vars || {}) }), recordId: p.id, sendAfter: mailAt, dedupe: o.dedupe ? `mail:${o.dedupe}` : null });
   }
-  if (waOnlyStop) return { skipped: waOnlyStop };
+  if (waOnlyStop) return { skipped: waOnlyStop, emailed };
+  // "Email only" messages skip WhatsApp when the email went; someone without an email still gets WhatsApp.
+  if (emailed && o.rule && ruleChannel(s.auto_rules.find((x) => x.key === o.rule)) === 'email') return { skipped: 'Email only (Settings)', emailed };
   // The daily cap is for reminders and alerts. Messages that follow something the team or client just did
   // (welcome, interview fixed, offer, profiles sent, bill) always go, or an offer could be dropped on a busy day.
   if (o.auto && p.type !== 'user' && !ACTION_RULES.includes(o.rule)) {

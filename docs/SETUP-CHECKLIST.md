@@ -34,6 +34,8 @@ When someone fills the hiring or job form, they get a confirmation email (if the
 
 Every WhatsApp message (welcome, interview fixed and reminders, offer, joining reminder, check-ins, profiles ready, JD approval, bill and payment reminders, task alerts, log reminder, day summary) also goes by email to the person's email address, at the same time and under the same rules: held to 9 am in quiet hours, never twice, not after STOP, and off when that automatic message is off in Settings. People with no WhatsApp number still get the email. Login codes and passwords never go by email. Team members get theirs at the email on their login (Team → Logins → Edit). `EMAIL_COPIES=off` stops the copies.
 
+Settings → Automatic messages → **Send by**: *WhatsApp + email* (default for everything someone must act on or know at once) or *Email only* (default for the daily log reminder, evening day summary, monthly summary and the "still looking?" ping, to save WhatsApp charges). "Email only" still goes on WhatsApp to anyone without an email address, and to everyone until email is set up.
+
 | Setting | Gmail / Google Workspace | Zoho | Microsoft 365 |
 | --- | --- | --- | --- |
 | `SMTP_HOST` | `smtp.gmail.com` | `smtp.zoho.in` | `smtp.office365.com` |

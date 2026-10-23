@@ -542,3 +542,5 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
 }
 .cp-app-mini .tracker { scrollbar-width: none; } .cp-app-mini .tracker::-webkit-scrollbar { display: none; } .cp-app-mini .tracker .s { min-width: 58px; font-size: 10px; }
 @media (max-width: 560px) { .cp-hero .grow { flex: 1 1 calc(100% - 64px); min-width: 0; } .cp-hero h1 { font-size: 26px; } .cp-strength { margin-left: auto; } .cp-hero .eyebrow { letter-spacing: .18em; } }
+.inp-wrap .cp-change { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); }
+.inp-wrap .cp-locked { padding-right: 84px; }

@@ -411,6 +411,35 @@ route('PUT', '/api/cand/profile', K, (ctx) => {
   patch.last_updated = now();
   return D.edit('candidates', ctx.candidate.id, patch, ctx.actor.label);
 });
+// Changing the WhatsApp number: a code goes to the NEW number, and only that code saves it.
+// The old number stays in the record's history; the new one becomes the login number at once.
+function newNumberCheck(ctx, raw) {
+  const phone = L.digits10(raw);
+  if (!L.validPhone(phone)) throw httpError(400, 'Enter a 10-digit WhatsApp number starting with 6, 7, 8 or 9', 'phone');
+  if (phone === ctx.candidate.whatsapp) throw httpError(400, 'This is already your number.', 'phone');
+  if (get('SELECT 1 FROM candidates WHERE whatsapp=? AND id<>? AND merged_into IS NULL AND removed=0', phone, ctx.candidate.id)) throw httpError(400, 'This number is on another profile with us. Please message us to join the two.', 'phone');
+  return phone;
+}
+route('POST', '/api/cand/phone/request', { auth: 'candidate', rate: { key: 'phone', max: 6, minutes: 60 } }, (ctx) => {
+  const phone = newNumberCheck(ctx, ctx.body.phone);
+  if (!showCode() && !D.settings().crm.enabled) throw httpError(400, 'Codes are sent on WhatsApp, which is being set up. Please try again later.', 'phone');
+  const hourAgo = new Date(Date.now() - 3600000).toISOString();
+  if (get('SELECT COUNT(*) c FROM otps WHERE phone=? AND created_at>?', phone, hourAgo).c >= 5) throw httpError(429, 'Too many codes asked for this number. Try again in an hour.');
+  const code = String(crypto.randomInt(0, 1000000)).padStart(6, '0');
+  insert('otps', { phone, purpose: `phone:${ctx.candidate.id}`, code_hash: L.sha(code + phone), expires: new Date(Date.now() + 10 * 60000).toISOString(), tries: 0, used: 0, created_at: now() });
+  L.sendWA({ ptype: 'candidate', pid: ctx.candidate.id, toPhone: phone, format: 'bbhs_login_code', vars: { code }, secret: code });
+  return { sent: true, phone, dev_code: showCode() ? code : undefined };
+});
+route('POST', '/api/cand/phone/verify', { auth: 'candidate' }, (ctx) => {
+  const phone = newNumberCheck(ctx, ctx.body.phone);
+  checkCode(phone, `phone:${ctx.candidate.id}`, ctx.body.code);
+  const old = ctx.candidate.whatsapp;
+  const patch = { whatsapp: phone, last_updated: now() };
+  if (/no phone/i.test(ctx.candidate.needs_check || '')) patch.needs_check = null;
+  D.edit('candidates', ctx.candidate.id, patch, ctx.actor.label, ctx.ip);
+  insert('notes', { record_id: ctx.candidate.id, text: `WhatsApp number changed by the candidate from ${old || 'none'} to ${phone} (checked with a code sent to the new number).`, author: ctx.actor.label, at: now() });
+  return { ok: true, phone };
+});
 function candApp(ctx) { const a = get('SELECT * FROM applications WHERE id=? AND candidate_id=?', ctx.params.id, ctx.candidate.id); if (!a) throw httpError(404, 'Application not found'); return a; }
 route('POST', '/api/cand/interviews/:iv/:action', K, (ctx) => {
   const iv = get('SELECT * FROM interviews WHERE id=?', ctx.params.iv); if (!iv) throw httpError(404, 'Interview not found');

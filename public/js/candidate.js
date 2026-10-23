@@ -115,7 +115,7 @@
       <div class="stack-lg">
         <div class="card pad stack"><div class="cp-h">${icon('users')}<h3>About you</h3><div class="right">${BB.voiceSwitch()}</div></div>
           ${field({ name: 'name', label: 'Name', value: p.name })}
-          <div class="grid g2"><label class="field"><span class="lab">WhatsApp number</span><div class="inp-wrap has-cc"><span class="cc">+91</span><input value="${esc(String(p.whatsapp || '').replace(/(\d{5})(\d{5})/, '$1 $2'))}" readonly class="cp-locked" aria-label="WhatsApp number"></div><div class="faint small" style="margin-top:3px">Your login number. To change it, <a href="https://wa.me/91${esc(BB.boot.business.support_phone)}" target="_blank" rel="noopener">message us</a>.</div></label>
+          <div class="grid g2"><label class="field"><span class="lab">WhatsApp number</span><div class="inp-wrap has-cc"><span class="cc">+91</span><input value="${esc(String(p.whatsapp || '').replace(/(\d{5})(\d{5})/, '$1 $2'))}" readonly class="cp-locked" aria-label="WhatsApp number"><button type="button" class="btn sm cp-change" data-chphone>Change</button></div><div class="faint small" style="margin-top:3px">Your login number. Changing it needs a code sent to the new number.</div></label>
             ${field({ name: 'email', label: 'Email', value: p.email, type: 'email', opt: true })}</div>
           ${field({ name: 'city', label: 'City', value: p.city, list: 'cities' })}
         </div>
@@ -152,6 +152,17 @@
       $('[data-skills]', el).appendChild(b); inp.value = ''; dirty();
     };
     $('[data-skill-new]', el).onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); $('[data-skill-add]', el).click(); } };
+    // New WhatsApp number: a code goes to the new number; it is saved only when that code is right.
+    $('[data-chphone]', el).onclick = async () => {
+      const a = await BB.ask({ title: 'Change your WhatsApp number', note: 'We send a 6-digit code on WhatsApp to the new number to check that it is yours.', ok: 'Send code',
+        fields: [field({ name: 'phone', label: 'New WhatsApp number', type: 'tel', phone: true, placeholder: '10 digits', attrs: 'inputmode="numeric" maxlength="14" autocomplete="tel"' })],
+        submit: (v) => BB.post('/api/cand/phone/request', { phone: BB.spokenToDigits(v.phone) || v.phone }) });
+      if (!a) return;
+      const b = await BB.ask({ title: 'Enter the code', note: `Sent on WhatsApp to +91 ${esc(a.phone.slice(0, 5))} ${esc(a.phone.slice(5))}. It is valid for 10 minutes.${a.dev_code ? ` <b>Test copy:</b> the code is <b class="mono">${a.dev_code}</b>.` : ''}`, ok: 'Verify and save',
+        fields: [field({ name: 'code', label: '6-digit code', voice: false, attrs: 'inputmode="numeric" maxlength="6" autocomplete="one-time-code"' })],
+        submit: (v) => BB.post('/api/cand/phone/verify', { phone: a.phone, code: v.code }) });
+      if (b) { BB.toast('WhatsApp number updated. Use it to log in from now on.'); reload(); }
+    };
     form.onsubmit = (e) => {
       e.preventDefault(); const v = BB.formValues(form);
       v.skills = $$('[data-skill].on', el).map((b) => b.dataset.skill);
