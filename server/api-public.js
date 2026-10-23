@@ -271,10 +271,17 @@ route('POST', '/api/client/apps/:id/interested', { auth: 'client', perm: 'candid
 // The client shares when they can meet the candidate; our recruiter fixes the interview from these times.
 route('POST', '/api/client/apps/:id/availability', { auth: 'client', perm: 'candidates' }, (ctx) => {
   const a = clientApp(ctx); if (a.result !== 'open') throw httpError(400, 'This profile is closed.');
-  const slots = (Array.isArray(ctx.body.slots) ? ctx.body.slots : []).filter(Boolean).map((x) => new Date(x)).filter((d) => !isNaN(d) && d > new Date());
-  if (!slots.length) throw httpError(400, 'Pick at least one date and time from today onwards', 'slot1');
+  // Each option is a window: { from, to } on one day (an older single time is still accepted).
+  const slots = (Array.isArray(ctx.body.slots) ? ctx.body.slots : []).filter(Boolean).map((x) => (typeof x === 'string' ? { from: new Date(x), to: null } : { from: new Date(x.from), to: x.to ? new Date(x.to) : null }));
+  for (const [i, s] of slots.entries()) {
+    if (isNaN(s.from) || (s.to && isNaN(s.to))) throw httpError(400, 'Pick a date and time', `slot${i + 1}`);
+    if (s.to && s.to <= s.from) throw httpError(400, 'The end time must be after the start time', `slot${i + 1}`);
+    if ((s.to || s.from) <= new Date()) throw httpError(400, 'Pick a time from now onwards', `slot${i + 1}`);
+  }
+  if (!slots.length) throw httpError(400, 'Give at least one date and time', 'slot1');
   const b = ctx.body;
-  const text = `Interview availability from ${ctx.actor.label}: ${slots.map((d) => L.istFmt(d.toISOString())).join(' · ')}${b.place ? ` · Place: ${b.place}` : ''}${b.interviewer ? ` · Meets: ${b.interviewer}` : ''}${b.note ? ` · ${b.note}` : ''}`;
+  const when = (s) => `${L.istFmt(s.from.toISOString())}${s.to ? ` – ${L.istTime(s.to.toISOString())}` : ''}`;
+  const text = `Interview availability from ${ctx.actor.label}: ${slots.map(when).join(' · ')}${b.place ? ` · Place: ${b.place}` : ''}${b.interviewer ? ` · Meets: ${b.interviewer}` : ''}${b.note ? ` · ${b.note}` : ''}`;
   update('applications', a.id, { client_choice: 'Availability shared' });
   if (L.stepIdx(a.step) < L.stepIdx('Client interview')) L.moveStep(a.id, 'Client interview', ctx.actor, 'Client shared interview availability');
   L.appHist(a.id, get('SELECT step FROM applications WHERE id=?', a.id).step, ctx.actor, text, 'availability');

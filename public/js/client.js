@@ -134,7 +134,25 @@
       ${a.step === 'Offer made' || a.step === 'Offer accepted' || a.result === 'Hired' ? offerBox(a) : ''}
     </div>`).join('')}</div>` : '<div class="card empty">No profiles yet. When our team sends you profiles, they show here and on WhatsApp.</div>';
     $$('[data-file]', el).forEach((b) => (b.onclick = () => BB.openFile(b.dataset.file)));
-    $$('[data-avail]', el).forEach((b) => (b.onclick = (e) => { e.preventDefault(); BB.ask({ title: `When can you meet ${b.dataset.name}?`, note: 'Give one to three times that suit you. Our recruiter confirms one with the candidate and lets you know.', fields: [`<div class="grid g3">${[1, 2, 3].map((k) => field({ name: `slot${k}`, label: `Option ${k}`, type: 'datetime-local', opt: k > 1 })).join('')}</div>`, { name: 'place', label: 'Place', value: D.client.city }, { name: 'interviewer', label: 'Who will meet them', value: D.member ? D.member.name : D.client.contact, opt: true }, { name: 'note', label: 'Anything else', type: 'textarea', opt: true }], ok: 'Share availability', submit: (v) => BB.post(`/api/client/apps/${b.dataset.avail}/availability`, { slots: [v.slot1, v.slot2, v.slot3].filter(Boolean).map((x) => new Date(x).toISOString()), place: v.place, interviewer: v.interviewer, note: v.note }) }).then((x) => x && (BB.toast('Thank you — our team will confirm the interview time'), reload())); }));
+    // Each option is a window on one day: date, from, to (e.g. 25 Oct, 11:00 am – 1:00 pm).
+    $$('[data-avail]', el).forEach((b) => (b.onclick = (e) => { e.preventDefault(); BB.ask({ title: `When can you meet ${b.dataset.name}?`, wide: true,
+      note: 'Give one to three time windows that suit you. Our recruiter confirms one with the candidate and lets you know.',
+      fields: [...[1, 2, 3].map((k) => `<div class="avail-opt"><b class="small">Option ${k}${k > 1 ? ' <span class="opt">(optional)</span>' : ''}</b><div class="grid g3">${field({ name: `d${k}`, label: 'Date', type: 'date', voice: false, attrs: `min="${new Date().toISOString().slice(0, 10)}"` })}${field({ name: `f${k}`, label: 'From', type: 'time', voice: false })}${field({ name: `t${k}`, label: 'To', type: 'time', voice: false })}</div></div>`),
+        { name: 'place', label: 'Place', value: D.client.city }, { name: 'interviewer', label: 'Who will meet them', value: D.member ? D.member.name : D.client.contact, opt: true }, { name: 'note', label: 'Anything else', type: 'textarea', opt: true }],
+      ok: 'Share availability',
+      submit: (v) => {
+        const slots = [];
+        for (const k of [1, 2, 3]) {
+          const d = v[`d${k}`], f = v[`f${k}`], t = v[`t${k}`];
+          if (!d && !f && !t) { if (k === 1) { const er = new Error('Give at least one date and time'); er.field = 'd1'; throw er; } continue; }
+          if (!d) { const er = new Error('Pick the date'); er.field = `d${k}`; throw er; }
+          if (!f) { const er = new Error('Pick the start time'); er.field = `f${k}`; throw er; }
+          if (!t) { const er = new Error('Pick the end time'); er.field = `t${k}`; throw er; }
+          if (t <= f) { const er = new Error('The end time must be after the start time'); er.field = `t${k}`; throw er; }
+          slots.push({ from: new Date(`${d}T${f}`).toISOString(), to: new Date(`${d}T${t}`).toISOString() });
+        }
+        return BB.post(`/api/client/apps/${b.dataset.avail}/availability`, { slots, place: v.place, interviewer: v.interviewer, note: v.note });
+      } }).then((x) => x && (BB.toast('Thank you — our team will confirm the interview time'), reload())); }));
     $$('[data-offer-send]', el).forEach((b) => (b.onclick = () => act(() => BB.post(`/api/client/apps/${b.dataset.offerSend}/offer-letter`, { send: true }), 'Offer letter sent to the candidate')));
     $$('[data-offer-make]', el).forEach((b) => (b.onclick = () => act(() => BB.post(`/api/client/apps/${b.dataset.offerMake}/offer-letter`, {}), 'Offer letter made — check it, then send')));
     $$('[data-ck]', el).forEach((b) => (b.onchange = () => act(() => BB.post(`/api/client/apps/${b.dataset.ck}/checklist`, { item: b.dataset.item, done: b.checked }))));

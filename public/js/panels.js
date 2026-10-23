@@ -207,7 +207,7 @@
   BB.schedule = (a, round) => BB.ask({ title: round === 'ours' ? 'Schedule our interview' : 'Schedule client interview', fields: [
     { name: 'name', label: 'Round name', value: round === 'ours' ? 'Round 1' : 'Client round' }, { name: 'at', label: 'Date and time', type: 'datetime-local' },
     { name: 'place', label: 'Place', value: round === 'ours' ? 'Zoom' : '', placeholder: 'Zoom / phone / address' }, { name: 'interviewer', label: 'Interviewer', value: round === 'ours' ? me().name : '' },
-  ], note: 'The candidate gets bbhs_interview_scheduled with Confirm / Reschedule.', ok: 'Schedule', submit: (v) => BB.post('/api/interviews', { app_id: a.id, round, ...v, at: BB.fromLocalInput(v.at) }) })
+  ], ok: 'Schedule', submit: (v) => BB.post('/api/interviews', { app_id: a.id, round, ...v, at: BB.fromLocalInput(v.at) }) })
     .then((x) => { if (x) { BB.toast(x.clash && x.clash.length ? `Scheduled — clash warning with ${x.clash.join(', ')}` : 'Scheduled'); after(); } });
   BB.recordOffer = (a) => BB.ask({ title: 'Record the offer', note: 'The candidate gets the offer with Accept / Decline.', fields: [
     { name: 'ctc', label: 'Yearly CTC (₹)', type: 'number', value: a.offer_ctc || '' }, { name: 'joining_date', label: 'Joining date', type: 'date', value: a.joining_date || '' }, { name: 'reporting_to', label: 'Reporting to', value: a.reporting_to || '', opt: true },

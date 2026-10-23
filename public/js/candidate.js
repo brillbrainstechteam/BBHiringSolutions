@@ -70,7 +70,7 @@
     el.innerHTML = `<div class="cp-grid">
       <div class="stack-lg">
         ${o ? `<div class="cp-offer"><div class="cp-offer-ic">🎉</div><div class="grow"><span class="eyebrow">You have an offer</span><h2>${esc(o.job_title)} at ${esc(o.company)}</h2><div>${inr(o.offer_ctc)} a year · joining ${fmtD(o.joining_date)}</div></div><div class="row">${o.offer_letter ? `<button class="btn" data-file="${o.offer_letter}">Read offer letter</button>` : ''}<button class="btn gold" data-accept="${o.id}">Accept offer</button><button class="btn ghost" data-decline="${o.id}">Decline</button></div></div>` : ''}
-        ${n ? `<div class="card pad stack-sm"><div class="cp-h">${icon('cal')}<h3>Your next interview</h3></div>${ivCard(n, n.job_title)}<div class="small muted">With ${esc(n.company)}. Carry a printed CV and reach 10 minutes early.</div></div>` : ''}
+        ${n ? `<div class="card pad stack-sm"><div class="cp-h">${icon('cal')}<h3>Your next interview</h3></div>${ivCard(n, n.job_title)}<div class="small muted">With ${esc(n.company)}.</div></div>` : ''}
         <div class="card pad stack-sm"><div class="cp-h">${icon('flow')}<h3>Your applications</h3>${active().length ? `<a href="#" class="small right" data-goto="apps">See all</a>` : ''}</div>
           ${active().map(step).join('') || `<div class="cp-empty">${icon('brief')}<div><b>No applications yet</b><div class="small muted">Apply to a matching job below, or wait for your recruiter's call.</div></div></div>`}</div>
         <div class="card pad stack-sm"><div class="cp-h">${icon('brief')}<h3>Top matches for you</h3>${D.jobs.length > 3 ? `<a href="#" class="small right" data-goto="jobs">See all ${D.jobs.length}</a>` : ''}</div>
