@@ -31,7 +31,7 @@ function candStatus(candId) {
   const apps = all('SELECT step, result, left_date FROM applications WHERE candidate_id=?', candId);
   if (apps.some((a) => a.result === 'Hired' && !a.left_date)) return 'Hired';
   const open = apps.filter((a) => a.result === 'open').length;
-  return open ? `In process · ${open}` : 'In bank';
+  return open ? `In process · ${open}` : 'Available';
 }
 function appView(a) {
   if (!a) return a;

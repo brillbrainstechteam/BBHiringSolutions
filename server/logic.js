@@ -240,34 +240,82 @@ function ratingOf(candId) {
   const r = get("SELECT AVG(i.rating) r FROM interviews i JOIN applications a ON a.id=i.app_id WHERE a.candidate_id=? AND i.rating IS NOT NULL", candId);
   return r && r.r ? r.r : null;
 }
+// ---------- matching a candidate to a job ----------
+// Score 0–100 from weighted parts (settings: match.weights). Each part also says why, briefly:
+// reasons = what fits (shown to the team, clients and candidates); gaps = what does not (team only).
+const WORD_SKIP = new Set(['senior', 'sr', 'junior', 'jr', 'trainee', 'assistant', 'asst', 'head', 'lead', 'the', 'and', 'of', 'for', '&', '-']);
+const words = (t) => String(t || '').toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').split(/\s+/).filter((w) => w && !WORD_SKIP.has(w)).map((w) => w.replace(/s$/, ''));
+function titleCloseness(a, b) {
+  const x = new Set(words(a)); const y = new Set(words(b)); if (!x.size || !y.size) return 0;
+  const both = [...x].filter((w) => y.has(w)).length;
+  return both / Math.min(x.size, y.size); // "Senior Sales Executive" vs "Sales Executive" = 1
+}
+function groupOf(title) {
+  const t = String(title || '').toLowerCase();
+  for (const ind of Object.values(settings().industries)) for (const [g, v] of Object.entries(ind.groups)) if (v.jobs.some((x) => x.toLowerCase() === t)) return g;
+  return null;
+}
+const perMonth = (yearly) => `₹${Math.round(yearly / 12 / 1000)}k/mo`;
+function skillHit(js, cs) {
+  const n = (x) => String(x).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  const have = cs.map(n);
+  return js.filter((k) => { const kk = n(k); return have.some((h) => h === kk || (kk.length > 3 && h.includes(kk)) || (h.length > 3 && kk.includes(h))); });
+}
 function matchScore(c, j, rating) {
-  const w = settings().match.weights; let score = 0; const reasons = [];
+  const w = settings().match.weights; let score = 0; const reasons = []; const gaps = [];
   const total = Object.values(w).reduce((a, b) => a + Number(b), 0) || 100;
-  const part = (k, frac, why) => { score += (Number(w[k]) || 0) * frac; if (why && frac >= 0.5) reasons.push(why); };
-  if (c.job_wanted && c.job_wanted === j.title) part('role', 1, `Wants ${j.title}`);
-  else if (c.department && c.department === j.department) part('role', 0.6, `${j.department} background`);
-  else part('role', 0);
+  const part = (k, frac, why, gap) => { score += (Number(w[k]) || 0) * frac; if (why && frac >= 0.5) reasons.push(why); if (gap && frac < 0.5) gaps.push(gap); };
+  // Role: same title, a close title, the same field of work, or the same department.
+  const close = titleCloseness(c.job_wanted, j.title); const cg = groupOf(c.job_wanted); const jg = groupOf(j.title);
+  if (c.job_wanted && c.job_wanted.toLowerCase() === String(j.title).toLowerCase()) part('role', 1, `Wants ${j.title}`);
+  else if (close >= 0.99) part('role', 0.9, `Wants ${c.job_wanted}`);
+  else if (close >= 0.5) part('role', 0.75, `Wants ${c.job_wanted} (close)`);
+  else if (cg && cg === jg) part('role', 0.5, `Same field: ${cg}`);
+  else if (c.department && c.department === j.department) part('role', 0.4, null, `${j.department} background, other role`);
+  else part('role', 0, null, c.job_wanted ? `Wants ${c.job_wanted}` : 'Job wanted not given');
+  // Place: the job's city, or a city they will work in; the same state counts a little.
   const cities = [c.city, ...(Array.isArray(c.work_cities) ? c.work_cities : [])].filter(Boolean).map((x) => x.toLowerCase());
-  part('city', cities.includes(String(j.city).toLowerCase()) ? 1 : 0, `Works in ${j.city}`);
-  const e = c.exp_total;
-  if (e === null || e === undefined) part('experience', 0.3);
-  else if ((j.exp_from ?? 0) <= e && e <= (j.exp_to ?? 99)) part('experience', 1, `${e} yrs experience fits`);
-  else if (e > (j.exp_to ?? 99)) part('experience', 0.7, `${e} yrs experience`);
-  else if (e >= (j.exp_from ?? 0) - 1) part('experience', 0.5, 'Close on experience');
-  else part('experience', 0);
-  if (!c.exp_salary || !j.sal_to) part('salary', 0.5);
-  else if (c.exp_salary <= j.sal_to) part('salary', 1, 'Salary within range');
-  else if (c.exp_salary <= j.sal_to * 1.15) part('salary', 0.5, 'Salary slightly above range');
-  else part('salary', 0);
-  const js = (j.skills || []).map((x) => x.toLowerCase()); const cs = (c.skills || []).map((x) => x.toLowerCase());
+  const jcity = String(j.city || '').toLowerCase(); const jstate = stateOf(j.city); const cstate = c.state || stateOf(c.city);
+  if (jcity && cities.includes(jcity)) part('city', 1, c.city && c.city.toLowerCase() === jcity ? `Lives in ${j.city}` : `Will work in ${j.city}`);
+  else if (jstate && cstate && jstate === cstate) part('city', 0.45, null, `In ${c.city || cstate}, same state`);
+  else part('city', 0, null, c.city ? `Based in ${c.city}` : 'City not given');
+  // Experience against the job's range (freshers fit jobs that start at 0).
+  const e = c.exp_total; const from = j.exp_from ?? 0; const to = j.exp_to ?? 99;
+  if (e === null || e === undefined) part('experience', 0.3, null, 'Experience not given');
+  else if (e === 0 && from === 0) part('experience', 1, 'Fresher, job takes freshers');
+  else if (e >= from && e <= to) part('experience', 1, `${e} yrs experience fits`);
+  else if (e > to) part('experience', 0.7, `${e} yrs, more than asked`);
+  else if (e >= from - 1) { part('experience', 0.5); gaps.push(`${e} yrs, close to ${from}+`); }
+  else part('experience', 0, null, `${e} yrs, needs ${from}+`);
+  // Salary: what they expect against the job's top.
+  if (!c.exp_salary || !j.sal_to) part('salary', 0.5, null, !c.exp_salary ? 'Expected salary not given' : null);
+  else if (c.exp_salary <= j.sal_to) part('salary', 1, `Expects ${perMonth(c.exp_salary)}, in budget`);
+  else if (c.exp_salary <= j.sal_to * 1.15) { part('salary', 0.5); gaps.push(`Expects ${perMonth(c.exp_salary)}, a little above`); }
+  else part('salary', 0, null, `Expects ${perMonth(c.exp_salary)}, above budget`);
+  // Skills: a job skill counts when the candidate has it or something close ("CAD" in "CAD design").
+  const js = j.skills || []; const cs = c.skills || [];
   if (!js.length) part('skills', 0.5);
-  else { const hit = js.filter((x) => cs.includes(x)).length; part('skills', hit / js.length, hit ? `${hit} of ${js.length} skills` : null); }
+  else { const hit = skillHit(js, cs); part('skills', hit.length / js.length, hit.length ? `Skills: ${hit.slice(0, 3).join(', ')}` : null, hit.length ? null : 'No matching skills'); }
+  // Notice period against how soon the job needs someone.
   if (c.notice_days === null || c.notice_days === undefined || j.notice_days === null || j.notice_days === undefined) part('notice', 0.5);
-  else if (c.notice_days <= j.notice_days) part('notice', 1, c.notice_days === 0 ? 'Can join at once' : `Notice ${c.notice_days} days`);
-  else if (c.notice_days <= j.notice_days * 2) part('notice', 0.5);
-  else part('notice', 0);
+  else if (c.notice_days <= j.notice_days) part('notice', 1, c.notice_days === 0 ? 'Can join at once' : `Joins in ${c.notice_days} days`);
+  else if (c.notice_days <= j.notice_days * 2) part('notice', 0.5, null, `Notice ${c.notice_days} days`);
+  else part('notice', 0, null, `Notice ${c.notice_days} days`);
+  if (c.exp_jewellery >= 1) reasons.push(`${c.exp_jewellery} yrs in jewellery`);
   if (rating) part('rating', rating / 5, rating >= 4 ? `Rated ${rating.toFixed(1)}/5 in interviews` : null); else part('rating', 0.6);
-  return { score: Math.round((score / total) * 100), reasons };
+  let pct = Math.round((score / total) * 100);
+  if (c.looking === 'Not looking') { pct = Math.round(pct * 0.8); gaps.push('Not looking now'); }
+  return { score: pct, reasons: reasons.slice(0, 4), gaps: gaps.slice(0, 3) };
+}
+// Open jobs a candidate fits best (for the candidate's page and the note when they come in).
+function jobsFor(c, limit = 5) {
+  const placed = new Set(all("SELECT job_id FROM applications WHERE candidate_id=? AND result IN ('open','Hired')", c.id).map((r) => r.job_id));
+  const rating = ratingOf(c.id);
+  return all("SELECT * FROM jobs WHERE archived=0 AND status IN ('Open','Sourcing','Interviewing','Offer stage')")
+    .filter((j) => !placed.has(j.id))
+    .map((j) => ({ j, ...matchScore(c, j, rating) }))
+    .filter((m) => m.score >= settings().match.show)
+    .sort((a, b) => b.score - a.score).slice(0, limit);
 }
 function isPlaced(candId) {
   const j = get("SELECT joined_at FROM applications WHERE candidate_id=? AND result='Hired' AND left_date IS NULL ORDER BY joined_at DESC LIMIT 1", candId);
@@ -682,6 +730,11 @@ function intakeCandidate(d, o) {
   if (o.consent !== false && !o.silent && phone) sendWA({ ptype: 'candidate', pid: id, format: 'bbhs_candidate_welcome', vars: { candidate_id: id, link: link('my-profile') }, auto: true, rule: 'candidate_welcome', dedupe: `welcome:${id}` });
   if (o.consent === false && !o.silent && phone) sendWA({ ptype: 'candidate', pid: id, format: 'bbhs_consent_request', auto: true, dedupe: `consent:${id}` });
   if (d.apply_job) { try { createApplication(id, d.apply_job, by || { label: 'Candidate' }, source, 'Applied from a job link'); } catch { /* job closed or missing */ } }
+  // Automatic matching: the open jobs this person fits best go on their record as a note for the team.
+  try {
+    const fits = jobsFor(get('SELECT * FROM candidates WHERE id=?', id), 3);
+    if (fits.length) insert('notes', { record_id: id, text: `Matches open jobs: ${fits.map((m) => `${m.j.id} ${m.j.title}, ${m.j.city} (${m.score}%: ${m.reasons.slice(0, 2).join(', ')})`).join(' · ')}`, author: 'Matching', at: now() });
+  } catch { /* matching never blocks a sign-up */ }
   return { candidate: get('SELECT * FROM candidates WHERE id=?', id), isNew: true };
 }
 function assignLead(type, id, agencyId, by) {
@@ -791,7 +844,7 @@ function sendSystemText(ptype, pid, text) {
 module.exports = {
   STEPS, stepIdx, digits10, validPhone, inr, istDay, istFmt, istTime, istHour, inQuiet, next9am, daysBetween, addDays, hashPassword, checkPassword, newPassword, sha,
   jobList, deptOf, stateOf, person, fillFormat, windowOpenUntil, sendWA, setDispatcher, alertUser, link, agencyAdmin, superAdmins,
-  computeJobStatus, jobStatusReason, recalcJob, filledCount, appsOfJob, matchScore, ratingOf, bestMatches, isPlaced, salaryText, autoJobAlert,
+  computeJobStatus, jobStatusReason, recalcJob, filledCount, appsOfJob, matchScore, jobsFor, ratingOf, bestMatches, isPlaced, salaryText, autoJobAlert,
   feeFor, gstFor, fyOf, billView, refreshBill, createBillForApp, issueBill, upiLink,
   appHist, createApplication, moveStep, closeApplication, reopenApplication, scheduleInterview, recordInterview, interviewView, ivVars, recordOffer, leftJob, jobAction,
   CONSENT_WORDING, saveConsent, intakeClient, intakeCandidate, assignLead, mergeRecords, resolveId, receiveReply, actorName,

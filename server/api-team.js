@@ -188,6 +188,11 @@ route('GET', '/api/dashboard', T, (ctx) => {
   }
   for (const a of apps.filter((x) => x.at_risk && x.result === 'Hired' && !x.left_date)) { const v = V.appView(a); att.push({ kind: 'At risk', text: `${a.id} ${v.candidate_name} asked for help at ${v.client_name}`, open: { type: 'application', id: a.id }, wa: { ptype: 'candidate', pid: a.candidate_id, ap: a.id, suggest: true } }); }
   for (const j of jobs.filter((x) => x.status === 'Open' && x.apps_total === 0)) att.push({ kind: 'No candidates', text: `${j.id} ${j.title} — ${j.client_name}`, open: { type: 'job', id: j.id }, wa: { ptype: 'user', pid: j.recruiter_id || u.id, format: 'bbhs_team_task_alert', jb: j.id, vars: { task: `Add candidates to ${j.id}`, record_id: j.id } } });
+  // Automatic matching: open jobs that still need people and have strong matches in the resume bank not yet added.
+  for (const j of jobs.filter((x) => ['Open', 'Sourcing'].includes(x.status) && (x.apps_open || 0) < (x.openings || 1) * 3)) {
+    const strong = L.bestMatches(get('SELECT * FROM jobs WHERE id=?', j.id), 10).filter((m) => m.score >= D.settings().match.strong);
+    if (strong.length) att.push({ kind: 'Strong matches', text: `${strong.length} strong match${strong.length > 1 ? 'es' : ''} for ${j.id} ${j.title} — top: ${strong[0].c.name} (${strong[0].score}%)`, open: { type: 'job', id: j.id } });
+  }
   for (const j of jobs.filter((x) => x.status === 'Draft' && ['Not written', 'Changes asked'].includes(x.jd_status))) att.push({ kind: 'Write job description', text: `${j.id} ${j.title} — ${j.client_name}${j.jd_status === 'Changes asked' ? ' (client asked for changes)' : ''}`, open: { type: 'job', id: j.id }, wa: { ptype: 'user', pid: j.recruiter_id || u.id, format: 'bbhs_team_task_alert', jb: j.id, vars: { task: `Write the JD for ${j.id}`, record_id: j.id } } });
   if (deadlinePassed() || true) {
     const team = all("SELECT * FROM users WHERE status='On' AND level!='super'").filter((x) => (isSuper(u) && x.level === 'admin') || (u.level === 'admin' && x.agency_id === u.agency_id && x.level === 'sub') || x.id === u.id);
@@ -386,7 +391,7 @@ route('GET', '/api/jobs/:id', T, (ctx) => {
   const client = get('SELECT * FROM clients WHERE id=?', j.client_id);
   return {
     ...V.jobView(j, apps), client, apps: apps.map(V.appView).map((a) => ({ ...a, score: L.matchScore(get('SELECT * FROM candidates WHERE id=?', a.candidate_id), j, L.ratingOf(a.candidate_id)).score })),
-    matches: L.bestMatches(j, 10).map((m) => ({ ...candidateOut(ctx.user, m.c), score: m.score, reasons: m.reasons, status: V.candStatus(m.c.id) })),
+    matches: L.bestMatches(j, 10).map((m) => ({ ...candidateOut(ctx.user, m.c), score: m.score, reasons: m.reasons, gaps: m.gaps, status: V.candStatus(m.c.id) })),
     history: all('SELECT * FROM job_history WHERE job_id=? ORDER BY at DESC, id DESC', j.id), postings: all('SELECT * FROM postings WHERE job_id=?', j.id).map((p) => ({ ...p, apply_link: L.link('apply', `?src=${p.tag}&job=${j.id}`), apps: apps.filter((a) => a.source === (D.settings().src_tags[p.tag] || p.tag)).length })),
     recruiters: all("SELECT id, name FROM users WHERE agency_id=? AND status='On'", j.agency_id), files: all('SELECT * FROM files WHERE record_id=? AND replaced=0', j.id),
     notes: all('SELECT * FROM notes WHERE record_id=? ORDER BY at DESC', j.id), jd_template: (D.settings().jd_templates || {})[j.title] || D.settings().jd_template, salary_text: L.salaryText(j),
@@ -487,6 +492,7 @@ route('GET', '/api/candidates/:id', T, (ctx) => {
   const msgs = seeThread(u, 'candidate', c.id) ? all("SELECT * FROM messages WHERE person_type='candidate' AND person_id=? ORDER BY at DESC LIMIT 30", c.id) : [];
   return {
     ...candidateOut(u, c), status: V.candStatus(c.id), apps, messages: msgs, rating: L.ratingOf(c.id), can_message: seeThread(u, 'candidate', c.id) || isSuper(u),
+    job_matches: L.jobsFor(c, 20).filter((m) => seeJob(u, m.j)).slice(0, 6).map((m) => ({ id: m.j.id, title: m.j.title, city: m.j.city, client_name: (get('SELECT company FROM clients WHERE id=?', m.j.client_id) || {}).company, score: m.score, reasons: m.reasons, gaps: m.gaps })),
     files: show ? all('SELECT * FROM files WHERE record_id=? AND replaced=0 ORDER BY at DESC', c.id) : all("SELECT * FROM files WHERE record_id=? AND replaced=0 AND type='short_cv'", c.id),
     notes: all('SELECT * FROM notes WHERE record_id=? ORDER BY at DESC', c.id), consents: all("SELECT * FROM consents WHERE person_type='candidate' AND person_id=? ORDER BY at DESC", c.id),
     tieup: c.tieup_id ? get('SELECT * FROM tieups WHERE id=?', c.tieup_id) : null, referral_link: L.link('apply', `?ref=${c.id}`), agency_name: V.agencyName(c.agency_id), recruiter_name: V.userName(c.recruiter_id),

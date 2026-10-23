@@ -28,7 +28,7 @@
       <div class="acct-band cp-hero"><div class="in">
         <div class="cp-avatar">${esc(initials(p.name))}</div>
         <div class="grow"><span class="eyebrow">Candidate profile</span><h1>Hello, <span class="hl">${first}</span></h1>
-          <div class="cp-meta"><span class="mono">${esc(p.id)}</span>${p.job_wanted ? `<span>${esc(p.job_wanted)}</span>` : ''}${p.city ? `<span>${esc(p.city)}</span>` : ''}</div>
+          <div class="cp-meta">${p.job_wanted ? `<span>${esc(p.job_wanted)}</span>` : ''}${p.city ? `<span>${esc(p.city)}</span>` : ''}</div>
           <button class="cp-status ${p.looking === 'Not looking' ? 'off' : ''}" data-goto="profile" data-f="looking" title="Change in your profile">${esc(p.looking || 'Actively looking')}</button></div>
         <button class="cp-strength" data-goto="profile" title="Profile strength">${ring(D.pct, 50)}<span><b>Profile</b><br>strength</span></button>
       </div></div>
