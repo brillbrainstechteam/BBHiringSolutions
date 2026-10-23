@@ -122,6 +122,36 @@ function openedAccount(type, id) {
   const r = get(`SELECT account_status FROM ${table} WHERE id=?`, id);
   if (r && r.account_status !== 'Opened') { update(table, id, { account_status: 'Opened' }); D.history(type, 'account opened', id); }
 }
+// Email and password: a second way in for candidates and client owners who set a password in their account.
+// Kept in its own table, so a password hash never travels with a profile. The WhatsApp code stays the main login.
+const hasPassword = (kind, id) => !!get('SELECT 1 FROM account_passwords WHERE kind=? AND subject_id=?', kind, id);
+route('POST', '/api/account/login', { rate: { key: 'pwlogin', max: 20, minutes: 15 } }, (ctx) => {
+  const kind = ctx.body.kind === 'client' ? 'client' : 'candidate';
+  const email = String(ctx.body.email || '').trim().toLowerCase(); const pw = String(ctx.body.password || '');
+  if (!/^\S+@\S+\.\S+$/.test(email)) throw httpError(400, 'Enter your email', 'email');
+  if (!pw) throw httpError(400, 'Enter your password', 'password');
+  const table = kind === 'client' ? 'clients' : 'candidates';
+  const rows = all(`SELECT r.id, p.pass_hash FROM ${table} r JOIN account_passwords p ON p.kind=? AND p.subject_id=r.id WHERE lower(r.email)=? AND r.merged_into IS NULL AND r.removed=0`, kind, email);
+  const hit = rows.find((r) => L.checkPassword(pw, r.pass_hash));
+  if (!hit) throw httpError(400, rows.length ? 'Email or password is wrong.' : 'No password is set for this email. Log in with your WhatsApp number, then set one in your account.', 'password');
+  openedAccount(kind, hit.id);
+  return { token: newSession(kind, hit.id) };
+});
+function setPassword(kind, rec, b, actor, ip) {
+  const pw = String(b.password || '');
+  if (pw.length < 8) throw httpError(400, 'Use at least 8 characters.', 'password');
+  const email = String(b.email || rec.email || '').trim().toLowerCase();
+  if (!/^\S+@\S+\.\S+$/.test(email)) throw httpError(400, 'Add your email first — you log in with it.', 'email');
+  if (email !== String(rec.email || '').toLowerCase()) D.edit(kind === 'client' ? 'clients' : 'candidates', rec.id, { email }, actor.label, ip);
+  D.run('INSERT INTO account_passwords (kind, subject_id, pass_hash, updated_at) VALUES (?,?,?,?) ON CONFLICT(kind, subject_id) DO UPDATE SET pass_hash=excluded.pass_hash, updated_at=excluded.updated_at', kind, rec.id, L.hashPassword(pw), now());
+  D.history(actor.label, 'password set', rec.id);
+  return { ok: true, email };
+}
+route('POST', '/api/cand/password', { auth: 'candidate', rate: { key: 'pwset', max: 10, minutes: 60 } }, (ctx) => setPassword('candidate', ctx.candidate, ctx.body, ctx.actor, ctx.ip));
+route('POST', '/api/client/password', { auth: 'client', rate: { key: 'pwset', max: 10, minutes: 60 } }, (ctx) => {
+  if (ctx.member) throw httpError(403, 'Team members log in with their WhatsApp number.');
+  return setPassword('client', ctx.client, ctx.body, ctx.actor, ctx.ip);
+});
 route('POST', '/api/account/logout', {}, (ctx) => { D.run('DELETE FROM sessions WHERE token=?', ctx.req.headers['x-session'] || ''); return { ok: true }; });
 
 // ---------- public forms ----------
@@ -220,7 +250,7 @@ route('GET', '/api/client/me', C, (ctx) => {
   const waiting = candidates.filter((x) => x.step === 'Sent to client' && x.result === 'open' && !x.client_choice).length;
   const checklist = V.onboardingView(c).filter((x) => ['intro_call', 'kyc', 'contract', 'first_job'].includes(x.key));
   return {
-    client: { ...c, templates: c.templates ? JSON.parse(c.templates) : D.settings().templates }, member: ctx.member, perms,
+    client: { ...c, templates: c.templates ? JSON.parse(c.templates) : D.settings().templates }, member: ctx.member, perms, has_password: hasPassword('client', c.id),
     counts: { open_jobs: jobs.filter((j) => !['Closed', 'Filled'].includes(j.status)).length, to_review: waiting, upcoming: ivs.filter((i) => ['Scheduled', 'Rescheduled'].includes(i.status) && i.at > now()).length, bills_due: bills.filter((b) => ['Due', 'Overdue', 'Part paid'].includes(b.view_status)).length },
     checklist: [{ key: 'request', label: 'Request received', done: true, date: c.created_at }, ...checklist], jobs, candidates, interviews: ivs, bills,
     members: all('SELECT * FROM client_members WHERE client_id=?', c.id), files: all("SELECT id, type, name, version, at FROM files WHERE record_id=? AND replaced=0", c.id),
@@ -415,7 +445,7 @@ route('GET', '/api/cand/me', K, (ctx) => {
   const next = apps.flatMap((a) => a.interviews.filter((i) => ['Scheduled', 'Rescheduled'].includes(i.status) && i.at > now()).map((i) => ({ ...i, app: a.id, job_title: a.job_title, company: a.company }))).sort((a, b) => (a.at < b.at ? -1 : 1))[0] || null;
   const offer = apps.find((a) => a.result === 'open' && a.step === 'Offer made') || null;
   return {
-    profile: { ...c, cur_month: c.cur_salary ? Math.round(c.cur_salary / 12) : null, exp_month: c.exp_salary ? Math.round(c.exp_salary / 12) : null }, pct: profilePct(c), missing: profileGaps(c).missing, apps, jobs, next, offer,
+    profile: { ...c, cur_month: c.cur_salary ? Math.round(c.cur_salary / 12) : null, exp_month: c.exp_salary ? Math.round(c.exp_salary / 12) : null }, pct: profilePct(c), missing: profileGaps(c).missing, has_password: hasPassword('candidate', c.id), apps, jobs, next, offer,
     referral: L.link('apply', `?ref=${c.id}`), files: all('SELECT id, type, name, version, at FROM files WHERE record_id=? AND replaced=0', c.id), joining_items: s.templates.joining_checklist.split('\n').filter(Boolean), active: onJob.size,
   };
 });

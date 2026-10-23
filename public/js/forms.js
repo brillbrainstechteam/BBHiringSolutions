@@ -122,10 +122,10 @@
     arrow: svg('<path d="M5 12h14M13 6l6 6-6 6"/>', 2),
   };
   const TY = {
-    hire: { head: 'Your hiring request has been submitted.', sub: 'Our team will connect with you within 1 working day.', access: 'Access your client dashboard', open: 'Open my dashboard',
+    hire: { head: 'Your hiring request has been submitted.', sub: 'Our team will connect with you within 1 working day.', access: 'Log in to your client dashboard', open: 'Open my dashboard',
       features: [['doc', 'Track requests'], ['users', 'View shortlisted profiles'], ['chat', 'Manage communication']],
       steps: [['doc', 'Request received'], ['phone', 'Team connects'], ['doc', 'Agreement & activation'], ['users', 'Receive candidates']] },
-    job: { head: 'Your application has been submitted.', sub: 'Our team will call you as soon as a matching job opens.', access: 'Access your candidate profile', open: 'Open my profile',
+    job: { head: 'Your application has been submitted.', sub: '', access: 'Log in to your candidate profile', open: 'Open my profile',
       features: [['brief', 'See jobs that match you'], ['doc', 'Track your applications'], ['cal', 'Interview & offer updates']],
       steps: [['doc', 'Application received'], ['search', 'Profile check'], ['cal', 'Interview'], ['star', 'Offer & joining']] },
   };
@@ -142,45 +142,60 @@
           <div class="ty-check"><span class="ty-burst" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>${svg('<path d="m6 12.5 4 4 8-9"/>', 3)}</div>
           <h1>Thank you${first ? `, ${esc(first)}` : ''}!</h1>
           <h2>${t.head}</h2>
-          <p>${t.sub}</p>
-          <div class="ty-id"><span>${m.idLabel}</span><b class="mono">${esc(res.id)}</b><button type="button" class="btn sm" data-copyid>Copy</button></div>
+          ${t.sub ? `<p>${t.sub}</p>` : ''}
+          ${mode === 'hire' ? `<div class="ty-id"><span>${m.idLabel}</span><b class="mono">${esc(res.id)}</b><button type="button" class="btn sm" data-copyid>Copy</button></div>` : ''}
         </div>
       </div>
       <div class="ty-access">
-        <div class="ty-access-main"><div class="ty-tile">${TY_ICON.grid}</div><div class="grow stack-sm"><h3>${t.access}</h3><div data-access></div></div></div>
+        <div class="ty-access-main"><h3>${t.access}</h3><div class="ty-login" data-access></div></div>
         <ul class="ty-features">${t.features.map(([ic, l]) => `<li><span class="ty-ic">${TY_ICON[ic]}</span>${l}</li>`).join('')}</ul>
       </div>
       <h3 class="ty-next-h">What happens next?</h3>
-      <ol class="ty-steps">${t.steps.map(([ic, l], i) => `<li><span class="ty-n">${i + 1}</span><span class="ty-ic soft">${TY_ICON[ic]}</span><span class="ty-l">${l}</span>${i < t.steps.length - 1 ? `<span class="ty-arrow">${TY_ICON.arrow}</span>` : ''}</li>`).join('')}</ol>
+      <ol class="ty-steps">${t.steps.map(([, l], i) => `<li><span class="ty-n">${i + 1}</span><span class="ty-l">${l}</span>${i < t.steps.length - 1 ? `<span class="ty-arrow">${TY_ICON.arrow}</span>` : ''}</li>`).join('')}</ol>
       <div class="ty-help"><span class="ty-help-ic">${TY_ICON.headset}</span><b class="grow">Need help with your ${mode === 'hire' ? 'request' : 'application'}?</b>
         <a class="btn" href="https://wa.me/91${esc(support)}" target="_blank" rel="noopener">Contact support ${TY_ICON.arrow}</a></div>
     </div>`;
-    $('[data-copyid]', card).onclick = () => BB.copy(res.id);
+    const cp = $('[data-copyid]', card); if (cp) cp.onclick = () => BB.copy(res.id);
     const acc = $('[data-access]', card);
 
-    // 1) New sign-up: the account was made with the form, one tap opens it.
+    const pretty = res.phone ? `+91 ${esc(res.phone.slice(0, 5))} ${esc(res.phone.slice(5))}` : '';
+    const phoneLine = `<div class="phone-line"><span class="muted small">WhatsApp</span><b class="mono">${pretty}</b><a href="#" class="small right" data-edit>Wrong number?</a></div>`;
+    const wireEdit = () => { $('[data-edit]', acc).onclick = (e) => { e.preventDefault(); if (main) main.classList.remove('ty-mode'); if (pubCard) pubCard.classList.remove('ty-card'); editAgain(); }; };
+    // 1) New sign-up: the account was made with the form; the number they just gave opens it in one tap.
     if (res.token) {
       BB.setToken(m.kind, res.token);
-      acc.innerHTML = `<div class="small ty-ok">${svg('<path d="m6 12.5 4 4 8-9"/>', 3)} Your ${m.account} is ready</div>
-        <a class="btn primary lg ty-go" href="#${m.go}">${t.open} ${TY_ICON.arrow}</a>
-        <div class="small muted">Next time, log in with your WhatsApp number and a 6-digit code.</div>`;
-      return;
+      acc.innerHTML = `${phoneLine}<a class="btn primary lg ty-go" href="#${m.go}">${t.open} ${TY_ICON.arrow}</a>`;
+      wireEdit(); return;
     }
     // 3) WhatsApp codes cannot go out yet.
     if (!res.can_verify) { acc.innerHTML = `<div class="notice small">We will message you on WhatsApp with a link to your ${m.account}.</div>`; return; }
-    // 2) A number we already know: one WhatsApp code proves it is theirs, then the account opens.
-    const pretty = `+91 ${esc(res.phone.slice(0, 5))} ${esc(res.phone.slice(5))}`;
-    acc.innerHTML = `<div class="small muted">Welcome back! This number already has a ${m.account} with us${res.isNew ? '' : ' — we added these details to it'}. Confirm it is you to open it.</div>
-      <div class="phone-line"><span class="muted small">WhatsApp</span><b class="mono" style="font-size:16px">${pretty}</b><a href="#" class="small right" data-edit>Wrong number?</a></div>
+    // 2) A number we already know: one WhatsApp code proves it is theirs (or their email and password), then the account opens.
+    acc.innerHTML = `<div data-byphone class="stack-sm">${phoneLine}
       <button class="btn primary lg ty-go" data-sendcode>Send code on WhatsApp</button>
       <form class="stack-sm hidden" data-codeform novalidate>
         ${field({ name: 'code', label: '6-digit code from WhatsApp', voice: false, attrs: 'inputmode="numeric" maxlength="6" autocomplete="one-time-code" class="code-in"' })}
         <div data-dev class="small"></div>
         <button class="btn primary lg ty-go">Verify and ${t.open.toLowerCase()}</button>
         <div class="small"><a href="#" data-resend>Send the code again</a> <span class="muted" data-wait></span></div>
-      </form>`;
+      </form></div>
+      <form class="stack-sm hidden" data-emailform novalidate>
+        ${field({ name: 'email', label: 'Email', type: 'email', voice: false, attrs: 'autocomplete="email"' })}${field({ name: 'password', label: 'Password', type: 'password', voice: false, attrs: 'autocomplete="current-password"' })}
+        <button class="btn primary lg ty-go">${t.open}</button>
+      </form>
+      <div class="login-switch"><a href="#" data-switch>Log in with email and password instead</a></div>`;
+    wireEdit();
+    const ef = $('[data-emailform]', acc);
+    $('[data-switch]', acc).onclick = (e) => {
+      e.preventDefault(); const toEmail = ef.classList.contains('hidden');
+      ef.classList.toggle('hidden', !toEmail); $('[data-byphone]', acc).classList.toggle('hidden', toEmail);
+      e.currentTarget.textContent = toEmail ? 'Log in with WhatsApp code instead' : 'Log in with email and password instead';
+      if (toEmail) $('[name=email]', ef).focus();
+    };
+    ef.onsubmit = async (e) => {
+      e.preventDefault();
+      try { const r = await BB.post('/api/account/login', { kind: m.kind, ...BB.formValues(ef) }, { kind: null }); BB.setToken(m.kind, r.token); location.hash = m.go; } catch (er) { BB.showErr(ef, er); }
+    };
     const codeForm = $('[data-codeform]', acc); const code = $('[name=code]', acc); let timer;
-    $('[data-edit]', acc).onclick = (e) => { e.preventDefault(); if (main) main.classList.remove('ty-mode'); if (pubCard) pubCard.classList.remove('ty-card'); editAgain(); };
     const wait = (s) => { clearInterval(timer); const a = $('[data-resend]', acc); a.classList.add('disabled'); const w = $('[data-wait]', acc);
       const tick = () => { w.textContent = s > 0 ? `(in ${s} s)` : ''; if (s-- <= 0) { clearInterval(timer); a.classList.remove('disabled'); } }; tick(); timer = setInterval(tick, 1000); };
     const request = async (btn) => {

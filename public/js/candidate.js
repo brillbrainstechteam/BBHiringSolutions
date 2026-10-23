@@ -5,7 +5,7 @@
 
   BB.views.candidate = async (r) => {
     if (r.sub[0]) tab = r.sub[0];
-    if (!BB.token('candidate')) return BB.otpLogin('candidate', 'My profile', () => BB.route());
+    if (!BB.token('candidate')) return BB.otpLogin('candidate', 'Candidate login', () => BB.route());
     try { D = await BB.api('/api/cand/me'); } catch (e) { return; }
     render();
   };
@@ -144,6 +144,7 @@
         <div class="card pad stack-sm"><div class="cp-h">${icon('search')}<h3>Are you looking for a new job?</h3></div>
           <div class="cp-looking" data-looking>${['Actively looking', 'Open to offers', 'Not looking'].map((v) => `<label><input type="radio" name="looking" value="${v}" ${(p.looking === 'Placed' ? 'Not looking' : p.looking || 'Actively looking') === v ? 'checked' : ''}><span>${v}</span></label>`).join('')}</div></div>
         <div class="card pad stack-sm"><div class="cp-h">${icon('note')}<h3>Your CV</h3></div>${D.files.filter((f) => f.type === 'cv').map((f) => `<button type="button" class="cp-file" data-file="${f.id}"><span class="cp-file-ic">CV</span><span class="grow"><b>${esc(f.name)}</b><span class="small muted">Version ${f.version} · ${fmtD(f.at)}</span></span></button>`).join('') || '<div class="small muted">No CV yet. Upload one and we fill in your details from it.</div>'}<button type="button" class="btn sm" data-cv>Upload CV</button></div>
+      ${BB.passwordCard(p.email, D.has_password)}
       </div></div>
       </form>`;
     const form = $('[data-prof]', el);
@@ -168,6 +169,7 @@
       inp.value = ''; dirty();
     };
     $('[data-skill-new]', el).onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); $('[data-skill-add]', el).click(); } };
+    BB.wirePassword(el, '/api/cand/password', p.email, () => reload());
     // New WhatsApp number: a code goes to the new number; it is saved only when that code is right.
     $('[data-chphone]', el).onclick = async () => {
       const a = await BB.ask({ title: 'Change your WhatsApp number', note: 'We send a 6-digit code on WhatsApp to the new number to check that it is yours.', ok: 'Send code',

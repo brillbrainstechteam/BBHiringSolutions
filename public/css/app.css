@@ -673,3 +673,16 @@ a.disabled { pointer-events: none; color: var(--faint); }
   .cp-hero .cp-strength { order: 1; margin-left: auto; } .cp-hero .in > .grow { order: 2; flex: 1 1 100%; }
   .pub-top { gap: 10px; }
 }
+
+/* Thank-you page: one clean login column; steps are a number and a label on one line. */
+.ty-access-main { flex-direction: column; align-items: stretch; gap: 14px; }
+.ty-login { display: flex; flex-direction: column; gap: 12px; max-width: 460px; }
+.ty-login .phone-line { align-items: center; }
+.ty-login .phone-line b { font-size: 16px; }
+.ty-login .ty-go { width: 100%; min-width: 0; }
+.ty-steps li { padding-top: 0; }
+.ty-n { position: static; flex: none; width: 30px; height: 30px; }
+/* Switch between WhatsApp code and email + password. */
+.login-switch { margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--border); text-align: center; font-size: 13.5px; font-weight: 600; }
+.ty-login .login-switch { margin-top: 0; }
+.pw-card .btn { align-self: flex-start; }

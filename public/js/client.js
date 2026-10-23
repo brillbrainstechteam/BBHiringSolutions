@@ -8,8 +8,10 @@
     const intro = kind === 'client'
       ? { eyebrow: 'For employers', title: 'Your hiring, <em>all in one place</em>', lead: 'Job openings, shortlisted candidates, interviews, offers and bills — always up to date.', perks: [['1', 'Review profiles', 'Share interview times in one step.'], ['2', 'Give feedback', 'Selected, another round or not selected.'], ['₹', 'Pay by UPI', 'Bills and receipts in one tab.']] }
       : { eyebrow: 'For candidates', title: 'Track every step <em>to your new job</em>', lead: 'See matching jobs, your interviews and your offers, and keep your profile up to date.', perks: [['★', 'Jobs for you', 'Matched on your city, skills and salary.'], ['✓', 'Confirm interviews', 'Or ask to move them — in one tap.'], ['✉', 'Accept your offer', 'Read the offer letter and upload joining papers.']] };
-    $('#app').innerHTML = BB.split({ top: BB.publicTop(title), ...intro, card: `<div class="card-title">${esc(title)}</div><p class="muted" style="margin:4px 0 16px">Log in with your WhatsApp number. We send you a 6-digit code.</p><form class="stack" data-step1>${BB.field({ name: 'phone', label: 'WhatsApp number', type: 'tel', phone: true, value: lastPhone(), placeholder: '10 digits', attrs: 'inputmode="numeric" maxlength="14" autocomplete="tel"' })}<button class="btn gold block lg">Send code</button></form>
+    $('#app').innerHTML = BB.split({ top: BB.publicTop(title), ...intro, card: `<div class="card-title">${esc(title)}</div><p class="muted" style="margin:4px 0 16px" data-intro>Log in with your WhatsApp number. We send you a 6-digit code.</p><form class="stack" data-step1>${BB.field({ name: 'phone', label: 'WhatsApp number', type: 'tel', phone: true, value: lastPhone(), placeholder: '10 digits', attrs: 'inputmode="numeric" maxlength="14" autocomplete="tel"' })}<button class="btn gold block lg">Send code</button></form>
       <form class="stack hidden" data-step2><div class="muted small" data-sent></div>${BB.field({ name: 'code', label: '6-digit code', voice: false, attrs: 'inputmode="numeric" maxlength="6" autocomplete="one-time-code" class="code-in"' })}<div data-dev></div><button class="btn gold block lg">Log in</button><div class="row small between"><a href="#" data-resend>Send the code again</a><span class="muted" data-wait></span><a href="#" data-again>Use another number</a></div></form>
+      <form class="stack hidden" data-stepE>${BB.field({ name: 'email', label: 'Email', type: 'email', voice: false, attrs: 'autocomplete="email" inputmode="email"' })}${BB.field({ name: 'password', label: 'Password', type: 'password', voice: false, attrs: 'autocomplete="current-password"' })}<button class="btn gold block lg">Log in</button><div class="small muted">Forgot your password? Log in with your WhatsApp number and set a new one in your account.</div></form>
+      <div class="login-switch"><a href="#" data-switch>Log in with email and password instead</a></div>
       <p class="small muted" style="margin-top:16px">New here? ${kind === 'client' ? '<a href="#hire">Fill the hiring form</a>' : '<a href="#apply">Fill the job form</a>'}</p>` });
     BB.attachMics($('#app'));
     let phone = ''; let timer;
@@ -27,7 +29,7 @@
         const c = $('[name=code]'); c.value = ''; c.focus(); wait(30);
       } catch (er) { BB.showErr(f, er); } finally { btn.disabled = false; if (btn.tagName === 'BUTTON') btn.textContent = label; }
     };
-    $('[data-step1]').onsubmit = (e) => { e.preventDefault(); const f = e.target; phone = BB.spokenToDigits(BB.formValues(f).phone) || BB.formValues(f).phone.replace(/D/g, '').slice(-10); send($('button[type=submit], button:not([type=button])', f), f); };
+    $('[data-step1]').onsubmit = (e) => { e.preventDefault(); const f = e.target; phone = BB.spokenToDigits(BB.formValues(f).phone) || BB.formValues(f).phone.replace(/\D/g, '').slice(-10); send($('button[type=submit], button:not([type=button])', f), f); };
     $('[data-resend]').onclick = (e) => { e.preventDefault(); send(e.currentTarget, $('[data-step2]')); };
     let busy = false;
     const verify = async () => {
@@ -35,9 +37,35 @@
       try { const r = await BB.post('/api/otp/verify', { phone, kind, code: BB.formValues(f).code }, { kind: null }); clearInterval(timer); BB.setToken(kind, r.token); after(); } catch (er) { BB.showErr(f, er); } finally { busy = false; }
     };
     // The 6th digit logs in; no extra tap (phones fill the code from the WhatsApp message).
-    $('[name=code]').addEventListener('input', (e) => { e.target.value = e.target.value.replace(/D/g, '').slice(0, 6); if (e.target.value.length === 6) verify(); });
+    $('[name=code]').addEventListener('input', (e) => { e.target.value = e.target.value.replace(/\D/g, '').slice(0, 6); if (e.target.value.length === 6) verify(); });
     $('[data-step2]').onsubmit = (e) => { e.preventDefault(); verify(); };
     $('[data-again]').onclick = (e) => { e.preventDefault(); BB.otpLogin(kind, title, after); };
+    // Email and password: for people who set one in their account. The WhatsApp code stays the main way in.
+    let byEmail = false;
+    $('[data-switch]').onclick = (e) => {
+      e.preventDefault(); byEmail = !byEmail; clearInterval(timer);
+      $('[data-step1]').classList.toggle('hidden', byEmail); $('[data-step2]').classList.add('hidden'); $('[data-stepE]').classList.toggle('hidden', !byEmail);
+      $('[data-intro]').textContent = byEmail ? 'Log in with the email and password you set in your account.' : 'Log in with your WhatsApp number. We send you a 6-digit code.';
+      e.currentTarget.textContent = byEmail ? 'Log in with WhatsApp number instead' : 'Log in with email and password instead';
+      $(byEmail ? '[name=email]' : '[name=phone]').focus();
+    };
+    $('[data-stepE]').onsubmit = async (e) => {
+      e.preventDefault(); const f = e.target; const b = $('button', f); if (b.disabled) return; b.disabled = true;
+      try { const r = await BB.post('/api/account/login', { kind, ...BB.formValues(f) }, { kind: null }); BB.setToken(kind, r.token); after(); } catch (er) { BB.showErr(f, er); } finally { b.disabled = false; }
+    };
+  };
+  // Set or change the password for email login (from the candidate profile or the client's company tab).
+  BB.passwordCard = (email, has) => `<div class="card pad stack-sm pw-card"><div class="cp-h">${BB.icon('key')}<h3>Email login</h3></div>
+    <div class="small muted">${has ? `You can also log in with <b>${esc(email)}</b> and your password.` : 'Set a password to log in with your email as well as your WhatsApp number.'}</div>
+    <button type="button" class="btn sm" data-setpw>${has ? 'Change password' : 'Set a password'}</button></div>`;
+  BB.wirePassword = (root, url, email, done) => {
+    const b = $('[data-setpw]', root); if (!b) return;
+    b.onclick = async () => {
+      const r = await BB.ask({ title: 'Password for email login', ok: 'Save password',
+        fields: [{ name: 'email', label: 'Email', type: 'email', value: email || '', voice: false }, { name: 'password', label: 'Password', type: 'password', voice: false, hint: 'At least 8 characters' }],
+        submit: (v) => BB.post(url, v) });
+      if (r) { BB.toast(`Saved. You can now log in with ${r.email} and this password.`); done && done(); }
+    };
   };
   BB.onLogout = (kind, msg) => { if (BB.portal === kind) { if (msg) BB.toast(msg, true); BB.route(); } };
 
@@ -216,7 +244,9 @@
         <div class="grid g2">${field({ name: 'joining_form', label: 'Joining form', type: 'textarea', value: t.joining_form, attrs: 'rows="7"' })}${field({ name: 'joining_checklist', label: 'Joining checklist (one item per line)', type: 'textarea', value: t.joining_checklist, attrs: 'rows="7"' })}</div>
         <div class="row"><button class="btn primary">Save templates</button><button type="button" class="btn" data-std>Back to standard</button></div></form></div>
       ${!D.member ? `<div class="card" style="margin-top:14px"><div class="card-h"><h3>People from your company</h3><button class="btn sm right" data-add-m>+ Add person</button></div><div class="tbl-wrap"><table class="tbl cards"><thead><tr><th>Name</th><th>WhatsApp</th><th>Role</th><th>See candidates</th><th>Give feedback</th><th>Approve JD & offers</th><th>See bills</th><th></th></tr></thead><tbody>${D.members.map((m) => `<tr><td>${esc(m.name)}</td><td class="mono">${esc(m.whatsapp)}</td><td>${esc(m.role)}</td>${['candidates', 'feedback', 'approve', 'bills'].map((p) => `<td><input type="checkbox" data-perm="${m.id}" data-p="${p}" ${m.perms[p] ? 'checked' : ''}></td>`).join('')}<td><button class="btn sm danger" data-rm="${m.id}">Remove</button></td></tr>`).join('') || '<tr><td colspan="8" class="empty">Only you have access. Add your team here.</td></tr>'}</tbody></table></div></div>` : ''}
+      ${!D.member ? `<div style="margin-top:14px">${BB.passwordCard(c.email, D.has_password)}</div>` : ''}
       <div class="card pad" style="margin-top:14px"><h3>Monthly summaries</h3><div class="row" style="margin-top:8px">${D.files.filter((f) => f.type.startsWith('monthly_summary')).sort((a, b) => (a.name < b.name ? 1 : -1)).map((f) => `<button class="btn sm" data-file="${f.id}">${esc(f.name.replace(/^Summary-|\.pdf$/g, ''))}</button>`).join('') || '<span class="muted small">Your first summary comes on the 1st of next month.</span>'}</div></div>`;
+    BB.wirePassword(el, '/api/client/password', c.email, () => reload());
     $('[data-co]', el).onsubmit = (e) => { e.preventDefault(); const v = BB.formValues(e.target); act(() => BB.put('/api/client/company', { ...v, extra: { branches: v.branches, website: v.website } }), 'Saved'); };
     $$('[data-kyc]', el).forEach((b) => (b.onclick = async () => { const f = await BB.pickFile(); if (f) act(() => BB.post('/api/client/files', { type: b.dataset.kyc, ...f }), 'Uploaded'); }));
     const sign = $('[data-sign]', el); if (sign) sign.onsubmit = (e) => { e.preventDefault(); act(() => BB.post('/api/client/contract/sign', BB.formValues(e.target)), 'Contract signed'); };
