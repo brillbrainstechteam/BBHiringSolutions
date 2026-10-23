@@ -129,19 +129,6 @@
       features: [['brief', 'See jobs that match you'], ['doc', 'Track your applications'], ['cal', 'Interview & offer updates']],
       steps: [['doc', 'Application received'], ['search', 'Profile check'], ['cal', 'Interview'], ['star', 'Offer & joining']] },
   };
-  // A soft illustration: a laptop with profile cards being picked (no images to load).
-  const tyArt = `<svg class="ty-art" viewBox="0 0 360 260" aria-hidden="true">
-    <path d="M60 60C110 10 230 0 300 40s70 140 20 180-200 40-250 0S10 110 60 60z" style="fill:var(--mustard-50)"/>
-    <circle cx="70" cy="44" r="4" style="fill:var(--mustard-300)"/><circle cx="318" cy="70" r="3" style="fill:var(--mustard)"/><circle cx="46" cy="190" r="3" style="fill:var(--sky)"/>
-    <g transform="translate(62 128)"><rect width="150" height="96" rx="10" style="fill:var(--navy)"/><rect x="10" y="10" width="130" height="76" rx="5" style="fill:var(--navy-700)"/>
-      <rect x="22" y="24" width="60" height="7" rx="3.5" style="fill:var(--mustard-300)"/><rect x="22" y="40" width="96" height="5" rx="2.5" fill="#fff" opacity=".35"/><rect x="22" y="52" width="80" height="5" rx="2.5" fill="#fff" opacity=".35"/><rect x="22" y="64" width="50" height="5" rx="2.5" fill="#fff" opacity=".35"/>
-      <path d="M-14 96h178l-10 14H-4z" style="fill:var(--navy-800)"/></g>
-    ${[[188, 40, true], [204, 102, false], [196, 160, false]].map(([x, y, ok], i) => `<g transform="translate(${x} ${y})"><rect width="128" height="48" rx="12" fill="#fff" stroke="#E5E8F1"/>
-      <circle cx="24" cy="24" r="13" style="fill:${['var(--mustard-300)', 'var(--sky)', 'var(--mustard-50)'][i]}"/><circle cx="24" cy="20" r="5" style="fill:var(--navy)"/><path d="M15 33a9 9 0 0 1 18 0" style="fill:var(--navy)"/>
-      <rect x="46" y="15" width="${ok ? 52 : 60}" height="6" rx="3" style="fill:var(--navy)" opacity=".75"/><rect x="46" y="28" width="40" height="5" rx="2.5" style="fill:var(--faint)" opacity=".6"/>
-      ${ok ? '<circle cx="110" cy="24" r="10" style="fill:var(--green)"/><path d="m105 24 3.5 3.5L115 21" stroke="#fff" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/>' : ''}</g>`).join('')}
-  </svg>`;
-
   function showVerify(card, mode, res, name, editAgain) {
     const m = MODES[mode]; const t = TY[mode]; const first = String(name || '').trim().split(' ')[0];
     const support = BB.boot.business.support_phone;
@@ -158,7 +145,6 @@
           <p>${t.sub}</p>
           <div class="ty-id"><span>${m.idLabel}</span><b class="mono">${esc(res.id)}</b><button type="button" class="btn sm" data-copyid>Copy</button></div>
         </div>
-        ${tyArt}
       </div>
       <div class="ty-access">
         <div class="ty-access-main"><div class="ty-tile">${TY_ICON.grid}</div><div class="grow stack-sm"><h3>${t.access}</h3><div data-access></div></div></div>
@@ -176,7 +162,7 @@
     if (res.token) {
       BB.setToken(m.kind, res.token);
       acc.innerHTML = `<div class="small ty-ok">${svg('<path d="m6 12.5 4 4 8-9"/>', 3)} Your ${m.account} is ready</div>
-        <a class="btn gold lg ty-go" href="#${m.go}">${t.open} ${TY_ICON.arrow}</a>
+        <a class="btn primary lg ty-go" href="#${m.go}">${t.open} ${TY_ICON.arrow}</a>
         <div class="small muted">Next time, log in with your WhatsApp number and a 6-digit code.</div>`;
       return;
     }
@@ -186,7 +172,7 @@
     const pretty = `+91 ${esc(res.phone.slice(0, 5))} ${esc(res.phone.slice(5))}`;
     acc.innerHTML = `<div class="small muted">Welcome back! This number already has a ${m.account} with us${res.isNew ? '' : ' — we added these details to it'}. Confirm it is you to open it.</div>
       <div class="phone-line"><span class="muted small">WhatsApp</span><b class="mono" style="font-size:16px">${pretty}</b><a href="#" class="small right" data-edit>Wrong number?</a></div>
-      <button class="btn gold lg ty-go" data-sendcode>Send code on WhatsApp</button>
+      <button class="btn primary lg ty-go" data-sendcode>Send code on WhatsApp</button>
       <form class="stack-sm hidden" data-codeform novalidate>
         ${field({ name: 'code', label: '6-digit code from WhatsApp', voice: false, attrs: 'inputmode="numeric" maxlength="6" autocomplete="one-time-code" class="code-in"' })}
         <div data-dev class="small"></div>
