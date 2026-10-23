@@ -20,6 +20,13 @@ jobs:
         run: |
           mkdir -p ~/.ssh
           printf '%s\n' "$KEY" > ~/.ssh/deploy_key && chmod 600 ~/.ssh/deploy_key
-          ssh-keyscan -H 187.127.176.187 >> ~/.ssh/known_hosts 2>/dev/null
+          # The server's own host key (from /etc/ssh/ssh_host_ed25519_key.pub), so no lookup is needed.
+          echo '187.127.176.187 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBKFbiLFl1UwFScp0b6rQULGzL2dc3gzTWJGfAk9tL76' >> ~/.ssh/known_hosts
           # The key can only run bbhs-deploy on the server, whatever is asked here.
-          ssh -i ~/.ssh/deploy_key root@187.127.176.187 deploy
+          # A dropped connection from GitHub's side is tried again (3 times, 15 s apart).
+          for try in 1 2 3; do
+            if ssh -o ConnectTimeout=20 -o ServerAliveInterval=15 -i ~/.ssh/deploy_key root@187.127.176.187 deploy; then exit 0; fi
+            code=$?; [ "$code" -ne 255 ] && exit "$code"   # 255 = could not connect; anything else is the deploy's own answer
+            echo "Could not reach the server (try $try of 3)"; sleep 15
+          done
+          exit 1
