@@ -27,7 +27,6 @@
         <div class="cv-first" data-only="job" data-f="cv"><div class="cv-ic" aria-hidden="true">CV</div><div class="grow"><b>Start with your CV</b> <span class="opt">(optional)</span><div class="muted small" data-cv-name>PDF or Word, max 10 MB</div><div class="small" data-cv-msg></div></div><button type="button" class="btn" data-cv>Attach CV</button></div>
         <div class="grid g2">${field({ name: 'name', label: 'Your name' })}<div data-only="hire">${field({ name: 'company', label: 'Company name' })}</div><div data-only="job">${field({ name: 'email', label: 'Email', type: 'email', opt: true, placeholder: 'For a confirmation email', attrs: 'autocomplete="email"' })}</div></div>
         <div class="grid g2">${field({ name: 'whatsapp', label: 'WhatsApp number', type: 'tel', phone: true, placeholder: '10 digits', attrs: 'inputmode="numeric" maxlength="14" autocomplete="tel"' })}<div data-only="hire">${field({ name: 'email_hire', label: 'Email', type: 'email', opt: true, placeholder: 'For a confirmation email', attrs: 'autocomplete="email"' })}</div><div data-only="job"><label class="field" data-f="job_wanted"><span class="lab">Job you want</span><select name="job_wanted">${BB.jobOptions('', true, q.ind)}</select></label></div></div>
-        <div class="hidden" data-pw>${field({ name: 'password', label: 'Create a password', type: 'password', opt: true, voice: false, hint: 'At least 8 characters. Lets you log in with your email as well as your WhatsApp number.', attrs: 'autocomplete="new-password"' })}</div>
         <div class="hidden" data-other>${field({ name: 'job_other', label: 'Type the job you want' })}</div>
         <div class="grid g2">${field({ name: 'city', label: 'City', list: 'cities', placeholder: 'Start typing your city…' })}${field({ name: 'state', label: 'State', placeholder: 'Fills in from the city', voice: false })}</div>
         <div data-only="hire" class="stack">
@@ -57,17 +56,13 @@
       $$('.err-msg', card).forEach((x) => x.remove()); $$('.has-err', card).forEach((x) => x.classList.remove('has-err'));
       onMode && onMode(mode);
     };
-    $$('[data-mode]', card).forEach((b) => (b.onclick = () => { mode = b.dataset.mode; apply(); showPw(); }));
+    $$('[data-mode]', card).forEach((b) => (b.onclick = () => { mode = b.dataset.mode; apply(); }));
     $('[name=job_wanted]', card).onchange = (e) => $('[data-other]', card).classList.toggle('hidden', e.target.value !== 'Other');
     $('[data-cv]', card).onclick = async () => {
       cv = await BB.pickFile(); $('[data-cv-name]', card).textContent = cv ? cv.name : 'PDF or Word, max 10 MB';
       if (cv) fillFromCv(card, cv);
     };
     BB.attachMics(card); apply();
-    // "Create a password" appears once an email is typed.
-    const pwBox = $('[data-pw]', card);
-    const showPw = () => { const e = $(`[name=${mode === 'hire' ? 'email_hire' : 'email'}]`, card); pwBox.classList.toggle('hidden', !(e && e.value.trim()) && !$('[name=password]', card).value); };
-    form.addEventListener('input', showPw); showPw();
     form.onsubmit = async (e) => {
       e.preventDefault();
       const v = BB.formValues(form); v.whatsapp = digits(v.whatsapp);
@@ -76,17 +71,15 @@
       const rules = mode === 'hire'
         ? [...common, ['company', v.company, 'Please enter your company name'], ['city', v.city, 'Please enter your city'], ['business_type', v.business_type, 'Pick your type of business'], ['need', v.need, 'Tell us when you need staff']]
         : [...common, ['job_wanted', v.job_wanted, 'Pick the job you want'], ['job_other', v.job_wanted !== 'Other' || v.job_other, 'Type the job you want'], ['city', v.city, 'Please enter the city you want to work in']];
-      // A password is optional and needs an email to log in with.
-      if (v.password) rules.push([mode === 'hire' ? 'email_hire' : 'email', email, 'Add your email to log in with a password'], ['password', v.password.length >= 8, 'Use at least 8 characters, or leave it empty']);
       rules.push(['consent', v.consent, 'Please tick to agree before sending']);
       if (!check(form, rules)) return;
       const body = mode === 'hire'
-        ? { contact: v.name, company: v.company, whatsapp: v.whatsapp, email, city: v.city, state: v.state, business_type: v.business_type, need: v.need, roles: v.roles, password: v.password, website: v.website, src: q.src }
-        : { name: v.name, whatsapp: v.whatsapp, email, city: v.city, state: v.state, job_wanted: v.job_wanted, job_other: v.job_other, experience: v.experience, password: v.password, cv, website: v.website, src: q.src, job: q.job, ref: q.ref };
+        ? { contact: v.name, company: v.company, whatsapp: v.whatsapp, email, city: v.city, state: v.state, business_type: v.business_type, need: v.need, roles: v.roles, website: v.website, src: q.src }
+        : { name: v.name, whatsapp: v.whatsapp, email, city: v.city, state: v.state, job_wanted: v.job_wanted, job_other: v.job_other, experience: v.experience, cv, website: v.website, src: q.src, job: q.job, ref: q.ref };
       const btn = $('[data-send]', card); btn.disabled = true; btn.textContent = 'Sending…';
       try {
         const res = await BB.post(mode === 'hire' ? '/api/public/hire' : '/api/public/apply', body, { kind: null });
-        showVerify(card, mode, res, v.name, () => { card.innerHTML = formHtml(mode, q, single); restore(card, v); mountForm(card, mode, q, onMode, single); });
+        showVerify(card, mode, { ...res, email }, v.name, () => { card.innerHTML = formHtml(mode, q, single); restore(card, v); mountForm(card, mode, q, onMode, single); });
       } catch (er) {
         // Server field names differ for the hiring side; point the error at the visible field.
         if (er.field === 'contact') er.field = 'name'; if (er.field === 'email' && mode === 'hire') er.field = 'email_hire';
@@ -130,10 +123,10 @@
     arrow: svg('<path d="M5 12h14M13 6l6 6-6 6"/>', 2),
   };
   const TY = {
-    hire: { head: 'Your hiring request has been submitted.', sub: 'Our team will connect with you within 1 working day.', access: 'Log in to your client dashboard', open: 'Open my dashboard',
+    hire: { head: 'Your hiring request has been submitted.', sub: 'Our team will connect with you within 1 working day.', access: 'Open your client dashboard', open: 'Open my dashboard',
       features: [['doc', 'Track requests'], ['users', 'View shortlisted profiles'], ['chat', 'Manage communication']],
       steps: [['doc', 'Request received'], ['phone', 'Team connects'], ['doc', 'Agreement & activation'], ['users', 'Receive candidates']] },
-    job: { head: 'Your application has been submitted.', sub: '', access: 'Log in to your candidate profile', open: 'Open my profile',
+    job: { head: 'Your application has been submitted.', sub: '', access: 'Open your candidate profile', open: 'Open my profile',
       features: [['brief', 'See jobs that match you'], ['doc', 'Track your applications'], ['cal', 'Interview & offer updates']],
       steps: [['doc', 'Application received'], ['search', 'Profile check'], ['cal', 'Interview'], ['star', 'Offer & joining']] },
   };
@@ -169,40 +162,41 @@
     const pretty = res.phone ? `+91 ${esc(res.phone.slice(0, 5))} ${esc(res.phone.slice(5))}` : '';
     const phoneLine = `<div class="phone-line"><span class="muted small">WhatsApp</span><b class="mono">${pretty}</b><a href="#" class="small right" data-edit>Wrong number?</a></div>`;
     const wireEdit = () => { $('[data-edit]', acc).onclick = (e) => { e.preventDefault(); if (main) main.classList.remove('ty-mode'); if (pubCard) pubCard.classList.remove('ty-card'); editAgain(); }; };
+    // Email instead of WhatsApp: a new sign-up creates an account (email + password) and then logs in with it;
+    // someone already known logs in, or creates one after a WhatsApp code. Forgot password lives in the same box.
+    const emailSwitch = (isNew) => {
+      const box = $('[data-byemail]', acc); let mounted = false;
+      $('[data-switch]', acc).onclick = (e) => {
+        e.preventDefault(); const toEmail = box.classList.contains('hidden');
+        box.classList.toggle('hidden', !toEmail); $('[data-byphone]', acc).classList.toggle('hidden', toEmail);
+        e.currentTarget.textContent = toEmail ? 'Use WhatsApp instead' : 'Use email and password instead';
+        if (toEmail && !mounted) {
+          mounted = true;
+          BB.emailAuth(box, { kind: m.kind, email: res.email || '', phone: res.phone, session: isNew, start: isNew ? 'register' : 'login', onLogin: (tk) => { BB.setToken(m.kind, tk); location.hash = m.go; } });
+        }
+        if (toEmail) { const i = $$('input', box).find((x) => !x.value) || $('input', box); if (i) i.focus(); }
+      };
+    };
+    const shell = (phoneHtml) => `<div data-byphone class="stack-sm">${phoneLine}${phoneHtml}</div><div class="hidden" data-byemail></div>
+      <div class="login-switch"><a href="#" data-switch>Use email and password instead</a></div>`;
     // 1) New sign-up: the account was made with the form; the number they just gave opens it in one tap.
     if (res.token) {
       BB.setToken(m.kind, res.token);
-      acc.innerHTML = `${phoneLine}<a class="btn primary lg ty-go" href="#${m.go}">${t.open} ${TY_ICON.arrow}</a>`;
-      wireEdit(); return;
+      acc.innerHTML = shell(`<a class="btn primary lg ty-go" href="#${m.go}">${t.open} ${TY_ICON.arrow}</a>`);
+      wireEdit(); emailSwitch(true); return;
     }
     // 3) WhatsApp codes cannot go out yet.
     if (!res.can_verify) { acc.innerHTML = `<div class="notice small">We will message you on WhatsApp with a link to your ${m.account}.</div>`; return; }
-    // 2) A number we already know: one WhatsApp code proves it is theirs (or their email and password), then the account opens.
-    acc.innerHTML = `<div data-byphone class="stack-sm">${phoneLine}
+    // 2) A number we already know: one WhatsApp code proves it is theirs, then the account opens.
+    acc.innerHTML = shell(`
       <button class="btn primary lg ty-go" data-sendcode>Send code on WhatsApp</button>
       <form class="stack-sm hidden" data-codeform novalidate>
         ${field({ name: 'code', label: 'Enter 6 digit code received on WhatsApp', voice: false, attrs: 'inputmode="numeric" maxlength="6" autocomplete="one-time-code" class="code-in"' })}
         <div data-dev class="small"></div>
         <button class="btn primary lg ty-go">Verify and ${t.open.toLowerCase()}</button>
         <div class="small"><a href="#" data-resend>Send the code again</a> <span class="muted" data-wait></span></div>
-      </form></div>
-      <form class="stack-sm hidden" data-emailform novalidate>
-        ${field({ name: 'email', label: 'Email', type: 'email', voice: false, attrs: 'autocomplete="email"' })}${field({ name: 'password', label: 'Password', type: 'password', voice: false, attrs: 'autocomplete="current-password"' })}
-        <button class="btn primary lg ty-go">${t.open}</button>
-      </form>
-      <div class="login-switch"><a href="#" data-switch>Log in with email and password instead</a></div>`;
-    wireEdit();
-    const ef = $('[data-emailform]', acc);
-    $('[data-switch]', acc).onclick = (e) => {
-      e.preventDefault(); const toEmail = ef.classList.contains('hidden');
-      ef.classList.toggle('hidden', !toEmail); $('[data-byphone]', acc).classList.toggle('hidden', toEmail);
-      e.currentTarget.textContent = toEmail ? 'Log in with WhatsApp code instead' : 'Log in with email and password instead';
-      if (toEmail) $('[name=email]', ef).focus();
-    };
-    ef.onsubmit = async (e) => {
-      e.preventDefault();
-      try { const r = await BB.post('/api/account/login', { kind: m.kind, ...BB.formValues(ef) }, { kind: null }); BB.setToken(m.kind, r.token); location.hash = m.go; } catch (er) { BB.showErr(ef, er); }
-    };
+      </form>`);
+    wireEdit(); emailSwitch(false);
     const codeForm = $('[data-codeform]', acc); const code = $('[name=code]', acc); let timer;
     const wait = (s) => { clearInterval(timer); const a = $('[data-resend]', acc); a.classList.add('disabled'); const w = $('[data-wait]', acc);
       const tick = () => { w.textContent = s > 0 ? `(in ${s} s)` : ''; if (s-- <= 0) { clearInterval(timer); a.classList.remove('disabled'); } }; tick(); timer = setInterval(tick, 1000); };

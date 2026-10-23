@@ -749,7 +749,7 @@ a.disabled { pointer-events: none; color: var(--faint); }
 .pub-card .choice label:has(input:checked) { background: var(--mustard-50); border-color: var(--mustard); }
 .pub-card .choice label[style] { min-width: 0 !important; }
 .consent-tick { display: flex; gap: 10px; align-items: flex-start; font-size: 13px; line-height: 1.5; color: var(--muted); cursor: pointer; padding: 2px 2px 0; }
-.consent-tick input { width: 18px; height: 18px; margin: 1px 0 0; flex: none; }
+.consent-tick input { width: 15px; height: 15px; min-height: 0; margin: 3px 0 0; flex: none; }
 .consent-tick.has-err span, .has-err .consent-tick span { color: var(--red); }
 @media (max-width: 560px) { .cv-first { flex-wrap: wrap; } .cv-first .btn { width: 100%; justify-content: center; } .pub-card .choice label { padding: 9px 13px; font-size: 13.5px; } }
 .consent-tick { flex-wrap: wrap; } .consent-tick span { flex: 1; min-width: 0; } .consent-tick .err-msg { flex-basis: 100%; margin-left: 28px; }
@@ -766,3 +766,8 @@ a.disabled { pointer-events: none; color: var(--faint); }
 .pub-card [data-f="experience"] .choice { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); }
 .pub-card [data-f="experience"] .choice label { justify-content: center; padding: 9px 6px; gap: 6px; }
 @media (max-width: 560px) { .pub-card [data-f="experience"] .choice { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+/* Email account box (log in / create account / forgot / reset). */
+.ea-links { margin-top: 2px; } .ea-links a { font-weight: 600; }
+.ea-note { margin-bottom: 10px; }
+.gem-bg .gem { display: none; }
+.ty-access input:not([type=checkbox]):not([type=radio]) { background: var(--surface); border-color: var(--border); }

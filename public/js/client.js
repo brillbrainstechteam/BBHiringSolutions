@@ -10,7 +10,7 @@
       : { eyebrow: 'For candidates', title: 'The job platform made <em>only for jewellery</em>', lead: 'See matching jobs, your interviews and your offers, and keep your profile up to date.', perks: [['★', 'Jobs for you', 'Matched on your city, skills and salary.'], ['✓', 'Confirm interviews', 'Or ask to move them — in one tap.'], ['✉', 'Accept your offer', 'Read the offer letter and upload joining papers.']] };
     $('#app').innerHTML = BB.split({ top: BB.publicTop(title), ...intro, card: `<div class="card-title">${esc(title)}</div><p class="muted" style="margin:4px 0 16px" data-intro>Get a 6-digit code on WhatsApp.</p><form class="stack" data-step1>${BB.field({ name: 'phone', label: 'WhatsApp number', type: 'tel', phone: true, value: lastPhone(), placeholder: '10 digits', attrs: 'inputmode="numeric" maxlength="14" autocomplete="tel"' })}<button class="btn gold block lg">Send code</button></form>
       <form class="stack hidden" data-step2><div class="muted small" data-sent></div>${BB.field({ name: 'code', label: 'Enter 6 digit code received on WhatsApp', voice: false, attrs: 'inputmode="numeric" maxlength="6" autocomplete="one-time-code" class="code-in"' })}<div data-dev></div><button class="btn gold block lg">Log in</button><div class="row small between"><a href="#" data-resend>Send the code again</a><span class="muted" data-wait></span><a href="#" data-again>Use another number</a></div></form>
-      <form class="stack hidden" data-stepE>${BB.field({ name: 'email', label: 'Email', type: 'email', voice: false, attrs: 'autocomplete="email" inputmode="email"' })}${BB.field({ name: 'password', label: 'Password', type: 'password', voice: false, attrs: 'autocomplete="current-password"' })}<button class="btn gold block lg">Log in</button><div class="small muted">Forgot your password? Log in with your WhatsApp number and set a new one in your account.</div></form>
+      <div class="hidden" data-stepE></div>
       <div class="login-switch"><a href="#" data-switch>Log in with email and password instead</a></div>
       <p class="small muted" style="margin-top:16px">New here? ${kind === 'client' ? '<a href="#hire">Fill the hiring form</a>' : '<a href="#apply">Fill the job form</a>'}</p>` });
     BB.attachMics($('#app'));
@@ -40,21 +40,83 @@
     $('[name=code]').addEventListener('input', (e) => { e.target.value = e.target.value.replace(/\D/g, '').slice(0, 6); if (e.target.value.length === 6) verify(); });
     $('[data-step2]').onsubmit = (e) => { e.preventDefault(); verify(); };
     $('[data-again]').onclick = (e) => { e.preventDefault(); BB.otpLogin(kind, title, after); };
-    // Email and password: for people who set one in their account. The WhatsApp code stays the main way in.
-    let byEmail = false;
+    // Email and password: log in, create an account, or reset a forgotten password. The WhatsApp code stays the main way in.
+    let byEmail = false; let mounted = false;
     $('[data-switch]').onclick = (e) => {
       e.preventDefault(); byEmail = !byEmail; clearInterval(timer);
       $('[data-step1]').classList.toggle('hidden', byEmail); $('[data-step2]').classList.add('hidden'); $('[data-stepE]').classList.toggle('hidden', !byEmail);
       $('[data-intro]').textContent = byEmail ? 'Use your email and password.' : 'Get a 6-digit code on WhatsApp.';
-      e.currentTarget.textContent = byEmail ? 'Log in with WhatsApp number instead' : 'Log in with email and password instead';
-      $(byEmail ? '[name=email]' : '[name=phone]').focus();
-    };
-    $('[data-stepE]').onsubmit = async (e) => {
-      e.preventDefault(); const f = e.target; const b = $('button', f); if (b.disabled) return; b.disabled = true;
-      try { const r = await BB.post('/api/account/login', { kind, ...BB.formValues(f) }, { kind: null }); BB.setToken(kind, r.token); after(); } catch (er) { BB.showErr(f, er); } finally { b.disabled = false; }
+      e.currentTarget.textContent = byEmail ? 'Log in with WhatsApp code instead' : 'Log in with email and password instead';
+      if (byEmail && !mounted) { mounted = true; BB.emailAuth($('[data-stepE]'), { kind, phone: lastPhone(), onLogin: (t) => { BB.setToken(kind, t); after(); } }); }
+      $(byEmail ? '[data-stepE] input' : '[name=phone]').focus();
     };
   };
-  // Set or change the password for email login (from the candidate profile or the client's company tab).
+  // Email accounts, one box with four views: log in, create an account, forgot password, set a new password.
+  // o: { kind, email, phone, session (true when the form just signed them in), start, onLogin(token) }.
+  BB.emailAuth = (el, o) => {
+    const F = BB.field; let email = o.email || ''; let phone = o.phone || '';
+    const pwF = (name, label, auto, hint) => F({ name, label, type: 'password', voice: false, hint, attrs: `autocomplete="${auto}"` });
+    const emF = () => F({ name: 'email', label: 'Email', type: 'email', voice: false, value: email, attrs: 'autocomplete="email" inputmode="email"' });
+    const note = (t) => (t ? `<div class="notice small ea-note">${t}</div>` : '');
+    const dev = (c) => (c ? `<div class="test-code">Test copy: the code is <b class="mono">${c}</b></div>` : '');
+    const busy = async (f, fn) => { const b = $('button[type=submit], button:not([type=button])', f); if (b.disabled) return; b.disabled = true; try { await fn(); } catch (er) { BB.showErr(f, er); } finally { b.disabled = false; } };
+    const wire = () => $$('[data-ea]', el).forEach((a) => (a.onclick = (e) => { e.preventDefault(); const f = $('form', el); const v = f ? BB.formValues(f) : {}; if (v.email) email = v.email; show(a.dataset.ea); }));
+    const views = {
+      login: (msg) => {
+        el.innerHTML = `${note(msg)}<form class="stack-sm" novalidate>${emF()}${pwF('password', 'Password', 'current-password')}
+          <button class="btn gold block lg">Log in</button>
+          <div class="row between small ea-links"><a href="#" data-ea="forgot">Forgot password?</a><a href="#" data-ea="register">Create an account</a></div></form>`;
+        const f = $('form', el);
+        f.onsubmit = (e) => { e.preventDefault(); busy(f, async () => { const v = BB.formValues(f); email = v.email; const r = await BB.post('/api/account/login', { kind: o.kind, email: v.email, password: v.password }, { kind: null }); o.onLogin(r.token); }); };
+      },
+      register: () => {
+        const viaCode = !o.session;
+        el.innerHTML = `<form class="stack-sm" novalidate>${viaCode ? F({ name: 'phone', label: 'WhatsApp number', type: 'tel', phone: true, value: phone, placeholder: '10 digits', attrs: 'inputmode="numeric" maxlength="14" autocomplete="tel"' }) : ''}${emF()}
+          ${pwF('password', 'Create a password', 'new-password', 'At least 8 characters')}${pwF('confirm', 'Type the password again', 'new-password')}
+          <div class="hidden stack-sm" data-codebox><div class="small muted" data-sent></div>${F({ name: 'code', label: 'Enter 6 digit code received on WhatsApp', voice: false, attrs: 'inputmode="numeric" maxlength="6" autocomplete="one-time-code"' })}<div data-dev></div></div>
+          <button class="btn gold block lg">${viaCode ? 'Send code on WhatsApp' : 'Create account'}</button>
+          <div class="small ea-links">Already have an account? <a href="#" data-ea="login">Log in</a></div></form>`;
+        const f = $('form', el); let codeSent = false;
+        f.onsubmit = (e) => { e.preventDefault(); busy(f, async () => {
+          const v = BB.formValues(f); email = v.email;
+          if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(v.email)) throw Object.assign(new Error('Enter a valid email'), { field: 'email' });
+          if (v.password.length < 8) throw Object.assign(new Error('Use at least 8 characters.'), { field: 'password' });
+          if (v.password !== v.confirm) throw Object.assign(new Error('The two passwords do not match.'), { field: 'confirm' });
+          if (viaCode && !codeSent) {
+            phone = BB.spokenToDigits(v.phone) || String(v.phone).replace(/\D/g, '').slice(-10);
+            const r = await BB.post('/api/otp/request', { phone, kind: o.kind }, { kind: null });
+            codeSent = true; $('[data-codebox]', f).classList.remove('hidden');
+            $('[data-sent]', f).textContent = `Code sent on WhatsApp to +91 ${phone.slice(0, 5)} ${phone.slice(5)}.`; $('[data-dev]', f).innerHTML = dev(r.dev_code);
+            $('button.gold', f).textContent = 'Create account'; $('[name=code]', f).focus(); return;
+          }
+          await BB.post('/api/account/register', { kind: o.kind, phone, email: v.email, password: v.password, confirm: v.confirm, code: v.code }, { kind: o.session ? o.kind : null });
+          show('login', 'Account created. Log in with your email and password.');
+        }); };
+      },
+      forgot: () => {
+        el.innerHTML = `<form class="stack-sm" novalidate><div class="small muted">Enter your account email. We send a 6-digit code to your WhatsApp and email.</div>${emF()}
+          <button class="btn gold block lg">Send reset code</button><div class="small ea-links"><a href="#" data-ea="login">Back to log in</a></div></form>`;
+        const f = $('form', el);
+        f.onsubmit = (e) => { e.preventDefault(); busy(f, async () => { const v = BB.formValues(f); email = v.email; const r = await BB.post('/api/account/forgot', { kind: o.kind, email: v.email }, { kind: null }); show('reset', r.dev_code); }); };
+      },
+      reset: (devCode) => {
+        el.innerHTML = `<form class="stack-sm" novalidate>${note(`If <b>${BB.esc(email)}</b> has an account, a 6-digit code is on its way to the WhatsApp number and email on it.`)}${dev(devCode)}
+          ${F({ name: 'code', label: 'Enter the 6 digit code', voice: false, attrs: 'inputmode="numeric" maxlength="6" autocomplete="one-time-code"' })}
+          ${pwF('password', 'New password', 'new-password', 'At least 8 characters')}${pwF('confirm', 'Type the new password again', 'new-password')}
+          <button class="btn gold block lg">Set new password</button>
+          <div class="row between small ea-links"><a href="#" data-ea="forgot">Send the code again</a><a href="#" data-ea="login">Back to log in</a></div></form>`;
+        const f = $('form', el);
+        f.onsubmit = (e) => { e.preventDefault(); busy(f, async () => {
+          const v = BB.formValues(f);
+          if (v.password !== v.confirm) throw Object.assign(new Error('The two passwords do not match.'), { field: 'confirm' });
+          await BB.post('/api/account/reset', { kind: o.kind, email, code: v.code, password: v.password, confirm: v.confirm }, { kind: null });
+          show('login', 'Password changed. Log in with your new password.');
+        }); };
+      },
+    };
+    const show = (view, arg, focus = true) => { views[view](arg); wire(); if (!focus) return; const first = $('input:not([type=hidden])', el); if (first && view !== 'reset') { const empty = $$('input', el).find((i) => !i.value); (empty || first).focus(); } else if (first) first.focus(); };
+    show(o.start || 'login', undefined, false);
+  };
   // Only people who log in with email see this: a way to change their password. Everyone else uses the WhatsApp code.
   BB.passwordCard = (email, has) => (has ? `<div class="card pad stack-sm pw-card"><div class="cp-h">${BB.icon('key')}<h3>Password</h3></div>
     <div class="small muted">You can log in with <b>${esc(email)}</b> and your password.</div>

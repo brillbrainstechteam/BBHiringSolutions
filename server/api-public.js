@@ -133,7 +133,7 @@ route('POST', '/api/account/login', { rate: { key: 'pwlogin', max: 20, minutes: 
   const table = kind === 'client' ? 'clients' : 'candidates';
   const rows = all(`SELECT r.id, p.pass_hash FROM ${table} r JOIN account_passwords p ON p.kind=? AND p.subject_id=r.id WHERE lower(r.email)=? AND r.merged_into IS NULL AND r.removed=0`, kind, email);
   const hit = rows.find((r) => L.checkPassword(pw, r.pass_hash));
-  if (!hit) throw httpError(400, rows.length ? 'Email or password is wrong.' : 'This email has no password yet. Log in with the WhatsApp code, then create a password under Email login in your account.', 'password');
+  if (!hit) throw httpError(400, rows.length ? 'Email or password is wrong.' : 'No account uses this email yet. Create an account first.', 'password');
   openedAccount(kind, hit.id);
   return { token: newSession(kind, hit.id) };
 });
@@ -146,15 +146,6 @@ function savePassword(kind, id, pw, who = 'Form') {
   D.run('INSERT INTO account_passwords (kind, subject_id, pass_hash, updated_at) VALUES (?,?,?,?) ON CONFLICT(kind, subject_id) DO UPDATE SET pass_hash=excluded.pass_hash, updated_at=excluded.updated_at', kind, id, L.hashPassword(pw), now());
   D.history(who, 'password set', id);
 }
-// "Create a password" on the sign-up forms: checked before anything is saved. It is kept only for a brand-new
-// account; a number we already know gets no password from a form (anyone could type someone else's number).
-function formPassword(b, kind) {
-  const pw = String(b.password || ''); delete b.password;
-  if (!pw) return null;
-  if (!b.email) throw httpError(400, 'Add your email to log in with a password', 'email');
-  if (pw.length < 8) throw httpError(400, 'Use at least 8 characters, or leave it empty', 'password');
-  return pw;
-}
 function setPassword(kind, rec, b, actor, ip) {
   const pw = String(b.password || '');
   if (pw.length < 8) throw httpError(400, 'Use at least 8 characters.', 'password');
@@ -165,6 +156,64 @@ function setPassword(kind, rec, b, actor, ip) {
   savePassword(kind, rec.id, pw, actor.label);
   return { ok: true, email };
 }
+// ---------- create an account with email, forgot password, reset ----------
+const KINDS = { client: 'clients', candidate: 'candidates' };
+const kindOf = (k) => (k === 'client' ? 'client' : 'candidate');
+const cleanEmail = (e) => String(e || '').trim().toLowerCase();
+function checkNewPassword(b) {
+  const pw = String(b.password || '');
+  if (pw.length < 8) throw httpError(400, 'Use at least 8 characters.', 'password');
+  if (b.confirm !== undefined && b.confirm !== pw) throw httpError(400, 'The two passwords do not match.', 'confirm');
+  return pw;
+}
+// Create an account: the person proves the WhatsApp number is theirs (the session they got from the form, or a
+// WhatsApp code), then picks an email and password. They log in with it afterwards.
+route('POST', '/api/account/register', { rate: { key: 'pwset', max: 10, minutes: 60 } }, (ctx) => {
+  const kind = kindOf(ctx.body.kind); const b = ctx.body;
+  const email = cleanEmail(b.email);
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) throw httpError(400, 'Enter a valid email', 'email');
+  const pw = checkNewPassword(b);
+  let rec = null;
+  const sess = ctx.req.headers['x-session'] ? get('SELECT * FROM sessions WHERE token=? AND kind=?', ctx.req.headers['x-session'], kind) : null;
+  if (sess && !sess.member_id) rec = get(`SELECT * FROM ${KINDS[kind]} WHERE id=?`, L.resolveId(sess.subject_id));
+  else {
+    const phone = L.digits10(b.phone);
+    if (!L.validPhone(phone)) throw httpError(400, 'Enter your 10-digit WhatsApp number', 'phone');
+    rec = get(`SELECT * FROM ${KINDS[kind]} WHERE whatsapp=? AND merged_into IS NULL AND removed=0`, phone);
+    if (!rec) throw httpError(404, kind === 'client' ? 'No client account with this number. Fill the hiring form first.' : 'No profile with this number. Fill the job form first.', 'phone');
+    checkCode(phone, kind, b.code);
+  }
+  if (!rec) throw httpError(400, 'Please log in again.');
+  if (hasPassword(kind, rec.id)) throw httpError(400, 'This account already has a password. Log in, or use Forgot password.', 'email');
+  emailFree(kind, email, rec.id);
+  if (email !== String(rec.email || '').toLowerCase()) D.edit(KINDS[kind], rec.id, { email }, kind === 'client' ? 'Client' : 'Candidate', ctx.ip);
+  savePassword(kind, rec.id, pw, kind === 'client' ? 'Client' : 'Candidate');
+  return { ok: true, email };
+});
+// Forgot password: a 6-digit code goes to the account's WhatsApp and to its email. The answer is the same
+// whether or not the email is known, so nobody can use this to find out who has an account.
+route('POST', '/api/account/forgot', { rate: { key: 'pwforgot', max: 10, minutes: 60 } }, (ctx) => {
+  const kind = kindOf(ctx.body.kind); const email = cleanEmail(ctx.body.email);
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) throw httpError(400, 'Enter your email', 'email');
+  const rec = get(`SELECT r.* FROM ${KINDS[kind]} r JOIN account_passwords p ON p.kind=? AND p.subject_id=r.id WHERE lower(r.email)=? AND r.merged_into IS NULL AND r.removed=0`, kind, email);
+  let dev;
+  if (rec && L.validPhone(rec.whatsapp)) {
+    const code = issueCode(rec.whatsapp, `reset:${kind}`);
+    require('./mailer').resetCode(email, code, rec.id);
+    dev = showCode() ? code : undefined;
+  }
+  return { sent: true, dev_code: dev };
+});
+route('POST', '/api/account/reset', { rate: { key: 'pwreset', max: 20, minutes: 60 } }, (ctx) => {
+  const kind = kindOf(ctx.body.kind); const email = cleanEmail(ctx.body.email);
+  const rec = get(`SELECT r.* FROM ${KINDS[kind]} r JOIN account_passwords p ON p.kind=? AND p.subject_id=r.id WHERE lower(r.email)=? AND r.merged_into IS NULL AND r.removed=0`, kind, email);
+  if (!rec) throw httpError(400, 'The code is wrong or has expired. Ask for a new one.', 'code');
+  const pw = checkNewPassword(ctx.body);
+  checkCode(rec.whatsapp, `reset:${kind}`, ctx.body.code);
+  savePassword(kind, rec.id, pw, kind === 'client' ? 'Client' : 'Candidate');
+  D.run('DELETE FROM sessions WHERE kind=? AND subject_id=?', kind, rec.id); // old logins end with the old password
+  return { ok: true };
+});
 route('POST', '/api/cand/password', { auth: 'candidate', rate: { key: 'pwset', max: 10, minutes: 60 } }, (ctx) => setPassword('candidate', ctx.candidate, ctx.body, ctx.actor, ctx.ip));
 route('POST', '/api/client/password', { auth: 'client', rate: { key: 'pwset', max: 10, minutes: 60 } }, (ctx) => {
   if (ctx.member) throw httpError(403, 'Team members log in with their WhatsApp number.');
@@ -189,12 +238,10 @@ route('POST', '/api/public/hire', { rate: { key: 'form', max: 60, minutes: 60 } 
   if (!b.need) throw httpError(400, 'Tell us when you need staff', 'need');
   if (b.email) b.email = String(b.email).trim();
   if (b.email && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(String(b.email).trim())) throw httpError(400, 'Enter a valid email, or leave it empty', 'email');
-  const pw = formPassword(b, 'client');
   const r = L.intakeClient(b, { source: srcFrom(b) });
   const mailer = require('./mailer');
   if (r.isNew) mailer.newLead('client', r.client);
   mailer.confirmToPerson('client', r.client);
-  if (pw && r.isNew) { try { emailFree('client', String(b.email).trim().toLowerCase(), r.client.id); savePassword('client', r.client.id, pw); } catch { /* email already logs in elsewhere: they set one later */ } }
   return formDone('client', r.isNew, r.client.id, r.client.whatsapp);
 });
 // The job form's first step: read the chosen CV and hand back the details to fill in. Nothing is saved here.
@@ -211,7 +258,6 @@ route('POST', '/api/public/apply', { rate: { key: 'form', max: 60, minutes: 60 }
   if (!b.name || !String(b.name).trim()) throw httpError(400, 'Please enter your name', 'name');
   if (b.email) b.email = String(b.email).trim();
   if (b.email && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(String(b.email).trim())) throw httpError(400, 'Enter a valid email, or leave it empty', 'email');
-  const pw = formPassword(b, 'candidate');
 
   if (!b.city) throw httpError(400, 'Please enter the city you want to work in', 'city');
   if (!b.job_wanted) throw httpError(400, 'Pick the job you want', 'job_wanted');
@@ -224,7 +270,6 @@ route('POST', '/api/public/apply', { rate: { key: 'form', max: 60, minutes: 60 }
   { const mailer = require('./mailer'); const rec = get('SELECT * FROM candidates WHERE id=?', r.candidate.id); if (r.isNew) mailer.newLead('candidate', rec); mailer.confirmToPerson('candidate', rec); }
   if (refBy && r.isNew) insert('notes', { record_id: r.candidate.id, text: `Referred by ${refBy}`, author: 'Form', at: now() });
   if (b.cv && b.cv.base64) { try { const f = await F.saveFile({ recordId: r.candidate.id, type: 'cv', name: b.cv.name, base64: b.cv.base64, by: 'Candidate form' }); update('candidates', r.candidate.id, { cv_file: String(f.id) }); CV.fillCandidate(r.candidate.id, b.cv.name, b.cv.base64, 'Candidate form'); } catch (e) { insert('notes', { record_id: r.candidate.id, text: `CV not saved: ${e.message}`, author: 'Form', at: now() }); } }
-  if (pw && r.isNew) { try { emailFree('candidate', String(b.email).trim().toLowerCase(), r.candidate.id); savePassword('candidate', r.candidate.id, pw); } catch { /* email already logs in elsewhere: they set one later */ } }
   return formDone('candidate', r.isNew, r.candidate.id, r.candidate.whatsapp);
 });
 // A new sign-up opens its own fresh account straight away: it holds only what this person just typed.

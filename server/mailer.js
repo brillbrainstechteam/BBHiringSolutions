@@ -184,8 +184,14 @@ function copyOfWhatsApp({ to, personType, format, text, recordId, sendAfter, ded
     text: `${text}\n\n${label}: ${base}/${path}`, html: layout(subject, body, { label, url: `${base}/${path}` }) });
 }
 
+// Forgot password: the reset code by email (the same code also goes on WhatsApp).
+function resetCode(to, code, recordId) {
+  const b = D.settings().business;
+  const text = `Your ${b.name} password reset code is ${code}. It is valid for 10 minutes. If you did not ask for it, ignore this email.`;
+  return queue({ to, subject: `Your password reset code: ${code}`, text, html: layout('Reset your password', `<p style="font-size:14px;line-height:1.6">Use this code to set a new password. It is valid for 10 minutes.</p><p style="font-size:30px;font-weight:bold;letter-spacing:6px;margin:12px 0">${esc(code)}</p><p style="font-size:12px;color:#5A6482">If you did not ask for it, ignore this email. Your password stays the same.</p>`), kind: 'password_reset', recordId });
+}
 function testEmail(to) {
   return queue({ to, kind: 'test', subject: 'BBHS test email', text: 'This is a test email from BBHS. If you can read this, outgoing email works.', html: layout('Outgoing email works', '<p style="font-size:14px">This is a test email from BBHS. If you can read this, outgoing email works.</p>') });
 }
 
-module.exports = { configured, queue, deliver, retryQueued, newLead, confirmToPerson, copyOfWhatsApp, testEmail, smtpSend };
+module.exports = { resetCode, configured, queue, deliver, retryQueued, newLead, confirmToPerson, copyOfWhatsApp, testEmail, smtpSend };
