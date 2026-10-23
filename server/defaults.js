@@ -113,7 +113,7 @@ const AUTO_RULES = [
 
 module.exports.defaultSettings = () => ({
   business: {
-    name: 'BrillBrains Hiring Solutions', short: 'BBHS', support_phone: '9820000000',
+    name: 'BrillBrains Hiring Solutions', short: 'BBHS', support_phone: '9093400444',
     primary: '#101A3A', accent: '#D19B12',
     address: 'Office 4, Opera House, Mumbai 400004', state: 'Maharashtra',
     gstin: '27AABCB1234M1Z5', pan: 'AABCB1234M', bank: 'HDFC Bank · A/c 50200012345678 · IFSC HDFC0000123',
