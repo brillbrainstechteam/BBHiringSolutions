@@ -5,8 +5,8 @@
   const { $, $$, esc, field } = BB;
 
   const MODES = {
-    hire: { kind: 'client', label: 'I want to hire', eyebrow: 'For employers', title: 'Hire the <em>right people</em>, without the chase', top: 'For Employers', send: 'Send request', account: 'client account', idLabel: 'Your client ID', go: 'my-account' },
-    job: { kind: 'candidate', label: 'I want a job', eyebrow: 'For candidates', title: 'Your next <em>jewellery</em> job starts here', top: 'For Candidates', send: 'Send my details', account: 'profile', idLabel: 'Your candidate ID', go: 'my-profile/profile' },
+    hire: { kind: 'client', label: 'I want to hire', eyebrow: 'For Employers', title: 'Hire the <em>right people</em>, without the chase', top: 'For Employers', send: 'Send request', account: 'client account', idLabel: 'Your client ID', go: 'my-account' },
+    job: { kind: 'candidate', label: 'I want a job', eyebrow: 'For Job Seekers', title: 'Your next <em>jewellery</em> job starts here', top: 'For Job Seekers', send: 'Send my details', account: 'profile', idLabel: 'Your candidate ID', go: 'my-profile/profile' },
   };
   const emailOk = (v) => !v || /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(v);
   const phoneOk = (v) => /^[6-9]\d{9}$/.test(v);
@@ -19,7 +19,7 @@
   // The form card. Shared fields stay put when the toggle switches, so nothing typed is lost.
   // single: the separate client (/hire) or candidate (/apply) form, with no toggle.
   function formHtml(mode, q, single) {
-    return `${single ? `<div class="card-title">${mode === 'hire' ? 'Tell us what you need' : 'Share a few details'}</div><p class="muted small" style="margin:0 0 14px">Takes a minute. Tap the mic to speak in English or Hindi.</p>` : `<div class="seg mode-seg" role="tablist" aria-label="What do you want to do?">${Object.entries(MODES).map(([k, m]) => `<button type="button" role="tab" data-mode="${k}" class="${k === mode ? 'on' : ''}" aria-selected="${k === mode}">${m.label}</button>`).join('')}</div>`}
+    return `${single ? `<div class="card-title">Fill in the below details</div><p class="muted small" style="margin:0 0 14px">For voice input, tap and allow the mic to speak</p>` : `<div class="seg mode-seg" role="tablist" aria-label="What do you want to do?">${Object.entries(MODES).map(([k, m]) => `<button type="button" role="tab" data-mode="${k}" class="${k === mode ? 'on' : ''}" aria-selected="${k === mode}">${m.label}</button>`).join('')}</div>`}
       <form class="stack" novalidate${single ? '' : ' style="margin-top:18px"'}>
         ${BB.voiceSwitch()}
         ${q.job ? `<div class="notice gold small" data-only="job">You are applying for job <b>${esc(String(q.job).toUpperCase())}</b>. We will also show you other matching jobs.</div>` : ''}
