@@ -10,7 +10,7 @@ fs.mkdirSync(path.join(DATA_DIR, 'files'), { recursive: true });
 fs.mkdirSync(path.join(DATA_DIR, 'backups'), { recursive: true });
 const DB_FILE = path.join(DATA_DIR, 'bbhs.db');
 const db = new DatabaseSync(DB_FILE);
-db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;');
+db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;'); // wait up to 5 s if another write is in progress
 
 const JSON_COLS = new Set(['kyc', 'extra', 'perms', 'jd', 'qa', 'buttons', 'checklist', 'onboarding', 'work_cities', 'skills', 'rounds', 'screening_qs', 'value', 'map', 'vars', 'joining_docs']);
 
@@ -59,6 +59,26 @@ CREATE INDEX IF NOT EXISTS ix_apps_cand ON applications(candidate_id);
 CREATE INDEX IF NOT EXISTS ix_msg_person ON messages(person_type, person_id);
 CREATE INDEX IF NOT EXISTS ix_hist_rec ON history(record_id);
 CREATE INDEX IF NOT EXISTS ix_apph ON app_history(app_id);
+-- Lookups done on every page or every timer run.
+CREATE INDEX IF NOT EXISTS ix_jobs_client ON jobs(client_id);
+CREATE INDEX IF NOT EXISTS ix_iv_app ON interviews(app_id);
+CREATE INDEX IF NOT EXISTS ix_iv_at ON interviews(status, at);
+CREATE INDEX IF NOT EXISTS ix_bills_app ON bills(app_id);
+CREATE INDEX IF NOT EXISTS ix_bills_client ON bills(client_id);
+CREATE INDEX IF NOT EXISTS ix_pay_bill ON payments(bill_id);
+CREATE INDEX IF NOT EXISTS ix_files_rec ON files(record_id, type);
+CREATE INDEX IF NOT EXISTS ix_notes_rec ON notes(record_id);
+CREATE INDEX IF NOT EXISTS ix_jobh_job ON job_history(job_id);
+CREATE INDEX IF NOT EXISTS ix_msg_dedupe ON messages(dedupe);
+CREATE INDEX IF NOT EXISTS ix_msg_status ON messages(status, scheduled_at);
+CREATE INDEX IF NOT EXISTS ix_otp_phone ON otps(phone, purpose);
+CREATE INDEX IF NOT EXISTS ix_members_phone ON client_members(whatsapp);
+CREATE INDEX IF NOT EXISTS ix_follow_user ON followups(for_user, done);
+CREATE INDEX IF NOT EXISTS ix_alerts_user ON alerts(user_id, read);
+CREATE INDEX IF NOT EXISTS ix_logs_user ON logs(user_id, day);
+CREATE INDEX IF NOT EXISTS ix_consent_person ON consents(person_type, person_id);
+CREATE INDEX IF NOT EXISTS ix_emails_status ON emails(status);
+CREATE INDEX IF NOT EXISTS ix_sessions_subject ON sessions(kind, subject_id);
 CREATE INDEX IF NOT EXISTS ix_cand_phone ON candidates(whatsapp);
 CREATE INDEX IF NOT EXISTS ix_client_phone ON clients(whatsapp);
 `);

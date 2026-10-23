@@ -364,11 +364,15 @@ route('POST', '/api/client/delete-request', C, (ctx) => {
 
 // ---------- candidate account (6.4) ----------
 const K = { auth: 'candidate' };
-function profilePct(c) {
-  const keys = ['name', 'city', 'job_wanted', 'exp_total', 'cur_salary', 'exp_salary', 'notice_days', 'cv_file', 'email'];
-  const n = keys.filter((k) => c[k] !== null && c[k] !== undefined && c[k] !== '').length + ((c.skills || []).length ? 1 : 0);
-  return Math.round((n / (keys.length + 1)) * 100);
+// What a full profile needs; a fresher (0 years) is not asked for a current salary or notice period.
+const PROFILE_ITEMS = [['name', 'Name'], ['city', 'City'], ['job_wanted', 'Job you want'], ['exp_total', 'Experience'], ['cur_salary', 'Current salary'], ['exp_salary', 'Expected salary'], ['notice_days', 'Notice period'], ['cv_file', 'CV'], ['email', 'Email'], ['skills', 'Skills']];
+function profileGaps(c) {
+  const fresher = c.exp_total === 0;
+  const items = PROFILE_ITEMS.filter(([k]) => !(fresher && (k === 'cur_salary' || k === 'notice_days')));
+  const missing = items.filter(([k]) => (k === 'skills' ? !(c.skills || []).length : c[k] === null || c[k] === undefined || c[k] === ''));
+  return { pct: Math.round(((items.length - missing.length) / items.length) * 100), missing: missing.map(([key, label]) => ({ key, label })) };
 }
+const profilePct = (c) => profileGaps(c).pct;
 function companyShown(a, cl) { return cl.hide_name_until === 'Always show' || L.stepIdx(a.step) >= L.stepIdx('Client interview'); }
 route('GET', '/api/cand/me', K, (ctx) => {
   const c = ctx.candidate; const s = D.settings();
@@ -386,7 +390,7 @@ route('GET', '/api/cand/me', K, (ctx) => {
   const next = apps.flatMap((a) => a.interviews.filter((i) => ['Scheduled', 'Rescheduled'].includes(i.status) && i.at > now()).map((i) => ({ ...i, app: a.id, job_title: a.job_title, company: a.company }))).sort((a, b) => (a.at < b.at ? -1 : 1))[0] || null;
   const offer = apps.find((a) => a.result === 'open' && a.step === 'Offer made') || null;
   return {
-    profile: { ...c, cur_month: c.cur_salary ? Math.round(c.cur_salary / 12) : null, exp_month: c.exp_salary ? Math.round(c.exp_salary / 12) : null }, pct: profilePct(c), apps, jobs, next, offer,
+    profile: { ...c, cur_month: c.cur_salary ? Math.round(c.cur_salary / 12) : null, exp_month: c.exp_salary ? Math.round(c.exp_salary / 12) : null }, pct: profilePct(c), missing: profileGaps(c).missing, apps, jobs, next, offer,
     referral: L.link('apply', `?ref=${c.id}`), files: all('SELECT id, type, name, version, at FROM files WHERE record_id=? AND replaced=0', c.id), joining_items: s.templates.joining_checklist.split('\n').filter(Boolean), active: onJob.size,
   };
 });

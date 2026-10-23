@@ -103,7 +103,8 @@ BB.field = (d) => {
   else if (d.type === 'choice') inner = `<div class="choice">${d.options.map((o) => { const [val, text] = Array.isArray(o) ? o : [o, o]; return `<label><input type="radio" name="${d.name}" value="${esc(val)}" ${String(val) === String(v) ? 'checked' : ''}> ${esc(text)}</label>`; }).join('')}</div>`;
   else {
     const voice = d.voice !== false && ['text', undefined, 'tel', 'search'].includes(d.type);
-    inner = `<div class="inp-wrap"><input name="${d.name}" type="${d.type || 'text'}" value="${esc(v)}" ${voice ? `data-voice ${d.phone ? 'data-phone' : ''}` : ''} ${d.list === 'cities' ? 'data-city' : d.list ? `list="${d.list}"` : ''} placeholder="${esc(d.placeholder || '')}" ${d.attrs || ''}></div>`;
+    // Phone fields show the +91 country code in front; the 10 digits are what is saved.
+    inner = `<div class="inp-wrap${d.phone ? ' has-cc' : ''}">${d.phone ? '<span class="cc" aria-hidden="true">+91</span>' : ''}<input name="${d.name}" type="${d.type || 'text'}" value="${esc(v)}" ${voice ? `data-voice ${d.phone ? 'data-phone' : ''}` : ''} ${d.list === 'cities' ? 'data-city' : d.list ? `list="${d.list}"` : ''} placeholder="${esc(d.placeholder || '')}" ${d.attrs || ''}></div>`;
   }
   return `<label class="field" data-f="${d.name}">${lab}${inner}${d.hint ? `<div class="faint small" style="margin-top:3px">${d.hint}</div>` : ''}</label>`;
 };
