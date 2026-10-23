@@ -177,11 +177,12 @@ function copyOfWhatsApp({ to, personType, format, text, recordId, sendAfter, ded
   const subject = SUBJECTS[format] || 'A message from BrillBrains Hiring';
   // "Tap Confirm…" refers to WhatsApp buttons; in an email the same answers are given in their account.
   const tapped = /\s*(?:please\s+)?tap\s[^.!?]*[.!?]/gi;
-  if (tapped.test(text)) text = `${text.replace(/,?\s+(?:and|or)\s+tap\s[^.!?]*([.!?])/gi, '$1').replace(tapped, '').trim()}\nUse the button below to reply.`;
-  const linkify = (s) => esc(s).replace(/(https?:\/\/[^\s<]+[^\s<.,;:)])/g, '<a href="$1" style="color:#1E3A8A">$1</a>');
-  const body = String(text).split(/\n+/).map((p) => `<p style="font-size:14px;line-height:1.65;margin:0 0 12px">${linkify(p)}</p>`).join('');
+  if (tapped.test(text)) text = `${text.replace(/,?\s+(?:and|or)\s+tap\s[^.!?]*([.!?])/gi, '$1').replace(tapped, '').trim()}\n\nUse the button below to reply.`;
+  // WhatsApp *bold* becomes real bold; blank lines split paragraphs, single line breaks stay (lists, Date/Time/Venue).
+  const linkify = (s) => esc(s).replace(/\*([^*\n]+)\*/g, '<b>$1</b>').replace(/(https?:\/\/[^\s<]+[^\s<.,;:)])/g, '<a href="$1" style="color:#1E3A8A">$1</a>');
+  const body = String(text).split(/\n{2,}/).map((p) => `<p style="font-size:14px;line-height:1.65;margin:0 0 12px">${p.split('\n').map(linkify).join('<br>')}</p>`).join('');
   return queue({ to, subject, kind: `copy:${format}`, recordId, sendAfter, dedupe,
-    text: `${text}\n\n${label}: ${base}/${path}`, html: layout(subject, body, { label, url: `${base}/${path}` }) });
+    text: `${String(text).replace(/\*([^*\n]+)\*/g, '$1')}\n\n${label}: ${base}/${path}`, html: layout(subject, body, { label, url: `${base}/${path}` }) });
 }
 
 // Account codes by email (the same code also goes on WhatsApp): 'signup' confirms a new email account,

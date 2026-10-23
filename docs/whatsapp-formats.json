@@ -1,0 +1,86 @@
+{
+  "bbhs_client_welcome": {
+    "en": "Hello {name},\n\nWelcome to *BrillBrains Hiring Solutions*.\n\nIn your client account you can:\n• Raise job openings\n• Review candidates\n• Track interviews\n\nOpen your account: {link}\n\nOur team will call you within one working day.",
+    "hi": "नमस्ते {name},\n\n*BrillBrains Hiring Solutions* में आपका स्वागत है।\n\nअपने क्लाइंट अकाउंट में आप:\n• नई नौकरी डाल सकते हैं\n• उम्मीदवार देख सकते हैं\n• इंटरव्यू ट्रैक कर सकते हैं\n\nअकाउंट खोलें: {link}\n\nहमारी टीम एक कार्य दिवस में आपको कॉल करेगी।"
+  },
+  "bbhs_candidate_welcome": {
+    "en": "Hello {name},\n\nWelcome to *BrillBrains Hiring Solutions*. Your profile is ready.\n\nKeep it updated so we can match you with the right jobs: {link}\n\nWe will contact you when a suitable job opens.",
+    "hi": "नमस्ते {name},\n\n*BrillBrains Hiring Solutions* में आपका स्वागत है। आपकी प्रोफ़ाइल तैयार है।\n\nसही नौकरी से मिलाने के लिए इसे अपडेट रखें: {link}\n\nसही नौकरी खुलने पर हम आपसे संपर्क करेंगे।"
+  },
+  "bbhs_details_request": {
+    "en": "Hello {name},\n\nWe are considering you for the *{job}* role.\n\nPlease share:\n• Current salary\n• Expected salary\n• Notice period\n\nThank you.",
+    "hi": "नमस्ते {name},\n\nहम आपको *{job}* पद के लिए देख रहे हैं।\n\nकृपया बताएँ:\n• अभी की सैलरी\n• अपेक्षित सैलरी\n• नोटिस पीरियड\n\nधन्यवाद।"
+  },
+  "bbhs_shortlist_ready": {
+    "en": "Hello {name},\n\n*{count} new profile(s)* are ready for your *{job}* opening.\n\nPlease review them and share the times you can meet them: {link}\n\nWe will confirm each interview with the candidate.",
+    "hi": "नमस्ते {name},\n\nआपकी *{job}* नौकरी के लिए *{count} नई प्रोफ़ाइल* तैयार हैं।\n\nकृपया इन्हें देखें और मिलने का समय बताएँ: {link}\n\nहर इंटरव्यू हम उम्मीदवार से पक्का करेंगे।"
+  },
+  "bbhs_interview_scheduled": {
+    "en": "Hello {name},\n\nYour *{round}* for the *{job}* role is scheduled.\n\n📅 Date: {date}\n⏰ Time: {time}\n📍 Venue: {place}\n\nTap *Confirm* if you can attend, or *Reschedule* for another time.",
+    "hi": "नमस्ते {name},\n\n*{job}* पद के लिए आपका *{round}* तय हो गया है।\n\n📅 तारीख: {date}\n⏰ समय: {time}\n📍 जगह: {place}\n\nआ सकें तो *Confirm* दबाएँ, दूसरा समय चाहिए तो *Reschedule* दबाएँ।"
+  },
+  "bbhs_interview_reminder": {
+    "en": "Hello {name}, a reminder of your *{round}* for the *{job}* role.\n\n📅 Date: {date}\n⏰ Time: {time}\n📍 Venue: {place}\n\nTap *Confirm* if you are coming, or *Reschedule* for another time. All the best!",
+    "hi": "नमस्ते {name}, *{job}* पद के लिए आपके *{round}* की याद दिला रहे हैं।\n\n📅 तारीख: {date}\n⏰ समय: {time}\n📍 जगह: {place}\n\nआ रहे हैं तो *Confirm* दबाएँ, दूसरा समय चाहिए तो *Reschedule* दबाएँ। शुभकामनाएँ!"
+  },
+  "bbhs_feedback_request": {
+    "en": "Hello {name},\n\nHow did the interview with *{candidate}* for the *{job}* role go?\n\nPlease tap a button below.",
+    "hi": "नमस्ते {name},\n\n*{job}* पद के लिए *{candidate}* का इंटरव्यू कैसा रहा?\n\nकृपया नीचे एक बटन दबाएँ।"
+  },
+  "bbhs_offer": {
+    "en": "Congratulations {name}! 🎉\n\n*{company}* has offered you the *{job}* role.\n\n💰 Yearly CTC: {ctc}\n📅 Joining date: {joining_date}\n\nRead the offer letter in your profile, then tap *Accept offer* or *Decline*.",
+    "hi": "बधाई हो {name}! 🎉\n\n*{company}* ने आपको *{job}* पद का ऑफ़र दिया है।\n\n💰 सालाना CTC: {ctc}\n📅 जॉइनिंग की तारीख: {joining_date}\n\nअपनी प्रोफ़ाइल में ऑफ़र लेटर पढ़ें, फिर *Accept offer* या *Decline* दबाएँ।"
+  },
+  "bbhs_joining_reminder": {
+    "en": "Hello {name},\n\nA reminder that you join *{company}* on *{date}*.\n\nAll the best for your first day!",
+    "hi": "नमस्ते {name},\n\nयाद दिला रहे हैं कि आप *{date}* को *{company}* जॉइन कर रहे हैं।\n\nपहले दिन के लिए शुभकामनाएँ!"
+  },
+  "bbhs_post_join_checkin": {
+    "en": "Hello {name},\n\nIt has been {days} days since you joined *{company}*.\n\nHow is it going? Please tap a button below.",
+    "hi": "नमस्ते {name},\n\n*{company}* जॉइन किए आपको {days} दिन हो गए हैं।\n\nसब कैसा चल रहा है? कृपया नीचे एक बटन दबाएँ।"
+  },
+  "bbhs_bill_raised": {
+    "en": "Hello {name},\n\nA bill has been raised for the placement of *{candidate}*.\n\n🧾 Bill no: {bill_no}\n💰 Amount due: {amount}\n\nPay by UPI or download the invoice: {link}\n\nThank you for hiring with BrillBrains.",
+    "hi": "नमस्ते {name},\n\n*{candidate}* की नियुक्ति के लिए बिल बन गया है।\n\n🧾 बिल नंबर: {bill_no}\n💰 देय राशि: {amount}\n\nUPI से भुगतान करें या इनवॉइस डाउनलोड करें: {link}\n\nBrillBrains के साथ हायर करने के लिए धन्यवाद।"
+  },
+  "bbhs_payment_reminder": {
+    "en": "Hello {name},\n\nA reminder about your bill.\n\n🧾 Bill no: {bill_no}\n💰 Amount: {amount}\n📌 Status: {status}\n\nPay by UPI or download the invoice: {link}\n\nPlease ignore this if you have already paid.",
+    "hi": "नमस्ते {name},\n\nआपके बिल की याद दिला रहे हैं।\n\n🧾 बिल नंबर: {bill_no}\n💰 राशि: {amount}\n📌 स्थिति: {status}\n\nUPI से भुगतान करें या इनवॉइस डाउनलोड करें: {link}\n\nअगर भुगतान हो चुका है तो इसे अनदेखा करें।"
+  },
+  "bbhs_job_alert": {
+    "en": "Hello {name},\n\nA new job matching your profile has opened.\n\n💼 Role: {job}\n📍 City: {city}\n💰 Salary: {salary}\n\nTap *Interested* and our recruiter will call you with the details.",
+    "hi": "नमस्ते {name},\n\nआपकी प्रोफ़ाइल से मिलती एक नई नौकरी खुली है।\n\n💼 पद: {job}\n📍 शहर: {city}\n💰 सैलरी: {salary}\n\n*Interested* दबाएँ, हमारे रिक्रूटर आपको पूरी जानकारी के लिए कॉल करेंगे।"
+  },
+  "bbhs_team_login": {
+    "en": "Hello {name},\n\nYour BrillBrains Hiring team account is ready.\n\n👤 Username: {username}\n🔗 Log in: {link}\n\nUse the temporary password from your admin, and set your own when asked.",
+    "hi": "नमस्ते {name},\n\nआपका BrillBrains Hiring टीम अकाउंट तैयार है।\n\n👤 यूज़रनेम: {username}\n🔗 लॉग इन: {link}\n\nएडमिन से मिला अस्थायी पासवर्ड इस्तेमाल करें, और पूछे जाने पर अपना पासवर्ड बनाएँ।"
+  },
+  "bbhs_team_task_alert": {
+    "en": "Hello {name},\n\nA task needs your attention:\n*{task}*\n📁 Record: {record_id}\n\nOpen it in the team portal and update it today: {link}\n\nThank you.",
+    "hi": "नमस्ते {name},\n\nएक काम आपका ध्यान चाहता है:\n*{task}*\n📁 रिकॉर्ड: {record_id}\n\nटीम पोर्टल में खोलें और आज ही अपडेट करें: {link}\n\nधन्यवाद।"
+  },
+  "bbhs_log_reminder": {
+    "en": "Hello {name},\n\nPlease submit today's daily log before *{deadline}*.\n\nFill it here: {link}\n\nThank you.",
+    "hi": "नमस्ते {name},\n\nकृपया आज का डेली लॉग *{deadline}* से पहले भरें।\n\nयहाँ भरें: {link}\n\nधन्यवाद।"
+  },
+  "bbhs_day_summary": {
+    "en": "Hello {name},\n\nHere is the BrillBrains Hiring summary for *{date}*:\n{summary}\n\nFull details: {link}\n\nHave a good evening.",
+    "hi": "नमस्ते {name},\n\n*{date}* का BrillBrains Hiring सारांश:\n{summary}\n\nपूरी जानकारी: {link}\n\nशुभ संध्या।"
+  },
+  "bbhs_jd_approval": {
+    "en": "Hello {name},\n\nThe job description for your *{job}* opening is ready.\n\nPlease review and approve it so we can start sending you candidates: {link}\n\nThank you.",
+    "hi": "नमस्ते {name},\n\nआपकी *{job}* नौकरी का जॉब डिस्क्रिप्शन तैयार है।\n\nकृपया देखकर मंज़ूर करें, ताकि हम उम्मीदवार भेजना शुरू कर सकें: {link}\n\nधन्यवाद।"
+  },
+  "bbhs_still_looking": {
+    "en": "Hello {name},\n\nAre you still looking for a new job?\n\nTap a button below, or update your profile so we only send jobs that suit you: {link}\n\nThank you.",
+    "hi": "नमस्ते {name},\n\nक्या आप अभी भी नई नौकरी ढूँढ रहे हैं?\n\nनीचे एक बटन दबाएँ, या अपनी प्रोफ़ाइल अपडेट करें ताकि हम सिर्फ़ सही नौकरियाँ भेजें: {link}\n\nधन्यवाद।"
+  },
+  "bbhs_monthly_summary": {
+    "en": "Hello {name},\n\nYour BrillBrains hiring summary for *{month}* is ready:\n{summary}\n\nDownload the full report: {link}\n\nThank you for hiring with us.",
+    "hi": "नमस्ते {name},\n\n*{month}* का आपका BrillBrains हायरिंग सारांश तैयार है:\n{summary}\n\nपूरी रिपोर्ट डाउनलोड करें: {link}\n\nहमारे साथ हायर करने के लिए धन्यवाद।"
+  },
+  "bbhs_consent_request": {
+    "en": "Hello {name},\n\nBrillBrains Hiring would like to send you job updates on WhatsApp.\n\nDo you agree? Please tap a button below.",
+    "hi": "नमस्ते {name},\n\nBrillBrains Hiring आपको WhatsApp पर नौकरी की जानकारी भेजना चाहता है।\n\nक्या आप सहमत हैं? कृपया नीचे एक बटन दबाएँ।"
+  }
+}
