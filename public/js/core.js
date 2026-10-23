@@ -413,7 +413,7 @@ BB.brand = (tagline, href = '#') => {
   return `<a class="brand" href="${href}"><img class="brand-logo" src="/img/logo.png" alt="${esc(name)}"><img class="brand-mark" src="/img/icon.png" alt="${esc(name)}">${tagline ? `<span class="brand-tag">${esc(tagline)}</span>` : ''}</a>`;
 };
 // Navy top bar. nav=false on the form links (they open only the form, no other menus).
-BB.publicTop = (sub, nav = false) => `<header class="pub-top">${BB.brand(sub)}${nav ? `<nav class="pub-nav"><a href="#hire">For Employers</a><a href="#apply">For Candidates</a><a href="#my-account">Client login</a><a href="#my-profile">Candidate login</a></nav><details class="pub-login"><summary class="btn sm">Log in</summary><div class="pub-login-menu"><a href="#my-account">Client login</a><a href="#my-profile">Candidate login</a></div></details>` : `<a class="btn sm help" href="https://wa.me/91${esc(BB.boot.business.support_phone)}" target="_blank" rel="noopener">${waIcon} Need help?</a>`}</header>`;
+BB.publicTop = (sub, nav = false) => `<header class="pub-top">${BB.brand(sub)}${nav ? `<nav class="pub-nav"><a href="#hire">For Employers</a><a href="#apply">For Candidates</a><a href="#my-account">Client login</a><a href="#my-profile">Candidate login</a></nav><details class="pub-login"><summary class="btn sm" aria-label="Menu"><span class="burger" aria-hidden="true"><i></i><i></i><i></i></span>Menu</summary><div class="pub-login-menu"><a href="#hire">For Employers</a><a href="#apply">For Candidates</a><hr><a href="#my-account">Client login</a><a href="#my-profile">Candidate login</a></div></details>` : `<a class="btn sm help" href="https://wa.me/91${esc(BB.boot.business.support_phone)}" target="_blank" rel="noopener">${waIcon} Need help?</a>`}</header>`;
 // Line art from the website: fine arcs bottom-left, a row of dots top-left.
 BB.deco = () => `<div class="deco-dots" aria-hidden="true"><i></i><i></i><i></i><i></i></div><svg class="deco-lines" viewBox="0 0 340 340" fill="none" stroke="currentColor" stroke-width="1.2" aria-hidden="true">${Array.from({ length: 9 }, (_, i) => `<path d="M0 ${110 + i * 26} C 90 ${150 + i * 20}, 170 ${230 + i * 10}, 260 340" opacity="${0.35 + i * 0.06}"/>`).join('')}</svg>`;
 // Split page: big heading + perks on the left, a card on the right.
@@ -426,7 +426,7 @@ BB.views.landing = (r) => {
       <section class="pub-intro">${BB.deco()}
         <span class="eyebrow">${esc(BB.boot.business.name)}</span>
         <h1>Bringing the right <em>people</em> and companies together</h1>
-        <p class="lead">Recruitment for the jewellery trade — from the showroom floor to the karigar's bench. Tell us who you need, or the job you want, and our recruiters take it from there.</p>
+        <p class="lead">Recruitment for the jewellery business — from the showroom floor to the karigar's bench. Tell us who you need, or the job you want, and our recruiters take it from there.</p>
         <ul class="trust"><li><b>Screened</b> every candidate is called and interviewed first</li><li><b>On WhatsApp</b> interviews, offers and updates on your phone</li><li><b>Free for candidates</b> employers pay only when someone joins</li></ul>
       </section>
       <section class="card pub-card" data-leadcard></section>

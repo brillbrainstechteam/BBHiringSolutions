@@ -697,3 +697,6 @@ a.disabled { pointer-events: none; color: var(--faint); }
 @media (max-width: 1080px) { .pub-login { display: block; } }
 .phone-line { flex-wrap: wrap; row-gap: 4px; } .phone-line b, .phone-line a { white-space: nowrap; }
 @media (max-width: 560px) { .ty-login .phone-line > .muted { display: none; } }
+.pub-login summary { display: inline-flex; align-items: center; gap: 8px; }
+.burger { display: inline-grid; gap: 3px; width: 16px; } .burger i { display: block; height: 2px; border-radius: 2px; background: currentColor; }
+.pub-login-menu hr { border: 0; border-top: 1px solid var(--border); margin: 4px 6px; }
