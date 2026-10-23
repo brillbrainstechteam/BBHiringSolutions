@@ -27,6 +27,7 @@
         <div class="cv-first stack-sm" data-only="job" data-f="cv"><div><b>Start with your CV</b> <span class="opt">(optional)</span><div class="muted small">Attach your CV to fill this form automatically (PDF or Word, max 10 MB).</div></div><div class="row"><button type="button" class="btn" data-cv>Attach CV</button><span class="muted small" data-cv-name>No file chosen</span></div><div class="small" data-cv-msg></div></div>
         <div class="grid g2">${field({ name: 'name', label: 'Your name' })}<div data-only="hire">${field({ name: 'company', label: 'Company name' })}</div><div data-only="job">${field({ name: 'email', label: 'Email', type: 'email', opt: true, placeholder: 'For a confirmation email', attrs: 'autocomplete="email"' })}</div></div>
         <div class="grid g2">${field({ name: 'whatsapp', label: 'WhatsApp number', type: 'tel', phone: true, placeholder: '10 digits', attrs: 'inputmode="numeric" maxlength="14" autocomplete="tel"' })}<div data-only="hire">${field({ name: 'email_hire', label: 'Email', type: 'email', opt: true, placeholder: 'For a confirmation email', attrs: 'autocomplete="email"' })}</div><div data-only="job"><label class="field" data-f="job_wanted"><span class="lab">Job you want</span><select name="job_wanted">${BB.jobOptions('', true, q.ind)}</select></label></div></div>
+        <div class="hidden" data-pw>${field({ name: 'password', label: 'Create a password', type: 'password', opt: true, voice: false, hint: 'At least 8 characters. Lets you log in with your email as well as your WhatsApp number.', attrs: 'autocomplete="new-password"' })}</div>
         <div class="hidden" data-other>${field({ name: 'job_other', label: 'Type the job you want' })}</div>
         <div class="grid g2">${field({ name: 'city', label: 'City', list: 'cities', placeholder: 'Start typing your city…' })}${field({ name: 'state', label: 'State', placeholder: 'Fills in from the city', voice: false })}</div>
         <div data-only="hire" class="stack">
@@ -56,13 +57,17 @@
       $$('.err-msg', card).forEach((x) => x.remove()); $$('.has-err', card).forEach((x) => x.classList.remove('has-err'));
       onMode && onMode(mode);
     };
-    $$('[data-mode]', card).forEach((b) => (b.onclick = () => { mode = b.dataset.mode; apply(); }));
+    $$('[data-mode]', card).forEach((b) => (b.onclick = () => { mode = b.dataset.mode; apply(); showPw(); }));
     $('[name=job_wanted]', card).onchange = (e) => $('[data-other]', card).classList.toggle('hidden', e.target.value !== 'Other');
     $('[data-cv]', card).onclick = async () => {
       cv = await BB.pickFile(); $('[data-cv-name]', card).textContent = cv ? cv.name : 'No file chosen';
       if (cv) fillFromCv(card, cv);
     };
     BB.attachMics(card); apply();
+    // "Create a password" appears once an email is typed.
+    const pwBox = $('[data-pw]', card);
+    const showPw = () => { const e = $(`[name=${mode === 'hire' ? 'email_hire' : 'email'}]`, card); pwBox.classList.toggle('hidden', !(e && e.value.trim()) && !$('[name=password]', card).value); };
+    form.addEventListener('input', showPw); showPw();
     form.onsubmit = async (e) => {
       e.preventDefault();
       const v = BB.formValues(form); v.whatsapp = digits(v.whatsapp);
@@ -71,10 +76,12 @@
       const rules = mode === 'hire'
         ? [...common, ['company', v.company, 'Please enter your company name'], ['city', v.city, 'Please enter your city'], ['business_type', v.business_type, 'Pick your type of business'], ['need', v.need, 'Tell us when you need staff']]
         : [...common, ['job_wanted', v.job_wanted, 'Pick the job you want'], ['job_other', v.job_wanted !== 'Other' || v.job_other, 'Type the job you want'], ['city', v.city, 'Please enter the city you want to work in']];
+      // A password is optional and needs an email to log in with.
+      if (v.password) rules.push([mode === 'hire' ? 'email_hire' : 'email', email, 'Add your email to log in with a password'], ['password', v.password.length >= 8, 'Use at least 8 characters, or leave it empty']);
       if (!check(form, rules)) return;
       const body = mode === 'hire'
-        ? { contact: v.name, company: v.company, whatsapp: v.whatsapp, email, city: v.city, state: v.state, business_type: v.business_type, need: v.need, roles: v.roles, website: v.website, src: q.src }
-        : { name: v.name, whatsapp: v.whatsapp, email, city: v.city, state: v.state, job_wanted: v.job_wanted, job_other: v.job_other, experience: v.experience, cv, website: v.website, src: q.src, job: q.job, ref: q.ref };
+        ? { contact: v.name, company: v.company, whatsapp: v.whatsapp, email, city: v.city, state: v.state, business_type: v.business_type, need: v.need, roles: v.roles, password: v.password, website: v.website, src: q.src }
+        : { name: v.name, whatsapp: v.whatsapp, email, city: v.city, state: v.state, job_wanted: v.job_wanted, job_other: v.job_other, experience: v.experience, password: v.password, cv, website: v.website, src: q.src, job: q.job, ref: q.ref };
       const btn = $('[data-send]', card); btn.disabled = true; btn.textContent = 'Sending…';
       try {
         const res = await BB.post(mode === 'hire' ? '/api/public/hire' : '/api/public/apply', body, { kind: null });
@@ -151,7 +158,7 @@
         <ul class="ty-features">${t.features.map(([ic, l]) => `<li><span class="ty-ic">${TY_ICON[ic]}</span>${l}</li>`).join('')}</ul>
       </div>
       <h3 class="ty-next-h">What happens next?</h3>
-      <ol class="ty-steps">${t.steps.map(([, l], i) => `<li><span class="ty-n">${i + 1}</span><span class="ty-l">${l}</span>${i < t.steps.length - 1 ? `<span class="ty-arrow">${TY_ICON.arrow}</span>` : ''}</li>`).join('')}</ol>
+      <ol class="ty-steps">${t.steps.map(([, l], i) => `<li><span class="ty-n">${i + 1}</span><span class="ty-l">${l}</span></li>`).join('')}</ol>
       <div class="ty-help"><span class="ty-help-ic">${TY_ICON.headset}</span><b class="grow">Need help with your ${mode === 'hire' ? 'request' : 'application'}?</b>
         <a class="btn" href="https://wa.me/91${esc(support)}" target="_blank" rel="noopener">Contact support ${TY_ICON.arrow}</a></div>
     </div>`;
