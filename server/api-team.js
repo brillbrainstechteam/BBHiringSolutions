@@ -948,7 +948,7 @@ route('POST', '/api/users', ADMINS, (ctx) => {
   const pw = L.newPassword(); const id = D.nextId('U');
   insert('users', { id, name: b.name, whatsapp: phone, level, agency_id: level === 'super' ? null : agency, role: b.role || (level === 'admin' ? 'Agency owner' : 'Recruiter'), username, pass_hash: L.hashPassword(pw), status: 'On', must_change: 1, failed: 0, created_by: u.id, created_at: now() });
   D.history(ctx.actor.label, 'create login', id, null, null, `${username} (${level})`);
-  L.sendWA({ ptype: 'user', pid: id, format: 'bbhs_team_login', vars: { username, password: pw, link: L.link('team') }, by: ctx.actor, rule: 'team_login', secret: pw });
+  L.sendWA({ ptype: 'user', pid: id, format: 'bbhs_team_login', vars: { username, password: pw, link: L.link('team') }, by: ctx.actor, rule: 'team_login', secret: pw, auto: true }); // quietly skipped while Meta has not approved it: the admin sees the password on screen
   return { id, username, password: pw };
 });
 function canManage(u, target) { return isSuper(u) || (u.level === 'admin' && target.agency_id === u.agency_id && target.level === 'sub'); }
@@ -957,7 +957,7 @@ route('POST', '/api/users/:id/reset', ADMINS, (ctx) => {
   const pw = L.newPassword(); update('users', t.id, { pass_hash: L.hashPassword(pw), must_change: 1, failed: 0, locked_until: null });
   D.run('DELETE FROM sessions WHERE kind=? AND subject_id=?', 'team', t.id);
   D.history(ctx.actor.label, 'reset password', t.id);
-  L.sendWA({ ptype: 'user', pid: t.id, format: 'bbhs_team_login', vars: { username: t.username, password: pw, link: L.link('team') }, by: ctx.actor, rule: 'team_login', secret: pw });
+  L.sendWA({ ptype: 'user', pid: t.id, format: 'bbhs_team_login', vars: { username: t.username, password: pw, link: L.link('team') }, by: ctx.actor, rule: 'team_login', secret: pw, auto: true }); // quietly skipped while Meta has not approved it: the admin sees the password on screen
   return { password: pw };
 });
 route('POST', '/api/users/:id/toggle', ADMINS, (ctx) => {
@@ -986,7 +986,7 @@ route('POST', '/api/agencies', SUPER, (ctx) => {
     let username = usernameFrom(b.admin_name); let i = 2; const base = username; while (get('SELECT 1 FROM users WHERE username=?', username)) username = `${base}${i++}`;
     const pw = L.newPassword(); const uid = D.nextId('U');
     insert('users', { id: uid, name: b.admin_name, whatsapp: phone, level: 'admin', agency_id: id, role: 'Agency owner', username, pass_hash: L.hashPassword(pw), status: 'On', must_change: 1, created_by: ctx.user.id, created_at: now() });
-    L.sendWA({ ptype: 'user', pid: uid, format: 'bbhs_team_login', vars: { username, password: pw, link: L.link('team') }, by: ctx.actor, rule: 'team_login', secret: pw });
+    L.sendWA({ ptype: 'user', pid: uid, format: 'bbhs_team_login', vars: { username, password: pw, link: L.link('team') }, by: ctx.actor, rule: 'team_login', secret: pw, auto: true }); // quietly skipped while Meta has not approved it: the admin sees the password on screen
     admin = { id: uid, username, password: pw };
   }
   return { id, admin };

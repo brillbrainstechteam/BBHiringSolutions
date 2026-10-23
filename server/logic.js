@@ -4,6 +4,7 @@ const D = require('./db');
 const { all, get, run, insert, update, nextId, settings, history, now, httpError } = D;
 
 const STEPS = ['Applied', 'Screening', 'Our interview', 'Sent to client', 'Client interview', 'Offer made', 'Offer accepted', 'Joined'];
+const ACTION_RULES = ['client_welcome', 'candidate_welcome', 'interview_scheduled', 'offer', 'shortlist_ready', 'bill_raised'];
 const stepIdx = (s) => STEPS.indexOf(s);
 const INTERVIEW_STEPS = ['Our interview', 'Sent to client', 'Client interview'];
 
@@ -137,7 +138,9 @@ function sendWA(o) {
   if ((o.auto || o.bulk) && p.opted_out) return { skipped: 'Opted out (STOP)' };
   if (fmt && fmt.type === 'Marketing' && p.type === 'candidate' && !p.consent) return { skipped: 'No consent for job alerts yet' };
   if (o.dedupe && get('SELECT 1 FROM messages WHERE dedupe=?', o.dedupe)) return { skipped: 'Already sent before' };
-  if (o.auto && p.type !== 'user') {
+  // The daily cap is for reminders and alerts. Messages that follow something the team or client just did
+  // (welcome, interview fixed, offer, profiles sent, bill) always go, or an offer could be dropped on a busy day.
+  if (o.auto && p.type !== 'user' && !ACTION_RULES.includes(o.rule)) {
     const today = istDay();
     const sentToday = all("SELECT at FROM messages WHERE person_type=? AND person_id=? AND direction='out' AND auto=1", p.type, p.id).filter((m) => istDay(m.at) === today).length;
     if (sentToday >= s.daily_limit) return { skipped: `Daily limit of ${s.daily_limit} reached` };
