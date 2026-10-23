@@ -15,6 +15,7 @@
       <p class="small muted" style="margin-top:16px" data-newhere>New here? ${kind === 'client' ? '<a href="/hire">Fill the hiring form</a>' : '<a href="/apply">Fill the job form</a>'}</p>` });
     BB.attachMics($('#app'));
     let phone = ''; let timer;
+    const pretty = (p) => `+91 ${p.slice(0, 5)} ${p.slice(5)}`;
     const wait = (sec) => { clearInterval(timer); const a = $('[data-resend]'); a.classList.add('disabled'); const w = $('[data-wait]');
       const tick = () => { w.textContent = sec > 0 ? `in ${sec} s` : ''; if (sec-- <= 0) { clearInterval(timer); a.classList.remove('disabled'); } }; tick(); timer = setInterval(tick, 1000); };
     const send = async (btn, f) => {
@@ -63,7 +64,6 @@
     const note = (t) => (t ? `<div class="notice small">${t}</div>` : '');
     const dev = (c) => (c ? `<div class="test-code">Test copy: the code is <b class="mono">${c}</b></div>` : '');
     const err = (field, message) => Object.assign(new Error(message), { field });
-    const pretty = (p) => `+91 ${p.slice(0, 5)} ${p.slice(5)}`;
     const back = '<div class="ea-links ea-center"><a href="#" data-ea="login">Back to log in</a></div>';
     const views = {
       login: (msg) => `${note(msg)}${emF()}${pwF('Password', 'current-password')}
