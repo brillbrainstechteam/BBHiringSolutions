@@ -191,14 +191,15 @@ const companyLabel = (cl) => {
 };
 function clientAppView(a, client) {
   const v = V.appView(a); const cand = get('SELECT * FROM candidates WHERE id=?', a.candidate_id); const job = get('SELECT * FROM jobs WHERE id=?', a.job_id);
-  const showPhone = L.stepIdx(a.step) >= L.stepIdx('Client interview') || a.client_choice === 'Interested';
+  // Clients never get a candidate's phone, email or full CV (it carries both); our team stays in between.
+  const avail = get("SELECT note, at FROM app_history WHERE app_id=? AND kind='availability' ORDER BY id DESC LIMIT 1", a.id);
   const ours = all("SELECT * FROM interviews WHERE app_id=? AND round='ours' AND status='Completed'", a.id);
   const sc = L.matchScore(cand, job, L.ratingOf(cand.id));
   const js = (job.skills || []).map((x) => x.toLowerCase());
   return {
-    id: a.id, step: a.step, result: a.result, job_id: job.id, job_title: job.title, candidate_id: cand.id, name: cand.name, city: cand.city, phone: showPhone ? cand.whatsapp : null,
+    id: a.id, step: a.step, result: a.result, job_id: job.id, job_title: job.title, candidate_id: cand.id, name: cand.name, city: cand.city, phone: null, availability: avail ? { text: avail.note, at: avail.at } : null,
     exp_total: cand.exp_total, exp_jewellery: cand.exp_jewellery, cur_salary: cand.cur_salary, exp_salary: cand.exp_salary, notice_days: cand.notice_days, current_company: cand.current_company,
-    skills: (cand.skills || []).map((s) => ({ s, match: js.includes(s.toLowerCase()) })), score: sc.score, reasons: sc.reasons, short_cv: cand.short_cv_file || null, cv: showPhone ? cand.cv_file : null,
+    skills: (cand.skills || []).map((s) => ({ s, match: js.includes(s.toLowerCase()) })), score: sc.score, reasons: sc.reasons, short_cv: cand.short_cv_file || null, cv: null,
     our_notes: ours.map((i) => ({ remark: i.remark, rating: i.rating, qa: i.qa })), interviews: v.interviews.filter((i) => i.round === 'client'), offer_ctc: a.offer_ctc, joining_date: a.joining_date,
     offer_letter: a.offer_letter, offer_sent: a.offer_sent, checklist: a.checklist, joining_docs: a.joining_docs, client_choice: a.client_choice,
   };
@@ -210,7 +211,7 @@ route('GET', '/api/client/me', C, (ctx) => {
   const sent = apps.filter((a) => L.stepIdx(a.step) >= 3 && (a.result === 'open' || a.result === 'Hired' || a.client_choice));
   const candidates = perms.candidates ? sent.map((a) => clientAppView(a, c)) : [];
   const ivs = all("SELECT i.* FROM interviews i JOIN applications a ON a.id=i.app_id JOIN jobs j ON j.id=a.job_id WHERE j.client_id=? AND i.round='client' ORDER BY i.at DESC", c.id).map(L.interviewView)
-    .map((i) => { const a = apps.find((x) => x.id === i.app_id); const cand = get('SELECT name, whatsapp FROM candidates WHERE id=?', a.candidate_id); return { ...i, candidate: cand.name, phone: cand.whatsapp, job: get('SELECT title FROM jobs WHERE id=?', a.job_id).title }; });
+    .map((i) => { const a = apps.find((x) => x.id === i.app_id); const cand = get('SELECT name FROM candidates WHERE id=?', a.candidate_id); return { ...i, candidate: cand.name, job: get('SELECT title FROM jobs WHERE id=?', a.job_id).title }; });
   const bills = perms.bills ? all("SELECT * FROM bills WHERE client_id=? AND status!='Draft' ORDER BY created_at DESC", c.id).map(L.billView).map((b) => {
     const a = V.appView(get('SELECT * FROM applications WHERE id=?', b.app_id)); const ap = get('SELECT * FROM applications WHERE id=?', b.app_id);
     const win = c.replacement_days || D.settings().replacement_days;
@@ -264,6 +265,21 @@ route('POST', '/api/client/apps/:id/interested', { auth: 'client', perm: 'candid
   if (L.stepIdx(a.step) < L.stepIdx('Client interview')) L.moveStep(a.id, 'Client interview', ctx.actor, `Interested — by ${ctx.actor.label}`);
   if (ctx.body.at) L.scheduleInterview(a.id, { round: 'client', at: ctx.body.at, place: ctx.body.place || ctx.client.city, interviewer: ctx.body.interviewer || ctx.client.contact, name: 'Client round' }, ctx.actor);
   const job = get('SELECT * FROM jobs WHERE id=?', a.job_id); L.alertUser(a.owner_id || job.recruiter_id, `${ctx.client.company} wants to interview on ${a.id}`, a.id);
+  return { ok: true };
+});
+// The client shares when they can meet the candidate; our recruiter fixes the interview from these times.
+route('POST', '/api/client/apps/:id/availability', { auth: 'client', perm: 'candidates' }, (ctx) => {
+  const a = clientApp(ctx); if (a.result !== 'open') throw httpError(400, 'This profile is closed.');
+  const slots = (Array.isArray(ctx.body.slots) ? ctx.body.slots : []).filter(Boolean).map((x) => new Date(x)).filter((d) => !isNaN(d) && d > new Date());
+  if (!slots.length) throw httpError(400, 'Pick at least one date and time from today onwards', 'slot1');
+  const b = ctx.body;
+  const text = `Interview availability from ${ctx.actor.label}: ${slots.map((d) => L.istFmt(d.toISOString())).join(' · ')}${b.place ? ` · Place: ${b.place}` : ''}${b.interviewer ? ` · Meets: ${b.interviewer}` : ''}${b.note ? ` · ${b.note}` : ''}`;
+  update('applications', a.id, { client_choice: 'Availability shared' });
+  if (L.stepIdx(a.step) < L.stepIdx('Client interview')) L.moveStep(a.id, 'Client interview', ctx.actor, 'Client shared interview availability');
+  L.appHist(a.id, get('SELECT step FROM applications WHERE id=?', a.id).step, ctx.actor, text, 'availability');
+  insert('notes', { record_id: a.id, text, author: ctx.actor.label, at: now() });
+  const job = get('SELECT * FROM jobs WHERE id=?', a.job_id);
+  L.alertUser(a.owner_id || job.recruiter_id, `${ctx.client.company} shared interview times for ${a.id}: fix the interview`, a.id);
   return { ok: true };
 });
 route('POST', '/api/client/apps/:id/not-suitable', { auth: 'client', perm: 'candidates' }, (ctx) => {
@@ -495,7 +511,8 @@ route('GET', '/api/files/:id', {}, (ctx) => {
     if (rid === cid) ok = true;
     else if (rid.startsWith('JB-')) ok = !!get('SELECT 1 FROM jobs WHERE id=? AND client_id=?', rid, cid);
     else if (rid.startsWith('AP-')) ok = !!get('SELECT 1 FROM applications a JOIN jobs j ON j.id=a.job_id WHERE a.id=? AND j.client_id=?', rid, cid);
-    else if (rid.startsWith('CA-')) { const a = get("SELECT a.* FROM applications a JOIN jobs j ON j.id=a.job_id WHERE a.candidate_id=? AND j.client_id=? ORDER BY a.created_at DESC", rid, cid); ok = a && L.stepIdx(a.step) >= 3 && (f.type === 'short_cv' || L.stepIdx(a.step) >= 4); }
+    // Only our short CV (the full CV carries phone and email), once any of this candidate's applications to them was sent.
+    else if (rid.startsWith('CA-')) ok = f.type === 'short_cv' && all('SELECT a.step FROM applications a JOIN jobs j ON j.id=a.job_id WHERE a.candidate_id=? AND j.client_id=?', rid, cid).some((a) => L.stepIdx(a.step) >= 3);
   } else if (s.kind === 'candidate') {
     const cid = L.resolveId(s.subject_id);
     ok = rid === cid || !!get('SELECT 1 FROM applications WHERE id=? AND candidate_id=?', rid, cid);

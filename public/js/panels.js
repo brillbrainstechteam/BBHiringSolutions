@@ -99,7 +99,7 @@
         wireCommon(el);
         $$('[data-act]', el).forEach((b) => (b.onclick = () => jobAct(j, b.dataset.act)));
         $$('[data-add]', el).forEach((b) => (b.onclick = () => run(() => BB.post('/api/applications', { candidate_id: b.dataset.add, job_id: j.id }), 'Added — new application at Applied')));
-        $('[data-addmatch]', el).onclick = () => BB.pickCandidate((cid) => run(() => BB.post('/api/applications', { candidate_id: cid, job_id: j.id }), 'Added'));
+        $('[data-addmatch]', el).onclick = () => BB.pickCandidate((cid) => run(() => BB.post('/api/applications', { candidate_id: cid, job_id: j.id }), 'Added — a new application'), open.map((a) => a.candidate_id));
         const al = $('[data-alert]', el); if (al) al.onclick = async () => { if (!(await BB.confirm('Job alert', `Send bbhs_job_alert to candidates with a match score of ${s.match.strong}+ who have agreed to job alerts? People who replied STOP, are not looking or were placed in the last 6 months are left out.`, 'Send alert'))) return; const r = await BB.post(`/api/jobs/${j.id}/alert`, {}).catch(BB.fail); if (r) { BB.toast(`${r.sent} alert(s) saved${r.skipped.length ? `, ${r.skipped.length} skipped` : ''}`); after(); } };
         const rec = $('[data-rec]', el); if (rec) rec.onchange = (e) => run(() => BB.patch(`/api/jobs/${j.id}`, { recruiter_id: e.target.value || null }), 'Recruiter saved');
         $$('[data-post]', el).forEach((cb) => (cb.onchange = () => { if (cb.checked) BB.ask({ title: 'Posting done', fields: [{ name: 'post_link', label: 'Link to the post', opt: true }], ok: 'Save', submit: (v) => BB.post(`/api/jobs/${j.id}/posting`, { id: cb.dataset.post, done: true, post_link: v.post_link }) }).then((x) => (x ? after('Saved') : (cb.checked = false))); else run(() => BB.post(`/api/jobs/${j.id}/posting`, { id: cb.dataset.post, done: false })); }));
@@ -262,7 +262,7 @@
       mount: (el) => {
         wireCommon(el);
         $('[data-chat]', el).onclick = () => { BB.closePanels(); BB.go(`team/whatsapp?t=candidate:${c.id}`); };
-        $('[data-addjob]', el).onclick = () => BB.pickJob((jid) => run(() => BB.post('/api/applications', { candidate_id: c.id, job_id: jid }), 'Added to the job'));
+        $('[data-addjob]', el).onclick = () => BB.pickJob((jid) => run(() => BB.post('/api/applications', { candidate_id: c.id, job_id: jid }), 'Added to the job — a new application'), c.apps.filter((a) => a.result === 'open').map((a) => a.job_id));
         $('[data-shortcv]', el).onclick = () => run(() => BB.post(`/api/candidates/${c.id}/short-cv`), 'Short CV made (no phone or email)');
         const mg = $('[data-merge]', el); if (mg) mg.onclick = () => BB.mergeScreen('candidate', c.possible_repeat_of, c.id);
         const ed = $('[data-edit]', el); if (ed) ed.onclick = () => BB.ask({ title: `Edit ${c.id}`, wide: true, fields: [
@@ -315,16 +315,16 @@
   };
 
   // ---------- pickers, merge, new records ----------
-  BB.pickCandidate = (cb) => {
+  BB.pickCandidate = (cb, already = []) => {
     const m = BB.modal({ title: 'Add a candidate', foot: false, body: '<input placeholder="Search name, ID, phone or job…" data-q autofocus><div data-r class="stack-sm" style="margin-top:10px;max-height:360px;overflow:auto"></div>' });
     let t; const q = $('[data-q]', m.el);
-    const go = async () => { const r = await BB.api(`/api/candidates?q=${encodeURIComponent(q.value)}`); $('[data-r]', m.el).innerHTML = r.rows.slice(0, 20).map((c) => `<button class="fmt-chip" data-c="${c.id}"><b>${esc(c.name)}</b> <span class="mono faint">${c.id}</span> · ${esc(c.job_wanted || '')} · ${esc(c.city || '')} <span class="badge b-outline tiny">${esc(c.status)}</span></button>`).join('') || '<div class="faint">No match.</div>'; $$('[data-c]', m.el).forEach((b) => (b.onclick = () => { m.close(); cb(b.dataset.c); })); };
+    const go = async () => { const r = await BB.api(`/api/candidates?q=${encodeURIComponent(q.value)}`); $('[data-r]', m.el).innerHTML = r.rows.slice(0, 20).map((c) => already.includes(c.id) ? `<div class="fmt-chip" style="opacity:.55;cursor:default"><b>${esc(c.name)}</b> <span class="mono faint">${c.id}</span> <span class="badge b-outline tiny">Already on this job</span></div>` : `<button class="fmt-chip" data-c="${c.id}"><b>${esc(c.name)}</b> <span class="mono faint">${c.id}</span> · ${esc(c.job_wanted || '')} · ${esc(c.city || '')} <span class="badge b-outline tiny">${esc(c.status)}</span></button>`).join('') || '<div class="faint">No match.</div>'; $$('[data-c]', m.el).forEach((b) => (b.onclick = () => { m.close(); cb(b.dataset.c); })); };
     q.oninput = () => { clearTimeout(t); t = setTimeout(go, 200); }; go(); setTimeout(() => q.focus(), 30);
   };
-  BB.pickJob = (cb) => {
+  BB.pickJob = (cb, already = []) => {
     const m = BB.modal({ title: 'Add to a job', foot: false, body: '<input placeholder="Search job, client or ID…" data-q><div data-r class="stack-sm" style="margin-top:10px;max-height:360px;overflow:auto"></div>' });
     let t; const q = $('[data-q]', m.el);
-    const go = async () => { const r = await BB.api(`/api/jobs?status=Active&q=${encodeURIComponent(q.value)}`); $('[data-r]', m.el).innerHTML = r.rows.map((j) => `<button class="fmt-chip" data-j="${j.id}"><b>${esc(j.title)}</b> <span class="mono faint">${j.id}</span> · ${esc(j.client_name)} · ${esc(j.city)} ${statusBadge(j.status)}</button>`).join('') || '<div class="faint">No active job openings.</div>'; $$('[data-j]', m.el).forEach((b) => (b.onclick = () => { m.close(); cb(b.dataset.j); })); };
+    const go = async () => { const r = await BB.api(`/api/jobs?status=All&q=${encodeURIComponent(q.value)}`); $('[data-r]', m.el).innerHTML = r.rows.filter((j) => !['Filled', 'Closed'].includes(j.status)).map((j) => already.includes(j.id) ? `<div class="fmt-chip" style="opacity:.55;cursor:default"><b>${esc(j.title)}</b> <span class="mono faint">${j.id}</span> · ${esc(j.client_name)} <span class="badge b-outline tiny">Already on this job</span></div>` : `<button class="fmt-chip" data-j="${j.id}"><b>${esc(j.title)}</b> <span class="mono faint">${j.id}</span> · ${esc(j.client_name)} · ${esc(j.city)} ${statusBadge(j.status)}</button>`).join('') || '<div class="faint">No job openings that are still hiring.</div>'; $$('[data-j]', m.el).forEach((b) => (b.onclick = () => { m.close(); cb(b.dataset.j); })); };
     q.oninput = () => { clearTimeout(t); t = setTimeout(go, 200); }; go(); setTimeout(() => q.focus(), 30);
   };
   BB.mergeScreen = async (type, a, b) => {
