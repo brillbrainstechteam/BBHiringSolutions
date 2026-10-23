@@ -404,8 +404,10 @@ const fromHash = () => { const h = location.hash.replace(/^#/, ''); if (h) { BB.
 document.addEventListener('click', (e) => {
   const a = e.target.closest && e.target.closest('a[href]'); if (!a || e.defaultPrevented || a.target || e.ctrlKey || e.metaKey || e.shiftKey) return;
   const href = a.getAttribute('href');
-  if (href === '#' || !(href.startsWith('#') || href === '/')) return;
-  e.preventDefault(); BB.go(href === '/' ? '' : href.slice(1));
+  if (href === '#' || href.startsWith('//')) return;
+  const appPage = href.startsWith('/') && ['', 'hire', 'apply', 'my-account', 'my-profile', 'team'].includes(href.slice(1).split(/[/?#]/)[0]);
+  if (!href.startsWith('#') && !appPage) return;
+  e.preventDefault(); BB.go(href.slice(1));
 });
 BB.route = () => {
   const r = BB.parseHash();
@@ -423,7 +425,7 @@ BB.brand = (tagline, href = '/') => {
   return `<a class="brand" href="${href}"><img class="brand-logo" src="/img/logo.png" alt="${esc(name)}"><img class="brand-mark" src="/img/icon.png" alt="${esc(name)}">${tagline ? `<span class="brand-tag">${esc(tagline)}</span>` : ''}</a>`;
 };
 // Navy top bar. nav=false on the form links (they open only the form, no other menus).
-BB.publicTop = (sub, nav = false) => `<header class="pub-top">${BB.brand(sub)}${nav ? `<nav class="pub-nav"><a href="#hire">For Employers</a><a href="#apply">For Candidates</a><a href="#my-account">Client login</a><a href="#my-profile">Candidate login</a></nav><details class="pub-login"><summary class="btn sm" aria-label="Menu"><span class="burger" aria-hidden="true"><i></i><i></i><i></i></span>Menu</summary><div class="pub-login-menu"><a href="#hire">For Employers</a><a href="#apply">For Candidates</a><hr><a href="#my-account">Client login</a><a href="#my-profile">Candidate login</a></div></details>` : `${sub === 'Team portal' ? '' : `<a class="btn sm top-home" href="/" aria-label="Back to home">${BB.icon('home')}<span>Home</span></a>`}<a class="btn sm help" href="https://wa.me/91${esc(BB.boot.business.support_phone)}" target="_blank" rel="noopener">${waIcon} Need help?</a>`}</header>`;
+BB.publicTop = (sub, nav = false) => `<header class="pub-top">${BB.brand(sub)}${nav ? `<nav class="pub-nav"><a href="/hire">For Employers</a><a href="/apply">For Candidates</a><a href="/my-account">Client login</a><a href="/my-profile">Candidate login</a></nav><details class="pub-login"><summary class="btn sm" aria-label="Menu"><span class="burger" aria-hidden="true"><i></i><i></i><i></i></span>Menu</summary><div class="pub-login-menu"><a href="/hire">For Employers</a><a href="/apply">For Candidates</a><hr><a href="/my-account">Client login</a><a href="/my-profile">Candidate login</a></div></details>` : `${sub === 'Team portal' ? '' : `<a class="btn sm top-home" href="/" aria-label="Back to home">${BB.icon('home')}<span>Home</span></a>`}<a class="btn sm help" href="https://wa.me/91${esc(BB.boot.business.support_phone)}" target="_blank" rel="noopener">${waIcon} Need help?</a>`}</header>`;
 // Background behind the big headings: soft gold and sky glows drifting, small sparkles twinkling.
 BB.deco = () => `<div class="deco-dots" aria-hidden="true"><i></i><i></i><i></i><i></i></div><div class="gem-bg" aria-hidden="true"><span class="orb o1"></span><span class="orb o2"></span><span class="orb o3"></span>${['s1', 's2', 's3', 's4', 's5'].map((c) => `<i class="spark ${c}"></i>`).join('')}</div>`;
 // Split page: big heading + perks on the left, a card on the right.
@@ -441,7 +443,7 @@ BB.views.landing = (r) => {
       </section>
       <section class="card pub-card" data-leadcard></section>
     </main>
-    <div class="signin-row"><span class="muted">Already registered?</span><a href="#my-account">Client login</a><a href="#my-profile">Candidate login</a></div>
+    <div class="signin-row"><span class="muted">Already registered?</span><a href="/my-account">Client login</a><a href="/my-profile">Candidate login</a></div>
     <div class="pub-foot">© ${new Date().getFullYear()} ${esc(BB.boot.business.name)}</div></div>`;
   BB.leadFormCard($('[data-leadcard]'), 'job', (r && r.q) || {});
 };

@@ -172,7 +172,7 @@
         e.currentTarget.textContent = toEmail ? 'Use WhatsApp instead' : 'Use email and password instead';
         if (toEmail && !mounted) {
           mounted = true;
-          BB.emailAuth(box, { kind: m.kind, email: res.email || '', phone: res.phone, session: isNew, start: isNew ? 'register' : 'login', onLogin: (tk) => { BB.setToken(m.kind, tk); BB.go(m.go); } });
+          BB.emailAuth(box, { kind: m.kind, email: res.email || '', phone: res.phone, session: isNew, start: isNew ? 'register' : 'login', onLogin: (tk) => { BB.setToken(m.kind, tk); BB.go(m.go); }, onView: (v) => $('.login-switch', acc).classList.toggle('hidden', !['login', 'register'].includes(v)) });
         }
         if (toEmail) { const i = $$('input', box).find((x) => !x.value) || $('input', box); if (i) i.focus(); }
       };
@@ -182,7 +182,7 @@
     // 1) New sign-up: the account was made with the form; the number they just gave opens it in one tap.
     if (res.token) {
       BB.setToken(m.kind, res.token);
-      acc.innerHTML = shell(`<a class="btn primary lg ty-go" href="#${m.go}">${t.open} ${TY_ICON.arrow}</a>`);
+      acc.innerHTML = shell(`<a class="btn primary lg ty-go" href="/${m.go}">${t.open} ${TY_ICON.arrow}</a>`);
       wireEdit(); emailSwitch(true); return;
     }
     // 3) WhatsApp codes cannot go out yet.

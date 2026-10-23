@@ -771,3 +771,20 @@ a.disabled { pointer-events: none; color: var(--faint); }
 .ea-note { margin-bottom: 10px; }
 .gem-bg .gem { display: none; }
 .ty-access input:not([type=checkbox]):not([type=radio]) { background: var(--surface); border-color: var(--border); }
+/* Experience: text-only pills (the radio dot is hidden, the picked one is filled), never wider than their box. */
+.pub-card [data-f="experience"] .choice { grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); }
+.pub-card [data-f="experience"] .choice label { padding: 10px 8px; font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; }
+.pub-card [data-f="experience"] .choice input { position: absolute; opacity: 0; width: 1px; height: 1px; pointer-events: none; }
+.pub-card [data-f="experience"] .choice label:has(input:checked) { background: var(--navy); color: #fff; border-color: var(--navy); box-shadow: none; }
+.pub-card [data-f="experience"] .choice label:has(input:focus-visible) { box-shadow: var(--ring); }
+.pub-card [data-f="experience"] .choice label { position: relative; }
+
+/* Email account box: even spacing, a small heading per step, one main button, "Show" beside password labels. */
+.ea-form > * + * { margin-top: 14px; }
+.ea-form .ea-links { margin-top: 12px; font-size: 13px; } .ea-form .ea-links a { font-weight: 600; }
+.ea-center { text-align: center; }
+.ea-head b { display: block; font: 700 17px var(--display); color: var(--ink); }
+.ea-head span { display: block; font-size: 13px; color: var(--muted); margin-top: 2px; }
+.pw-show { border: 0; background: none; padding: 0; font: 600 12px var(--font); color: var(--royal); cursor: pointer; }
+label.field > span.lab:has(.pw-show) { display: flex; justify-content: space-between; align-items: baseline; }
+.pub-card .ea-head b { font-size: 21px; }
