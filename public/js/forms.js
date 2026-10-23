@@ -102,8 +102,7 @@
       const y = f.exp_total; const pick = y < 1 ? 'Fresher' : y < 3 ? '1–3 years' : y < 5 ? '3–5 years' : y < 10 ? '5–10 years' : '10+ years';
       const r = $(`[name=experience][value="${pick}"]`, form); if (r) { r.checked = true; done.push('experience'); }
     }
-    const more = ['cur_salary', 'exp_salary', 'notice_days', 'skills', 'current_company'].some((k) => f[k] !== undefined);
-    msg.innerHTML = done.length ? `<span class="ok-text">✓ Filled from your CV: ${esc(done.join(', '))}.</span> <span class="muted">Please check before sending.${more ? ' Salary, notice period and skills go to your profile.' : ''}</span>` : '<span class="muted">We could not read details from this file — please fill in the form.</span>';
+    msg.innerHTML = done.length ? '' : '<span class="muted">We could not read details from this file — please fill in the form.</span>';
   }
   function restore(card, v) { for (const [k, val] of Object.entries(v)) { const el = $(`[name="${k}"]`, card); if (!el || el.type === 'radio') continue; el.value = val; } for (const k of ['business_type', 'need', 'experience']) if (v[k]) { const r = $(`[name="${k}"][value="${v[k]}"]`, card); if (r) r.checked = true; } }
 

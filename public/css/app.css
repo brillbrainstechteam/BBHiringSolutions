@@ -437,4 +437,3 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
 
 /* ---------- job form: CV first ---------- */
 .cv-first { border: 1px dashed var(--mustard); background: var(--mustard-50); border-radius: 12px; padding: 12px 14px; }
-.ok-text { color: var(--green); font-weight: 600; }
