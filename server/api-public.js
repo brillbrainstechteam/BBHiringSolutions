@@ -170,7 +170,7 @@ function checkNewPassword(b) {
 // From the login page: step 1 (/register-start) finds the profile by its email and sends a 6-digit code to that
 // email (and its WhatsApp, while email sending is being set up); step 2 sends the code back with the password.
 // Without the code, anyone who knows someone's email could open their account.
-route('POST', '/api/account/register', { rate: { key: 'pwset', max: 10, minutes: 60 } }, (ctx) => {
+route('POST', '/api/account/register', { rate: { key: 'pwreg', max: 20, minutes: 60 } }, (ctx) => {
   const kind = kindOf(ctx.body.kind); const b = ctx.body;
   const email = cleanEmail(b.email);
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) throw httpError(400, 'Enter a valid email', 'email');
@@ -197,14 +197,28 @@ route('POST', '/api/account/register', { rate: { key: 'pwset', max: 10, minutes:
 });
 function signupRecord(kind, email) {
   const rec = get(`SELECT * FROM ${KINDS[kind]} WHERE lower(email)=? AND merged_into IS NULL AND removed=0 ORDER BY created_at DESC`, email);
-  if (!rec) throw httpError(404, kind === 'client' ? 'We could not find this email. Use the email you gave in the hiring form, or fill the form first.' : 'We could not find this email. Use the email you gave in the job form, or fill the form first.', 'email');
+  if (!rec) throw httpError(400, 'The code is wrong or has expired. Ask for a new one.', 'code');
   return rec;
 }
 route('POST', '/api/account/register-start', { rate: { key: 'pwsignup', max: 10, minutes: 60 } }, (ctx) => {
   const kind = kindOf(ctx.body.kind); const email = cleanEmail(ctx.body.email);
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) throw httpError(400, 'Enter a valid email', 'email');
   checkNewPassword(ctx.body);
-  const rec = signupRecord(kind, email);
+  // The email is optional on the forms, so it may not be on any profile yet: then the WhatsApp number used in
+  // the form finds the profile, and the code goes there (the email is added to the profile when the code is right).
+  const byEmail = get(`SELECT * FROM ${KINDS[kind]} WHERE lower(email)=? AND merged_into IS NULL AND removed=0 ORDER BY created_at DESC`, email);
+  if (!byEmail) {
+    if (!ctx.body.phone) return { need_phone: true };
+    const phone = L.digits10(ctx.body.phone);
+    if (!L.validPhone(phone)) throw httpError(400, 'Enter your 10-digit WhatsApp number', 'phone');
+    const rec = get(`SELECT * FROM ${KINDS[kind]} WHERE whatsapp=? AND merged_into IS NULL AND removed=0`, phone);
+    if (!rec) throw httpError(404, kind === 'client' ? 'No client account with this number. Fill the hiring form first.' : 'No profile with this number. Fill the job form first.', 'phone');
+    if (hasPassword(kind, rec.id)) throw httpError(400, 'This profile already has an email login. Log in, or use Forgot password.', 'phone');
+    emailFree(kind, email, rec.id);
+    const code = issueCode(phone, kind);
+    return { sent: true, by_whatsapp: true, phone, dev_code: showCode() ? code : undefined };
+  }
+  const rec = byEmail;
   if (hasPassword(kind, rec.id)) throw httpError(400, 'This email already has an account. Log in, or use Forgot password.', 'email');
   emailFree(kind, email, rec.id);
   const mailer = require('./mailer');

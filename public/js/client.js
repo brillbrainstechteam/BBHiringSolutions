@@ -55,7 +55,7 @@
   // Create an account = email + password. From the login page a 6-digit code then confirms the email is theirs
   // (sent to that email, and to the WhatsApp on the profile); right after the form no code is needed.
   BB.emailAuth = (el, o) => {
-    const F = BB.field; let email = o.email || ''; let pending = ''; // the new password, held only until the code is confirmed
+    const F = BB.field; let email = o.email || ''; let phone = ''; let pending = ''; // the new password, held only until the code is confirmed
     const pwF = (label, auto, hint) => F({ name: 'password', label, type: 'password', voice: false, hint, attrs: `autocomplete="${auto}"` });
     const emF = () => F({ name: 'email', label: 'Email', type: 'email', voice: false, value: email, attrs: 'autocomplete="email" inputmode="email"' });
     const codeF = (label) => F({ name: 'code', label, voice: false, attrs: 'inputmode="numeric" maxlength="6" autocomplete="one-time-code"' });
@@ -69,9 +69,12 @@
       login: (msg) => `${note(msg)}${emF()}${pwF('Password', 'current-password')}
         <button class="btn gold block lg">Log in</button>
         <div class="row between small ea-links"><a href="#" data-ea="forgot">Forgot password?</a><a href="#" data-ea="register">Create an account</a></div>`,
-      register: () => `${head('Create your account', 'Use the email you gave us and pick a password.')}${emF()}${pwF('Password', 'new-password', 'At least 8 characters')}
+      register: () => `${head('Create your account')}${emF()}${pwF('Password', 'new-password', 'At least 8 characters')}
           <button class="btn gold block lg">Create account</button>${back}`,
-      register2: (r) => `${head('Confirm your email', `We sent a 6-digit code to ${[r.by_email ? BB.esc(email) : '', r.by_whatsapp ? 'your WhatsApp' : ''].filter(Boolean).join(' and ')}.`)}${dev(r.dev_code)}
+      linkPhone: () => `${head('Link your profile', 'Enter the WhatsApp number you used in the form. We send a code to it.')}
+        ${F({ name: 'phone', label: 'WhatsApp number', type: 'tel', phone: true, placeholder: '10 digits', voice: false, attrs: 'inputmode="numeric" maxlength="14" autocomplete="tel"' })}
+        <button class="btn gold block lg">Continue</button>${back}`,
+      register2: (r) => `${head(r.by_email ? 'Confirm your email' : 'Enter the code', `We sent a 6-digit code to ${[r.by_email ? BB.esc(email) : '', r.by_whatsapp ? 'your WhatsApp' : ''].filter(Boolean).join(' and ')}.`)}${dev(r.dev_code)}
         ${codeF('Enter the 6 digit code')}
         <button class="btn gold block lg">Confirm and finish</button>
         <div class="row between small ea-links"><a href="#" data-ea="register">Send the code again</a><a href="#" data-ea="login">Back to log in</a></div>`,
@@ -92,12 +95,18 @@
           await BB.post('/api/account/register', { kind: o.kind, email: v.email, password: v.password }, { kind: o.kind });
           return show('login', 'Account created. Log in with your email and password.');
         }
-        pending = v.password;
+        pending = v.password; phone = '';
         const r = await BB.post('/api/account/register-start', { kind: o.kind, email: v.email, password: v.password }, { kind: null });
-        return show('register2', r);
+        return show(r.need_phone ? 'linkPhone' : 'register2', r);
+      },
+      linkPhone: async (v) => {
+        const p = BB.spokenToDigits(v.phone) || String(v.phone || '').replace(/\D/g, '').slice(-10);
+        if (!/^[6-9]\d{9}$/.test(p)) throw err('phone', 'Enter your 10-digit WhatsApp number');
+        const r = await BB.post('/api/account/register-start', { kind: o.kind, email, password: pending, phone: p }, { kind: null });
+        phone = p; show('register2', r);
       },
       register2: async (v) => {
-        await BB.post('/api/account/register', { kind: o.kind, email, code: v.code, password: pending }, { kind: null });
+        await BB.post('/api/account/register', { kind: o.kind, email, code: v.code, password: pending, ...(phone ? { phone } : {}) }, { kind: null });
         pending = '';
         show('login', 'Account created. Log in with your email and password.');
       },
