@@ -72,31 +72,53 @@
 
   function jobs(el) {
     el.innerHTML = `<div class="stack">${D.jobs.map((j) => `<div class="card pad stack-sm">
-      <div class="row between"><div><h3 style="font-size:16px">${esc(j.title)} <span class="mono faint small">${j.id}</span></h3><div class="small muted">${esc(j.city)} · ${j.openings} opening${j.openings > 1 ? 's' : ''} · ${esc(BB.inr(j.sal_from / 12))}–${esc(BB.inr(j.sal_to / 12))} a month</div></div><div class="row">${statusBadge(j.status)}${j.reopened ? `<span class="badge b-gold">${esc(j.reopened)}</span>` : ''}</div></div>
+      <div class="row between"><div><h3 style="font-size:16px">${esc(j.title)} <span class="mono faint small">${j.id}</span></h3><div class="small muted">${esc(j.city)} · ${j.openings} opening${j.openings > 1 ? 's' : ''}${j.sal_from || j.sal_to ? ` · ${esc(BB.inr((j.sal_from || j.sal_to) / 12))}–${esc(BB.inr((j.sal_to || j.sal_from) / 12))} a month` : ''}</div></div><div class="row">${statusBadge(j.status)}${j.reopened ? `<span class="badge b-gold">${esc(j.reopened)}</span>` : ''}</div></div>
       <div class="small muted">${esc(j.reason)}</div>
       <div class="row small"><span>Filled ${j.filled} of ${j.openings}</span><div class="bar grow" style="max-width:240px"><i style="width:${Math.min(100, (j.filled / j.openings) * 100)}%"></i></div></div>
+      <div class="seats">${(j.seats || []).map((s) => s.app_id ? `<span class="seat on" title="${esc(s.app_id)}">Seat ${s.n}: <b>${esc(s.candidate || '')}</b> · ${esc(s.state)}${s.joining_date ? ` ${fmtD(s.joining_date)}` : ''}</span>` : `<span class="seat">Seat ${s.n}: open</span>`).join('')}</div>
       <div class="row small">${[['Being screened', j.counts.screening], ['Waiting for you', j.counts.waiting], ['Your interviews', j.counts.interviews], ['Offers', j.counts.offers]].map(([l, n]) => `<span class="badge ${n ? 'b-primary' : 'b-outline'}">${l}: ${n}</span>`).join('')}</div>
       ${j.jd_status === 'Waiting for client' ? `<div class="notice gold"><b>Job description waiting for your approval</b><div class="small" style="white-space:pre-wrap;margin:6px 0">${esc([j.jd.summary, j.jd.duties && 'Duties: ' + j.jd.duties, j.jd.must && 'Must have: ' + j.jd.must, j.jd.timings && 'Timings: ' + j.jd.timings, j.jd.benefits && 'Benefits: ' + j.jd.benefits].filter(Boolean).join('\n'))}</div><div class="row"><button class="btn primary sm" data-jd-ok="${j.id}">Approve</button><button class="btn sm" data-jd-chg="${j.id}">Ask for changes</button></div></div>` : ''}
-      <div class="row">${['Filled', 'Closed'].includes(j.status) ? `<button class="btn sm" data-again="${j.id}">I need this role again</button>` : j.status === 'On hold' ? `<button class="btn sm" data-resume="${j.id}">Resume hiring</button>` : `<button class="btn sm" data-hold="${j.id}">Pause hiring</button>`}</div>
+      <div class="row">${['Filled', 'Closed'].includes(j.status) ? `<button class="btn sm" data-again="${j.id}">I need this role again</button>` : j.status === 'On hold' ? `<button class="btn sm" data-resume="${j.id}">Resume hiring</button>` : `<button class="btn sm" data-hold="${j.id}">Pause hiring</button><button class="btn sm" data-addseat="${j.id}">+ Add a seat</button>`}</div>
     </div>`).join('') || '<div class="card empty">No job openings yet.</div>'}</div>`;
     $$('[data-hold]', el).forEach((b) => (b.onclick = () => BB.ask({ title: 'Pause hiring', fields: [{ name: 'reason', label: 'Why are you pausing?', opt: true }], ok: 'Pause', submit: (v) => BB.post(`/api/client/jobs/${b.dataset.hold}/hold`, v) }).then((x) => x && reload())));
     $$('[data-resume]', el).forEach((b) => (b.onclick = () => act(() => BB.post(`/api/client/jobs/${b.dataset.resume}/resume`), 'Hiring resumed')));
-    $$('[data-again]', el).forEach((b) => (b.onclick = () => BB.ask({ title: 'I need this role again', fields: [{ name: 'add', label: 'How many more people?', type: 'number', value: 1 }, { name: 'reason', label: 'Reason', type: 'select', options: BB.boot.reopen_reasons, value: BB.boot.reopen_reasons[0] }], ok: 'Reopen', submit: (v) => BB.post(`/api/client/jobs/${b.dataset.again}/reopen`, v) }).then((x) => x && reload())));
+    $('[data-addseat]', el).forEach((b) => (b.onclick = () => BB.ask({ title: 'More people for this job', note: 'Same job and job ID, with more seats. Candidates already in process stay as they are.', fields: [{ name: 'add', label: 'How many more people?', type: 'number', value: 1 }], ok: 'Add seats', submit: (v) => BB.post(`/api/client/jobs/${b.dataset.addseat}/add-seat`, v) }).then((x) => x && (BB.toast('Seats added'), reload()))));
+    $('[data-again]', el).forEach((b) => (b.onclick = () => BB.ask({ title: 'I need this role again', fields: [{ name: 'add', label: 'How many more people?', type: 'number', value: 1 }, { name: 'reason', label: 'Reason', type: 'select', options: BB.boot.reopen_reasons, value: BB.boot.reopen_reasons[0] }], ok: 'Reopen', submit: (v) => BB.post(`/api/client/jobs/${b.dataset.again}/reopen`, v) }).then((x) => x && reload())));
     $$('[data-jd-ok]', el).forEach((b) => (b.onclick = () => act(() => BB.post(`/api/client/jobs/${b.dataset.jdOk}/approve-jd`), 'Approved — the job is now open')));
     $$('[data-jd-chg]', el).forEach((b) => (b.onclick = () => BB.ask({ title: 'Ask for changes', fields: [{ name: 'note', label: 'What should change?', type: 'textarea' }], ok: 'Send', submit: (v) => BB.post(`/api/client/jobs/${b.dataset.jdChg}/jd-changes`, v) }).then((x) => x && reload())));
   }
 
+  // One row per position: each becomes its own job opening (own job ID) with its own number of people.
+  // Two people for the same position = one row with 2, not two rows.
   function raiseJob() {
-    BB.ask({ title: 'Raise a job opening', ok: 'Raise job opening', fields: [
-      `<label class="field" data-f="title"><span class="lab">Job</span><select name="title">${BB.jobOptions('', true, D.client.industry)}</select></label>`,
-      { name: 'title_other', label: 'If Other, type the job', opt: true },
-      `<div class="grid g2">${field({ name: 'city', label: 'City', list: 'cities', value: D.client.city })}${field({ name: 'openings', label: 'How many people?', type: 'number', value: 1 })}</div>`,
-      `<div class="grid g2">${field({ name: 'sal_from', label: 'Salary from (per month)', type: 'number' })}${field({ name: 'sal_to', label: 'Salary to (per month)', type: 'number' })}</div>`,
-      `<div class="grid g2">${field({ name: 'exp_from', label: 'Experience from (years)', type: 'number', opt: true })}${field({ name: 'exp_to', label: 'Experience to (years)', type: 'number', opt: true })}</div>`,
-      { name: 'notice_days', label: 'Should join within (days)', type: 'number', opt: true },
+    const row = (i) => `<div class="card pad stack-sm raise-row" data-row="${i}"><div class="row between"><b>Position ${i + 1}</b>${i ? '<button type="button" class="btn sm ghost" data-rmrow>Remove</button>' : ''}</div>
+      <div class="grid g2"><label class="field"><span class="lab">Job</span><select name="title_${i}">${BB.jobOptions('', true, D.client.industry)}</select></label>${field({ name: `openings_${i}`, label: 'How many people?', type: 'number', value: 1, voice: false })}</div>
+      <div class="hidden" data-other>${field({ name: `other_${i}`, label: 'Type the job' })}</div>
+      <div class="grid g2">${field({ name: `sal_from_${i}`, label: 'Salary from (per month)', type: 'number', voice: false })}${field({ name: `sal_to_${i}`, label: 'Salary to (per month)', type: 'number', voice: false })}</div>
+      <div class="grid g2">${field({ name: `exp_from_${i}`, label: 'Experience from (years)', type: 'number', opt: true, voice: false })}${field({ name: `exp_to_${i}`, label: 'Experience to (years)', type: 'number', opt: true, voice: false })}</div></div>`;
+    let rows = 1;
+    BB.ask({ title: 'Raise job openings', wide: true, ok: 'Raise job openings', note: 'Add one row per position. For 2 people in the same position, put 2 in "How many people" — it stays one job opening.', fields: [
+      `<div class="stack" data-rows>${row(0)}</div><button type="button" class="btn sm" data-addrow>+ Add another position</button>`,
+      `<div class="grid g2">${field({ name: 'city', label: 'City', list: 'cities', value: D.client.city })}${field({ name: 'notice_days', label: 'Should join within (days)', type: 'number', opt: true, voice: false })}</div>`,
       { name: 'notes', label: 'Anything else we should know', type: 'textarea', opt: true },
-    ], submit: (v) => { if (!v.title) { const e = new Error('Pick the job'); e.field = 'title'; throw e; } return BB.post('/api/client/jobs', { ...v, salary_per: 'month' }); } })
-      .then((x) => { if (x) { BB.toast(`Job opening ${x.id} raised. We will write the job description for you to approve.`); tab = 'jobs'; reload(); } });
+    ], submit: async (v) => {
+      const list = [];
+      for (const r of $$('[data-row]', document.querySelector('.modal'))) {
+        const i = r.dataset.row; const title = v[`title_${i}`];
+        if (!title) { const e = new Error('Pick the job'); e.field = `title_${i}`; throw e; }
+        if (title === 'Other' && !v[`other_${i}`]) { const e = new Error('Type the job'); e.field = `other_${i}`; throw e; }
+        list.push({ title, title_other: v[`other_${i}`], openings: Number(v[`openings_${i}`]) || 1, sal_from: v[`sal_from_${i}`], sal_to: v[`sal_to_${i}`], exp_from: v[`exp_from_${i}`], exp_to: v[`exp_to_${i}`], city: v.city, notice_days: v.notice_days, notes: v.notes, salary_per: 'month' });
+      }
+      const made = []; for (const j of list) made.push(await BB.post('/api/client/jobs', j));
+      return made;
+    } }).then((made) => { if (made) { BB.toast(`${made.length === 1 ? 'Job opening' : made.length + ' job openings'} raised: ${made.map((x) => x.id).join(', ')}. We will write the job description${made.length === 1 ? '' : 's'} for you to approve.`); tab = 'jobs'; reload(); } });
+    // Rows are added and removed inside the open dialog.
+    setTimeout(() => {
+      const m = document.querySelector('.modal'); if (!m) return; const box = $('[data-rows]', m);
+      const wireRow = (r) => { const sel = $('select', r); sel.onchange = () => $('[data-other]', r).classList.toggle('hidden', sel.value !== 'Other'); const rm = $('[data-rmrow]', r); if (rm) rm.onclick = () => r.remove(); };
+      wireRow($('[data-row]', box));
+      $('[data-addrow]', m).onclick = () => { box.insertAdjacentHTML('beforeend', row(rows)); const r = box.lastElementChild; rows++; wireRow(r); BB.attachMics(r); $('select', r).focus(); };
+    }, 30);
   }
 
   function candidates(el) {

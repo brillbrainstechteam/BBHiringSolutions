@@ -18,6 +18,13 @@ function jobView(j, apps) {
     apps_total: apps.length, apps_open: open.length, days_open: L.daysBetween(j.created_at),
     reopened: j.reopened_at && L.daysBetween(j.reopened_at) <= 30 ? (j.reopen_tag || 'Reopened') : null,
     counts: { screening: cnt(['Applied', 'Screening', 'Our interview']), waiting: cnt(['Sent to client']), interviews: cnt(['Client interview']), offers: cnt(['Offer made', 'Offer accepted']) },
+    // One line per seat: who holds it (offer accepted or joined), in the order they took it; the rest are open.
+    seats: (() => {
+      // The order seats were taken in: when the offer was accepted (joining later does not move anyone).
+      const takenAt = (a) => (get("SELECT MIN(at) t FROM app_history WHERE app_id=? AND step='Offer accepted'", a.id) || {}).t || a.joined_at || a.step_since || '';
+      const held = apps.filter((a) => (a.result === 'open' && a.step === 'Offer accepted') || a.result === 'Hired').map((a) => ({ ...a, taken: takenAt(a) })).sort((a, b) => (a.taken < b.taken ? -1 : 1));
+      return Array.from({ length: Math.max(j.openings, held.length) }, (_, i) => { const a = held[i]; if (!a) return { n: i + 1 }; const c = get('SELECT name FROM candidates WHERE id=?', a.candidate_id) || {}; return { n: i + 1, app_id: a.id, candidate: c.name, state: a.result === 'Hired' ? 'Joined' : 'Offer accepted', joining_date: a.joining_date }; });
+    })(),
   };
 }
 function candStatus(candId) {

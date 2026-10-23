@@ -612,3 +612,6 @@ a.disabled { pointer-events: none; color: var(--faint); }
   .ty-arrow { display: none; }
   .ty-help .btn { width: 100%; justify-content: center; }
 }
+.seats { display: flex; flex-wrap: wrap; gap: 6px; }
+.seat { font-size: 12px; border: 1px dashed var(--border-strong); border-radius: 999px; padding: 3px 10px; color: var(--muted); }
+.seat.on { border-style: solid; border-color: var(--green); background: var(--green-50); color: var(--green); }

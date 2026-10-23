@@ -3,6 +3,8 @@ const crypto = require('crypto');
 const D = require('./db');
 const { all, get, run, insert, update, nextId, settings, history, now, httpError } = D;
 
+// Closing reasons the software uses itself (not in the team's pick list).
+const SYSTEM_CLOSE = ['Position filled', 'Joined elsewhere'];
 const STEPS = ['Applied', 'Screening', 'Our interview', 'Sent to client', 'Client interview', 'Offer made', 'Offer accepted', 'Joined'];
 // Routine messages go by email only (WhatsApp costs per message); everything someone must act on or know at once keeps WhatsApp too.
 const EMAIL_ONLY_RULES = ['log_reminder', 'day_summary', 'monthly_summary', 'still_looking'];
@@ -403,6 +405,12 @@ function moveStep(appId, step, by, note) {
   if (!STEPS.includes(step)) throw httpError(400, 'Unknown step');
   if (app.result !== 'open' && step !== 'Joined') throw httpError(400, 'This application is closed. Reopen it first.');
   if (step === app.step) return app;
+  // A job has a number of seats (openings): accepting an offer or joining takes one, and no more than that.
+  if ((step === 'Offer accepted' || step === 'Joined') && app.step !== 'Offer accepted') {
+    const j0 = get('SELECT * FROM jobs WHERE id=?', app.job_id);
+    const taken = filledCount(appsOfJob(app.job_id).filter((a) => a.id !== appId));
+    if (taken >= j0.openings) throw httpError(400, `All ${j0.openings} seat${j0.openings === 1 ? '' : 's'} on ${j0.id} are already taken. Add a seat to the job first (Reopen, or the client's "I need this role again").`);
+  }
   const patch = { step, step_since: now() };
   if (step === 'Joined') { patch.result = 'Hired'; patch.joined_at = now(); if (!app.joining_date) patch.joining_date = istDay(); }
   update('applications', appId, patch);
@@ -419,14 +427,24 @@ function moveStep(appId, step, by, note) {
   if (step === 'Joined') {
     createBillForApp({ ...app, ...patch }, by);
     update('candidates', app.candidate_id, { looking: 'Placed' });
+    // They have a job now: their other applications still in process close, and those recruiters are told.
+    for (const o of all("SELECT * FROM applications WHERE candidate_id=? AND id<>? AND result='open'", app.candidate_id, appId)) {
+      closeApplication(o.id, 'Joined elsewhere', by, `Joined ${job.title} (${job.id}) through ${appId}`);
+      const oj = get('SELECT * FROM jobs WHERE id=?', o.job_id); alertUser(o.owner_id || oj.recruiter_id, `${o.id} closed: the candidate joined ${job.id} elsewhere`, o.id, false);
+    }
   }
-  recalcJob(app.job_id, actorName(by), `${appId} → ${step}`);
+  if (recalcJob(app.job_id, actorName(by), `${appId} → ${step}`) === 'Filled') closeRestOfFilledJob(app.job_id, by);
   return get('SELECT * FROM applications WHERE id=?', appId);
+}
+// All seats taken: everyone else still in process on that job closes (they stay in the resume bank for other jobs).
+function closeRestOfFilledJob(jobId, by) {
+  const job = get('SELECT * FROM jobs WHERE id=?', jobId);
+  for (const a of all("SELECT * FROM applications WHERE job_id=? AND result='open' AND step NOT IN ('Offer accepted','Joined')", jobId)) closeApplication(a.id, 'Position filled', by, `All ${job.openings} seat${job.openings === 1 ? '' : 's'} on ${jobId} are taken`);
 }
 function closeApplication(appId, reason, by, note) {
   const app = get('SELECT * FROM applications WHERE id=?', appId);
   if (!app) throw httpError(404, 'Application not found');
-  if (!settings().closing_reasons.includes(reason)) throw httpError(400, 'Pick a closing reason');
+  if (!settings().closing_reasons.includes(reason) && !SYSTEM_CLOSE.includes(reason)) throw httpError(400, 'Pick a closing reason');
   update('applications', appId, { result: reason });
   appHist(appId, app.step, by, `Closed: ${reason}${note ? ' — ' + note : ''}`, 'close');
   history(actorName(by), 'close', appId, 'result', app.result, reason);
@@ -446,6 +464,10 @@ function reopenApplication(appId, by) {
   if (app.result === 'open') return app;
   if (get("SELECT 1 FROM applications WHERE candidate_id=? AND job_id=? AND result='open' AND id!=?", app.candidate_id, app.job_id, appId)) throw httpError(400, 'There is already an open application for this candidate on this job.');
   const step = app.result === 'Hired' ? 'Offer accepted' : app.step;
+  if (step === 'Offer accepted' || step === 'Joined') {
+    const j0 = get('SELECT * FROM jobs WHERE id=?', app.job_id);
+    if (filledCount(appsOfJob(app.job_id).filter((a) => a.id !== appId)) >= j0.openings) throw httpError(400, `All seats on ${j0.id} are taken. Add a seat to the job first.`);
+  }
   update('applications', appId, { result: 'open', step, step_since: now() });
   appHist(appId, step, by, 'Reopened', 'reopen');
   history(actorName(by), 'reopen', appId, 'result', app.result, 'open');
@@ -564,6 +586,12 @@ function jobAction(jobId, action, o, by) {
   else if (action === 'close') {
     if (!o.reason) throw httpError(400, 'Pick a reason', 'reason');
     update('jobs', jobId, { manual: 'Closed', manual_reason: o.reason });
+  } else if (action === 'add_seat') {
+    // More people for the same position while it is still hiring: same job ID, one more seat each.
+    const add = Math.max(1, Math.min(50, Number(o.add) || 1));
+    update('jobs', jobId, { openings: job.openings + add });
+    insert('job_history', { job_id: jobId, at: now(), status: `+${add} seat${add === 1 ? '' : 's'} (${job.openings + add} in all)`, by: who, note: o.reason || '' });
+    history(who, 'edit', jobId, 'openings', job.openings, job.openings + add);
   } else if (action === 'reopen') {
     const cur = computeJobStatus(job, appsOfJob(jobId));
     if (!['Filled', 'Closed'].includes(cur)) throw httpError(400, 'Only a Filled or Closed job can be reopened.');

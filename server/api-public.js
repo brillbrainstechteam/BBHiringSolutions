@@ -238,6 +238,7 @@ route('POST', '/api/client/jobs/:id/:action', C, (ctx) => {
   const j = clientJob(ctx); const a = ctx.params.action;
   if (a === 'hold') return L.jobAction(j.id, 'hold', { reason: ctx.body.reason || 'Paused by client' }, ctx.actor);
   if (a === 'resume') return L.jobAction(j.id, 'resume', {}, ctx.actor);
+  if (a === 'add-seat') { const r = L.jobAction(j.id, 'add_seat', { add: ctx.body.add || 1, reason: ctx.body.reason || 'Client needs more people' }, ctx.actor); L.alertUser(j.recruiter_id, `${ctx.client.company} added ${Number(ctx.body.add) || 1} seat(s) to ${j.id}`, j.id); return r; }
   if (a === 'reopen') return L.jobAction(j.id, 'reopen', { add: ctx.body.add || 1, reason: ctx.body.reason || 'Client needs more people' }, ctx.actor);
   if (a === 'close') return L.jobAction(j.id, 'close', { reason: ctx.body.reason || 'Client stopped hiring' }, ctx.actor);
   if (a === 'approve-jd') {
