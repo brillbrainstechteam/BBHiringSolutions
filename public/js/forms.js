@@ -24,14 +24,14 @@
         ${BB.voiceSwitch()}
         ${q.job ? `<div class="notice gold small" data-only="job">You are applying for job <b>${esc(String(q.job).toUpperCase())}</b>. We will also show you other matching jobs.</div>` : ''}
         ${q.ref ? `<div class="notice small" data-only="job">Referred by a friend (${esc(String(q.ref).toUpperCase())}).</div>` : ''}
-        <div class="cv-first stack-sm" data-only="job" data-f="cv"><div><b>Start with your CV</b> <span class="opt">(optional)</span><div class="muted small">Attach your CV to fill this form automatically (PDF or Word, max 10 MB).</div></div><div class="row"><button type="button" class="btn" data-cv>Attach CV</button><span class="muted small" data-cv-name>No file chosen</span></div><div class="small" data-cv-msg></div></div>
+        <div class="cv-first" data-only="job" data-f="cv"><div class="cv-ic" aria-hidden="true">CV</div><div class="grow"><b>Start with your CV</b> <span class="opt">(optional)</span><div class="muted small" data-cv-name>PDF or Word, max 10 MB</div><div class="small" data-cv-msg></div></div><button type="button" class="btn" data-cv>Attach CV</button></div>
         <div class="grid g2">${field({ name: 'name', label: 'Your name' })}<div data-only="hire">${field({ name: 'company', label: 'Company name' })}</div><div data-only="job">${field({ name: 'email', label: 'Email', type: 'email', opt: true, placeholder: 'For a confirmation email', attrs: 'autocomplete="email"' })}</div></div>
         <div class="grid g2">${field({ name: 'whatsapp', label: 'WhatsApp number', type: 'tel', phone: true, placeholder: '10 digits', attrs: 'inputmode="numeric" maxlength="14" autocomplete="tel"' })}<div data-only="hire">${field({ name: 'email_hire', label: 'Email', type: 'email', opt: true, placeholder: 'For a confirmation email', attrs: 'autocomplete="email"' })}</div><div data-only="job"><label class="field" data-f="job_wanted"><span class="lab">Job you want</span><select name="job_wanted">${BB.jobOptions('', true, q.ind)}</select></label></div></div>
         <div class="hidden" data-pw>${field({ name: 'password', label: 'Create a password', type: 'password', opt: true, voice: false, hint: 'At least 8 characters. Lets you log in with your email as well as your WhatsApp number.', attrs: 'autocomplete="new-password"' })}</div>
         <div class="hidden" data-other>${field({ name: 'job_other', label: 'Type the job you want' })}</div>
         <div class="grid g2">${field({ name: 'city', label: 'City', list: 'cities', placeholder: 'Start typing your city…' })}${field({ name: 'state', label: 'State', placeholder: 'Fills in from the city', voice: false })}</div>
         <div data-only="hire" class="stack">
-          ${field({ name: 'business_type', label: 'Your business', type: 'choice', options: ['Showroom B2C', 'Manufacturer B2B', 'Both'] })}
+          ${field({ name: 'business_type', label: 'Your business', type: 'choice', options: [['Showroom B2C', 'B2C'], ['Manufacturer B2B', 'B2B'], ['Both', 'Both']] })}
           ${field({ name: 'need', label: 'When do you need staff?', type: 'choice', options: ['Hiring now', 'Hiring soon', 'Just exploring'] })}
           ${field({ name: 'roles', label: 'Which roles?', opt: true, placeholder: 'e.g. 2 sales executives, 1 cashier' })}
         </div>
@@ -39,8 +39,8 @@
           <label class="field" data-f="experience"><span class="lab">Experience <span class="opt">(optional)</span></span><div class="choice">${['Fresher', '1–3 years', '3–5 years', '5–10 years', '10+ years'].map((x) => `<label style="min-width:96px"><input type="radio" name="experience" value="${x}"> ${x}</label>`).join('')}</div></label>
         </div>
         <label class="hp" aria-hidden="true">Leave this empty <input name="website" tabindex="-1" autocomplete="off"></label>
+        <label class="consent-tick" data-f="consent"><input type="checkbox" name="consent"><span>${esc(BB.boot.consent)}</span></label>
         <button type="submit" class="btn gold lg block" data-send>${MODES[mode].send}</button>
-        <div class="consent">${esc(BB.boot.consent)}</div>
       </form>`;
   }
 
@@ -60,7 +60,7 @@
     $$('[data-mode]', card).forEach((b) => (b.onclick = () => { mode = b.dataset.mode; apply(); showPw(); }));
     $('[name=job_wanted]', card).onchange = (e) => $('[data-other]', card).classList.toggle('hidden', e.target.value !== 'Other');
     $('[data-cv]', card).onclick = async () => {
-      cv = await BB.pickFile(); $('[data-cv-name]', card).textContent = cv ? cv.name : 'No file chosen';
+      cv = await BB.pickFile(); $('[data-cv-name]', card).textContent = cv ? cv.name : 'PDF or Word, max 10 MB';
       if (cv) fillFromCv(card, cv);
     };
     BB.attachMics(card); apply();
@@ -78,6 +78,7 @@
         : [...common, ['job_wanted', v.job_wanted, 'Pick the job you want'], ['job_other', v.job_wanted !== 'Other' || v.job_other, 'Type the job you want'], ['city', v.city, 'Please enter the city you want to work in']];
       // A password is optional and needs an email to log in with.
       if (v.password) rules.push([mode === 'hire' ? 'email_hire' : 'email', email, 'Add your email to log in with a password'], ['password', v.password.length >= 8, 'Use at least 8 characters, or leave it empty']);
+      rules.push(['consent', v.consent, 'Please tick to agree before sending']);
       if (!check(form, rules)) return;
       const body = mode === 'hire'
         ? { contact: v.name, company: v.company, whatsapp: v.whatsapp, email, city: v.city, state: v.state, business_type: v.business_type, need: v.need, roles: v.roles, password: v.password, website: v.website, src: q.src }

@@ -6,9 +6,9 @@
   const lastPhone = () => { try { return localStorage.getItem('bbhs.lastPhone') || ''; } catch { return ''; } };
   BB.otpLogin = (kind, title, after) => {
     const intro = kind === 'client'
-      ? { eyebrow: 'For employers', title: 'Your hiring, <em>all in one place</em>', lead: 'Job openings, shortlisted candidates, interviews, offers and bills — always up to date.', perks: [['1', 'Review profiles', 'Share interview times in one step.'], ['2', 'Give feedback', 'Selected, another round or not selected.'], ['₹', 'Pay by UPI', 'Bills and receipts in one tab.']] }
-      : { eyebrow: 'For candidates', title: 'Track every step <em>to your new job</em>', lead: 'See matching jobs, your interviews and your offers, and keep your profile up to date.', perks: [['★', 'Jobs for you', 'Matched on your city, skills and salary.'], ['✓', 'Confirm interviews', 'Or ask to move them — in one tap.'], ['✉', 'Accept your offer', 'Read the offer letter and upload joining papers.']] };
-    $('#app').innerHTML = BB.split({ top: BB.publicTop(title), ...intro, card: `<div class="card-title">${esc(title)}</div><p class="muted" style="margin:4px 0 16px" data-intro>Log in with your WhatsApp number. We send you a 6-digit code.</p><form class="stack" data-step1>${BB.field({ name: 'phone', label: 'WhatsApp number', type: 'tel', phone: true, value: lastPhone(), placeholder: '10 digits', attrs: 'inputmode="numeric" maxlength="14" autocomplete="tel"' })}<button class="btn gold block lg">Send code</button></form>
+      ? { eyebrow: 'For employers', title: 'The hiring platform made <em>only for jewellery</em>', lead: 'Job openings, shortlisted candidates, interviews, offers and bills — always up to date.', perks: [['1', 'Review profiles', 'Share interview times in one step.'], ['2', 'Give feedback', 'Selected, another round or not selected.'], ['₹', 'Pay by UPI', 'Bills and receipts in one tab.']] }
+      : { eyebrow: 'For candidates', title: 'The job platform made <em>only for jewellery</em>', lead: 'See matching jobs, your interviews and your offers, and keep your profile up to date.', perks: [['★', 'Jobs for you', 'Matched on your city, skills and salary.'], ['✓', 'Confirm interviews', 'Or ask to move them — in one tap.'], ['✉', 'Accept your offer', 'Read the offer letter and upload joining papers.']] };
+    $('#app').innerHTML = BB.split({ top: BB.publicTop(title), ...intro, card: `<div class="card-title">${esc(title)}</div><p class="muted" style="margin:4px 0 16px" data-intro>Get a 6-digit code on WhatsApp.</p><form class="stack" data-step1>${BB.field({ name: 'phone', label: 'WhatsApp number', type: 'tel', phone: true, value: lastPhone(), placeholder: '10 digits', attrs: 'inputmode="numeric" maxlength="14" autocomplete="tel"' })}<button class="btn gold block lg">Send code</button></form>
       <form class="stack hidden" data-step2><div class="muted small" data-sent></div>${BB.field({ name: 'code', label: 'Enter 6 digit code received on WhatsApp', voice: false, attrs: 'inputmode="numeric" maxlength="6" autocomplete="one-time-code" class="code-in"' })}<div data-dev></div><button class="btn gold block lg">Log in</button><div class="row small between"><a href="#" data-resend>Send the code again</a><span class="muted" data-wait></span><a href="#" data-again>Use another number</a></div></form>
       <form class="stack hidden" data-stepE>${BB.field({ name: 'email', label: 'Email', type: 'email', voice: false, attrs: 'autocomplete="email" inputmode="email"' })}${BB.field({ name: 'password', label: 'Password', type: 'password', voice: false, attrs: 'autocomplete="current-password"' })}<button class="btn gold block lg">Log in</button><div class="small muted">Forgot your password? Log in with your WhatsApp number and set a new one in your account.</div></form>
       <div class="login-switch"><a href="#" data-switch>Log in with email and password instead</a></div>
@@ -45,7 +45,7 @@
     $('[data-switch]').onclick = (e) => {
       e.preventDefault(); byEmail = !byEmail; clearInterval(timer);
       $('[data-step1]').classList.toggle('hidden', byEmail); $('[data-step2]').classList.add('hidden'); $('[data-stepE]').classList.toggle('hidden', !byEmail);
-      $('[data-intro]').textContent = byEmail ? 'Log in with the email and password you set in your account.' : 'Log in with your WhatsApp number. We send you a 6-digit code.';
+      $('[data-intro]').textContent = byEmail ? 'Use your email and password.' : 'Get a 6-digit code on WhatsApp.';
       e.currentTarget.textContent = byEmail ? 'Log in with WhatsApp number instead' : 'Log in with email and password instead';
       $(byEmail ? '[name=email]' : '[name=phone]').focus();
     };
@@ -55,16 +55,17 @@
     };
   };
   // Set or change the password for email login (from the candidate profile or the client's company tab).
-  BB.passwordCard = (email, has) => `<div class="card pad stack-sm pw-card"><div class="cp-h">${BB.icon('key')}<h3>Email login</h3></div>
-    <div class="small muted">${has ? `You can also log in with <b>${esc(email)}</b> and your password.` : 'Set a password to log in with your email as well as your WhatsApp number.'}</div>
-    <button type="button" class="btn sm" data-setpw>${has ? 'Change password' : 'Set a password'}</button></div>`;
+  // Only people who log in with email see this: a way to change their password. Everyone else uses the WhatsApp code.
+  BB.passwordCard = (email, has) => (has ? `<div class="card pad stack-sm pw-card"><div class="cp-h">${BB.icon('key')}<h3>Password</h3></div>
+    <div class="small muted">You can log in with <b>${esc(email)}</b> and your password.</div>
+    <button type="button" class="btn sm" data-setpw>Change password</button></div>` : '');
   BB.wirePassword = (root, url, email, done) => {
     const b = $('[data-setpw]', root); if (!b) return;
     b.onclick = async () => {
-      const r = await BB.ask({ title: 'Password for email login', ok: 'Save password',
-        fields: [{ name: 'email', label: 'Email', type: 'email', value: email || '', voice: false }, { name: 'password', label: 'Password', type: 'password', voice: false, hint: 'At least 8 characters' }],
+      const r = await BB.ask({ title: 'Change password', ok: 'Save password',
+        fields: [{ name: 'email', label: 'Email', type: 'email', value: email || '', voice: false }, { name: 'password', label: 'New password', type: 'password', voice: false, hint: 'At least 8 characters', attrs: 'autocomplete="new-password"' }],
         submit: (v) => BB.post(url, v) });
-      if (r) { BB.toast(`Saved. You can now log in with ${r.email} and this password.`); done && done(); }
+      if (r) { BB.toast('Password changed.'); done && done(); }
     };
   };
   BB.onLogout = (kind, msg) => { if (BB.portal === kind) { if (msg) BB.toast(msg, true); BB.route(); } };

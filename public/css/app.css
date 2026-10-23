@@ -709,3 +709,60 @@ a.disabled { pointer-events: none; color: var(--faint); }
 .back-home { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; font-size: 14px; color: var(--royal); text-decoration: none; padding: 8px 0; margin-bottom: 6px; }
 .back-home svg { width: 15px; height: 15px; } .back-home:hover { text-decoration: underline; }
 .pub-center .back-home { align-self: flex-start; }
+
+/* Background behind the headings (home, login pages): drifting glows, floating diamonds, twinkling sparkles. */
+.deco-lines { display: none; }
+.gem-bg { position: absolute; inset: -80px -60px -100px -120px; z-index: -1; pointer-events: none; overflow: hidden; }
+.gem-bg .orb { position: absolute; border-radius: 50%; filter: blur(60px); opacity: .55; }
+.gem-bg .o1 { width: 360px; height: 360px; left: -40px; bottom: -40px; background: radial-gradient(circle, rgba(232, 184, 60, .75), rgba(232, 184, 60, 0) 70%); animation: orb-a 18s ease-in-out infinite alternate; }
+.gem-bg .o2 { width: 300px; height: 300px; left: 38%; top: 8%; background: radial-gradient(circle, rgba(120, 170, 235, .6), rgba(120, 170, 235, 0) 70%); animation: orb-b 22s ease-in-out infinite alternate; }
+.gem-bg .o3 { width: 220px; height: 220px; left: 12%; top: 30%; background: radial-gradient(circle, rgba(255, 236, 190, .9), rgba(255, 236, 190, 0) 70%); animation: orb-a 26s ease-in-out infinite alternate-reverse; }
+.gem-bg .gem { position: absolute; color: var(--mustard); opacity: .5; animation: gem-float 9s ease-in-out infinite; }
+.gem-bg .gem svg { width: 100%; height: auto; display: block; filter: drop-shadow(0 6px 14px rgba(209, 155, 18, .25)); }
+.gem-bg .g1 { width: 64px; left: 4%; bottom: 14%; }
+.gem-bg .g2 { width: 38px; left: 46%; bottom: 6%; color: var(--royal); opacity: .35; animation-delay: -3s; animation-duration: 11s; }
+.gem-bg .g3 { width: 26px; left: 30%; bottom: 30%; animation-delay: -6s; animation-duration: 8s; }
+.gem-bg .spark { position: absolute; width: 10px; height: 10px; background: var(--mustard-400); clip-path: polygon(50% 0, 60% 40%, 100% 50%, 60% 60%, 50% 100%, 40% 60%, 0 50%, 40% 40%); animation: twinkle 3.2s ease-in-out infinite; }
+.gem-bg .s1 { left: 18%; bottom: 22%; } .gem-bg .s2 { left: 56%; bottom: 18%; animation-delay: -1s; width: 8px; height: 8px; }
+.gem-bg .s3 { left: 8%; bottom: 42%; animation-delay: -2s; width: 7px; height: 7px; background: var(--royal); }
+.gem-bg .s4 { left: 38%; bottom: 10%; animation-delay: -.5s; } .gem-bg .s5 { left: 64%; bottom: 34%; animation-delay: -2.4s; width: 6px; height: 6px; }
+@keyframes orb-a { to { transform: translate(60px, -40px) scale(1.15); } }
+@keyframes orb-b { to { transform: translate(-50px, 50px) scale(.9); } }
+@keyframes gem-float { 0%, 100% { transform: translateY(0) rotate(-6deg); } 50% { transform: translateY(-16px) rotate(6deg); } }
+@keyframes twinkle { 0%, 100% { opacity: 0; transform: scale(.4) rotate(0); } 50% { opacity: .9; transform: scale(1) rotate(45deg); } }
+@media (prefers-reduced-motion: reduce) { .gem-bg .orb, .gem-bg .gem, .gem-bg .spark { animation: none; } .gem-bg .spark { opacity: .6; } }
+@media (max-width: 1080px) { .gem-bg { inset: -40px -16px -40px -16px; } .gem-bg .g1 { bottom: auto; top: 6%; left: auto; right: 6%; width: 48px; } .gem-bg .g2, .gem-bg .g3 { display: none; } }
+
+/* Public forms, cleaner: one-line CV row, choices as pills that never wrap, consent tick above the button. */
+.pub-card form.stack { gap: 16px; }
+.pub-card input:not([type=checkbox]):not([type=radio]), .pub-card select { min-height: 46px; background: var(--surface-2); border-color: transparent; }
+.pub-card input:not([type=checkbox]):not([type=radio]):hover, .pub-card select:hover { border-color: var(--border); }
+.pub-card input:focus, .pub-card select:focus { background: var(--surface); border-color: var(--mustard); }
+.pub-card .field .lab { font-size: 13px; font-weight: 600; color: var(--ink); }
+.pub-card .inp-wrap.has-cc .cc { background: transparent; }
+.cv-first { display: flex; align-items: center; gap: 14px; border: 1.5px dashed color-mix(in srgb, var(--mustard) 60%, transparent); background: var(--mustard-50); border-radius: 14px; padding: 12px 14px; }
+.cv-first .cv-ic { flex: none; width: 40px; height: 40px; border-radius: 10px; display: grid; place-items: center; background: var(--navy); color: var(--mustard-300); font: 700 12px var(--display); }
+.cv-first .grow { min-width: 0; } .cv-first [data-cv-name] { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cv-first .btn { flex: none; }
+.pub-card .choice { gap: 8px; }
+.pub-card .choice label { flex: 0 1 auto; min-width: 0; white-space: nowrap; border-radius: 999px; padding: 9px 16px; font-size: 14px; background: var(--surface-2); border-color: transparent; }
+.pub-card .choice label:has(input:checked) { background: var(--mustard-50); border-color: var(--mustard); }
+.pub-card .choice label[style] { min-width: 0 !important; }
+.consent-tick { display: flex; gap: 10px; align-items: flex-start; font-size: 13px; line-height: 1.5; color: var(--muted); cursor: pointer; padding: 2px 2px 0; }
+.consent-tick input { width: 18px; height: 18px; margin: 1px 0 0; flex: none; }
+.consent-tick.has-err span, .has-err .consent-tick span { color: var(--red); }
+@media (max-width: 560px) { .cv-first { flex-wrap: wrap; } .cv-first .btn { width: 100%; justify-content: center; } .pub-card .choice label { padding: 9px 13px; font-size: 13.5px; } }
+.consent-tick { flex-wrap: wrap; } .consent-tick span { flex: 1; min-width: 0; } .consent-tick .err-msg { flex-basis: 100%; margin-left: 28px; }
+.pub-intro > .back-home { display: flex; width: max-content; margin-bottom: 18px; }
+.pub-split .pub-intro > .back-home + .deco-dots, .hero .pub-intro > .back-home + .deco-dots { top: 30px; }
+.pub-intro > .back-home ~ .deco-dots { display: none; }
+.gem-bg .orb { opacity: .7; }
+.gem-bg .g1 { left: auto; bottom: auto; right: 8%; top: 22%; width: 72px; opacity: .55; }
+.gem-bg .g3 { left: auto; bottom: auto; right: 22%; top: 10%; width: 30px; opacity: .5; }
+.gem-bg .g2 { left: 2%; bottom: 3%; width: 44px; }
+.gem-bg .s1 { left: auto; right: 14%; bottom: auto; top: 14%; } .gem-bg .s2 { left: auto; right: 4%; bottom: auto; top: 40%; }
+.gem-bg .s4 { left: auto; right: 28%; bottom: auto; top: 30%; }
+@media (max-width: 1080px) { .gem-bg .g1 { top: 4%; right: 4%; width: 46px; } }
+.pub-card [data-f="experience"] .choice { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.pub-card [data-f="experience"] .choice label { justify-content: center; padding: 9px 6px; gap: 6px; }
+@media (max-width: 560px) { .pub-card [data-f="experience"] .choice { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
