@@ -11,7 +11,10 @@
   };
   const reload = async () => { D = await BB.api('/api/cand/me'); render(); };
   const act = async (fn, ok) => { try { await fn(); ok && BB.toast(ok); await reload(); } catch (e) { BB.fail(e); } };
-  const go = (t, f) => { tab = t; focusField = f || null; history.replaceState(null, '', `#my-profile/${t}`); render(); window.scrollTo({ top: 0, behavior: 'smooth' }); };
+  // Every tab shows the latest (an interview or offer the team just added).
+  const go = (t, f) => { tab = t; focusField = f || null; history.replaceState(null, '', `#my-profile/${t}`); reload().catch(() => render()); window.scrollTo({ top: 0, behavior: 'smooth' }); };
+  // Coming back to the browser tab fetches the latest too, unless a dialog is open or the profile has unsaved changes.
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && BB.portal === 'candidate' && D && BB.token('candidate') && !document.querySelector('.modal') && !document.querySelector('.cp-form.dirty')) reload().catch(() => {}); });
   const initials = (n) => String(n || '?').trim().split(/\s+/).slice(0, 2).map((w) => w[0]).join('').toUpperCase();
   const ring = (pct, size = 64) => `<div class="cp-ring" style="--p:${pct};width:${size}px;height:${size}px"><span>${pct}<small>%</small></span></div>`;
   const dateTile = (iso) => { const d = new Date(iso); return `<div class="cp-date"><b>${d.toLocaleDateString('en-IN', { day: 'numeric', timeZone: 'Asia/Kolkata' })}</b><span>${d.toLocaleDateString('en-IN', { month: 'short', timeZone: 'Asia/Kolkata' })}</span></div>`; };

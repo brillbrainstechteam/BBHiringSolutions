@@ -37,6 +37,8 @@
     render();
   };
   const reload = async () => { D = await BB.api('/api/client/me'); render(); };
+  // Coming back to the browser tab fetches the latest too (unless a dialog is open).
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && BB.portal === 'client' && D && BB.token('client') && !document.querySelector('.modal')) reload().catch(() => {}); });
   const act = async (fn, ok) => { try { await fn(); ok && BB.toast(ok); await reload(); } catch (e) { BB.fail(e); } };
 
   function render() {
@@ -48,7 +50,8 @@
       <div class="acct">
         <div class="tabs">${tabs.map(([k, l, n]) => `<button data-tab="${k}" class="${tab === k ? 'on' : ''}">${l}${n ? ` <span class="n">${n}</span>` : ''}</button>`).join('')}</div>
         <div data-body></div></div></div>`;
-    $$('[data-tab]').forEach((b) => (b.onclick = () => { tab = b.dataset.tab; history.replaceState(null, '', `#my-account/${tab}`); render(); }));
+    // Every tab shows the latest: what the team did a minute ago (an interview, a profile) is there.
+    $$('[data-tab]').forEach((b) => (b.onclick = () => { tab = b.dataset.tab; history.replaceState(null, '', `#my-account/${tab}`); reload().catch(() => render()); }));
     $('[data-out]').onclick = async () => { await BB.post('/api/account/logout', {}).catch(() => {}); BB.setToken('client', null); BB.route(); };
     $('[data-raise]').onclick = raiseJob;
     const body = $('[data-body]');
@@ -82,8 +85,8 @@
     </div>`).join('') || '<div class="card empty">No job openings yet.</div>'}</div>`;
     $$('[data-hold]', el).forEach((b) => (b.onclick = () => BB.ask({ title: 'Pause hiring', fields: [{ name: 'reason', label: 'Why are you pausing?', opt: true }], ok: 'Pause', submit: (v) => BB.post(`/api/client/jobs/${b.dataset.hold}/hold`, v) }).then((x) => x && reload())));
     $$('[data-resume]', el).forEach((b) => (b.onclick = () => act(() => BB.post(`/api/client/jobs/${b.dataset.resume}/resume`), 'Hiring resumed')));
-    $('[data-addseat]', el).forEach((b) => (b.onclick = () => BB.ask({ title: 'More people for this job', note: 'Same job and job ID, with more seats. Candidates already in process stay as they are.', fields: [{ name: 'add', label: 'How many more people?', type: 'number', value: 1 }], ok: 'Add seats', submit: (v) => BB.post(`/api/client/jobs/${b.dataset.addseat}/add-seat`, v) }).then((x) => x && (BB.toast('Seats added'), reload()))));
-    $('[data-again]', el).forEach((b) => (b.onclick = () => BB.ask({ title: 'I need this role again', fields: [{ name: 'add', label: 'How many more people?', type: 'number', value: 1 }, { name: 'reason', label: 'Reason', type: 'select', options: BB.boot.reopen_reasons, value: BB.boot.reopen_reasons[0] }], ok: 'Reopen', submit: (v) => BB.post(`/api/client/jobs/${b.dataset.again}/reopen`, v) }).then((x) => x && reload())));
+    $$('[data-addseat]', el).forEach((b) => (b.onclick = () => BB.ask({ title: 'More people for this job', note: 'Same job and job ID, with more seats. Candidates already in process stay as they are.', fields: [{ name: 'add', label: 'How many more people?', type: 'number', value: 1 }], ok: 'Add seats', submit: (v) => BB.post(`/api/client/jobs/${b.dataset.addseat}/add-seat`, v) }).then((x) => x && (BB.toast('Seats added'), reload()))));
+    $$('[data-again]', el).forEach((b) => (b.onclick = () => BB.ask({ title: 'I need this role again', fields: [{ name: 'add', label: 'How many more people?', type: 'number', value: 1 }, { name: 'reason', label: 'Reason', type: 'select', options: BB.boot.reopen_reasons, value: BB.boot.reopen_reasons[0] }], ok: 'Reopen', submit: (v) => BB.post(`/api/client/jobs/${b.dataset.again}/reopen`, v) }).then((x) => x && reload())));
     $$('[data-jd-ok]', el).forEach((b) => (b.onclick = () => act(() => BB.post(`/api/client/jobs/${b.dataset.jdOk}/approve-jd`), 'Approved — the job is now open')));
     $$('[data-jd-chg]', el).forEach((b) => (b.onclick = () => BB.ask({ title: 'Ask for changes', fields: [{ name: 'note', label: 'What should change?', type: 'textarea' }], ok: 'Send', submit: (v) => BB.post(`/api/client/jobs/${b.dataset.jdChg}/jd-changes`, v) }).then((x) => x && reload())));
   }
