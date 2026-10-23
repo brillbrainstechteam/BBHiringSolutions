@@ -25,7 +25,7 @@ jobs:
           # The key can only run bbhs-deploy on the server, whatever is asked here.
           # A dropped connection from GitHub's side is tried again (3 times, 15 s apart).
           for try in 1 2 3; do
-            if ssh -o ConnectTimeout=20 -o ServerAliveInterval=15 -i ~/.ssh/deploy_key root@187.127.176.187 deploy; then exit 0; fi
+            ssh -o ConnectTimeout=20 -o ServerAliveInterval=15 -i ~/.ssh/deploy_key root@187.127.176.187 deploy && exit 0
             code=$?; [ "$code" -ne 255 ] && exit "$code"   # 255 = could not connect; anything else is the deploy's own answer
             echo "Could not reach the server (try $try of 3)"; sleep 15
           done
