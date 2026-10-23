@@ -22,7 +22,7 @@ const PAGES = ['/', '/hire', '/apply', '/my-account', '/my-profile', '/team'];
 // The preview always says the business name; the line under it says what this link is for.
 const META = {
   '/': ['BrillBrains Hiring Solutions', 'Hiring for the jewellery business: hire screened staff, or find your next jewellery job.'],
-  '/apply': ['Jewellery jobs · BrillBrains Hiring Solutions', 'Apply for jewellery jobs in a minute: showroom sales, cashier, karigar, CAD and more. Free for job seekers.'],
+  '/apply': ['Jewellery jobs · BrillBrains Hiring Solutions', 'Apply for jewellery jobs in a minute: sales, purchase, cashier, karigar, CAD and more. Free for job seekers.'],
   '/hire': ['Hire jewellery staff · BrillBrains Hiring Solutions', 'Tell us who you need. We send screened, interviewed candidates for your jewellery business.'],
   '/my-account': ['Client login · BrillBrains Hiring Solutions', 'Log in to see your job openings, shortlisted candidates, interviews and bills.'],
   '/my-profile': ['Candidate login · BrillBrains Hiring Solutions', 'Log in to see matching jobs, your interviews and your offers.'],
