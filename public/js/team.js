@@ -95,7 +95,7 @@
     await BB.refreshPage();
     window.scrollTo(0, 0);
   }
-  BB.setQ = (q) => { pageQ = { ...pageQ, ...q }; const qs = new URLSearchParams(Object.entries(pageQ).filter(([, v]) => v !== '' && v !== undefined && v !== null)).toString(); history.replaceState(null, '', `#team/${pageName}${qs ? '?' + qs : ''}`); BB.refreshPage(); };
+  BB.setQ = (q) => { pageQ = { ...pageQ, ...q }; const qs = new URLSearchParams(Object.entries(pageQ).filter(([, v]) => v !== '' && v !== undefined && v !== null)).toString(); BB.setUrl(`team/${pageName}${qs ? '?' + qs : ''}`); BB.refreshPage(); };
 
   function wireSearch() {
     const inp = $('[data-search]'); const res = $('[data-res]'); let t;

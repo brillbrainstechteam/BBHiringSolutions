@@ -45,8 +45,8 @@ const server = http.createServer(async (req, res) => {
     }
     let p = url.pathname;
     // The team portal is internal: reachable by its address, but kept out of search engines.
-    if (p.replace(/\/$/, '') === '/team') return send(res, 200, fs.readFileSync(path.join(PUBLIC, 'index.html')), { 'Content-Type': TYPES['.html'], 'Cache-Control': 'no-cache', 'X-Robots-Tag': 'noindex, nofollow' });
-    if (PAGES.includes(p.replace(/\/$/, '') || '/')) p = '/index.html';
+    if (p === '/team' || p.startsWith('/team/')) return send(res, 200, fs.readFileSync(path.join(PUBLIC, 'index.html')), { 'Content-Type': TYPES['.html'], 'Cache-Control': 'no-cache', 'X-Robots-Tag': 'noindex, nofollow' });
+    if (PAGES.includes('/' + (p.split('/')[1] || ''))) p = '/index.html'; // the app's own pages, e.g. /my-account/jobs
     const file = path.normalize(path.join(PUBLIC, p));
     if (!file.startsWith(PUBLIC) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) return send(res, 404, 'Not found', { 'Content-Type': 'text/plain' });
     return send(res, 200, fs.readFileSync(file), { 'Content-Type': TYPES[path.extname(file)] || 'application/octet-stream', 'Cache-Control': 'no-cache' });

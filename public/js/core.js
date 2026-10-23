@@ -388,15 +388,25 @@ document.addEventListener('click', (e) => {
 });
 
 // ---------- router ----------
+// Clean addresses (/apply, /my-account/jobs, /team/applications). Old #links still work: they are turned into the
+// clean address on arrival. Links written as href="#name" anywhere in the app are caught and opened the clean way.
 BB.parseHash = () => {
   let h = location.hash.replace(/^#/, '');
   const path = location.pathname.replace(/^\/|\/$/g, '');
-  if (!h && path) h = path + location.search;
+  if (!h) h = path + location.search;
   const [route, qs] = h.split('?');
   const parts = route.split('/');
   return { name: parts[0] || '', sub: parts.slice(1), q: Object.fromEntries(new URLSearchParams(qs || location.search.replace(/^\?/, ''))) };
 };
-BB.go = (hash) => { if (location.hash === '#' + hash) BB.route(); else location.hash = hash; };
+BB.go = (to) => { const url = '/' + String(to || '').replace(/^[#/]+/, ''); if (location.pathname + location.search !== url) history.pushState(null, '', url); BB.route(); };
+BB.setUrl = (to) => history.replaceState(null, '', '/' + String(to || '').replace(/^[#/]+/, ''));
+const fromHash = () => { const h = location.hash.replace(/^#/, ''); if (h) { BB.setUrl(h); return true; } return false; };
+document.addEventListener('click', (e) => {
+  const a = e.target.closest && e.target.closest('a[href]'); if (!a || e.defaultPrevented || a.target || e.ctrlKey || e.metaKey || e.shiftKey) return;
+  const href = a.getAttribute('href');
+  if (href === '#' || !(href.startsWith('#') || href === '/')) return;
+  e.preventDefault(); BB.go(href === '/' ? '' : href.slice(1));
+});
 BB.route = () => {
   const r = BB.parseHash();
   const map = { hire: 'hire', apply: 'apply', 'my-account': 'client', 'my-profile': 'candidate', team: 'team' };
@@ -408,16 +418,16 @@ BB.route = () => {
 };
 // Brand lockup: mark | BrillBrains / Hiring Solutions / tagline (as on the website).
 // The full logo on wide screens, the BB mark where space is tight; the tagline names the part of the site.
-BB.brand = (tagline, href = '#') => {
+BB.brand = (tagline, href = '/') => {
   const name = BB.boot.business.name || 'BrillBrains Hiring Solutions';
   return `<a class="brand" href="${href}"><img class="brand-logo" src="/img/logo.png" alt="${esc(name)}"><img class="brand-mark" src="/img/icon.png" alt="${esc(name)}">${tagline ? `<span class="brand-tag">${esc(tagline)}</span>` : ''}</a>`;
 };
 // Navy top bar. nav=false on the form links (they open only the form, no other menus).
-BB.publicTop = (sub, nav = false) => `<header class="pub-top">${BB.brand(sub)}${nav ? `<nav class="pub-nav"><a href="#hire">For Employers</a><a href="#apply">For Candidates</a><a href="#my-account">Client login</a><a href="#my-profile">Candidate login</a></nav><details class="pub-login"><summary class="btn sm" aria-label="Menu"><span class="burger" aria-hidden="true"><i></i><i></i><i></i></span>Menu</summary><div class="pub-login-menu"><a href="#hire">For Employers</a><a href="#apply">For Candidates</a><hr><a href="#my-account">Client login</a><a href="#my-profile">Candidate login</a></div></details>` : `${sub === 'Team portal' ? '' : `<a class="btn sm top-home" href="#" aria-label="Back to home">${BB.icon('home')}<span>Home</span></a>`}<a class="btn sm help" href="https://wa.me/91${esc(BB.boot.business.support_phone)}" target="_blank" rel="noopener">${waIcon} Need help?</a>`}</header>`;
+BB.publicTop = (sub, nav = false) => `<header class="pub-top">${BB.brand(sub)}${nav ? `<nav class="pub-nav"><a href="#hire">For Employers</a><a href="#apply">For Candidates</a><a href="#my-account">Client login</a><a href="#my-profile">Candidate login</a></nav><details class="pub-login"><summary class="btn sm" aria-label="Menu"><span class="burger" aria-hidden="true"><i></i><i></i><i></i></span>Menu</summary><div class="pub-login-menu"><a href="#hire">For Employers</a><a href="#apply">For Candidates</a><hr><a href="#my-account">Client login</a><a href="#my-profile">Candidate login</a></div></details>` : `${sub === 'Team portal' ? '' : `<a class="btn sm top-home" href="/" aria-label="Back to home">${BB.icon('home')}<span>Home</span></a>`}<a class="btn sm help" href="https://wa.me/91${esc(BB.boot.business.support_phone)}" target="_blank" rel="noopener">${waIcon} Need help?</a>`}</header>`;
 // Background behind the big headings: soft gold and sky glows drifting, small sparkles twinkling.
 BB.deco = () => `<div class="deco-dots" aria-hidden="true"><i></i><i></i><i></i><i></i></div><div class="gem-bg" aria-hidden="true"><span class="orb o1"></span><span class="orb o2"></span><span class="orb o3"></span>${['s1', 's2', 's3', 's4', 's5'].map((c) => `<i class="spark ${c}"></i>`).join('')}</div>`;
 // Split page: big heading + perks on the left, a card on the right.
-BB.split = ({ top, eyebrow, title, lead, perks, card, foot, centered }) => { const back = eyebrow === 'Team portal' ? '' : `<a class="back-home" href="#">${BB.icon('home')} Back to home</a>`; return centered
+BB.split = ({ top, eyebrow, title, lead, perks, card, foot, centered }) => { const back = eyebrow === 'Team portal' ? '' : `<a class="back-home" href="/">${BB.icon('home')} Back to home</a>`; return centered
   ? `<div class="pub">${top}<main class="pub-center"><section class="pub-intro">${back}<div class="deco-dots" aria-hidden="true"><i></i><i></i><i></i><i></i></div><span class="eyebrow">${esc(eyebrow)}</span><h1>${title}</h1></section><section class="card pub-card">${card}</section></main><div class="pub-foot">${foot || `© ${new Date().getFullYear()} ${esc(BB.boot.business.name)} · Your details are kept safe and used only for hiring.`}</div></div>`
   : `<div class="pub">${top}<main class="pub-split"><section class="pub-intro">${back}${BB.deco()}<span class="eyebrow">${esc(eyebrow)}</span><h1>${title}</h1>${lead ? `<p class="lead">${lead}</p>` : ''}${perks && perks.length ? `<ul class="perks">${perks.map(([ic, b, s]) => `<li><span class="pi">${ic}</span><div><b>${esc(b)}</b><span>${esc(s)}</span></div></li>`).join('')}</ul>` : ''}</section><section class="card pub-card">${card}</section></main><div class="pub-foot">${foot || `© ${new Date().getFullYear()} ${esc(BB.boot.business.name)} · Your details are kept safe and used only for hiring.`}</div></div>`; };
 BB.views.landing = (r) => {
@@ -442,8 +452,9 @@ BB.start = async () => {
   const dl = document.createElement('datalist'); dl.id = 'cities'; dl.innerHTML = BB.boot.cities.map((c) => `<option value="${esc(c)}">`).join(''); document.body.appendChild(dl);
   // The test copy says so on every page, so nobody mistakes it for the live one.
   if (BB.boot.env !== 'live') document.body.insertAdjacentHTML('beforeend', `<div class="env-ribbon" title="Sample data and test WhatsApp — not the live copy">${esc(BB.boot.env)} copy</div>`);
-  window.addEventListener('hashchange', BB.route);
-  BB.route();
+  window.addEventListener('popstate', BB.route);
+  window.addEventListener('hashchange', () => { if (fromHash()) BB.route(); });
+  fromHash(); BB.route();
 };
 // Job list grouped by its 11 groups, for selects.
 BB.jobOptions = (selected, withOther = true, industry) => {

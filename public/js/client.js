@@ -154,7 +154,7 @@
         <div class="tabs">${tabs.map(([k, l, n]) => `<button data-tab="${k}" class="${tab === k ? 'on' : ''}">${l}${n ? ` <span class="n">${n}</span>` : ''}</button>`).join('')}</div>
         <div data-body></div></div></div>`;
     // Every tab shows the latest: what the team did a minute ago (an interview, a profile) is there.
-    $$('[data-tab]').forEach((b) => (b.onclick = () => { tab = b.dataset.tab; history.replaceState(null, '', `#my-account/${tab}`); reload().catch(() => render()); }));
+    $$('[data-tab]').forEach((b) => (b.onclick = () => { tab = b.dataset.tab; BB.setUrl(`my-account/${tab}`); reload().catch(() => render()); }));
     $('[data-out]').onclick = async () => { await BB.post('/api/account/logout', {}).catch(() => {}); BB.setToken('client', null); BB.route(); };
     $('[data-raise]').onclick = raiseJob;
     const body = $('[data-body]');

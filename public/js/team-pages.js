@@ -249,7 +249,7 @@
         <div class="chat-col" data-chat><div class="empty">Choose a chat.</div></div><div class="side-info" data-info></div></div>`;
     $$('[data-fl]', el).forEach((c) => (c.onclick = () => BB.setQ({ filter: c.dataset.fl, t: '' })));
     let tq; $('[data-q]', el).oninput = (e) => { clearTimeout(tq); tq = setTimeout(() => BB.setQ({ q: e.target.value }), 350); };
-    $$('[data-th]', el).forEach((t) => (t.onclick = () => { $$('[data-th]', el).forEach((x) => x.classList.remove('on')); t.classList.add('on'); cur = t.dataset.th.split(':'); history.replaceState(null, '', `#team/whatsapp?${BB.qs({ ...q, t: t.dataset.th })}`); openThread(); }));
+    $$('[data-th]', el).forEach((t) => (t.onclick = () => { $$('[data-th]', el).forEach((x) => x.classList.remove('on')); t.classList.add('on'); cur = t.dataset.th.split(':'); BB.setUrl(`team/whatsapp?${BB.qs({ ...q, t: t.dataset.th })}`); openThread(); }));
     $$('[data-retry]', el).forEach((b) => (b.onclick = async () => { await BB.post(`/api/wa/retry/${b.dataset.retry}`); BB.toast('Queued again'); BB.refreshPage(); }));
     $('[data-new]', actions).onclick = () => BB.pickCandidate((cid) => BB.wa({ ptype: 'candidate', pid: cid, after: () => BB.setQ({ t: `candidate:${cid}` }) }));
     const al = $('[data-alert]', actions); if (al) al.onclick = () => BB.pickJob(async (jid) => { const r = await BB.post(`/api/jobs/${jid}/alert`, {}).catch(BB.fail); if (r) BB.toast(`${r.sent} job alert(s) saved${r.skipped.length ? `, ${r.skipped.length} skipped (STOP, no consent, limits)` : ''}`); });

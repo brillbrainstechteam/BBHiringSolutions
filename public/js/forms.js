@@ -172,7 +172,7 @@
         e.currentTarget.textContent = toEmail ? 'Use WhatsApp instead' : 'Use email and password instead';
         if (toEmail && !mounted) {
           mounted = true;
-          BB.emailAuth(box, { kind: m.kind, email: res.email || '', phone: res.phone, session: isNew, start: isNew ? 'register' : 'login', onLogin: (tk) => { BB.setToken(m.kind, tk); location.hash = m.go; } });
+          BB.emailAuth(box, { kind: m.kind, email: res.email || '', phone: res.phone, session: isNew, start: isNew ? 'register' : 'login', onLogin: (tk) => { BB.setToken(m.kind, tk); BB.go(m.go); } });
         }
         if (toEmail) { const i = $$('input', box).find((x) => !x.value) || $('input', box); if (i) i.focus(); }
       };
@@ -215,7 +215,7 @@
     const verify = async () => {
       try {
         const r = await BB.post('/api/otp/verify', { phone: res.phone, kind: m.kind, code: code.value }, { kind: null });
-        BB.setToken(m.kind, r.token); location.hash = m.go;
+        BB.setToken(m.kind, r.token); BB.go(m.go);
       } catch (er) { BB.showErr(codeForm, { message: er.message, field: 'code' }); }
     };
     // The 6th digit opens the account; no extra tap (phones fill it from the WhatsApp message).
