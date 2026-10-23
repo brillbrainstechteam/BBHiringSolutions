@@ -638,3 +638,9 @@ a.disabled { pointer-events: none; color: var(--faint); }
 .pub-top .top-out:hover { background: rgba(255, 255, 255, .1); }
 .pub-top .help + .top-out { margin-left: 0; }
 @media (max-width: 560px) { .cp-meta { font-size: 13px; } .cp-hero .cp-strength > span:last-child { display: none; } .pub-top .top-out { padding: 5px 10px; } }
+/* candidate profile: one Save button under the form (no strip) */
+.cp-save-row { display: flex; align-items: center; justify-content: flex-end; gap: 14px; }
+.cp-save-row [data-dirty] { color: var(--amber); font-weight: 600; }
+.cp-save-row .btn { min-width: 180px; justify-content: center; }
+.cp-save-row .btn.saved { background: var(--green); border-color: var(--green); color: #fff; }
+@media (max-width: 560px) { .cp-save-row .btn { width: 100%; } .cp-save-row { flex-wrap: wrap; } }

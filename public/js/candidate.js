@@ -1,7 +1,7 @@
 /* Candidate account (#my-profile, 6.4). */
 (() => {
   const { $, $$, esc, inr, fmtD, fmtDT, field, icon } = BB;
-  let D = null; let tab = 'home'; let focusField = null;
+  let D = null; let tab = 'home'; let focusField = null; let justSaved = false;
 
   BB.views.candidate = async (r) => {
     if (r.sub[0]) tab = r.sub[0];
@@ -138,15 +138,17 @@
           <div class="cp-skills" data-skills>${[...new Set([...BB.boot.skills, ...skills])].map((s) => `<button type="button" class="${skills.has(s) ? 'on' : ''}" data-skill="${esc(s)}">${skillChip(s)}</button>`).join('')}</div>
           <div class="row"><input class="grow" data-skill-new placeholder="Add another skill"><button type="button" class="btn sm" data-skill-add>${icon('plus')} Add</button></div>
         </div>
+        <div class="cp-save-row"><span class="small" data-dirty></span><button class="btn primary lg ${justSaved ? 'saved' : ''}" data-save>${justSaved ? '✓ Saved' : 'Save profile'}</button></div>
       </div>
       <div class="stack-lg">
         <div class="card pad stack-sm"><div class="cp-h">${icon('search')}<h3>Are you looking for a new job?</h3></div>
           <div class="cp-looking" data-looking>${['Actively looking', 'Open to offers', 'Not looking'].map((v) => `<label><input type="radio" name="looking" value="${v}" ${(p.looking === 'Placed' ? 'Not looking' : p.looking || 'Actively looking') === v ? 'checked' : ''}><span>${v}</span></label>`).join('')}</div></div>
         <div class="card pad stack-sm"><div class="cp-h">${icon('note')}<h3>Your CV</h3></div>${D.files.filter((f) => f.type === 'cv').map((f) => `<button type="button" class="cp-file" data-file="${f.id}"><span class="cp-file-ic">CV</span><span class="grow"><b>${esc(f.name)}</b><span class="small muted">Version ${f.version} · ${fmtD(f.at)}</span></span></button>`).join('') || '<div class="small muted">No CV yet. Upload one and we fill in your details from it.</div>'}<button type="button" class="btn sm" data-cv>Upload CV</button></div>
       </div></div>
-      <div class="cp-save"><span class="small muted" data-dirty>All changes saved</span><button class="btn primary">Save profile</button></div></form>`;
+      </form>`;
     const form = $('[data-prof]', el);
-    const dirty = () => { $('[data-dirty]', el).textContent = 'You have unsaved changes'; form.classList.add('dirty'); };
+    const dirty = () => { $('[data-dirty]', el).textContent = 'Unsaved changes'; form.classList.add('dirty'); const b = $('[data-save]', el); b.classList.remove('saved'); b.textContent = 'Save profile'; };
+    if (justSaved) { justSaved = false; setTimeout(() => { const b = $('[data-save]', el); if (b && b.classList.contains('saved')) { b.classList.remove('saved'); b.textContent = 'Save profile'; } }, 2500); }
     form.addEventListener('input', dirty); form.addEventListener('change', dirty);
     let isFresher = fresher;
     $$('[data-fresher] button', el).forEach((b) => (b.onclick = () => { isFresher = b.dataset.v === 'yes'; $$('[data-fresher] button', el).forEach((x) => x.classList.toggle('on', x === b)); $('[data-exp]', el).hidden = isFresher; dirty(); }));
@@ -184,7 +186,8 @@
       if (isFresher) Object.assign(v, { exp_total: 0, exp_jewellery: 0, notice_days: 0, cur_month: '', current_company: '' });
       else for (const k of ['exp_total', 'exp_jewellery', 'notice_days']) v[k] = v[k] === '' ? '' : Number(v[k]);
       if (!isFresher && v.exp_total === 0) v.exp_total = ''; // "No, I have experience" with 0 years would read as a fresher
-      act(() => BB.put('/api/cand/profile', v), 'Profile saved').catch(() => {});
+      const b = $('[data-save]', el); b.disabled = true; b.textContent = 'Saving…';
+      act(async () => { await BB.put('/api/cand/profile', v); justSaved = true; }).catch(() => {}).finally(() => { b.disabled = false; });
     };
     const FIELD = { cur_salary: 'cur_month', exp_salary: 'exp_month', skills: 'skill-new', looking: 'looking' };
     if (focusField) { const k = FIELD[focusField] || focusField; const f = k === 'skill-new' ? $('[data-skill-new]', el) : $(`[name="${k}"]`, el); if (f) { f.scrollIntoView({ block: 'center' }); if (f.focus) f.focus(); } focusField = null; }
