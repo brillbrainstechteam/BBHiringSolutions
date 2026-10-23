@@ -4,7 +4,7 @@ const D = require('./db');
 const { all, get, run, insert, update, nextId, settings, history, now, httpError } = D;
 
 const STEPS = ['Applied', 'Screening', 'Our interview', 'Sent to client', 'Client interview', 'Offer made', 'Offer accepted', 'Joined'];
-const ACTION_RULES = ['client_welcome', 'candidate_welcome', 'interview_scheduled', 'offer', 'shortlist_ready', 'bill_raised'];
+const ACTION_RULES = ['client_welcome', 'candidate_welcome', 'interview_scheduled', 'offer', 'shortlist_ready', 'bill_raised', 'jd_approval'];
 const stepIdx = (s) => STEPS.indexOf(s);
 const INTERVIEW_STEPS = ['Our interview', 'Sent to client', 'Client interview'];
 
@@ -123,14 +123,14 @@ function sendWA(o) {
   const s = settings();
   const p = person(o.ptype, o.pid);
   if (!p) return { skipped: 'Person not found' };
-  if (!p.phone) return { skipped: 'No WhatsApp number' };
   if (p.record && p.record.removed) return { skipped: 'Removed person' };
-  let fmt = null;
+  let fmt = null; let waOnlyStop = null; // reasons that stop the WhatsApp copy but not the email
   if (o.format) {
     fmt = s.formats[o.format];
     if (!fmt) return { skipped: 'Unknown format' };
-    if (!fmt.approved) { if (o.auto) return { skipped: 'Format waiting for Meta approval' }; throw httpError(400, 'This format is waiting for Meta approval and cannot be sent.'); }
+    if (!fmt.approved) { if (o.auto) waOnlyStop = 'Format waiting for Meta approval'; else throw httpError(400, 'This format is waiting for Meta approval and cannot be sent.'); }
   }
+  if (!p.phone) waOnlyStop = 'No WhatsApp number';
   if (o.rule) {
     const r = s.auto_rules.find((x) => x.key === o.rule);
     if (r && !r.on) return { skipped: 'Automatic message turned off in Settings' };
@@ -138,6 +138,14 @@ function sendWA(o) {
   if ((o.auto || o.bulk) && p.opted_out) return { skipped: 'Opted out (STOP)' };
   if (fmt && fmt.type === 'Marketing' && p.type === 'candidate' && !p.consent) return { skipped: 'No consent for job alerts yet' };
   if (o.dedupe && get('SELECT 1 FROM messages WHERE dedupe=?', o.dedupe)) return { skipped: 'Already sent before' };
+  // Email copy of the same message, under the same rules (on in Settings, not after STOP, never twice) and the
+  // same timing (held to 9 am in quiet hours). Codes and passwords never go by email.
+  const email = p.record && p.record.email;
+  if (o.format && !o.secret && email) {
+    const mailAt = o.sendLater && o.sendLater !== true ? o.sendLater : (o.auto || o.sendLater) && inQuiet() && p.type !== 'user' ? next9am() : null;
+    require('./mailer').copyOfWhatsApp({ to: email, personType: p.type, format: o.format, text: fillFormat(o.format, o.lang || p.lang || 'en', { name: p.name, ...(o.vars || {}) }), recordId: p.id, sendAfter: mailAt, dedupe: o.dedupe ? `mail:${o.dedupe}` : null });
+  }
+  if (waOnlyStop) return { skipped: waOnlyStop };
   // The daily cap is for reminders and alerts. Messages that follow something the team or client just did
   // (welcome, interview fixed, offer, profiles sent, bill) always go, or an offer could be dropped on a busy day.
   if (o.auto && p.type !== 'user' && !ACTION_RULES.includes(o.rule)) {

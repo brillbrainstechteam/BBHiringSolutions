@@ -28,9 +28,11 @@ Everything WhatsApp goes through the BrillBrains WhatsApp CRM (`whatsapp_crm` re
 
 Reminders need nothing else: the timer checks every 10 minutes and sends interview reminders (day before and 2 hours before), joining reminders (3 days and 1 day before), day-30/60/90 check-ins, payment reminders (3 days before, due date, every 7 days overdue), daily-log reminders and the evening summary — all within quiet hours (9 pm–9 am) and the daily limit. Each can be turned off in Settings → Automatic messages.
 
-## 2. Outgoing email (confirmation to the person + notice to the team)
+## 2. Outgoing email (confirmations, team notices, and an email copy of every WhatsApp message)
 
 When someone fills the hiring or job form, they get a confirmation email (if they typed their email), and the addresses in `NOTIFY_EMAILS` get a notice with the details. WhatsApp-bot and email-inbox leads also send the team notice.
+
+Every WhatsApp message (welcome, interview fixed and reminders, offer, joining reminder, check-ins, profiles ready, JD approval, bill and payment reminders, task alerts, log reminder, day summary) also goes by email to the person's email address, at the same time and under the same rules: held to 9 am in quiet hours, never twice, not after STOP, and off when that automatic message is off in Settings. People with no WhatsApp number still get the email. Login codes and passwords never go by email. Team members get theirs at the email on their login (Team → Logins → Edit). `EMAIL_COPIES=off` stops the copies.
 
 | Setting | Gmail / Google Workspace | Zoho | Microsoft 365 |
 | --- | --- | --- | --- |

@@ -94,10 +94,16 @@ const rows = (pairs) => `<table cellpadding="0" cellspacing="0" style="font-size
 const textRows = (pairs) => pairs.filter(([, v]) => v !== undefined && v !== null && v !== '').map(([k, v]) => `${k}: ${v}`).join('\n');
 
 // Queue one email (saved first, so nothing is lost if sending fails).
-function queue({ to, subject, text, html, kind, recordId }) {
+// sendAfter: hold it until then (quiet hours); dedupe: never send the same one twice.
+function queue({ to, subject, text, html, kind, recordId, sendAfter, dedupe }) {
   const list = (Array.isArray(to) ? to : [to]).map((x) => String(x || '').trim()).filter((x) => /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(x));
   if (!list.length) return null;
-  const r = D.run('INSERT INTO emails (to_addr,subject,kind,record_id,text,html,status,tries,at) VALUES (?,?,?,?,?,?,?,?,?)', list.join(', '), subject, kind || null, recordId || null, text, html, configured() ? 'queued' : 'not sent (email not set up)', 0, D.now());
+  if (dedupe && D.get('SELECT 1 FROM emails WHERE dedupe=?', dedupe)) return null;
+  if (sendAfter && sendAfter > D.now()) {
+    const r = D.run('INSERT INTO emails (to_addr,subject,kind,record_id,text,html,status,tries,at,send_after,dedupe) VALUES (?,?,?,?,?,?,?,?,?,?,?)', list.join(', '), subject, kind || null, recordId || null, text, html, 'scheduled', 0, D.now(), sendAfter, dedupe || null);
+    return Number(r.lastInsertRowid);
+  }
+  const r = D.run('INSERT INTO emails (to_addr,subject,kind,record_id,text,html,status,tries,at,dedupe) VALUES (?,?,?,?,?,?,?,?,?,?)', list.join(', '), subject, kind || null, recordId || null, text, html, configured() ? 'queued' : 'not sent (email not set up)', 0, D.now(), dedupe || null);
   const id = Number(r.lastInsertRowid);
   if (configured()) setImmediate(() => deliver(id));
   return id;
@@ -116,6 +122,8 @@ async function deliver(id) {
 }
 // Timer: retry queued emails (and ones saved before SMTP was set up, once it is).
 function retryQueued() {
+  // Held for quiet hours: due now → queued (or marked not sent while email is not set up).
+  D.run("UPDATE emails SET status=? WHERE status='scheduled' AND send_after<=?", configured() ? 'queued' : 'not sent (email not set up)', D.now());
   if (!configured()) return 0;
   const list = D.all("SELECT id FROM emails WHERE status IN ('queued','not sent (email not set up)') AND tries < 3 ORDER BY id LIMIT 50");
   for (const e of list) deliver(e.id);
@@ -148,8 +156,36 @@ function confirmToPerson(type, rec) {
       html: layout(`Thank you, ${rec.name}`, `<p style="font-size:14px;line-height:1.6">Your application is in. Your candidate ID is <b>${esc(rec.id)}</b>.</p><ol style="font-size:14px;line-height:1.7;padding-left:18px"><li>Complete your profile — salary, notice period and skills help us match you.</li><li>When a job matches, we call you and set up the interview.</li><li>Interview times and offers come on WhatsApp.</li></ol>`, { label: 'Open my profile', url: `${base}/my-profile` }) });
   }
 }
+// ---------- the email copy of a WhatsApp message ----------
+// Every WhatsApp format message also goes by email to anyone with an email address, at the same time.
+// Email costs nothing per message, and reaches people whose WhatsApp is off or who have no number on file.
+const SUBJECTS = {
+  bbhs_client_welcome: 'Welcome to BrillBrains Hiring Solutions', bbhs_candidate_welcome: 'Welcome to BrillBrains Hiring Solutions',
+  bbhs_details_request: 'A few details for your job application', bbhs_shortlist_ready: 'New candidate profiles are ready for you',
+  bbhs_interview_scheduled: 'Your interview is fixed', bbhs_interview_reminder: 'Interview reminder', bbhs_feedback_request: 'How did the interview go?',
+  bbhs_offer: 'Congratulations, you have a job offer', bbhs_joining_reminder: 'Your joining date is coming up', bbhs_post_join_checkin: 'How is the new job going?',
+  bbhs_bill_raised: 'Your invoice from BrillBrains Hiring', bbhs_payment_reminder: 'Payment reminder', bbhs_job_alert: 'A new job that matches your profile',
+  bbhs_team_task_alert: 'New task for you', bbhs_jd_approval: 'Your job description is ready to approve', bbhs_log_reminder: "Please submit today's daily log", bbhs_day_summary: 'Your daily hiring summary',
+  bbhs_still_looking: 'Are you still looking for a job?', bbhs_monthly_summary: 'Your monthly hiring summary', bbhs_consent_request: 'Job updates from BrillBrains Hiring',
+};
+// What the WhatsApp buttons become in an email: one button to the place where that answer is given.
+const ACCOUNT = { client: ['my-account', 'Open your account'], candidate: ['my-profile', 'Open your profile'], user: ['team', 'Open the team portal'] };
+function copyOfWhatsApp({ to, personType, format, text, recordId, sendAfter, dedupe }) {
+  if (!to || D.ENV.emailCopies === false) return null;
+  const base = D.settings().business.base_url || D.ENV.baseUrl;
+  const [path, label] = ACCOUNT[personType] || ACCOUNT.candidate;
+  const subject = SUBJECTS[format] || 'A message from BrillBrains Hiring';
+  // "Tap Confirm…" refers to WhatsApp buttons; in an email the same answers are given in their account.
+  const tapped = /\s*(?:please\s+)?tap\s[^.!?]*[.!?]/gi;
+  if (tapped.test(text)) text = `${text.replace(/,?\s+(?:and|or)\s+tap\s[^.!?]*([.!?])/gi, '$1').replace(tapped, '').trim()}\nUse the button below to reply.`;
+  const linkify = (s) => esc(s).replace(/(https?:\/\/[^\s<]+[^\s<.,;:)])/g, '<a href="$1" style="color:#1E3A8A">$1</a>');
+  const body = String(text).split(/\n+/).map((p) => `<p style="font-size:14px;line-height:1.65;margin:0 0 12px">${linkify(p)}</p>`).join('');
+  return queue({ to, subject, kind: `copy:${format}`, recordId, sendAfter, dedupe,
+    text: `${text}\n\n${label}: ${base}/${path}`, html: layout(subject, body, { label, url: `${base}/${path}` }) });
+}
+
 function testEmail(to) {
   return queue({ to, kind: 'test', subject: 'BBHS test email', text: 'This is a test email from BBHS. If you can read this, outgoing email works.', html: layout('Outgoing email works', '<p style="font-size:14px">This is a test email from BBHS. If you can read this, outgoing email works.</p>') });
 }
 
-module.exports = { configured, queue, deliver, retryQueued, newLead, confirmToPerson, testEmail, smtpSend };
+module.exports = { configured, queue, deliver, retryQueued, newLead, confirmToPerson, copyOfWhatsApp, testEmail, smtpSend };

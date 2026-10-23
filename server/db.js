@@ -84,7 +84,8 @@ CREATE INDEX IF NOT EXISTS ix_client_phone ON clients(whatsapp);
 `);
 
 // Columns added after the first version.
-for (const [table, col] of [['candidates', 'state TEXT']]) { try { db.exec(`ALTER TABLE ${table} ADD COLUMN ${col}`); } catch { /* already there */ } }
+for (const [table, col] of [['candidates', 'state TEXT'], ['users', 'email TEXT'], ['emails', 'send_after TEXT'], ['emails', 'dedupe TEXT']]) { try { db.exec(`ALTER TABLE ${table} ADD COLUMN ${col}`); } catch { /* already there */ } }
+db.exec('CREATE INDEX IF NOT EXISTS ix_emails_dedupe ON emails(dedupe); CREATE INDEX IF NOT EXISTS ix_emails_after ON emails(status, send_after);');
 
 // ---------- small helpers ----------
 const now = () => new Date().toISOString();

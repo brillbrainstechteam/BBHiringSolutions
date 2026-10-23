@@ -40,8 +40,9 @@ function runTimer() {
   // Applications stuck 7 days → task alert to the owner (once per step).
   for (const a of all("SELECT * FROM applications WHERE result='open' AND on_hold=0")) {
     if (L.daysBetween(a.step_since || a.created_at) >= 7 && a.owner_id && !get('SELECT 1 FROM alerts WHERE record_id=? AND text=?', a.id, `${a.id} stuck at ${a.step} for 7 days`)) { L.alertUser(a.owner_id, `${a.id} stuck at ${a.step} for 7 days`, a.id); count('stuck'); }
-    if (a.on_hold && a.hold_until && a.hold_until <= L.istDay()) update('applications', a.id, { on_hold: 0 });
   }
+  // Holds with an end date come off on that day.
+  for (const a of all("SELECT * FROM applications WHERE result='open' AND on_hold=1 AND hold_until IS NOT NULL AND hold_until<=?", L.istDay())) { update('applications', a.id, { on_hold: 0 }); L.appHist(a.id, a.step, null, 'Hold ended', 'hold'); count('hold_ended'); }
   // Joining reminders (3 days, 1 day before).
   for (const a of all("SELECT * FROM applications WHERE result='open' AND step='Offer accepted' AND joining_date IS NOT NULL")) {
     const d = Math.ceil((new Date(a.joining_date + 'T09:00:00+05:30') - t) / 86400000);

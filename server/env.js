@@ -27,6 +27,8 @@ module.exports = {
   // Outgoing email (SMTP): confirmations to people, new-lead notices to the team.
   smtp: { host: e.SMTP_HOST || '', port: Number(e.SMTP_PORT) || 587, secure: (e.SMTP_SECURE || '').toLowerCase(), user: e.SMTP_USER || '', pass: e.SMTP_PASS || '', from: e.SMTP_FROM || e.SMTP_USER || '' },
   notifyEmails: (e.NOTIFY_EMAILS || '').split(',').map((x) => x.trim()).filter(Boolean),
+  // An email copy of every WhatsApp message to people with an email address (EMAIL_COPIES=off to stop).
+  emailCopies: flag(e.EMAIL_COPIES) !== false,
   clamd: { host: e.CLAMD_HOST || '', port: Number(e.CLAMD_PORT) || 3310 },
   backupDir: e.BACKUP_DIR || '',
   // Behind Caddy/Nginx the visitor's address comes in X-Forwarded-For.

@@ -414,7 +414,7 @@ route('POST', '/api/jobs/:id/jd', T, (ctx) => {
   D.edit('jobs', j.id, patch, ctx.actor.label, ctx.ip);
   if (ctx.body.send) {
     insert('job_history', { job_id: j.id, at: now(), status: 'JD sent', by: ctx.actor.label, note: 'Sent to client for approval' });
-    L.sendWA({ ptype: 'client', pid: j.client_id, format: 'bbhs_team_task_alert', vars: { task: `Please approve the job description for ${j.title}`, record_id: j.id, link: L.link('my-account') }, jb: j.id, by: ctx.actor });
+    L.sendWA({ ptype: 'client', pid: j.client_id, format: 'bbhs_jd_approval', vars: { job: j.title, job_id: j.id, link: L.link('my-account') }, jb: j.id, by: ctx.actor, auto: true, rule: 'jd_approval' });
   }
   return get('SELECT * FROM jobs WHERE id=?', j.id);
 });
@@ -750,7 +750,7 @@ route('POST', '/api/wa/compose', T, (ctx) => {
   const b = ctx.body; const p = L.person(b.ptype, b.pid); if (!p) throw httpError(404, 'Person not found');
   if (b.ptype !== 'candidate') mustSee(seeThread(ctx.user, b.ptype, b.pid) || isSuper(ctx.user) || b.ptype === 'user', 'person');
   const s = D.settings(); const vars = composeVars(b, p); const app = b.ap ? get('SELECT * FROM applications WHERE id=?', b.ap) : null;
-  const forType = { client: ['bbhs_client_welcome', 'bbhs_shortlist_ready', 'bbhs_feedback_request', 'bbhs_bill_raised', 'bbhs_payment_reminder', 'bbhs_team_task_alert'], candidate: ['bbhs_candidate_welcome', 'bbhs_details_request', 'bbhs_interview_scheduled', 'bbhs_interview_reminder', 'bbhs_offer', 'bbhs_joining_reminder', 'bbhs_post_join_checkin', 'bbhs_job_alert', 'bbhs_still_looking', 'bbhs_consent_request'], user: ['bbhs_team_task_alert', 'bbhs_log_reminder', 'bbhs_day_summary'] }[b.ptype];
+  const forType = { client: ['bbhs_client_welcome', 'bbhs_shortlist_ready', 'bbhs_feedback_request', 'bbhs_bill_raised', 'bbhs_payment_reminder', 'bbhs_jd_approval'], candidate: ['bbhs_candidate_welcome', 'bbhs_details_request', 'bbhs_interview_scheduled', 'bbhs_interview_reminder', 'bbhs_offer', 'bbhs_joining_reminder', 'bbhs_post_join_checkin', 'bbhs_job_alert', 'bbhs_still_looking', 'bbhs_consent_request'], user: ['bbhs_team_task_alert', 'bbhs_log_reminder', 'bbhs_day_summary'] }[b.ptype];
   const suggested = [b.format, ...(app ? [suggestFor(app)].filter((x) => x && x.ptype === b.ptype).map((x) => x.format) : [])].filter(Boolean);
   const showPhone = b.ptype !== 'candidate' || R.phoneVisible(ctx.user, p.record);
   return {
@@ -925,7 +925,7 @@ route('GET', '/api/earnings', ADMINS, (ctx) => {
 // ---------- logins & team ----------
 route('GET', '/api/users', ADMINS, (ctx) => {
   const u = ctx.user;
-  const users = all('SELECT * FROM users ORDER BY id').filter((x) => isSuper(u) || x.agency_id === u.agency_id).map((x) => ({ id: x.id, name: x.name, whatsapp: x.whatsapp, level: x.level, agency_id: x.agency_id, agency_name: V.agencyName(x.agency_id), role: x.role, username: x.username, status: x.status, last_login: x.last_login, locked: x.locked_until && x.locked_until > now(), created_by: x.created_by, view_status: personStatus(x) }));
+  const users = all('SELECT * FROM users ORDER BY id').filter((x) => isSuper(u) || x.agency_id === u.agency_id).map((x) => ({ id: x.id, name: x.name, whatsapp: x.whatsapp, email: x.email || '', level: x.level, agency_id: x.agency_id, agency_name: V.agencyName(x.agency_id), role: x.role, username: x.username, status: x.status, last_login: x.last_login, locked: x.locked_until && x.locked_until > now(), created_by: x.created_by, view_status: personStatus(x) }));
   if (ctx.query.format) return page(ctx, users, 'logins', ['id', 'name', 'username', 'level', 'agency_name', 'role', 'status', 'view_status', 'last_login', 'created_by']);
   return { users, agencies: isSuper(u) ? all('SELECT * FROM agencies ORDER BY id').map((a) => ({ ...a, view_status: agencyStatus(a), people: all('SELECT 1 FROM users WHERE agency_id=?', a.id).length })) : [] };
 });
@@ -946,7 +946,8 @@ route('POST', '/api/users', ADMINS, (ctx) => {
   if (get('SELECT 1 FROM users WHERE username=?', username)) throw httpError(400, 'This username is already used', 'username');
   const phone = L.digits10(b.whatsapp); if (!L.validPhone(phone)) throw httpError(400, 'Enter a 10-digit WhatsApp number', 'whatsapp');
   const pw = L.newPassword(); const id = D.nextId('U');
-  insert('users', { id, name: b.name, whatsapp: phone, level, agency_id: level === 'super' ? null : agency, role: b.role || (level === 'admin' ? 'Agency owner' : 'Recruiter'), username, pass_hash: L.hashPassword(pw), status: 'On', must_change: 1, failed: 0, created_by: u.id, created_at: now() });
+  const email = String(b.email || '').trim(); if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) throw httpError(400, 'Enter a valid email, or leave it empty', 'email');
+  insert('users', { id, name: b.name, whatsapp: phone, email: email || null, level, agency_id: level === 'super' ? null : agency, role: b.role || (level === 'admin' ? 'Agency owner' : 'Recruiter'), username, pass_hash: L.hashPassword(pw), status: 'On', must_change: 1, failed: 0, created_by: u.id, created_at: now() });
   D.history(ctx.actor.label, 'create login', id, null, null, `${username} (${level})`);
   L.sendWA({ ptype: 'user', pid: id, format: 'bbhs_team_login', vars: { username, password: pw, link: L.link('team') }, by: ctx.actor, rule: 'team_login', secret: pw, auto: true }); // quietly skipped while Meta has not approved it: the admin sees the password on screen
   return { id, username, password: pw };
@@ -971,8 +972,10 @@ route('POST', '/api/users/:id/unlock', ADMINS, (ctx) => {
   update('users', t.id, { failed: 0, locked_until: null }); D.history(ctx.actor.label, 'unlock', t.id); return { ok: true };
 });
 route('PATCH', '/api/users/:id', ADMINS, (ctx) => {
-  const t = get('SELECT * FROM users WHERE id=?', ctx.params.id); if (!t || !canManage(ctx.user, t)) throw httpError(403, 'You cannot edit this login.');
-  const patch = {}; for (const k of ['name', 'role', 'whatsapp']) if (ctx.body[k] !== undefined) patch[k] = k === 'whatsapp' ? L.digits10(ctx.body[k]) : ctx.body[k];
+  const t = get('SELECT * FROM users WHERE id=?', ctx.params.id); const self = t && t.id === ctx.user.id;
+  if (!t || !(canManage(ctx.user, t) || self)) throw httpError(403, 'You cannot edit this login.');
+  const patch = {}; for (const k of self && !isSuper(ctx.user) ? ['name', 'whatsapp', 'email'] : ['name', 'role', 'whatsapp', 'email']) if (ctx.body[k] !== undefined) patch[k] = k === 'whatsapp' ? L.digits10(ctx.body[k]) : k === 'email' ? String(ctx.body[k]).trim() || null : ctx.body[k];
+  if (patch.email && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(patch.email)) throw httpError(400, 'Enter a valid email, or leave it empty', 'email');
   return D.edit('users', t.id, patch, ctx.actor.label, ctx.ip);
 });
 route('POST', '/api/agencies', SUPER, (ctx) => {
