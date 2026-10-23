@@ -156,19 +156,71 @@ const WORD_DIGITS = { zero: 0, oh: 0, o: 0, one: 1, won: 1, two: 2, to: 2, too: 
   shunya: 0, sunya: 0, 'शून्य': 0, ek: 1, 'एक': 1, do: 2, 'दो': 2, teen: 3, tin: 3, 'तीन': 3, char: 4, chaar: 4, 'चार': 4, panch: 5, paanch: 5, 'पांच': 5, 'पाँच': 5,
   chhe: 6, chhah: 6, che: 6, chah: 6, 'छह': 6, 'छः': 6, 'छे': 6, 'छै': 6, saat: 7, sat: 7, 'सात': 7, aath: 8, aat: 8, 'आठ': 8, nau: 9, nao: 9, 'नौ': 9 };
 const REPEAT = { double: 2, dabal: 2, 'डबल': 2, triple: 3, tripal: 3, 'ट्रिपल': 3 };
+const TENS = { twenty: 2, thirty: 3, forty: 4, fifty: 5, sixty: 6, seventy: 7, eighty: 8, ninety: 9 };
 // "nine eight double two…" or Hindi digits → 10 digits
 BB.spokenToDigits = (text) => {
   let s = String(text).toLowerCase().replace(/[०-९]/g, (c) => HI_DIGITS[c]).replace(/[,.\-+()]/g, ' ');
-  const out = []; let rep = 1;
+  const out = []; let rep = 1; let tens = false;
   for (const tok of s.split(/\s+/).filter(Boolean)) {
+    // "ninety eight" → 98, "ninety" alone → 90
+    if (tens && !(WORD_DIGITS[tok] >= 1 && tok !== 'o' && tok !== 'oh')) out.push('0');
+    if (tens && WORD_DIGITS[tok] >= 1) { out.push(String(WORD_DIGITS[tok])); tens = false; rep = 1; continue; }
+    tens = false;
+    if (TENS[tok]) { out.push(String(TENS[tok])); tens = true; continue; }
     if (REPEAT[tok]) { rep = REPEAT[tok]; continue; }
     if (/^\d+$/.test(tok)) { out.push(tok.length === 1 ? tok.repeat(rep) : tok); rep = 1; continue; }
     if (WORD_DIGITS[tok] !== undefined) { out.push(String(WORD_DIGITS[tok]).repeat(rep)); rep = 1; }
   }
+  if (tens) out.push('0');
   let d = out.join('');
   if (d.length > 10 && d.startsWith('91')) d = d.slice(-10);
   if (d.length === 11 && d.startsWith('0')) d = d.slice(1);
   return d;
+};
+// Hindi voice typing gives Devanagari; names, companies and cities are kept in English letters
+// so they match the city list and read the same for the whole team ("राहुल शर्मा" → "Rahul Sharma").
+const DV_CONS = { 'क': 'k', 'ख': 'kh', 'ग': 'g', 'घ': 'gh', 'ङ': 'n', 'च': 'ch', 'छ': 'chh', 'ज': 'j', 'झ': 'jh', 'ञ': 'n', 'ट': 't', 'ठ': 'th', 'ड': 'd', 'ढ': 'dh', 'ण': 'n',
+  'त': 't', 'थ': 'th', 'द': 'd', 'ध': 'dh', 'न': 'n', 'प': 'p', 'फ': 'ph', 'ब': 'b', 'भ': 'bh', 'म': 'm', 'य': 'y', 'र': 'r', 'ल': 'l', 'व': 'v', 'श': 'sh', 'ष': 'sh', 'स': 's', 'ह': 'h',
+  'ड़': 'r', 'ढ़': 'rh', 'क़': 'q', 'ख़': 'kh', 'ग़': 'g', 'ज़': 'z', 'फ़': 'f', 'य़': 'y' };
+const DV_VOW = { 'अ': 'a', 'आ': 'a', 'इ': 'i', 'ई': 'i', 'उ': 'u', 'ऊ': 'u', 'ऋ': 'ri', 'ए': 'e', 'ऐ': 'ai', 'ओ': 'o', 'औ': 'au', 'ऑ': 'o' };
+const DV_SIGN = { 'ा': 'a', 'ि': 'i', 'ी': 'i', 'ु': 'u', 'ू': 'u', 'ृ': 'ri', 'े': 'e', 'ै': 'ai', 'ो': 'o', 'ौ': 'au', 'ॉ': 'o' };
+// Usual English spellings of common names that letter-by-letter would get wrong.
+const HI_WORDS = { 'अग्रवाल': 'Agarwal', 'सिंह': 'Singh', 'वर्मा': 'Verma', 'चौधरी': 'Chaudhary', 'श्रीवास्तव': 'Srivastava', 'मोहम्मद': 'Mohammad', 'आसिफ': 'Asif', 'आसिफ़': 'Asif', 'प्रीति': 'Preeti',
+  'पूजा': 'Pooja', 'ज्योति': 'Jyoti', 'दीपक': 'Deepak', 'प्रदीप': 'Pradeep', 'संदीप': 'Sandeep', 'कुलदीप': 'Kuldeep', 'नीतू': 'Neetu', 'गीता': 'Geeta', 'सीमा': 'Seema', 'रीना': 'Reena',
+  'जैन': 'Jain', 'पटेल': 'Patel', 'खान': 'Khan', 'अली': 'Ali', 'यादव': 'Yadav', 'मिश्रा': 'Mishra', 'त्रिपाठी': 'Tripathi', 'सोनी': 'Soni', 'ज्वेलर्स': 'Jewellers', 'ज्वेलरी': 'Jewellery' };
+BB.toRoman = (text) => String(text).normalize('NFC').split(/(\s+)/).map((w) => {
+  if (HI_WORDS[w]) return HI_WORDS[w];
+  if (!/[ऀ-ॿ]/.test(w)) return w;
+  const ch = [...w.replace(/[०-९]/g, (c) => HI_DIGITS[c])]; const parts = []; // {c: consonant, v: vowel or null (inherent a)}
+  for (let i = 0; i < ch.length; i++) {
+    const c = ch[i] + (ch[i + 1] === '़' ? '़' : ''); if (ch[i + 1] === '़') i++;
+    if (DV_CONS[c]) { const nx = ch[i + 1]; if (DV_SIGN[nx]) { parts.push({ c: DV_CONS[c], v: DV_SIGN[nx] }); i++; } else if (nx === '्') { parts.push({ c: DV_CONS[c], v: '' }); i++; } else parts.push({ c: DV_CONS[c], v: null }); }
+    else if (DV_VOW[c]) parts.push({ c: '', v: DV_VOW[c] });
+    else if (c === 'ं' || c === 'ँ') parts.push({ c: 'n', v: '' });
+    else if (c === 'ः') parts.push({ c: 'h', v: '' });
+    else if (!/[ऀ-ॿ]/.test(c)) parts.push({ c, v: '' });
+  }
+  // The silent "a": dropped at the end of a word and between a vowel+consonant and a consonant+vowel (जयपुर → jaypur).
+  return parts.map((p, i) => {
+    if (p.v !== null) return p.c + p.v;
+    const last = i === parts.length - 1; const next = parts[i + 1]; const prev = parts[i - 1];
+    if (last && parts.length > 1) return p.c;
+    if (i > 0 && prev && prev.v && next && next.c && next.v !== '' && i < parts.length - 1 && !(i === 1 && parts.length <= 3)) return p.c;
+    return p.c + 'a';
+  }).join('').replace(/n(?=[pbm])/g, 'm');
+}).join('').replace(/(^|\s)([a-z])/g, (m, s, c) => s + c.toUpperCase());
+// Hindi names of big cities that the letter-by-letter spelling would not match.
+const HI_CITY = { 'दिल्ली': 'Delhi', 'नई दिल्ली': 'New Delhi', 'मुंबई': 'Mumbai', 'बंबई': 'Mumbai', 'कोलकाता': 'Kolkata', 'कलकत्ता': 'Kolkata', 'चेन्नई': 'Chennai', 'बेंगलुरु': 'Bengaluru', 'बेंगलुरू': 'Bengaluru', 'बैंगलोर': 'Bengaluru', 'हैदराबाद': 'Hyderabad', 'गुड़गांव': 'Gurgaon', 'गुरुग्राम': 'Gurugram', 'लखनऊ': 'Lucknow', 'कोच्चि': 'Kochi', 'त्रिशूर': 'Thrissur' };
+// The closest place in the list to what was heard (a letter or two out is fine).
+BB.matchPlace = (heard) => {
+  const raw = String(heard || '').trim(); if (!raw) return '';
+  if (HI_CITY[raw]) return HI_CITY[raw];
+  const roman = /[ऀ-ॿ]/.test(raw) ? BB.toRoman(raw) : raw;
+  const norm = (s) => s.toLowerCase().replace(/[^a-z]/g, '').replace(/ee/g, 'i').replace(/oo/g, 'u').replace(/ay/g, 'ai').replace(/w/g, 'v').replace(/z/g, 'j').replace(/ph/g, 'f').replace(/au/g, 'o').replace(/(.)\1/g, '$1').replace(/(?<=.{3})[ae]$/, '');
+  const dist = (a, b) => { const d = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array(b.length).fill(0)]); for (let j = 1; j <= b.length; j++) d[0][j] = j; for (let i = 1; i <= a.length; i++) for (let j = 1; j <= b.length; j++) d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1)); return d[a.length][b.length]; };
+  const n = norm(roman); let best = null; let bestD = 99;
+  for (const p of BB.boot.places || []) { const d = dist(n, norm(p.name)); if (d < bestD) { bestD = d; best = p.name; } }
+  return best && bestD <= Math.max(1, Math.floor(n.length / 4)) ? best : roman;
 };
 // ---------- city type-ahead (any town allowed); fills the State field next to it ----------
 BB.placeOf = (name) => { const n = String(name || '').trim().toLowerCase(); return n ? (BB.boot.places || []).find((p) => p.name.toLowerCase() === n) : null; };
@@ -231,7 +283,9 @@ BB.attachMics = (root) => {
       rec.onresult = (e) => {
         const said = Array.from(e.results).map((r) => r[0].transcript).join(' ');
         if (inp.dataset.phone !== undefined) inp.value = BB.spokenToDigits(said) || inp.value;
-        else inp.value = (inp.value ? inp.value + ' ' : '') + said.trim();
+        else if (inp.dataset.city !== undefined) inp.value = BB.matchPlace(said); // a city is one answer, not added to
+        else if (inp.tagName === 'INPUT' && /[ऀ-ॿ]/.test(said)) inp.value = (inp.value ? inp.value + ' ' : '') + BB.toRoman(said.trim());
+        else inp.value = (inp.value ? inp.value + ' ' : '') + said.trim(); // notes and messages keep the Hindi as spoken
         inp.dispatchEvent(new Event('input', { bubbles: true }));
       };
       rec.onerror = (e) => { if (e.error !== 'no-speech' && e.error !== 'aborted') BB.toast(e.error === 'not-allowed' ? 'Allow the microphone to use voice typing.' : 'Could not hear that. Try again.', true); };
