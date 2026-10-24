@@ -74,8 +74,8 @@
       rules.push(['consent', v.consent, 'Please tick to agree before sending']);
       if (!check(form, rules)) return;
       const body = mode === 'hire'
-        ? { contact: v.name, company: v.company, whatsapp: v.whatsapp, email, city: v.city, state: v.state, business_type: v.business_type, need: v.need, roles: v.roles, website: v.website, src: q.src }
-        : { name: v.name, whatsapp: v.whatsapp, email, city: v.city, state: v.state, job_wanted: v.job_wanted, job_other: v.job_other, experience: v.experience, cv, website: v.website, src: q.src, job: q.job, ref: q.ref };
+        ? { contact: v.name, company: v.company, whatsapp: v.whatsapp, email, city: v.city, state: v.state, business_type: v.business_type, need: v.need, roles: v.roles, website: v.website, src: q.src, lang: BB.lang }
+        : { name: v.name, whatsapp: v.whatsapp, email, city: v.city, state: v.state, job_wanted: v.job_wanted, job_other: v.job_other, experience: v.experience, cv, website: v.website, lang: BB.lang, src: q.src, job: q.job, ref: q.ref };
       const btn = $('[data-send]', card); btn.disabled = true; btn.textContent = 'Sending…';
       try {
         const res = await BB.post(mode === 'hire' ? '/api/public/hire' : '/api/public/apply', body, { kind: null });

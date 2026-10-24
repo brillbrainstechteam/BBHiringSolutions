@@ -253,6 +253,10 @@ route('POST', '/api/account/reset', { rate: { key: 'pwreset', max: 20, minutes: 
   D.run('DELETE FROM sessions WHERE kind=? AND subject_id=?', kind, rec.id); // old logins end with the old password
   return { ok: true };
 });
+// English / हिन्दी from the switch in the account: the screens and the WhatsApp messages follow it.
+const langOf = (ctx) => { const l = ctx.body.language; if (!['en', 'hi'].includes(l)) throw httpError(400, 'Pick English or Hindi'); return l; };
+route('POST', '/api/cand/language', { auth: 'candidate' }, (ctx) => { update('candidates', ctx.candidate.id, { language: langOf(ctx) }); return { ok: true }; });
+route('POST', '/api/client/language', { auth: 'client' }, (ctx) => { update('clients', ctx.client.id, { language: langOf(ctx) }); return { ok: true }; });
 route('POST', '/api/cand/password', { auth: 'candidate', rate: { key: 'pwset', max: 10, minutes: 60 } }, (ctx) => setPassword('candidate', ctx.candidate, ctx.body, ctx.actor, ctx.ip));
 route('POST', '/api/client/password', { auth: 'client', rate: { key: 'pwset', max: 10, minutes: 60 } }, (ctx) => {
   if (ctx.member) throw httpError(403, 'Team members log in with their WhatsApp number.');
@@ -277,10 +281,11 @@ route('POST', '/api/public/hire', { rate: { key: 'form', max: 60, minutes: 60 } 
   if (!b.need) throw httpError(400, 'Tell us when you need staff', 'need');
   if (b.email) b.email = String(b.email).trim();
   if (b.email && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(String(b.email).trim())) throw httpError(400, 'Enter a valid email, or leave it empty', 'email');
-  const r = L.intakeClient(b, { source: srcFrom(b) });
+  const r = L.intakeClient({ ...b, language: b.lang }, { source: srcFrom(b) });
   const mailer = require('./mailer');
   if (r.isNew) mailer.newLead('client', r.client);
   mailer.confirmToPerson('client', r.client);
+  if (['en', 'hi'].includes(b.lang)) update('clients', r.client.id, { language: b.lang });
   return formDone('client', r.isNew, r.client.id, r.client.whatsapp);
 });
 // The job form's first step: read the chosen CV and hand back the details to fill in. Nothing is saved here.
@@ -305,10 +310,11 @@ route('POST', '/api/public/apply', { rate: { key: 'form', max: 60, minutes: 60 }
   let refBy = null;
   if (b.ref) { const rc = get('SELECT id FROM candidates WHERE id=?', L.resolveId(String(b.ref).toUpperCase())); refBy = rc ? rc.id : null; }
   const jobOk = b.job ? get('SELECT * FROM jobs WHERE id=?', String(b.job).toUpperCase()) : null;
-  const r = L.intakeCandidate({ name: b.name, whatsapp: b.whatsapp, email: b.email || '', city: b.city, state: b.state, work_cities: [b.city], job_wanted: b.job_wanted === 'Other' ? b.job_other : b.job_wanted, exp_total: b.experience ? expMap[b.experience] : null, ref_by: refBy, apply_job: jobOk && ['Open', 'Sourcing', 'Interviewing', 'Offer stage'].includes(V.jobView(jobOk).status) ? jobOk.id : null }, { source: srcFrom(b) });
+  const r = L.intakeCandidate({ language: b.lang, name: b.name, whatsapp: b.whatsapp, email: b.email || '', city: b.city, state: b.state, work_cities: [b.city], job_wanted: b.job_wanted === 'Other' ? b.job_other : b.job_wanted, exp_total: b.experience ? expMap[b.experience] : null, ref_by: refBy, apply_job: jobOk && ['Open', 'Sourcing', 'Interviewing', 'Offer stage'].includes(V.jobView(jobOk).status) ? jobOk.id : null }, { source: srcFrom(b) });
   { const mailer = require('./mailer'); const rec = get('SELECT * FROM candidates WHERE id=?', r.candidate.id); if (r.isNew) mailer.newLead('candidate', rec); mailer.confirmToPerson('candidate', rec); }
   if (refBy && r.isNew) insert('notes', { record_id: r.candidate.id, text: `Referred by ${refBy}`, author: 'Form', at: now() });
   if (b.cv && b.cv.base64) { try { const f = await F.saveFile({ recordId: r.candidate.id, type: 'cv', name: b.cv.name, base64: b.cv.base64, by: 'Candidate form' }); update('candidates', r.candidate.id, { cv_file: String(f.id) }); CV.fillCandidate(r.candidate.id, b.cv.name, b.cv.base64, 'Candidate form'); } catch (e) { insert('notes', { record_id: r.candidate.id, text: `CV not saved: ${e.message}`, author: 'Form', at: now() }); } }
+  if (['en', 'hi'].includes(b.lang)) update('candidates', r.candidate.id, { language: b.lang });
   return formDone('candidate', r.isNew, r.candidate.id, r.candidate.whatsapp);
 });
 // A new sign-up opens its own fresh account straight away: it holds only what this person just typed.
@@ -575,8 +581,9 @@ route('PUT', '/api/cand/profile', K, (ctx) => {
   for (const k of ['name', 'email', 'city', 'state', 'job_wanted', 'exp_total', 'exp_jewellery', 'notice_days', 'skills', 'current_company', 'looking', 'work_cities']) if (b[k] !== undefined) patch[k] = b[k] === '' ? null : b[k];
   // A new city brings its own state (the profile has no State box), unless a state was sent with it.
   if (patch.city && patch.city !== ctx.candidate.city && b.state === undefined) patch.state = L.stateOf(patch.city) || null;
-  if (b.cur_month !== undefined) patch.cur_salary = b.cur_month === '' ? null : Number(b.cur_month) * 12;
-  if (b.exp_month !== undefined) patch.exp_salary = b.exp_month === '' ? null : Number(b.exp_month) * 12;
+  const yearly = (month, now) => (month === '' ? null : Number(month) === Math.round((now || 0) / 12) ? now : Number(month) * 12);
+  if (b.cur_month !== undefined) patch.cur_salary = yearly(b.cur_month, ctx.candidate.cur_salary);
+  if (b.exp_month !== undefined) patch.exp_salary = yearly(b.exp_month, ctx.candidate.exp_salary);
   if (patch.name !== undefined && !String(patch.name || '').trim()) throw httpError(400, 'Please enter your name', 'name');
   if (patch.job_wanted) patch.department = L.deptOf(patch.job_wanted);
   patch.last_updated = now();

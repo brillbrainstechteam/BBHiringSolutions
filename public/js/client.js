@@ -156,6 +156,7 @@
     if (r.sub[0]) tab = r.sub[0];
     if (!BB.token('client')) return BB.otpLogin('client', 'Client account', () => BB.route());
     try { D = await BB.api('/api/client/me'); } catch (e) { return; }
+    BB.adoptLang(D.client.language); // a new phone opens in the account's language
     render();
   };
   const reload = async () => { D = await BB.api('/api/client/me'); render(); };

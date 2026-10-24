@@ -7,6 +7,7 @@
     if (r.sub[0]) tab = r.sub[0];
     if (!BB.token('candidate')) return BB.otpLogin('candidate', 'Candidate login', () => BB.route());
     try { D = await BB.api('/api/cand/me'); } catch (e) { return; }
+    BB.adoptLang(D.profile.language); // a new phone opens in the account's language
     render();
   };
   const reload = async () => { D = await BB.api('/api/cand/me'); render(); };

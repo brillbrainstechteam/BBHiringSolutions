@@ -305,19 +305,30 @@ function fillCandidate(id, name, data, by) {
   const c = D.get('SELECT * FROM candidates WHERE id=?', id); if (!c) return [];
   let found; try { found = read(name, buf); } catch { return []; }
   const empty = (v) => v === null || v === undefined || v === '' || (Array.isArray(v) && !v.length);
-  const set = {};
-  for (const k of ['email', 'city', 'job_wanted', 'exp_total', 'cur_salary', 'exp_salary', 'notice_days', 'current_company']) if (found[k] !== undefined && empty(c[k])) set[k] = found[k];
-  if (found.skills && empty(c.skills)) set.skills = found.skills;
+  // Which values came from an earlier CV and were not changed since by the candidate or the team: a newer CV
+  // replaces those (and clears the ones it does not have). Anything a person typed is never touched.
+  const fromCv = new Set();
+  for (const h of D.all("SELECT action, field, new, who FROM history WHERE record_id=? AND (action='filled from CV' OR action='edit') ORDER BY id", id)) {
+    if (h.action === 'filled from CV') String(h.new || '').split(',').map((x) => x.trim()).filter(Boolean).forEach((k) => fromCv.add(k));
+    else if (h.field && h.who !== 'CV reader') fromCv.delete(h.field);
+  }
+  const set = {}; const cleared = [];
+  for (const k of ['email', 'city', 'job_wanted', 'exp_total', 'cur_salary', 'exp_salary', 'notice_days', 'current_company', 'skills']) {
+    const has = found[k] !== undefined && !empty(found[k]);
+    if (has && (empty(c[k]) || fromCv.has(k))) { if (JSON.stringify(found[k]) !== JSON.stringify(c[k])) set[k] = found[k]; }
+    else if (!has && fromCv.has(k) && !empty(c[k]) && k !== 'email' && k !== 'city') { set[k] = k === 'skills' ? [] : null; cleared.push(k); }
+  }
   if (set.city && empty(c.work_cities)) set.work_cities = [set.city];
   // A number from the CV only when the record has none and no one else has it.
   if (found.whatsapp && empty(c.whatsapp) && !D.get('SELECT 1 FROM candidates WHERE whatsapp=? AND id<>? AND merged_into IS NULL', found.whatsapp, id)) {
     set.whatsapp = found.whatsapp; if (/no phone/i.test(c.needs_check || '')) set.needs_check = null;
   }
-  const filled = Object.keys(set).filter((k) => LABELS[k]);
-  if (!filled.length) return [];
+  const filled = Object.keys(set).filter((k) => LABELS[k] && !cleared.includes(k));
+  if (!filled.length && !cleared.length) return [];
   D.update('candidates', id, { ...set, last_updated: D.now() });
-  D.history(by || 'CV reader', 'filled from CV', id, null, null, filled.join(', '));
-  D.insert('notes', { record_id: id, text: `Filled from the CV (${name}): ${filled.map((k) => LABELS[k]).join(', ')}.`, author: 'CV reader', at: D.now() });
+  if (filled.length) D.history(by || 'CV reader', 'filled from CV', id, null, null, filled.join(', '));
+  if (cleared.length) D.history(by || 'CV reader', 'cleared (not in the new CV)', id, null, null, cleared.join(', '));
+  D.insert('notes', { record_id: id, text: `From the CV (${name}): ${filled.length ? `filled ${filled.map((k) => LABELS[k]).join(', ')}` : 'nothing new'}${cleared.length ? `; cleared ${cleared.map((k) => LABELS[k] || k).join(', ')} (from the earlier CV, not in this one)` : ''}.`, author: 'CV reader', at: D.now() });
   return filled.map((k) => LABELS[k]);
 }
 

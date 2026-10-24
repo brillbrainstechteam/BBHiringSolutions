@@ -18,8 +18,8 @@
   --shadow-lg: 0 18px 50px rgba(16, 26, 58, .20);
   --ring: 0 0 0 4px rgba(209, 155, 18, .22);
   --radius: 16px; --radius-sm: 10px;
-  --font: 'Plus Jakarta Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
-  --display: 'Outfit', 'Plus Jakarta Sans', system-ui, sans-serif;
+  --font: 'Plus Jakarta Sans', 'Noto Sans Devanagari', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --display: 'Outfit', 'Plus Jakarta Sans', 'Noto Sans Devanagari', system-ui, sans-serif;
   --serif: var(--display);
   color-scheme: light;
 }
@@ -806,3 +806,15 @@ label.field > span.lab:has(.pw-show) { display: flex; justify-content: space-bet
 .cand-bar .chip.on { background: var(--navy); border-color: var(--navy); color: #fff; } .cand-bar .chip.on span { color: var(--side-muted); }
 .card.is-closed { opacity: .72; }
 .cand-bar select { width: auto; max-width: 280px; padding: 7px 30px 7px 12px; border-radius: 999px; font-size: 13px; }
+/* English / हिन्दी switch in the top bar of every public and account screen. */
+.pub-top .lang-seg { flex: none; border-color: rgba(255, 255, 255, .28); background: transparent; padding: 3px; }
+.pub-top .lang-seg button { color: #E4E8F5; padding: 6px 11px; font-size: 12.5px; }
+.pub-top .lang-seg button.on { background: var(--mustard); color: #1A1404; }
+.pub-top .pub-nav ~ .lang-seg, .pub-top .pub-login ~ .lang-seg { margin-left: 4px; }
+@media (max-width: 560px) { .pub-top { gap: 8px; } .pub-top .lang-seg button { padding: 6px 8px; font-size: 12px; } .pub-top .help { font-size: 0; gap: 0; padding: 6px 9px; } .pub-top .help svg { width: 16px; height: 16px; } }
+.lang-seg .short { display: none; }
+@media (max-width: 560px) {
+  .lang-seg .long { display: none; } .lang-seg .short { display: inline; }
+  .pub-top .brand-logo { height: 32px; }
+  .pub-top { padding-left: 12px; padding-right: 12px; }
+}

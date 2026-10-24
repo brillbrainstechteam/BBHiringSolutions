@@ -96,7 +96,7 @@ function person(type, id) {
   }
   if (type === 'candidate') {
     const c = get('SELECT * FROM candidates WHERE id=?', id); if (!c) return null;
-    return { type, id, name: c.name, phone: c.whatsapp, lang: 'en', opted_out: c.opted_out, consent: c.consent_alerts, agency_id: c.agency_id, record: c };
+    return { type, id, name: c.name, phone: c.whatsapp, lang: c.language === 'hi' ? 'hi' : 'en', opted_out: c.opted_out, consent: c.consent_alerts, agency_id: c.agency_id, record: c };
   }
   if (type === 'user') {
     const u = get('SELECT * FROM users WHERE id=?', id); if (!u) return null;
@@ -683,7 +683,7 @@ function intakeClient(d, o) {
   const repeat = d.email ? get('SELECT id FROM clients WHERE lower(email)=lower(?) AND merged_into IS NULL', d.email) : null;
   const agency = by && by.agency_id ? by.agency_id : null;
   insert('clients', {
-    id, company: d.company || '', contact: d.contact || '', whatsapp: phone, email: d.email || '', city: d.city || '', state: d.state || stateOf(d.city),
+    id, company: d.company || '', contact: d.contact || '', whatsapp: phone, email: d.email || '', city: d.city || '', state: d.state || stateOf(d.city), language: d.language === 'hi' ? 'hi' : 'en',
     business_type: d.business_type || '', need: d.need || '', roles: d.roles || '', source, stage: d.stage || settings().client_stages[0],
     agency_id: agency, owner_id: by && by.uid ? by.uid : null, is_new: by && by.uid ? 0 : 1, kyc: {}, onboarding: {}, extra: d.extra || {},
     industry: settings().default_industry, possible_repeat_of: repeat ? repeat.id : null, needs_check: o.needsCheck || null, old_code: d.old_code || null,
@@ -720,7 +720,7 @@ function intakeCandidate(d, o) {
   const repeat = d.email ? get('SELECT id FROM candidates WHERE lower(email)=lower(?) AND merged_into IS NULL', d.email) : null;
   const agency = by && by.agency_id ? by.agency_id : null;
   insert('candidates', {
-    id, name: d.name, whatsapp: phone, email: d.email || '', city: d.city || '', state: d.state || stateOf(d.city), work_cities: d.work_cities || (d.city ? [d.city] : []),
+    id, name: d.name, whatsapp: phone, email: d.email || '', city: d.city || '', state: d.state || stateOf(d.city), work_cities: d.work_cities || (d.city ? [d.city] : []), language: d.language === 'hi' ? 'hi' : 'en',
     job_wanted: d.job_wanted || '', department: dept, exp_total: d.exp_total ?? null, exp_jewellery: d.exp_jewellery ?? null,
     cur_salary: d.cur_salary ?? null, exp_salary: d.exp_salary ?? null, notice_days: d.notice_days ?? null, skills: d.skills || [], current_company: d.current_company || '',
     cv_file: d.cv_file || null, source, ref_by: d.ref_by || null, tieup_id: d.tieup_id || null, agency_id: agency, recruiter_id: by && by.uid ? by.uid : null,
