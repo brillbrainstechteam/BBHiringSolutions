@@ -39,7 +39,7 @@
     $('[data-out]').onclick = async () => { await BB.post('/api/account/logout', {}).catch(() => {}); BB.setToken('candidate', null); BB.route(); };
     const el = $('[data-body]');
     ({ home, jobs, apps, profile }[tab] || home)(el);
-    BB.attachMics(el); wire(el);
+    BB.attachMics(el); BB.romanizeFields(el); wire(el);
     $$('[data-goto]', el).forEach((b) => (b.onclick = (e) => { e.preventDefault(); go(b.dataset.goto, b.dataset.f); }));
   }
   function wire(el) {
@@ -182,7 +182,7 @@
       if (b) { BB.toast('WhatsApp number updated. Use it to log in from now on.'); reload(); }
     };
     form.onsubmit = (e) => {
-      e.preventDefault(); const v = BB.formValues(form);
+      e.preventDefault(); BB.romanizeNow(form); const v = BB.formValues(form);
       v.skills = $$('[data-skill].on', el).map((b) => b.dataset.skill);
       // A fresher has no experience, current salary, notice period or current company.
       if (isFresher) Object.assign(v, { exp_total: 0, exp_jewellery: 0, notice_days: 0, cur_month: '', current_company: '' });

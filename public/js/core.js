@@ -225,6 +225,25 @@ BB.matchPlace = (heard) => {
 };
 // ---------- city type-ahead (any town allowed); fills the State field next to it ----------
 BB.placeOf = (name) => { const n = String(name || '').trim().toLowerCase(); return n ? (BB.boot.places || []).find((p) => p.name.toLowerCase() === n) : null; };
+// Hindi typed on the keyboard is treated like Hindi voice input: names, company names, city and state are kept in
+// English letters (a city is matched to the list), Hindi digits in a phone number become 0–9. Sentences (roles,
+// "type the job you want", notes, messages) stay as written: spelled out letter by letter they would not read.
+// Runs when the person leaves a field, and again just before a form is sent.
+const DV = /[\u0900-\u097F]/;
+const romanizeOne = (inp) => {
+  const v = inp.value; if (!v || !DV.test(v)) return;
+  if (inp.dataset.phone !== undefined || inp.type === 'tel') inp.value = v.replace(/[०-९]/g, (c) => HI_DIGITS[c]);
+  else if (inp.dataset.city !== undefined) inp.value = BB.matchPlace(v);
+  else inp.value = BB.toRoman(v.trim());
+  if (inp.value !== v) inp.dispatchEvent(new Event('input', { bubbles: true }));
+};
+const ONE_LINE = 'input[name=name], input[name=contact], input[name=company], input[name=current_company], input[name=state], input[data-city], input[data-phone], input[type=tel]';
+BB.isNameLike = (inp) => inp.matches(ONE_LINE);
+BB.romanizeNow = (root) => $$(ONE_LINE, root).forEach(romanizeOne);
+BB.romanizeFields = (root) => {
+  if (root.dataset && root.dataset.roman) return; if (root.dataset) root.dataset.roman = '1';
+  root.addEventListener('change', (e) => { if (e.target.matches && e.target.matches(ONE_LINE)) romanizeOne(e.target); });
+};
 BB.attachCities = (root) => {
   for (const inp of $$('input[data-city]', root)) {
     if (inp.dataset.ta) continue; inp.dataset.ta = '1'; inp.setAttribute('autocomplete', 'off');
@@ -290,8 +309,8 @@ BB.attachMics = (root) => {
         const said = Array.from(e.results).map((r) => r[0].transcript).join(' ');
         if (inp.dataset.phone !== undefined) inp.value = BB.spokenToDigits(said) || inp.value;
         else if (inp.dataset.city !== undefined) inp.value = BB.matchPlace(said); // a city is one answer, not added to
-        else if (inp.tagName === 'INPUT' && /[ऀ-ॿ]/.test(said)) inp.value = (inp.value ? inp.value + ' ' : '') + BB.toRoman(said.trim());
-        else inp.value = (inp.value ? inp.value + ' ' : '') + said.trim(); // notes and messages keep the Hindi as spoken
+        else if (BB.isNameLike(inp) && /[ऀ-ॿ]/.test(said)) inp.value = (inp.value ? inp.value + ' ' : '') + BB.toRoman(said.trim());
+        else inp.value = (inp.value ? inp.value + ' ' : '') + said.trim(); // sentences, notes and messages keep the Hindi as spoken
         inp.dispatchEvent(new Event('input', { bubbles: true }));
       };
       rec.onerror = (e) => { if (e.error !== 'no-speech' && e.error !== 'aborted') BB.toast(e.error === 'not-allowed' ? 'Allow the microphone to use voice typing.' : 'Could not hear that. Try again.', true); };

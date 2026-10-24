@@ -573,6 +573,8 @@ route('POST', '/api/cand/apply', K, (ctx) => {
 route('PUT', '/api/cand/profile', K, (ctx) => {
   const b = ctx.body; const patch = {};
   for (const k of ['name', 'email', 'city', 'state', 'job_wanted', 'exp_total', 'exp_jewellery', 'notice_days', 'skills', 'current_company', 'looking', 'work_cities']) if (b[k] !== undefined) patch[k] = b[k] === '' ? null : b[k];
+  // A new city brings its own state (the profile has no State box), unless a state was sent with it.
+  if (patch.city && patch.city !== ctx.candidate.city && b.state === undefined) patch.state = L.stateOf(patch.city) || null;
   if (b.cur_month !== undefined) patch.cur_salary = b.cur_month === '' ? null : Number(b.cur_month) * 12;
   if (b.exp_month !== undefined) patch.exp_salary = b.exp_month === '' ? null : Number(b.exp_month) * 12;
   if (patch.name !== undefined && !String(patch.name || '').trim()) throw httpError(400, 'Please enter your name', 'name');

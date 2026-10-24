@@ -62,9 +62,9 @@
       cv = await BB.pickFile(); $('[data-cv-name]', card).textContent = cv ? cv.name : 'PDF or Word, max 10 MB';
       if (cv) fillFromCv(card, cv);
     };
-    BB.attachMics(card); apply();
+    BB.attachMics(card); BB.romanizeFields(card); apply();
     form.onsubmit = async (e) => {
-      e.preventDefault();
+      e.preventDefault(); BB.romanizeNow(form);
       const v = BB.formValues(form); v.whatsapp = digits(v.whatsapp);
       const email = mode === 'hire' ? v.email_hire : v.email;
       const common = [['name', v.name, 'Please enter your name'], ['whatsapp', phoneOk(v.whatsapp), 'Enter a 10-digit WhatsApp number starting with 6, 7, 8 or 9'], [mode === 'hire' ? 'email_hire' : 'email', emailOk(email), 'Enter a valid email, or leave it empty']];
