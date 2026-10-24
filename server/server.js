@@ -39,7 +39,25 @@ function pageHtml(page) {
     `<meta property="og:type" content="website">`, `<meta property="og:url" content="${escAttr(url)}">`,
     ...(/^https?:\/\//.test(base) ? [`<meta property="og:image" content="${escAttr(base)}/img/icon.png">`, '<meta property="og:image:width" content="192">', '<meta property="og:image:height" content="192">'] : []),
     `<meta name="twitter:card" content="summary">`, `<meta name="twitter:title" content="${escAttr(name)}">`, `<meta name="twitter:description" content="${escAttr(desc)}">`];
-  return fs.readFileSync(path.join(PUBLIC, 'index.html'), 'utf8').replace('<!--META-->', tags.join('\n  '));
+  return fs.readFileSync(path.join(PUBLIC, 'index.html'), 'utf8').replace('<!--META-->', [...tags, metaPixel(page)].filter(Boolean).join('\n  '));
+}
+// Meta Pixel (base code, in <head> of every page people outside the team see). The live site loads Meta's code;
+// test copies get a stand-in that only records the calls (window.__fbqCalls), so testing never sends visits or
+// leads to the ads account. No names, numbers or emails are sent — only page views and the named events.
+function metaPixel(page) {
+  const id = String(D.settings().meta_pixel_id || '').replace(/\D/g, '');
+  if (!id || page === '/team') return '';
+  if (D.ENV.name !== 'live') return `<script>window.fbq = function () { (window.__fbqCalls = window.__fbqCalls || []).push([].slice.call(arguments)); }; fbq('init', '${id}'); fbq('track', 'PageView');</script>`;
+  return `<!-- Meta Pixel Code -->
+  <script>
+  !function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?n.callMethod.apply(n,arguments):n.queue.push(arguments)};
+  if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;
+  t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,document,'script','https://connect.facebook.net/en_US/fbevents.js');
+  fbq('init', '${id}');
+  fbq('track', 'PageView');
+  </script>
+  <noscript><img height="1" width="1" style="display:none" alt="" src="https://www.facebook.com/tr?id=${id}&ev=PageView&noscript=1"/></noscript>
+  <!-- End Meta Pixel Code -->`;
 }
 
 function send(res, code, body, headers = {}) {

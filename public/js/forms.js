@@ -85,6 +85,9 @@
       const btn = $('[data-send]', card); btn.disabled = true; btn.textContent = 'Sending…';
       try {
         const res = await BB.post(mode === 'hire' ? '/api/public/hire' : '/api/public/apply', body, { kind: null });
+        // Meta Pixel: an employer's request is a Lead, a job seeker's form is a SubmitApplication (no personal data sent).
+        if (mode === 'hire') BB.track('Lead', { content_name: 'Hiring request', content_category: 'Employer' });
+        else BB.track('SubmitApplication', { content_name: body.job_wanted || 'Job application', content_category: 'Job seeker' });
         showVerify(card, mode, { ...res, email }, v.name, () => { card.innerHTML = formHtml(mode, q, single); restore(card, v); mountForm(card, mode, q, onMode, single); });
       } catch (er) {
         // Server field names differ for the hiring side; point the error at the visible field.

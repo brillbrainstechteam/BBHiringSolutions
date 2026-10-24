@@ -125,6 +125,8 @@ module.exports.defaultSettings = () => ({
   },
   industries: { Jewellery: { groups: JOB_GROUPS } },
   default_industry: 'Jewellery',
+  // Meta (Facebook/Instagram) ads: the pixel on the public pages and accounts, never the team portal. Empty = off.
+  meta_pixel_id: '2481511222591423',
   // Industries a candidate can belong to (filter on the Candidates page). Jewellery is the default.
   industry_list: ['Jewellery', 'Retail', 'FMCG', 'Manufacturing', 'IT & Software', 'Banking & Financial Services', 'Insurance', 'Healthcare & Pharma', 'Hospitality & Travel',
     'Real Estate & Construction', 'Education', 'Logistics & Supply Chain', 'Automobile', 'Textile & Apparel', 'E-commerce', 'Telecom', 'Media & Entertainment', 'Agriculture', 'Energy & Power', 'Other'],

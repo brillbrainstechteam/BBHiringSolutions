@@ -421,6 +421,7 @@ BB.go = (to) => { const url = '/' + String(to || '').replace(/^[#/]+/, ''); if (
 BB.setUrl = (to) => history.replaceState(null, '', '/' + String(to || '').replace(/^[#/]+/, ''));
 const fromHash = () => { const h = location.hash.replace(/^#/, ''); if (h) { BB.setUrl(h); return true; } return false; };
 document.addEventListener('click', (e) => {
+  if (e.target.closest && e.target.closest('a[href^="https://wa.me/"]')) BB.track('Contact', { content_name: 'WhatsApp help' });
   const a = e.target.closest && e.target.closest('a[href]'); if (!a || e.defaultPrevented || a.target || e.ctrlKey || e.metaKey || e.shiftKey) return;
   const href = a.getAttribute('href');
   if (href === '#' || href.startsWith('//')) return;
@@ -428,6 +429,9 @@ document.addEventListener('click', (e) => {
   if (!href.startsWith('#') && !appPage) return;
   e.preventDefault(); BB.go(href.slice(1));
 });
+// Meta Pixel events (fbq comes from the page head; absent on the team portal and when the pixel is off).
+BB.track = (event, params) => { try { if (window.fbq && document.body.dataset.view !== 'team') window.fbq('track', event, params || {}); } catch { /* ads tracking never breaks the page */ } };
+let lastTracked = location.pathname;
 BB.route = () => {
   const r = BB.parseHash();
   const map = { hire: 'hire', apply: 'apply', 'my-account': 'client', 'my-profile': 'candidate', team: 'team' };
@@ -436,6 +440,7 @@ BB.route = () => {
   if (view !== 'team') BB.closePanels();
   document.body.dataset.view = view;
   (BB.views[view] || BB.views.landing)(r);
+  if (location.pathname !== lastTracked) { lastTracked = location.pathname; if (view !== 'team') BB.track('PageView'); }
 };
 // Brand lockup: mark | BrillBrains / Hiring Solutions / tagline (as on the website).
 // The full logo on wide screens, the BB mark where space is tight; the tagline names the part of the site.
