@@ -453,6 +453,8 @@ function moveStep(appId, step, by, note) {
   if (!STEPS.includes(step)) throw httpError(400, 'Unknown step');
   if (app.result !== 'open' && step !== 'Joined') throw httpError(400, 'This application is closed. Reopen it first.');
   if (step === app.step) return app;
+  // An offer always has its salary and joining date: "Offer made" comes from recording the offer, not a bare step change.
+  if (step === 'Offer made' && !app.offer_ctc) throw httpError(400, 'Record the offer first: the yearly CTC and the joining date (Record offer).');
   // A job has a number of seats (openings): accepting an offer or joining takes one, and no more than that.
   if ((step === 'Offer accepted' || step === 'Joined') && app.step !== 'Offer accepted') {
     const j0 = get('SELECT * FROM jobs WHERE id=?', app.job_id);

@@ -440,6 +440,13 @@ route('POST', '/api/client/interviews/:id/feedback', { auth: 'client', perm: 'fe
   L.alertUser(a.owner_id || job.recruiter_id, `${ctx.client.company}: ${ctx.body.result} on ${a.id}${ctx.body.result === 'Selected' ? ' — record the offer' : ''}`, a.id);
   return r;
 });
+// The client (the employer) can record the offer itself: salary and joining date. The candidate gets the offer on WhatsApp.
+route('POST', '/api/client/apps/:id/offer', { auth: 'client', perm: 'approve' }, (ctx) => {
+  const a = clientApp(ctx);
+  if (!['Client interview', 'Sent to client', 'Offer made'].includes(a.step)) throw httpError(400, 'An offer can be made after the interview.');
+  const month = Number(ctx.body.month); if (!month || month < 1000) throw httpError(400, 'Enter the monthly salary in rupees', 'month');
+  return L.recordOffer(a.id, { ctc: Math.round(month * 12), joining_date: ctx.body.joining_date, reporting_to: ctx.body.reporting_to }, ctx.actor);
+});
 route('POST', '/api/client/apps/:id/offer-letter', { auth: 'client', perm: 'approve' }, (ctx) => {
   const a = clientApp(ctx);
   if (!a.offer_letter) return TEAM.makeOfferLetter(a, ctx.actor, !!ctx.body.send);

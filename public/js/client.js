@@ -300,12 +300,18 @@
         }
         return BB.post(`/api/client/apps/${b.dataset.avail}/availability`, { slots, place: v.place, interviewer: v.interviewer, note: v.note });
       } }).then((x) => x && (BB.toast('Thank you — our team will confirm the interview time'), reload())); }));
+    $$('[data-offer-add]', el).forEach((b) => (b.onclick = () => BB.ask({ title: `Offer for ${b.dataset.name}`, note: 'The candidate gets the offer on WhatsApp and in their profile. Our team helps with the rest.',
+      fields: [{ name: 'month', label: 'Monthly salary (₹)', type: 'number', voice: false }, { name: 'joining_date', label: 'Joining date', type: 'date', voice: false, attrs: `min="${new Date().toISOString().slice(0, 10)}"` }, { name: 'reporting_to', label: 'Reports to', opt: true }],
+      ok: 'Make the offer', submit: (v) => BB.post(`/api/client/apps/${b.dataset.offerAdd}/offer`, v) }).then((x) => x && (BB.toast('Offer recorded — the candidate has been told'), reload()))));
     $$('[data-offer-send]', el).forEach((b) => (b.onclick = () => act(() => BB.post(`/api/client/apps/${b.dataset.offerSend}/offer-letter`, { send: true }), 'Offer letter sent to the candidate')));
     $$('[data-offer-make]', el).forEach((b) => (b.onclick = () => act(() => BB.post(`/api/client/apps/${b.dataset.offerMake}/offer-letter`, {}), 'Offer letter made — check it, then send')));
     $$('[data-ck]', el).forEach((b) => (b.onchange = () => act(() => BB.post(`/api/client/apps/${b.dataset.ck}/checklist`, { item: b.dataset.item, done: b.checked }))));
   }
   function offerBox(a) {
     const items = (D.standard_templates.joining_checklist || '').split('\n').filter(Boolean);
+    // No salary or joining date yet: ask for them first (a letter needs both).
+    if (!a.offer_ctc && a.result === 'open') return `<div class="notice gold small stack-sm"><div><b>Offer details needed</b> — add the salary and joining date, and we share the offer with ${esc(a.name)}.</div>
+      ${D.perms.approve ? `<div class="row"><button class="btn primary sm" data-offer-add="${a.id}" data-name="${esc(a.name)}">Add offer details</button></div>` : '<div class="faint">Someone with approval rights in your company can add them.</div>'}</div>`;
     return `<div class="notice gold small stack-sm"><div><b>Offer:</b> ${inr(a.offer_ctc)} a year · joining ${fmtD(a.joining_date)}</div>
       <div class="row">${a.offer_letter ? `<button class="btn sm" data-file="${a.offer_letter}">View offer letter</button>${a.offer_sent ? '<span class="badge b-green">Sent to candidate</span>' : `<button class="btn primary sm" data-offer-send="${a.id}">Send to candidate</button>`}` : `<button class="btn sm" data-offer-make="${a.id}">Make offer letter</button>`}</div>
       ${a.step === 'Offer accepted' || a.result === 'Hired' ? `<div><b>Joining checklist</b>${items.map((it) => `<label class="row"><input type="checkbox" data-ck="${a.id}" data-item="${esc(it)}" ${a.checklist && a.checklist[it] ? 'checked' : ''}> ${esc(it)}</label>`).join('')}${(a.joining_docs || []).length ? `<div class="row" style="margin-top:4px">${a.joining_docs.map((d) => `<button class="btn sm" data-file="${d.file}">${esc(d.label)}</button>`).join('')}</div>` : ''}</div>` : ''}</div>`;
