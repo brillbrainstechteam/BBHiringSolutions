@@ -135,9 +135,10 @@ function nextId(prefix) {
 }
 
 // ---------- settings ----------
-let settingsCache = null;
+// Kept for a minute, so a change saved by a setup script (outside this process) is picked up without a restart.
+let settingsCache = null; let settingsAt = 0;
 function settings() {
-  if (settingsCache) return settingsCache;
+  if (settingsCache && Date.now() - settingsAt < 60000) return settingsCache;
   const rows = db.prepare('SELECT key, value FROM settings').all();
   const s = {};
   for (const r of rows) s[r.key] = JSON.parse(r.value);
@@ -151,7 +152,7 @@ function settings() {
     s.crm = crm;
   }
   if (s.business && ENV.baseUrl) s.business = { ...s.business, base_url: ENV.baseUrl.replace(/\/+$/, '') };
-  settingsCache = s;
+  settingsCache = s; settingsAt = Date.now();
   return s;
 }
 function setSetting(key, value) {
