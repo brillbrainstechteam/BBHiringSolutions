@@ -125,6 +125,9 @@ module.exports.defaultSettings = () => ({
   },
   industries: { Jewellery: { groups: JOB_GROUPS } },
   default_industry: 'Jewellery',
+  // Industries a candidate can belong to (filter on the Candidates page). Jewellery is the default.
+  industry_list: ['Jewellery', 'Retail', 'FMCG', 'Manufacturing', 'IT & Software', 'Banking & Financial Services', 'Insurance', 'Healthcare & Pharma', 'Hospitality & Travel',
+    'Real Estate & Construction', 'Education', 'Logistics & Supply Chain', 'Automobile', 'Textile & Apparel', 'E-commerce', 'Telecom', 'Media & Entertainment', 'Agriculture', 'Energy & Power', 'Other'],
   hidden_jobs: [],
   departments: ['Sales', 'Design', 'Production', 'Marketing', 'Purchase', 'Dispatch', 'Accounts', 'Admin', 'Support'],
   cities: CITIES,

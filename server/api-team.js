@@ -468,16 +468,19 @@ route('GET', '/api/candidates', T, (ctx) => {
   const q = ctx.query; const u = ctx.user; const s = D.settings();
   const minE = q.exp_min === undefined || q.exp_min === '' ? null : Number(q.exp_min); const maxE = q.exp_max === undefined || q.exp_max === '' ? null : Number(q.exp_max);
   const maxSal = q.sal_max ? Number(q.sal_max) * 12 : null; const fresh = q.updated ? Number(q.updated) : null;
+  const ind = q.industry || D.settings().default_industry || 'Jewellery'; const inInd = (c) => ind === 'all' || (c.industry || 'Jewellery') === ind;
   const rows = all('SELECT * FROM candidates WHERE merged_into IS NULL AND removed=0 AND junk=0 ORDER BY created_at DESC')
-    .filter((c) => (q.archived ? c.archived : !c.archived) && (!q.dept || c.department === q.dept) && (!q.city || c.city === q.city || (c.work_cities || []).includes(q.city)) && (!q.job || c.job_wanted === q.job)
+    .filter((c) => (q.archived ? c.archived : !c.archived) && inInd(c) && (!q.dept || c.department === q.dept) && (!q.city || c.city === q.city || (c.work_cities || []).includes(q.city)) && (!q.job || c.job_wanted === q.job)
       && (minE === null || (c.exp_total ?? -1) >= minE) && (maxE === null || (c.exp_total ?? 999) <= maxE) && (!maxSal || (c.exp_salary || 0) <= maxSal) && (!q.notice || (c.notice_days ?? 999) <= Number(q.notice))
       && (!q.looking || c.looking === q.looking) && (!q.source || c.source === q.source) && (!q.tieup || String(c.tieup_id) === String(q.tieup)) && (!q.agency || c.agency_id === q.agency)
       && (!fresh || L.daysBetween(c.last_updated || c.created_at) <= fresh) && (!q.stale || L.daysBetween(c.last_updated || c.created_at) > 90)
       && like(q.q, c.id, c.name, R.phoneVisible(u, c) ? c.whatsapp : '', c.job_wanted, c.city, c.current_company, c.old_code))
     .map((c) => ({ ...candidateOut(u, c), status: V.candStatus(c.id) }))
     .filter((c) => !q.status || c.status.startsWith(q.status));
-  if (['csv', 'xlsx'].includes(ctx.query.format) && !isSuper(u) && rows.length > 500) throw httpError(403, 'Agencies cannot download the whole resume bank. Narrow the filters first.');
-  return page(ctx, rows, 'candidates', ['id', 'name', 'whatsapp', 'job_wanted', 'department', 'city', 'exp_total', [(r) => r.exp_salary ? Math.round(r.exp_salary / 12) : '', 'expected_per_month'], 'notice_days', 'source', 'looking', 'status']);
+  ctx.designations = [...new Set(all('SELECT industry, job_wanted FROM candidates WHERE merged_into IS NULL AND removed=0 AND junk=0').filter(inInd).map((c) => c.job_wanted).filter(Boolean))].sort();
+  // Only the super admin downloads candidates (as filtered on screen); agencies and recruiters work in the portal.
+  if (['csv', 'xlsx'].includes(ctx.query.format) && !isSuper(u)) throw httpError(403, 'Only the super admin can download candidates.');
+  return { ...page(ctx, rows, 'candidates', ['id', 'name', 'whatsapp', 'industry', 'job_wanted', 'department', 'city', 'exp_total', [(r) => r.exp_salary ? Math.round(r.exp_salary / 12) : '', 'expected_per_month'], 'notice_days', 'source', 'looking', 'status']), designations: ctx.designations };
 });
 route('POST', '/api/candidates', T, (ctx) => {
   const b = ctx.body;
@@ -501,7 +504,7 @@ route('GET', '/api/candidates/:id', T, (ctx) => {
 route('PATCH', '/api/candidates/:id', T, (ctx) => {
   const c = get('SELECT * FROM candidates WHERE id=?', ctx.params.id); if (!c) throw httpError(404, 'Not found');
   if (!R.phoneVisible(ctx.user, c)) throw httpError(403, 'Only the candidate\'s own agency can edit this profile.');
-  const allowed = ['name', 'whatsapp', 'email', 'city', 'state', 'work_cities', 'job_wanted', 'exp_total', 'exp_jewellery', 'cur_salary', 'exp_salary', 'notice_days', 'skills', 'current_company', 'looking', 'tieup_id', 'archived', 'recruiter_id'];
+  const allowed = ['name', 'whatsapp', 'email', 'city', 'state', 'work_cities', 'industry', 'job_wanted', 'exp_total', 'exp_jewellery', 'cur_salary', 'exp_salary', 'notice_days', 'skills', 'current_company', 'looking', 'tieup_id', 'archived', 'recruiter_id'];
   const patch = {}; for (const k of allowed) if (ctx.body[k] !== undefined) patch[k] = ctx.body[k];
   if (patch.whatsapp) { patch.whatsapp = L.digits10(patch.whatsapp); if (!L.validPhone(patch.whatsapp)) throw httpError(400, 'Enter a 10-digit WhatsApp number', 'whatsapp'); }
   if (patch.job_wanted) patch.department = L.deptOf(patch.job_wanted);
