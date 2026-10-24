@@ -480,7 +480,7 @@ route('GET', '/api/candidates', T, (ctx) => {
   ctx.designations = [...new Set(all('SELECT industry, job_wanted FROM candidates WHERE merged_into IS NULL AND removed=0 AND junk=0').filter(inInd).map((c) => c.job_wanted).filter(Boolean))].sort();
   // Only the super admin downloads candidates (as filtered on screen); agencies and recruiters work in the portal.
   if (['csv', 'xlsx'].includes(ctx.query.format) && !isSuper(u)) throw httpError(403, 'Only the super admin can download candidates.');
-  return { ...page(ctx, rows, 'candidates', ['id', 'name', 'whatsapp', 'industry', 'job_wanted', 'department', 'city', 'exp_total', [(r) => r.exp_salary ? Math.round(r.exp_salary / 12) : '', 'expected_per_month'], 'notice_days', 'source', 'looking', 'status']), designations: ctx.designations };
+  return { ...page(ctx, rows, 'candidates', ['id', 'name', 'whatsapp', 'industry', 'job_wanted', 'department', 'city', 'exp_total', [(r) => r.exp_salary ? Math.round(r.exp_salary / 12) : '', 'expected_per_month'], 'notice_days', [(r) => (r.exp_business || []).join(', '), 'worked_in'], 'source', 'looking', 'status']), designations: ctx.designations };
 });
 route('POST', '/api/candidates', T, (ctx) => {
   const b = ctx.body;
@@ -504,7 +504,8 @@ route('GET', '/api/candidates/:id', T, (ctx) => {
 route('PATCH', '/api/candidates/:id', T, (ctx) => {
   const c = get('SELECT * FROM candidates WHERE id=?', ctx.params.id); if (!c) throw httpError(404, 'Not found');
   if (!R.phoneVisible(ctx.user, c)) throw httpError(403, 'Only the candidate\'s own agency can edit this profile.');
-  const allowed = ['name', 'whatsapp', 'email', 'city', 'state', 'work_cities', 'industry', 'job_wanted', 'exp_total', 'exp_jewellery', 'cur_salary', 'exp_salary', 'notice_days', 'skills', 'current_company', 'looking', 'tieup_id', 'archived', 'recruiter_id'];
+  if (ctx.body.exp_business !== undefined) ctx.body.exp_business = L.cleanBusiness(ctx.body.exp_business);
+  const allowed = ['exp_business', 'name', 'whatsapp', 'email', 'city', 'state', 'work_cities', 'industry', 'job_wanted', 'exp_total', 'exp_jewellery', 'cur_salary', 'exp_salary', 'notice_days', 'skills', 'current_company', 'looking', 'tieup_id', 'archived', 'recruiter_id'];
   const patch = {}; for (const k of allowed) if (ctx.body[k] !== undefined) patch[k] = ctx.body[k];
   if (patch.whatsapp) { patch.whatsapp = L.digits10(patch.whatsapp); if (!L.validPhone(patch.whatsapp)) throw httpError(400, 'Enter a 10-digit WhatsApp number', 'whatsapp'); }
   if (patch.job_wanted) patch.department = L.deptOf(patch.job_wanted);

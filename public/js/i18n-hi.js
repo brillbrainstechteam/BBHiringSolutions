@@ -30,7 +30,8 @@
     'Your business': 'आपका बिज़नेस', 'B2C': 'B2C', 'B2B': 'B2B', 'Both': 'दोनों', 'Showroom B2C': 'शोरूम B2C', 'Manufacturer B2B': 'मैन्युफ़ैक्चरर B2B',
     'When do you need staff?': 'स्टाफ़ कब चाहिए?', 'Hiring now': 'अभी चाहिए', 'Hiring soon': 'जल्द चाहिए', 'Just exploring': 'बस देख रहे हैं',
     'Which roles?': 'कौन-से पद?', 'e.g. 2 sales executives, 1 cashier': 'जैसे 2 सेल्स एग्ज़ीक्यूटिव, 1 कैशियर',
-    'Experience': 'अनुभव', 'Fresher': 'फ़्रेशर', '1–3 years': '1–3 साल', '3–5 years': '3–5 साल', '5–10 years': '5–10 साल', '10+ years': '10+ साल',
+    'Experience': 'अनुभव', 'Where have you worked?': 'आपने कहाँ काम किया है?', 'Tick all that apply.': 'जो भी लागू हों, सब पर टिक करें।', 'Wholesaler': 'होलसेलर', 'Manufacturer': 'मैन्युफ़ैक्चरर', 'Retailer': 'रिटेलर', 'Worked in': 'काम किया',
+    'Tick where you have worked: wholesaler, manufacturer or retailer': 'टिक करें आपने कहाँ काम किया है: होलसेलर, मैन्युफ़ैक्चरर या रिटेलर', 'Fresher': 'फ़्रेशर', '1–3 years': '1–3 साल', '3–5 years': '3–5 साल', '5–10 years': '5–10 साल', '10+ years': '10+ साल',
     'By sending, you agree to be contacted on WhatsApp, phone and email, and to your profile being shared with employers.': 'भेजकर आप WhatsApp, फ़ोन और ईमेल पर संपर्क किए जाने और अपनी प्रोफ़ाइल नियोक्ताओं से साझा किए जाने के लिए सहमत होते हैं।',
     'Send my details': 'मेरी जानकारी भेजें', 'Send request': 'रिक्वेस्ट भेजें', 'Sending…': 'भेज रहे हैं…', 'Leave this empty': 'इसे खाली छोड़ें',
     'You are applying for job': 'आप इस नौकरी के लिए आवेदन कर रहे हैं:', '. We will also show you other matching jobs.': '। हम आपको मिलती-जुलती दूसरी नौकरियाँ भी दिखाएँगे।',
@@ -203,7 +204,7 @@
     [/^Wants (.+) \(close\)$/, '$1 चाहिए (मिलता-जुलता)'], [/^Wants (.+)$/, '$1 चाहिए'], [/^Lives in (.+)$/, '$1 में रहते हैं'], [/^Will work in (.+)$/, '$1 में काम करेंगे'],
     [/^([\d.]+) yrs experience fits$/, '$1 साल का अनुभव सही'], [/^([\d.]+) yrs, more than asked$/, '$1 साल, माँगे से ज़्यादा'], [/^([\d.]+) yrs in jewellery$/, 'ज्वेलरी में $1 साल'],
     [/^Fresher, job takes freshers$/, 'फ़्रेशर, नौकरी फ़्रेशर के लिए खुली'], [/^Expects (₹[\dk.]+)\/mo, in budget$/, '$1/माह की उम्मीद, बजट में'], [/^Same field: (.+)$/, 'एक ही क्षेत्र: $1'],
-    [/^Skills: (.+)$/, 'स्किल: $1'], [/^Joins in (\d+) days$/, '$1 दिन में जॉइन'], [/^Can join at once$/, 'तुरंत जॉइन कर सकते हैं'], [/^Rated ([\d.]+)\/5 in interviews$/, 'इंटरव्यू में $1/5 रेटिंग'],
+    [/^Skills: (.+)$/, 'स्किल: $1'], [/^Joins in (\d+) days$/, '$1 दिन में जॉइन'], [/^Can join at once$/, 'तुरंत जॉइन कर सकते हैं'], [/^Rated ([\d.]+)\/5 in interviews$/, 'इंटरव्यू में $1/5 रेटिंग'], [/^(.+) experience$/, (m, k) => `${k.split(' / ').map((x) => ({ Wholesaler: 'होलसेलर', Manufacturer: 'मैन्युफ़ैक्चरर', Retailer: 'रिटेलर' }[x] || x)).join(' / ')} का अनुभव`],
   ];
   const tReason = (s) => { for (const [re, to] of reason) if (re.test(s)) return s.replace(re, to); return null; };
   const patterns = [

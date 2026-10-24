@@ -132,6 +132,7 @@
             <div class="grid g2">${field({ name: 'exp_total', label: 'Total experience (years)', type: 'number', value: p.exp_total ?? '', attrs: 'min="0" max="45" step="0.5"' })}${field({ name: 'exp_jewellery', label: 'In jewellery (years)', type: 'number', value: p.exp_jewellery ?? '', opt: true, attrs: 'min="0" max="45" step="0.5"' })}</div>
             <div class="grid g2">${field({ name: 'current_company', label: 'Current company', value: p.current_company || '', opt: true })}${field({ name: 'notice_days', label: 'Notice period (days)', type: 'number', value: p.notice_days ?? '', attrs: 'min="0" max="180"' })}</div>
             ${field({ name: 'cur_month', label: 'Current salary (₹ per month)', type: 'number', value: p.cur_month ?? '', attrs: 'min="0"' })}
+            <div class="field" data-f="exp_business"><span class="lab">Where have you worked?</span><div class="choice biz-choice">${['Wholesaler', 'Manufacturer', 'Retailer'].map((x) => `<label><input type="checkbox" name="exp_business" value="${x}" ${(p.exp_business || []).includes(x) ? 'checked' : ''}> ${x}</label>`).join('')}</div><span class="hint">Tick all that apply.</span></div>
           </div>
           ${field({ name: 'exp_month', label: 'Expected salary (₹ per month)', type: 'number', value: p.exp_month ?? '', attrs: 'min="0"' })}
         </div>
@@ -185,6 +186,7 @@
     form.onsubmit = (e) => {
       e.preventDefault(); BB.romanizeNow(form); const v = BB.formValues(form);
       v.skills = $$('[data-skill].on', el).map((b) => b.dataset.skill);
+      v.exp_business = isFresher ? [] : $$('[name=exp_business]:checked', el).map((x) => x.value);
       // A fresher has no experience, current salary, notice period or current company.
       if (isFresher) Object.assign(v, { exp_total: 0, exp_jewellery: 0, notice_days: 0, cur_month: '', current_company: '' });
       else for (const k of ['exp_total', 'exp_jewellery', 'notice_days']) v[k] = v[k] === '' ? '' : Number(v[k]);

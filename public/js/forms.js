@@ -36,6 +36,7 @@
         </div>
         <div data-only="job" class="stack">
           <label class="field" data-f="experience"><span class="lab">Experience <span class="opt">(optional)</span></span><div class="choice">${['Fresher', '1–3 years', '3–5 years', '5–10 years', '10+ years'].map((x) => `<label style="min-width:96px"><input type="radio" name="experience" value="${x}"> ${x}</label>`).join('')}</div></label>
+          <div class="field hidden" data-f="exp_business" data-expbiz><span class="lab">Where have you worked?</span><div class="choice biz-choice">${['Wholesaler', 'Manufacturer', 'Retailer'].map((x) => `<label><input type="checkbox" name="exp_business" value="${x}"> ${x}</label>`).join('')}</div><span class="hint">Tick all that apply.</span></div>
         </div>
         <label class="hp" aria-hidden="true">Leave this empty <input name="website" tabindex="-1" autocomplete="off"></label>
         <label class="consent-tick" data-f="consent"><input type="checkbox" name="consent"><span>${esc(BB.boot.consent)}</span></label>
@@ -63,6 +64,9 @@
       if (cv) fillFromCv(card, cv);
     };
     BB.attachMics(card); BB.romanizeFields(card); apply();
+    const biz = $('[data-expbiz]', card);
+    const showBiz = () => { const e = $('[name=experience]:checked', card); const on = !!e && e.value !== 'Fresher'; biz.classList.toggle('hidden', !on); if (!on) $$('[name=exp_business]', card).forEach((x) => { x.checked = false; }); };
+    $$('[name=experience]', card).forEach((r) => r.addEventListener('change', showBiz)); showBiz();
     form.onsubmit = async (e) => {
       e.preventDefault(); BB.romanizeNow(form);
       const v = BB.formValues(form); v.whatsapp = digits(v.whatsapp);
@@ -71,11 +75,13 @@
       const rules = mode === 'hire'
         ? [...common, ['company', v.company, 'Please enter your company name'], ['city', v.city, 'Please enter your city'], ['business_type', v.business_type, 'Pick your type of business'], ['need', v.need, 'Tell us when you need staff']]
         : [...common, ['job_wanted', v.job_wanted, 'Pick the job you want'], ['job_other', v.job_wanted !== 'Other' || v.job_other, 'Type the job you want'], ['city', v.city, 'Please enter the city you want to work in']];
+      v.exp_business = $$('[name=exp_business]:checked', form).map((x) => x.value);
+      if (mode === 'job' && v.experience && v.experience !== 'Fresher') rules.push(['exp_business', v.exp_business.length, 'Tick where you have worked: wholesaler, manufacturer or retailer']);
       rules.push(['consent', v.consent, 'Please tick to agree before sending']);
       if (!check(form, rules)) return;
       const body = mode === 'hire'
         ? { contact: v.name, company: v.company, whatsapp: v.whatsapp, email, city: v.city, state: v.state, business_type: v.business_type, need: v.need, roles: v.roles, website: v.website, src: q.src, lang: BB.lang }
-        : { name: v.name, whatsapp: v.whatsapp, email, city: v.city, state: v.state, job_wanted: v.job_wanted, job_other: v.job_other, experience: v.experience, cv, website: v.website, lang: BB.lang, src: q.src, job: q.job, ref: q.ref };
+        : { name: v.name, whatsapp: v.whatsapp, email, city: v.city, state: v.state, job_wanted: v.job_wanted, job_other: v.job_other, experience: v.experience, exp_business: v.exp_business, cv, website: v.website, lang: BB.lang, src: q.src, job: q.job, ref: q.ref };
       const btn = $('[data-send]', card); btn.disabled = true; btn.textContent = 'Sending…';
       try {
         const res = await BB.post(mode === 'hire' ? '/api/public/hire' : '/api/public/apply', body, { kind: null });
@@ -101,11 +107,11 @@
     if (f.job_wanted && !sel.value) { sel.value = f.job_wanted; if (sel.value !== f.job_wanted) { sel.value = 'Other'; $('[name=job_other]', form).value = f.job_wanted; } sel.dispatchEvent(new Event('change')); done.push('job'); }
     if (f.exp_total !== undefined && !$('[name=experience]:checked', form)) {
       const y = f.exp_total; const pick = y < 1 ? 'Fresher' : y < 3 ? '1–3 years' : y < 5 ? '3–5 years' : y < 10 ? '5–10 years' : '10+ years';
-      const r = $(`[name=experience][value="${pick}"]`, form); if (r) { r.checked = true; done.push('experience'); }
+      const r = $(`[name=experience][value="${pick}"]`, form); if (r) { r.checked = true; r.dispatchEvent(new Event('change', { bubbles: true })); done.push('experience'); }
     }
     msg.innerHTML = done.length ? '' : '<span class="muted">We could not read details from this file — please fill in the form.</span>';
   }
-  function restore(card, v) { for (const [k, val] of Object.entries(v)) { const el = $(`[name="${k}"]`, card); if (!el || el.type === 'radio') continue; el.value = val; } for (const k of ['business_type', 'need', 'experience']) if (v[k]) { const r = $(`[name="${k}"][value="${v[k]}"]`, card); if (r) r.checked = true; } }
+  function restore(card, v) { for (const [k, val] of Object.entries(v)) { const el = $(`[name="${k}"]`, card); if (!el || el.type === 'radio' || el.type === 'checkbox') continue; el.value = val; } for (const k of ['business_type', 'need', 'experience']) if (v[k]) { const r = $(`[name="${k}"][value="${v[k]}"]`, card); if (r) r.checked = true; } for (const b of v.exp_business || []) { const x = $(`[name="exp_business"][value="${b}"]`, card); if (x) x.checked = true; } const c = $('[name=consent]', card); if (c) c.checked = !!v.consent; }
 
   // ---------- after sending: thank-you page that also opens the account ----------
   const svg = (d, w = 1.8) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;

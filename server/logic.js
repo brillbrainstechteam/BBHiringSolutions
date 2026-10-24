@@ -261,6 +261,10 @@ function skillHit(js, cs) {
   const have = cs.map(n);
   return js.filter((k) => { const kk = n(k); return have.some((h) => h === kk || (kk.length > 3 && h.includes(kk)) || (h.length > 3 && kk.includes(h))); });
 }
+// Where a candidate has worked (asked on the job form when they have experience), and how it lines up with clients.
+const BUSINESS_TYPES = ['Wholesaler', 'Manufacturer', 'Retailer'];
+const cleanBusiness = (v) => (Array.isArray(v) ? v : String(v || '').split(',')).map((x) => String(x).trim()).filter((x) => BUSINESS_TYPES.includes(x));
+const BUSINESS_OF = { 'Showroom B2C': ['Retailer'], 'Manufacturer B2B': ['Manufacturer', 'Wholesaler'], Both: ['Retailer', 'Manufacturer', 'Wholesaler'] };
 function matchScore(c, j, rating) {
   const w = settings().match.weights; let score = 0; const reasons = []; const gaps = [];
   const total = Object.values(w).reduce((a, b) => a + Number(b), 0) || 100;
@@ -302,6 +306,9 @@ function matchScore(c, j, rating) {
   else if (c.notice_days <= j.notice_days * 2) part('notice', 0.5, null, `Notice ${c.notice_days} days`);
   else part('notice', 0, null, `Notice ${c.notice_days} days`);
   if (c.exp_jewellery >= 1) reasons.push(`${c.exp_jewellery} yrs in jewellery`);
+  const kinds = BUSINESS_OF[(j.client_id && (get('SELECT business_type FROM clients WHERE id=?', j.client_id) || {}).business_type) || ''] || [];
+  const same = (Array.isArray(c.exp_business) ? c.exp_business : []).filter((b) => kinds.includes(b));
+  if (same.length) reasons.push(`${same.join(' / ')} experience`);
   if (rating) part('rating', rating / 5, rating >= 4 ? `Rated ${rating.toFixed(1)}/5 in interviews` : null); else part('rating', 0.6);
   let pct = Math.round((score / total) * 100);
   if (c.looking === 'Not looking') { pct = Math.round(pct * 0.8); gaps.push('Not looking now'); }
@@ -720,7 +727,7 @@ function intakeCandidate(d, o) {
   const repeat = d.email ? get('SELECT id FROM candidates WHERE lower(email)=lower(?) AND merged_into IS NULL', d.email) : null;
   const agency = by && by.agency_id ? by.agency_id : null;
   insert('candidates', {
-    id, name: d.name, whatsapp: phone, email: d.email || '', city: d.city || '', state: d.state || stateOf(d.city), work_cities: d.work_cities || (d.city ? [d.city] : []), language: d.language === 'hi' ? 'hi' : 'en', industry: d.industry || settings().default_industry || 'Jewellery',
+    id, name: d.name, whatsapp: phone, email: d.email || '', city: d.city || '', state: d.state || stateOf(d.city), work_cities: d.work_cities || (d.city ? [d.city] : []), language: d.language === 'hi' ? 'hi' : 'en', industry: d.industry || settings().default_industry || 'Jewellery', exp_business: cleanBusiness(d.exp_business),
     job_wanted: d.job_wanted || '', department: dept, exp_total: d.exp_total ?? null, exp_jewellery: d.exp_jewellery ?? null,
     cur_salary: d.cur_salary ?? null, exp_salary: d.exp_salary ?? null, notice_days: d.notice_days ?? null, skills: d.skills || [], current_company: d.current_company || '',
     cv_file: d.cv_file || null, source, ref_by: d.ref_by || null, tieup_id: d.tieup_id || null, agency_id: agency, recruiter_id: by && by.uid ? by.uid : null,
@@ -846,7 +853,7 @@ function sendSystemText(ptype, pid, text) {
 module.exports = {
   STEPS, stepIdx, digits10, validPhone, inr, istDay, istFmt, istTime, istHour, inQuiet, next9am, daysBetween, addDays, hashPassword, checkPassword, newPassword, sha,
   jobList, deptOf, stateOf, person, fillFormat, windowOpenUntil, sendWA, setDispatcher, alertUser, link, agencyAdmin, superAdmins,
-  computeJobStatus, jobStatusReason, recalcJob, filledCount, appsOfJob, matchScore, jobsFor, ratingOf, bestMatches, isPlaced, salaryText, autoJobAlert,
+  computeJobStatus, jobStatusReason, recalcJob, filledCount, appsOfJob, matchScore, jobsFor, cleanBusiness, BUSINESS_TYPES, ratingOf, bestMatches, isPlaced, salaryText, autoJobAlert,
   feeFor, gstFor, fyOf, billView, refreshBill, createBillForApp, issueBill, upiLink,
   appHist, createApplication, moveStep, closeApplication, reopenApplication, scheduleInterview, recordInterview, interviewView, ivVars, recordOffer, leftJob, jobAction,
   CONSENT_WORDING, saveConsent, intakeClient, intakeCandidate, assignLead, mergeRecords, resolveId, receiveReply, actorName,

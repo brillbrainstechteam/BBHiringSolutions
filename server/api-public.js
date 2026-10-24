@@ -305,12 +305,15 @@ route('POST', '/api/public/apply', { rate: { key: 'form', max: 60, minutes: 60 }
 
   if (!b.city) throw httpError(400, 'Please enter the city you want to work in', 'city');
   if (!b.job_wanted) throw httpError(400, 'Pick the job you want', 'job_wanted');
+  const business = L.cleanBusiness(b.exp_business);
+  // Required on the current form (which always sends the field); a page opened before this question existed still goes through.
+  if (b.exp_business !== undefined && b.experience && b.experience !== 'Fresher' && !business.length) throw httpError(400, 'Tick where you have worked: wholesaler, manufacturer or retailer', 'exp_business');
   if (b.job_wanted === 'Other' && !b.job_other) throw httpError(400, 'Type the job you want', 'job_other');
   const expMap = { Fresher: 0, '1–3 years': 2, '3–5 years': 4, '5–10 years': 7, '10+ years': 12 };
   let refBy = null;
   if (b.ref) { const rc = get('SELECT id FROM candidates WHERE id=?', L.resolveId(String(b.ref).toUpperCase())); refBy = rc ? rc.id : null; }
   const jobOk = b.job ? get('SELECT * FROM jobs WHERE id=?', String(b.job).toUpperCase()) : null;
-  const r = L.intakeCandidate({ language: b.lang, name: b.name, whatsapp: b.whatsapp, email: b.email || '', city: b.city, state: b.state, work_cities: [b.city], job_wanted: b.job_wanted === 'Other' ? b.job_other : b.job_wanted, exp_total: b.experience ? expMap[b.experience] : null, ref_by: refBy, apply_job: jobOk && ['Open', 'Sourcing', 'Interviewing', 'Offer stage'].includes(V.jobView(jobOk).status) ? jobOk.id : null }, { source: srcFrom(b) });
+  const r = L.intakeCandidate({ exp_business: business, language: b.lang, name: b.name, whatsapp: b.whatsapp, email: b.email || '', city: b.city, state: b.state, work_cities: [b.city], job_wanted: b.job_wanted === 'Other' ? b.job_other : b.job_wanted, exp_total: b.experience ? expMap[b.experience] : null, ref_by: refBy, apply_job: jobOk && ['Open', 'Sourcing', 'Interviewing', 'Offer stage'].includes(V.jobView(jobOk).status) ? jobOk.id : null }, { source: srcFrom(b) });
   { const mailer = require('./mailer'); const rec = get('SELECT * FROM candidates WHERE id=?', r.candidate.id); if (r.isNew) mailer.newLead('candidate', rec); mailer.confirmToPerson('candidate', rec); }
   if (refBy && r.isNew) insert('notes', { record_id: r.candidate.id, text: `Referred by ${refBy}`, author: 'Form', at: now() });
   if (b.cv && b.cv.base64) { try { const f = await F.saveFile({ recordId: r.candidate.id, type: 'cv', name: b.cv.name, base64: b.cv.base64, by: 'Candidate form' }); update('candidates', r.candidate.id, { cv_file: String(f.id) }); CV.fillCandidate(r.candidate.id, b.cv.name, b.cv.base64, 'Candidate form'); } catch (e) { insert('notes', { record_id: r.candidate.id, text: `CV not saved: ${e.message}`, author: 'Form', at: now() }); } }
@@ -340,7 +343,7 @@ function clientAppView(a, client) {
   const js = (job.skills || []).map((x) => x.toLowerCase());
   return {
     id: a.id, step: a.step, result: a.result, job_id: job.id, job_title: job.title, candidate_id: cand.id, name: cand.name, city: cand.city, phone: null, availability: avail ? { text: avail.note, at: avail.at } : null,
-    exp_total: cand.exp_total, exp_jewellery: cand.exp_jewellery, cur_salary: cand.cur_salary, exp_salary: cand.exp_salary, notice_days: cand.notice_days, current_company: cand.current_company,
+    exp_total: cand.exp_total, exp_jewellery: cand.exp_jewellery, exp_business: cand.exp_business || [], cur_salary: cand.cur_salary, exp_salary: cand.exp_salary, notice_days: cand.notice_days, current_company: cand.current_company,
     skills: (cand.skills || []).map((s) => ({ s, match: js.includes(s.toLowerCase()) })), score: sc.score, reasons: sc.reasons, short_cv: cand.short_cv_file || null, cv: null,
     our_notes: ours.map((i) => ({ remark: i.remark, rating: i.rating, qa: i.qa })), interviews: v.interviews.filter((i) => i.round === 'client'), offer_ctc: a.offer_ctc, joining_date: a.joining_date,
     offer_letter: a.offer_letter, offer_sent: a.offer_sent, checklist: a.checklist, joining_docs: a.joining_docs, client_choice: a.client_choice,
@@ -578,7 +581,8 @@ route('POST', '/api/cand/apply', K, (ctx) => {
 });
 route('PUT', '/api/cand/profile', K, (ctx) => {
   const b = ctx.body; const patch = {};
-  for (const k of ['name', 'email', 'city', 'state', 'job_wanted', 'exp_total', 'exp_jewellery', 'notice_days', 'skills', 'current_company', 'looking', 'work_cities']) if (b[k] !== undefined) patch[k] = b[k] === '' ? null : b[k];
+  if (b.exp_business !== undefined) b.exp_business = L.cleanBusiness(b.exp_business);
+  for (const k of ['exp_business', 'name', 'email', 'city', 'state', 'job_wanted', 'exp_total', 'exp_jewellery', 'notice_days', 'skills', 'current_company', 'looking', 'work_cities']) if (b[k] !== undefined) patch[k] = b[k] === '' ? null : b[k];
   // A new city brings its own state (the profile has no State box), unless a state was sent with it.
   if (patch.city && patch.city !== ctx.candidate.city && b.state === undefined) patch.state = L.stateOf(patch.city) || null;
   const yearly = (month, now) => (month === '' ? null : Number(month) === Math.round((now || 0) / 12) ? now : Number(month) * 12);
