@@ -251,16 +251,42 @@ route('GET', '/api/leads', SUPER, (ctx) => {
   const hires = {};
   for (const a of all("SELECT a.source, a.joined_at FROM applications a WHERE a.result='Hired'")) if (a.joined_at >= since) hires[a.source || 'Other'] = (hires[a.source || 'Other'] || 0) + 1;
   if (q.format) {
-    if (q.tab === 'candidate') return page(ctx, cands, 'candidate-leads', ['id', 'name', 'whatsapp', 'job_wanted', 'city', 'source', 'created_at', 'agency_id']);
+    const only = q.ids ? new Set(String(q.ids).split(',')) : null; const pick = (rows) => (only ? rows.filter((r) => only.has(r.id)) : rows);
+    if (q.tab === 'candidate') return page(ctx, pick(cands), 'candidate-leads', ['id', 'name', 'whatsapp', 'email', 'job_wanted', 'department', 'city', 'state', 'exp_total', [(r) => (r.exp_business || []).join(', '), 'worked_in'], [(r) => (r.exp_salary ? Math.round(r.exp_salary / 12) : ''), 'expected_per_month'], 'notice_days', 'looking', 'source', 'created_at', 'agency_id']);
     if (q.tab === 'check') return page(ctx, check, 'leads-to-check', ['id', 'type', 'label', 'whatsapp', 'email', 'source', 'needs_check', 'possible_repeat_of']);
-    return page(ctx, clients, 'client-leads', ['id', 'company', 'contact', 'whatsapp', 'city', 'need', 'roles', 'source', 'created_at', 'agency_name']);
+    return page(ctx, pick(clients), 'client-leads', ['id', 'company', 'contact', 'whatsapp', 'email', 'city', 'state', 'business_type', 'need', 'roles', 'stage', 'source', 'created_at', 'agency_name']);
   }
-  return { clients, candidates: cands, check, sources: srcCount, hires, agencies: all("SELECT id, name FROM agencies WHERE status='Active'") };
+  return { clients, candidates: cands, check, sources: srcCount, hires, stages: D.settings().client_stages, agencies: all("SELECT id, name FROM agencies WHERE status='Active'") };
 });
 route('POST', '/api/leads/assign', SUPER, (ctx) => {
   const { type, ids, agency_id } = ctx.body;
   const out = (ids || [ctx.body.id]).map((id) => L.assignLead(type, id, agency_id, ctx.actor));
   return { ok: true, count: out.length };
+});
+// Bulk actions on ticked leads (Leads page, super admin): mark seen, junk, send the account link on WhatsApp,
+// move clients to a stage, add candidates to a job opening. Each record is done on its own; failures are listed.
+route('POST', '/api/leads/bulk', SUPER, (ctx) => {
+  const { type, action, value } = ctx.body; const ids = (ctx.body.ids || []).map(String).slice(0, 500);
+  const table = type === 'client' ? 'clients' : 'candidates'; const out = { done: 0, skipped: [] };
+  if (!ids.length) throw httpError(400, 'Tick some leads first');
+  if (action === 'stage' && !D.settings().client_stages.includes(value)) throw httpError(400, 'Pick a stage');
+  if (action === 'add_to_job' && !get('SELECT 1 FROM jobs WHERE id=?', value)) throw httpError(400, 'Pick a job opening');
+  for (const id of ids) {
+    try {
+      const r = get(`SELECT id FROM ${table} WHERE id=? AND merged_into IS NULL AND removed=0`, id); if (!r) { out.skipped.push(`${id}: not found`); continue; }
+      if (action === 'seen') D.edit(table, id, { is_new: 0 }, ctx.actor.label, ctx.ip);
+      else if (action === 'junk') D.edit(table, id, { junk: 1, is_new: 0 }, ctx.actor.label, ctx.ip);
+      else if (action === 'stage' && type === 'client') D.edit(table, id, { stage: value, is_new: 0 }, ctx.actor.label, ctx.ip);
+      else if (action === 'add_to_job' && type === 'candidate') L.createApplication(id, value, ctx.actor, null, 'Added from Leads');
+      else if (action === 'welcome') {
+        const s = L.sendWA({ ptype: type, pid: id, format: type === 'client' ? 'bbhs_client_welcome' : 'bbhs_candidate_welcome', vars: { client_id: id, candidate_id: id, link: L.link(type === 'client' ? 'my-account' : 'my-profile') }, by: ctx.actor, bulk: true, dedupe: `welcome-again:${id}:${L.istDay()}` });
+        if (s && s.skipped) { out.skipped.push(`${id}: ${s.skipped}`); continue; }
+      } else throw httpError(400, 'Unknown action');
+      out.done++;
+    } catch (e) { if (e.status === 400 && e.message === 'Unknown action') throw e; out.skipped.push(`${id}: ${e.message}`); }
+  }
+  D.history(ctx.actor.label, `bulk ${action}`, null, table, null, `${out.done} of ${ids.length}${value ? ` (${value})` : ''}`, ids.join(','), ctx.ip);
+  return out;
 });
 route('POST', '/api/leads/junk', T, (ctx) => {
   const { type, id } = ctx.body; const table = type === 'client' ? 'clients' : 'candidates';
