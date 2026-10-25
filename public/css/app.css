@@ -1056,3 +1056,18 @@ html[lang="hi"] .eyebrow { letter-spacing: .02em; }
 .why { border-left: 3px solid var(--mustard); }
 .why::after { display: none; }
 .why b { display: block; }
+
+/* Home and partners: sections sit close together (about a fifth of the earlier gaps). */
+.lp-hero { padding-bottom: 8px; }
+.lp-sec { padding-top: 8px; padding-bottom: 8px; }
+.lp-sec + .lp-sec, .lp-stats + .lp-sec, .lp-sec + .lp-stats { margin-top: 0; }
+.lp-stats { margin: 8px 0; }
+.sec-head { margin-bottom: 12px; }
+.sec-head h2 { margin: 4px 0 4px; }
+.lp .center { margin-top: 10px; }
+.lp-foot { margin-top: 8px; }
+.sim-head { margin: 14px 0 10px; }
+.how-seg { margin-bottom: 12px; }
+.lp-stats { margin: 0; }
+.mq { padding: 4px 0; }
+.lp-hero { padding-bottom: 4px; }
