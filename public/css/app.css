@@ -1019,3 +1019,40 @@ body.guarded.guard-veil::after { content: 'Hidden while the portal is not in fro
 @media (max-width: 420px) { .why-grid { grid-template-columns: 1fr; } }
 .lp-search .btn svg { width: 18px; height: 18px; flex: none; }
 html[lang="hi"] .eyebrow { letter-spacing: .02em; }
+
+/* Candidates: filters in an even grid; "More filters" opens a labelled panel under the whole bar. */
+.cand-filters { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 8px; position: relative; align-items: center; }
+.cand-filters > input, .cand-filters > select { width: 100%; min-width: 0; max-width: none; field-sizing: fixed; }
+.cand-filters > input[data-q] { grid-column: span 2; min-width: 0; }
+.cand-filters > .more-f > summary, .cand-filters > [data-save] { width: 100%; justify-content: center; min-height: 38px; }
+.cand-filters > .more-f { position: static; }
+.cand-filters > .more-f > summary { list-style: none; } .cand-filters > .more-f > summary::-webkit-details-marker { display: none; }
+.cand-filters > .more-f[open] > summary { border-color: var(--primary); background: var(--primary-50); }
+.more-pop { position: absolute; left: 0; right: 0; top: calc(100% + 8px); z-index: 30; padding: 16px; display: flex; flex-direction: column; gap: 12px; box-shadow: var(--shadow-lg); }
+.more-pop .mf { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.more-pop .mf > span { font-size: 12px; font-weight: 600; color: var(--muted); }
+.more-pop input:not([type=checkbox]), .more-pop select { width: 100%; min-width: 0; max-width: none; field-sizing: fixed; border-radius: var(--radius-sm); padding: 8px 12px; font-size: 13px; }
+.more-pop .mf-check { gap: 8px; font-weight: 500; }
+@media (max-width: 760px) { .cand-filters > input[data-q] { grid-column: 1 / -1; } .more-pop .g4 { grid-template-columns: 1fr 1fr; } }
+
+/* Home search results (openings section). */
+.search-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin: -6px 0 16px; padding: 12px 16px; border-radius: 14px; background: var(--mustard-50); border: 1px solid var(--mustard-300); }
+.search-bar .sb-text { font-size: 15px; } .search-bar b { font-family: var(--display); }
+.sim-head { font: 700 20px var(--display); margin: 34px 0 14px; }
+
+/* Home and partners: tighter rhythm between sections, cards without icons. */
+.lp-hero { padding-bottom: clamp(20px, 3vw, 36px); }
+.lp-sec { padding-top: clamp(22px, 3vw, 40px); padding-bottom: clamp(22px, 3vw, 40px); }
+.sec-head { margin-bottom: clamp(16px, 2vw, 24px); }
+.sec-head h2 { margin: 8px 0 6px; }
+.lp-stats { padding-top: clamp(26px, 3.5vw, 40px); padding-bottom: clamp(26px, 3.5vw, 40px); }
+.lp .center { margin-top: 16px; }
+.lp-foot { margin-top: 12px; }
+.sim-head { margin-top: 24px; }
+.jc-meta > span { white-space: nowrap; }
+.jc-meta { gap: 4px 18px; }
+.job-card { gap: 10px; }
+.fg { border-top: 3px solid var(--mustard-300); }
+.why { border-left: 3px solid var(--mustard); }
+.why::after { display: none; }
+.why b { display: block; }

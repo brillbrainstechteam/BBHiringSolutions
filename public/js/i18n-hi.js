@@ -77,6 +77,10 @@
     'Tell us about your network': 'अपने नेटवर्क के बारे में बताइए', 'For example: 40 CAD students a year, or 200 retail candidates': 'जैसे: साल में 40 CAD छात्र, या 200 रिटेल उम्मीदवार',
     'Send partner request': 'पार्टनर अनुरोध भेजें', 'By sending, you agree that we may contact you on WhatsApp about the partnership.': 'भेजकर आप सहमत हैं कि पार्टनरशिप के बारे में हम आपसे WhatsApp पर संपर्क कर सकते हैं।',
     'Your partner request has reached our team. We will call you on WhatsApp within two working days.': 'आपका पार्टनर अनुरोध हमारी टीम तक पहुँच गया है। हम दो कामकाजी दिनों में WhatsApp पर कॉल करेंगे।',
+    'openings for': 'नौकरियाँ —', 'opening for': 'नौकरी —', 'You searched for': 'आपकी खोज:', '✕ Clear search': '✕ खोज हटाएँ',
+    'No open jobs for this search right now': 'इस खोज के लिए अभी कोई नौकरी खुली नहीं है', 'New jobs open every week. Send your details once — our recruiters will call you as soon as a matching job opens.': 'हर हफ़्ते नई नौकरियाँ खुलती हैं। एक बार अपनी जानकारी भेजें — मेल खाती नौकरी खुलते ही हमारे रिक्रूटर कॉल करेंगे।',
+    'Similar openings': 'मिलती-जुलती नौकरियाँ', 'Not the right fit?': 'सही नहीं लगी?', 'Send your details and we will call you': 'अपनी जानकारी भेजें, हम कॉल करेंगे',
+    'You are applying for': 'आप इसके लिए आवेदन कर रहे हैं:', 'We will also show you other matching jobs.': 'हम आपको दूसरी मिलती-जुलती नौकरियाँ भी दिखाएँगे।',
     'Please enter your organisation': 'कृपया अपनी संस्था का नाम लिखें', 'Training partner': 'ट्रेनिंग पार्टनर',
 
     // ---- forms ----

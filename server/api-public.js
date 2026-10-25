@@ -22,15 +22,25 @@ route('GET', '/api/bootstrap', {}, () => {
   };
 });
 // Home page: open jobs anyone can see (no employer names), and how many there are per field of work.
-route('GET', '/api/public/jobs', { rate: { key: 'pubjobs', max: 240, minutes: 60 } }, () => {
+// The home page search narrows it: ?title= (part of the job title), ?city=, ?group= (field of work).
+// With a search, "similar" lists other open jobs in the same field (or the same job in other cities).
+route('GET', '/api/public/jobs', { rate: { key: 'pubjobs', max: 240, minutes: 60 } }, (ctx) => {
+  const q = ctx.query || {};
   const open = all('SELECT * FROM jobs WHERE archived=0 AND is_sample=0 ORDER BY created_at DESC').map((j) => V.jobView(j)).filter((j) => ['Open', 'Sourcing', 'Interviewing', 'Offer stage'].includes(j.status));
   const groups = {}; for (const x of L.jobList()) groups[x.title] = x.group;
-  const byGroup = {}; for (const j of open) { const g = groups[j.title] || 'Other roles'; byGroup[g] = (byGroup[g] || 0) + Math.max(1, (j.openings || 1) - (j.filled || 0)); }
-  return {
-    total: open.reduce((n, j) => n + Math.max(1, (j.openings || 1) - (j.filled || 0)), 0),
-    jobs: open.slice(0, 9).map((j) => ({ id: j.id, title: j.title, city: j.city, salary: L.salaryText(j), exp: j.exp_from !== null && j.exp_from !== undefined ? `${j.exp_from}–${j.exp_to ?? '+'} yrs` : '', group: groups[j.title] || 'Other roles', seats: Math.max(1, (j.openings || 1) - (j.filled || 0)), posted: j.created_at })),
-    groups: byGroup,
-  };
+  const seats = (j) => Math.max(1, (j.openings || 1) - (j.filled || 0));
+  const card = (j) => ({ id: j.id, title: j.title, city: j.city, salary: L.salaryText(j), exp: j.exp_from !== null && j.exp_from !== undefined ? `${j.exp_from}–${j.exp_to ?? '+'} yrs` : '', group: groups[j.title] || 'Other roles', seats: seats(j), posted: j.created_at });
+  const byGroup = {}; for (const j of open) { const g = groups[j.title] || 'Other roles'; byGroup[g] = (byGroup[g] || 0) + seats(j); }
+  const low = (v) => String(v || '').trim().toLowerCase();
+  const title = low(q.title); const city = low(q.city); const group = String(q.group || '').trim();
+  const out = { total: open.reduce((n, j) => n + seats(j), 0), groups: byGroup };
+  if (!title && !city && !group) return { ...out, jobs: open.slice(0, 9).map(card) };
+  const fits = (j) => (!title || low(j.title).includes(title) || title.includes(low(j.title))) && (!city || low(j.city) === city) && (!group || (groups[j.title] || 'Other roles') === group);
+  const hits = open.filter(fits);
+  const wantGroup = group || groups[open.find((j) => low(j.title) === title)?.title] || (L.jobList().find((x) => low(x.title) === title) || {}).group;
+  const similar = open.filter((j) => !hits.includes(j) && ((wantGroup && groups[j.title] === wantGroup) || (title && low(j.title).includes(title))))
+    .sort((a, b) => Number(!!title && !low(a.title).includes(title)) - Number(!!title && !low(b.title).includes(title))).slice(0, 6); // the same job in other cities first
+  return { ...out, search: { title: q.title || '', city: q.city || '', group }, jobs: hits.slice(0, 30).map(card), similar: similar.map(card) };
 });
 // "Become a partner" (partners page): saved, and the super admins get a task.
 route('POST', '/api/public/partner', { rate: { key: 'form', max: 60, minutes: 60 } }, (ctx) => {
