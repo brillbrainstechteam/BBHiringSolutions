@@ -36,7 +36,7 @@ const statusBadge = (s) => `<span class="badge st-${String(s || '').replace(/\s+
 const scoreBadge = (n) => `<span class="score ${n >= 70 ? 'hi' : n >= 55 ? 'mid' : ''}" title="Match score">${n}</span>`;
 const levelName = (l) => ({ super: 'Super admin', admin: 'Admin', sub: 'Sub admin' }[l] || l);
 const resultBadge = (r) => (r === 'open' ? '<span class="badge b-primary">Open</span>' : r === 'Hired' ? '<span class="badge b-green">Hired</span>' : `<span class="badge b-red">${esc(r)}</span>`);
-const ticks = (st) => ({ 'would send': '<span class="badge b-outline tiny" title="Saved; sends when WhatsApp is connected">would send</span>', scheduled: '<span class="badge b-amber tiny">scheduled</span>', sending: '<span class="ticks">✓</span>', sent: '<span class="ticks">✓</span>', delivered: '<span class="ticks">✓✓</span>', read: '<span class="ticks read">✓✓</span>', failed: '<span class="badge b-red tiny">failed</span>', received: '' }[st] || esc(st));
+const ticks = (st) => ({ held: '<span class="badge b-amber tiny" title="Not sent: candidate WhatsApp is paused for testing">held</span>', 'would send': '<span class="badge b-outline tiny" title="Saved; sends when WhatsApp is connected">would send</span>', scheduled: '<span class="badge b-amber tiny">scheduled</span>', sending: '<span class="ticks">✓</span>', sent: '<span class="ticks">✓</span>', delivered: '<span class="ticks">✓✓</span>', read: '<span class="ticks read">✓✓</span>', failed: '<span class="badge b-red tiny">failed</span>', received: '' }[st] || esc(st));
 Object.assign(BB, { statusBadge, scoreBadge, levelName, resultBadge, ticks });
 
 // ---------- API ----------

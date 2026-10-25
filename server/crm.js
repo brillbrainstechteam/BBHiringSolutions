@@ -22,6 +22,8 @@ async function post(msg, text, vars) {
 // The real text and filled details are only kept in memory for the retries, never in the saved history.
 const pending = new Map();
 async function dispatch(msg, realText, vars) {
+  const held = L.waHeld(msg); // scheduled before the testing pause was turned on
+  if (held) { D.update('messages', msg.id, { status: 'held', error: held }); return; }
   pending.set(msg.id, { text: realText, vars });
   const tries = (D.get('SELECT tries FROM messages WHERE id=?', msg.id) || {}).tries || 0;
   try {

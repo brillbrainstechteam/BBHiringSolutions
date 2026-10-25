@@ -107,6 +107,15 @@ function person(type, id) {
   return null;
 }
 const actorName = (a) => (a ? a.label || a.name || 'System' : 'System');
+// Testing pause (settings.wa_pause): why a WhatsApp to a candidate is held instead of sent, or null to send it.
+function waHeld(msg) {
+  const w = settings().wa_pause || {};
+  if (!w.candidates || msg.person_type !== 'candidate') return null;
+  if ((w.allow || []).map((x) => String(x).replace(/\D/g, '').slice(-10)).includes(String(msg.phone || '').slice(-10))) return null;
+  if (msg.format === 'bbhs_login_code') return null; // people must still be able to log in
+  if (!msg.format && !['Auto', 'Bot', 'System'].includes(msg.sent_by)) return null; // typed by a team member
+  return 'Held: candidate WhatsApp paused for testing';
+}
 
 // ---------- WhatsApp records (section 8) ----------
 function fillFormat(fmtName, lang, vars) {
@@ -182,6 +191,7 @@ function sendWA(o) {
   // Saved history never keeps a password: the text is masked after it is handed to the CRM.
   const realText = msg.text;
   if (o.secret) msg.text = msg.text.split(o.secret).join('••••••••');
+  const held = waHeld(msg); if (held) { msg.status = 'held'; msg.error = held; insert('messages', msg); return msg; }
   insert('messages', msg);
   if (!scheduled && dispatcher && s.crm.enabled) dispatcher(msg, realText, vars);
   D.setHealth('last_wa_sent', now());
@@ -855,7 +865,7 @@ function sendSystemText(ptype, pid, text) {
 
 module.exports = {
   STEPS, stepIdx, digits10, validPhone, inr, istDay, istFmt, istTime, istHour, inQuiet, next9am, daysBetween, addDays, hashPassword, checkPassword, newPassword, sha,
-  jobList, deptOf, stateOf, person, fillFormat, windowOpenUntil, sendWA, setDispatcher, alertUser, link, agencyAdmin, superAdmins,
+  waHeld, jobList, deptOf, stateOf, person, fillFormat, windowOpenUntil, sendWA, setDispatcher, alertUser, link, agencyAdmin, superAdmins,
   computeJobStatus, jobStatusReason, recalcJob, filledCount, appsOfJob, matchScore, jobsFor, cleanBusiness, BUSINESS_TYPES, ratingOf, bestMatches, isPlaced, salaryText, autoJobAlert,
   feeFor, gstFor, fyOf, billView, refreshBill, createBillForApp, issueBill, upiLink,
   appHist, createApplication, moveStep, closeApplication, reopenApplication, scheduleInterview, recordInterview, interviewView, ivVars, recordOffer, leftJob, jobAction,
