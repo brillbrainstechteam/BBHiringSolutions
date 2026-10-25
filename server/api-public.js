@@ -18,8 +18,34 @@ route('GET', '/api/bootstrap', {}, () => {
     jobs: L.jobList().filter((j) => !j.hidden), places: (() => { const seen = new Set(); const out = []; for (const p of [...s.cities, ...require('./places').PLACES]) { const k = p.name.toLowerCase(); if (!seen.has(k)) { seen.add(k); out.push({ name: p.name, state: p.state || L.stateOf(p.name) }); } } return out; })(), industries: Object.fromEntries(Object.keys(s.industries).map((k) => [k, L.jobList(k).filter((j) => !j.hidden)])), default_industry: s.default_industry, departments: s.departments, cities: s.cities.map((c) => c.name), skills: s.skills, stages: s.client_stages,
     closing_reasons: s.closing_reasons, job_close_reasons: s.job_close_reasons, reopen_reasons: s.reopen_reasons, lead_sources: s.lead_sources, src_tags: s.src_tags, industry_list: s.industry_list || ['Jewellery'], default_industry: s.default_industry || 'Jewellery',
     steps: L.STEPS, consent: L.CONSENT_WORDING, fee: s.fee, replacement_days: s.replacement_days, payment_days: s.payment_days, agency_share_pct: s.agency_share_pct, gst: s.gst, match: s.match, quiet: s.quiet, log_deadline: s.log_deadline,
-    test_mode: !s.crm.enabled, languages: s.languages, env: D.ENV.name, base_url: s.business.base_url,
+    test_mode: !s.crm.enabled, languages: s.languages, env: D.ENV.name, base_url: s.business.base_url, landing: s.landing || null,
   };
+});
+// Home page: open jobs anyone can see (no employer names), and how many there are per field of work.
+route('GET', '/api/public/jobs', { rate: { key: 'pubjobs', max: 240, minutes: 60 } }, () => {
+  const open = all('SELECT * FROM jobs WHERE archived=0 AND is_sample=0 ORDER BY created_at DESC').map((j) => V.jobView(j)).filter((j) => ['Open', 'Sourcing', 'Interviewing', 'Offer stage'].includes(j.status));
+  const groups = {}; for (const x of L.jobList()) groups[x.title] = x.group;
+  const byGroup = {}; for (const j of open) { const g = groups[j.title] || 'Other roles'; byGroup[g] = (byGroup[g] || 0) + Math.max(1, (j.openings || 1) - (j.filled || 0)); }
+  return {
+    total: open.reduce((n, j) => n + Math.max(1, (j.openings || 1) - (j.filled || 0)), 0),
+    jobs: open.slice(0, 9).map((j) => ({ id: j.id, title: j.title, city: j.city, salary: L.salaryText(j), exp: j.exp_from !== null && j.exp_from !== undefined ? `${j.exp_from}–${j.exp_to ?? '+'} yrs` : '', group: groups[j.title] || 'Other roles', seats: Math.max(1, (j.openings || 1) - (j.filled || 0)), posted: j.created_at })),
+    groups: byGroup,
+  };
+});
+// "Become a partner" (partners page): saved, and the super admins get a task.
+route('POST', '/api/public/partner', { rate: { key: 'form', max: 60, minutes: 60 } }, (ctx) => {
+  const b = ctx.body || {};
+  if (b.website) throw httpError(400, 'Please try again.');
+  if (!String(b.name || '').trim()) throw httpError(400, 'Please enter your name', 'name');
+  if (!String(b.organisation || '').trim()) throw httpError(400, 'Please enter your organisation', 'organisation');
+  const phone = L.digits10(b.whatsapp); if (!L.validPhone(phone)) throw httpError(400, 'Enter a 10-digit WhatsApp number starting with 6, 7, 8 or 9', 'whatsapp');
+  if (b.email && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(String(b.email).trim())) throw httpError(400, 'Enter a valid email, or leave it empty', 'email');
+  const kinds = ['Placement agency', 'Training institute', 'Industry body / association', 'Independent recruiter', 'Other'];
+  insert('partner_requests', { name: String(b.name).trim(), organisation: String(b.organisation).trim(), kind: kinds.includes(b.kind) ? b.kind : 'Other', whatsapp: phone, email: String(b.email || '').trim(), city: String(b.city || '').trim(), message: String(b.message || '').slice(0, 1000), source: String(b.src || 'Website').slice(0, 40), created_at: now() });
+  const text = `New partner request: ${String(b.organisation).trim()} (${kinds.includes(b.kind) ? b.kind : 'Other'}), ${String(b.city || '').trim() || 'city not given'}`;
+  for (const u of L.superAdmins()) L.alertUser(u.id, text, null, true);
+  D.history('Partner form', 'partner request', null, 'partner_requests', null, String(b.organisation).trim(), null, ctx.ip);
+  return { ok: true };
 });
 
 // ---------- team login (19.3) ----------

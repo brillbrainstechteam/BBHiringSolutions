@@ -434,7 +434,7 @@ BB.track = (event, params) => { try { if (window.fbq && document.body.dataset.vi
 let lastTracked = location.pathname;
 BB.route = () => {
   const r = BB.parseHash();
-  const map = { hire: 'hire', apply: 'apply', 'my-account': 'client', 'my-profile': 'candidate', team: 'team' };
+  const map = { hire: 'hire', apply: 'apply', partners: 'partners', 'my-account': 'client', 'my-profile': 'candidate', team: 'team' };
   const view = map[r.name] || 'landing';
   BB.portal = { client: 'client', candidate: 'candidate', team: 'team' }[view] || null;
   if (view !== 'team') { BB.closePanels(); if (BB.unguard) BB.unguard(); }

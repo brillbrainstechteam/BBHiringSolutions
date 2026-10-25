@@ -127,6 +127,23 @@ module.exports.defaultSettings = () => ({
   default_industry: 'Jewellery',
   // Meta (Facebook/Instagram) ads: the pixel on the public pages and accounts, never the team portal. Empty = off.
   meta_pixel_id: '2481511222591423',
+  // Home page trust content (editable later): BrillBrains group numbers and the jewellery businesses we hire for.
+  // A client shows its logo when it has one (public/img/clients), otherwise its name in the same style.
+  landing: {
+    stats: [['2011', 'In the jewellery industry since'], ['100+', 'Jewellery brands empowered'], ['10,000+', 'People trained'], ['30', 'Jewellery businesses hiring with us'], ['12', 'Cities across India']],
+    clients: [
+      ['SwarnSarita', 'Mumbai', 'B2B', 'swarnsarita.png'], ['Pure Platinum', 'Mumbai', 'B2B', 'pure-platinum.png'], ['Riivara', 'Mumbai', 'B2C', 'riivara.png'], ['Ratna Design', 'Surat', 'B2C', 'ratna-design.png'],
+      ['Brahammand', 'Mumbai', 'B2C', 'brahammand.png'], ['Greenwave Diamonds', 'Mumbai', 'B2B', 'greenwave.png'], ['Gems From Jaipur', 'Jaipur', 'B2C'], ['Devi Diamonds', 'Gurugram', 'B2C'],
+      ['Dishaa Platinum', 'Mumbai', 'B2B'], ['Dhanresha Gold', 'Mumbai', 'B2B'], ['Om Jewellers', 'Mumbai', 'B2C'], ['Shri Chimmanlal Jewels', 'Hyderabad', 'B2C'], ['JKS Jewels', 'Bengaluru', 'B2B'],
+      ['Shrinivasen RKR Gold', 'Coimbatore', 'B2C'], ['Sangam House of Jewels', 'Mumbai', 'B2B'], ['Bhura Jewels', 'Jabalpur', 'B2C'], ['JB Gupta & Sons', 'Mumbai', 'B2C'], ['Royal Chains', 'Mumbai', 'B2B'],
+      ['Surabi Jewells', 'Coimbatore', 'B2C'], ["Nicole's Creations", 'Mumbai', 'B2C'], ['Harsh Prakash Jewellers', 'Mumbai', 'B2B & B2C'], ['Aradhana Jewellers', 'Mumbai', 'B2B'], ['Shree Radhe Diamonds', 'Hyderabad', 'B2B'],
+      ['Pratham International', 'New Delhi', 'B2B'], ['Ghansingh', 'Mumbai', 'B2C'], ['DP Jewellers', 'Ballia', 'B2C'], ['Jagdamba Jewellers', 'Ahmedabad', 'B2C'], ['Brij Kishore Jewellers', 'Ayodhya', 'B2C'],
+      ['Akshit', 'Mumbai', 'B2B'], ['Dagina', 'Mumbai', 'B2B'],
+    ],
+    partners: [['DG Trainings', 'Training partner', 'dg-trainings.png']],
+    legal: { terms: 'https://hiring.brillbrainsconsultants.com/terms/', privacy: 'https://hiring.brillbrainsconsultants.com/privacy/', refund: 'https://hiring.brillbrainsconsultants.com/refund/' },
+    contact: { phones: ['+91 73041 92092', '+91 73047 92092'], email: 'connect@brillbrainsconsultants.com', site: 'https://brillbrainsconsultants.com' },
+  },
   // Industries a candidate can belong to (filter on the Candidates page). Jewellery is the default.
   industry_list: ['Jewellery', 'Retail', 'FMCG', 'Manufacturing', 'IT & Software', 'Banking & Financial Services', 'Insurance', 'Healthcare & Pharma', 'Hospitality & Travel',
     'Real Estate & Construction', 'Education', 'Logistics & Supply Chain', 'Automobile', 'Textile & Apparel', 'E-commerce', 'Telecom', 'Media & Entertainment', 'Agriculture', 'Energy & Power', 'Other'],
