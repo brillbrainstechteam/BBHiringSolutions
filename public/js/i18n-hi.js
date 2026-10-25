@@ -81,6 +81,30 @@
     'No open jobs for this search right now': 'इस खोज के लिए अभी कोई नौकरी खुली नहीं है', 'New jobs open every week. Send your details once — our recruiters will call you as soon as a matching job opens.': 'हर हफ़्ते नई नौकरियाँ खुलती हैं। एक बार अपनी जानकारी भेजें — मेल खाती नौकरी खुलते ही हमारे रिक्रूटर कॉल करेंगे।',
     'Similar openings': 'मिलती-जुलती नौकरियाँ', 'Not the right fit?': 'सही नहीं लगी?', 'Send your details and we will call you': 'अपनी जानकारी भेजें, हम कॉल करेंगे',
     'You are applying for': 'आप इसके लिए आवेदन कर रहे हैं:', 'We will also show you other matching jobs.': 'हम आपको दूसरी मिलती-जुलती नौकरियाँ भी दिखाएँगे।',
+    // ---- home and partners, short copy ----
+    "From the showroom floor to the karigar's bench.": 'शोरूम से लेकर कारीगर की बेंच तक।', 'jewellers in': 'ज्वेलर्स,', 'cities hire with us': 'शहरों में, हमारे साथ हायर करते हैं',
+    'Hiring for the jewellery trade, since 2011.': 'ज्वेलरी कारोबार के लिए हायरिंग, 2011 से।', 'Apply': 'आवेदन करें', 'Open jobs': 'खुली नौकरियाँ', 'WhatsApp': 'WhatsApp',
+    'Employer names are shared after your first call.': 'कंपनी का नाम पहली कॉल के बाद बताया जाता है।', 'All': 'सभी', 'Today': 'आज', 'Yesterday': 'कल', 'Over a month ago': 'एक महीने से पहले',
+    'opening for': 'नौकरी —', '✕ Clear': '✕ हटाएँ', 'No match right now': 'अभी कोई मेल नहीं', 'New jobs every week': 'हर हफ़्ते नई नौकरियाँ', 'Send your details — we call when a match opens.': 'अपनी जानकारी भेजें — मेल खाती नौकरी खुलते ही हम कॉल करेंगे।',
+    'Share the role': 'रोल बताइए', 'Two-minute form or WhatsApp.': 'दो मिनट का फ़ॉर्म या WhatsApp।', 'We screen': 'हम जाँचते हैं', 'Every candidate is called and interviewed.': 'हर उम्मीदवार से बात और इंटरव्यू होता है।',
+    'Meet a shortlist': 'शॉर्टलिस्ट देखें', 'Pick interview times in your account.': 'अपने अकाउंट में इंटरव्यू का समय चुनें।', 'Pay on joining': 'जॉइनिंग पर भुगतान',
+    'Send your details': 'अपनी जानकारी भेजें', 'CV or voice, English or Hindi.': 'CV या आवाज़, अंग्रेज़ी या हिन्दी।', 'Talk to a recruiter': 'रिक्रूटर से बात करें', 'Tell us the job and salary you want.': 'पसंद की नौकरी और सैलरी बताइए।',
+    'Interview': 'इंटरव्यू', 'Dates and reminders on WhatsApp.': 'तारीख और रिमाइंडर WhatsApp पर।', 'Join': 'जॉइन करें', 'Free for you, always.': 'आपके लिए हमेशा मुफ़्त।',
+    'Only jewellery': 'सिर्फ़ ज्वेलरी', 'Karat, hallmarking, CAD, showroom — we speak it.': 'कैरेट, हॉलमार्किंग, CAD, शोरूम — हम यह भाषा समझते हैं।', 'Screened first': 'पहले से जाँचे हुए',
+    'You meet people we have already interviewed.': 'आप उन्हीं से मिलते हैं जिनका हम इंटरव्यू ले चुके हैं।', 'No upfront fee.': 'पहले कोई फ़ीस नहीं।', 'On WhatsApp': 'WhatsApp पर', 'Shortlists, interviews and offers on your phone.': 'शॉर्टलिस्ट, इंटरव्यू और ऑफ़र आपके फ़ोन पर।',
+    'Employers': 'नियोक्ता', 'Need staff?': 'स्टाफ़ चाहिए?', 'Screened candidates, usually within a week.': 'जाँचे हुए उम्मीदवार, आमतौर पर एक हफ़्ते में।', 'Start hiring →': 'हायरिंग शुरू करें →',
+    'Job seekers': 'नौकरी ढूँढने वाले', 'Want a jewellery job?': 'ज्वेलरी नौकरी चाहिए?', 'One form. Free for you.': 'एक फ़ॉर्म। आपके लिए मुफ़्त।', 'Apply now →': 'अभी आवेदन करें →',
+    'Place people with us': 'हमारे साथ लोगों को नौकरी दिलाएँ', 'Agencies, institutes and recruiters.': 'एजेंसियाँ, संस्थान और रिक्रूटर।', 'Become a partner →': 'पार्टनर बनें →',
+    'Is it free for job seekers?': 'क्या नौकरी ढूँढने वालों के लिए यह मुफ़्त है?', 'Yes. Employers pay only when someone joins.': 'हाँ। नियोक्ता तभी भुगतान करते हैं जब कोई जॉइन करता है।',
+    'Which jobs do you hire for?': 'आप किन नौकरियों के लिए हायर करते हैं?', 'Every jewellery role — sales, design, CAD, karigars, quality, accounts, marketing and more.': 'ज्वेलरी की हर भूमिका — सेल्स, डिज़ाइन, CAD, कारीगर, क्वालिटी, अकाउंट्स, मार्केटिंग और भी।',
+    'How fast are candidates sent?': 'उम्मीदवार कितनी जल्दी भेजे जाते हैं?', 'Usually within a week.': 'आमतौर पर एक हफ़्ते में।', 'What if a new hire leaves?': 'अगर नया व्यक्ति छोड़ दे तो?',
+    'You bring the people. We bring the jobs.': 'आप लोग लाइए। हम नौकरियाँ लाते हैं।', 'of our fee is yours': 'हमारी फ़ीस का हिस्सा आपका', 'jewellers hiring': 'ज्वेलर्स हायर कर रहे हैं', 'to join': 'जुड़ने का खर्च', 'Partnered with': 'हमारे पार्टनर',
+    'Who can partner': 'कौन पार्टनर बन सकता है', 'Placement agencies': 'प्लेसमेंट एजेंसियाँ', 'Fill our open roles.': 'हमारी खुली नौकरियाँ भरें।', 'Training institutes': 'ट्रेनिंग संस्थान', 'Place your students.': 'अपने छात्रों को नौकरी दिलाएँ।',
+    'Industry bodies': 'इंडस्ट्री संगठन', 'A hiring desk for members.': 'सदस्यों के लिए हायरिंग डेस्क।', 'Independent recruiters': 'स्वतंत्र रिक्रूटर', 'Refer and earn.': 'रेफ़र करें और कमाएँ।',
+    'We call within two working days.': 'हम दो कामकाजी दिनों में कॉल करते हैं।', 'Get your login': 'अपना लॉगिन पाएँ', 'See open roles and add candidates.': 'खुली नौकरियाँ देखें और उम्मीदवार जोड़ें।', 'Earn': 'कमाएँ',
+    'Your share on every joining, paid monthly.': 'हर जॉइनिंग पर आपका हिस्सा, हर महीने।', 'Is there a joining fee?': 'क्या जुड़ने की कोई फ़ीस है?', 'No. You earn when your candidate joins.': 'नहीं। आपका उम्मीदवार जॉइन करे तो आप कमाते हैं।',
+    'When do I get paid?': 'भुगतान कब मिलता है?', 'In the monthly statement after the employer pays.': 'नियोक्ता के भुगतान के बाद, मासिक स्टेटमेंट में।', 'Two partners, same person?': 'दो पार्टनर, एक ही व्यक्ति?', 'The first to add them gets the credit.': 'जो पहले जोड़े, क्रेडिट उसे।',
+    'For example: 40 CAD students a year': 'जैसे: साल में 40 CAD छात्र', 'By sending, you agree to be contacted on WhatsApp.': 'भेजकर आप WhatsApp पर संपर्क के लिए सहमत हैं।', 'We will call you on WhatsApp within two working days.': 'हम दो कामकाजी दिनों में WhatsApp पर कॉल करेंगे।',
     'Please enter your organisation': 'कृपया अपनी संस्था का नाम लिखें', 'Training partner': 'ट्रेनिंग पार्टनर',
 
     // ---- forms ----
@@ -257,6 +281,11 @@
 
   // Headings with a highlighted word: the whole heading is swapped (Hindi word order differs).
   const html = {
+    'Trusted by leading jewellers': 'बड़े <em>ज्वेलर्स</em> का भरोसा',
+    'Open jobs': 'खुली <em>नौकरियाँ</em>',
+    'Hiring that knows jewellery': 'हायरिंग जो <em>ज्वेलरी समझती है</em>',
+    'Built for people networks': '<em>लोगों के नेटवर्क</em> के लिए बना',
+    'The jobs come from leading jewellers': 'नौकरियाँ <em>बड़े ज्वेलर्स</em> से आती हैं',
     'Brands that hire with us': 'ब्रांड जो <em>हमारे साथ हायर करते हैं</em>',
     'Open jewellery jobs': 'खुली <em>ज्वेलरी नौकरियाँ</em>',
     'Every role in the jewellery trade': '<em>ज्वेलरी कारोबार</em> की हर भूमिका',
@@ -323,6 +352,8 @@
   patterns.push(
     [/^(\d+) openings$/, '$1 पद'], [/^(\d+) roles$/, '$1 रोल'], [/^(\d+) open now$/, '$1 अभी खुली'], [/^(\d+) cities$/, '$1 शहरों में'],
     [/^Posted (\d+) days ago$/, '$1 दिन पहले डाली गई'],
+    [/^(\d+) days ago$/, '$1 दिन पहले'], [/^Free replacement for (\d+) days\.$/, '$1 दिन तक मुफ़्त रिप्लेसमेंट।'], [/^Free replacement within (\d+) days\.$/, '$1 दिन के भीतर मुफ़्त रिप्लेसमेंट।'],
+    [/^([\d.]+)% of our fee on every joining, paid monthly\.$/, 'हर जॉइनिंग पर हमारी फ़ीस का $1%, हर महीने।'],
     [/^([\d.]+)–([\d.]+|\+) yrs$/, '$1–$2 साल'],
     [/^Pay only when someone joins, with a free replacement for (\d+) days\.$/, 'भुगतान तभी जब कोई जॉइन करे, और $1 दिन तक मुफ़्त रिप्लेसमेंट।'],
     [/^No upfront fee\. Free replacement for (\d+) days if someone leaves\.$/, 'पहले कोई फ़ीस नहीं। कोई छोड़ दे तो $1 दिन तक मुफ़्त रिप्लेसमेंट।'],

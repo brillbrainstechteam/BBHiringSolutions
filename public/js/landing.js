@@ -1,20 +1,21 @@
 /* Home page (hire.brillbrainsconsultants.com) and the partners page (/partners).
-   Home, top to bottom: hero (role search + the lead form card the ads point to), the jewellery businesses we hire for,
-   BrillBrains numbers, live openings, browse by field, how it works (two tracks), why us, cities, the two doors,
-   partners, questions, footer. Trust content (numbers, clients, legal links) comes from settings.landing. */
+   Home, top to bottom: hero (job search + the form the ads point to), proof band (numbers + client logos),
+   open jobs (filter by field), how it works (both sides at once), why us, three doors (hire / job / partner),
+   questions, footer. Trust content (numbers, clients, legal links) comes from settings.landing. */
 (() => {
   const { $, $$, esc } = BB;
   const L = () => BB.boot.landing || { stats: [], clients: [], partners: [], legal: {}, contact: {} };
   const reduced = () => window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const days = () => BB.boot.replacement_days || 90;
 
   // Sections fade up as they scroll into view; numbers count up once.
   function animate(root) {
-    const els = $$('.rv', root);
+    const els = $$('.rv:not(.in)', root);
     if (!('IntersectionObserver' in window) || reduced()) { els.forEach((e) => e.classList.add('in')); $$('[data-count]', root).forEach((e) => (e.textContent = e.dataset.count)); return; }
     const io = new IntersectionObserver((list) => list.forEach((x) => {
       if (!x.isIntersecting) return; io.unobserve(x.target); x.target.classList.add('in');
       $$('[data-count]', x.target).forEach(countUp);
-    }), { threshold: 0.15, rootMargin: '0px 0px -40px 0px' });
+    }), { threshold: 0.12, rootMargin: '0px 0px -30px 0px' });
     els.forEach((e) => io.observe(e));
   }
   // "10,000+" counts 0 → 10,000 and keeps its "+"; a year like 2011 counts up from 1990.
@@ -31,35 +32,35 @@
 
   const initials = (n) => n.replace(/[^A-Za-z& ]/g, '').split(/\s+/).filter((w) => w && !['&', 'and', 'of', 'the'].includes(w.toLowerCase())).slice(0, 2).map((w) => w[0]).join('').toUpperCase();
   // A client: its logo when we have one, otherwise its name set like a wordmark with a monogram.
-  const tile = ([name, city, kind, logo], i) => `<div class="lg-tile${logo ? ' has-logo' : ''}" data-no-i18n title="${esc(name)}${city ? ` · ${esc(city)}` : ''}">${logo
+  const tile = ([name, city, , logo]) => `<div class="lg-tile${logo ? ' has-logo' : ''}" data-no-i18n title="${esc(name)}${city ? ` · ${esc(city)}` : ''}">${logo
     ? `<img src="/img/clients/${esc(logo)}" alt="${esc(name)}" loading="lazy" decoding="async">`
-    : `<span class="mono-chip h${i % 6}">${esc(initials(name))}</span><span class="lg-name">${esc(name)}</span>`}<span class="lg-city">${esc(city || '')}${kind ? ` · ${esc(kind)}` : ''}</span></div>`;
-  const marquee = (list, reverse) => `<div class="mq${reverse ? ' rev' : ''}"><div class="mq-track">${[...list, ...list].map((c, i) => tile(c, i)).join('')}</div></div>`;
+    : `<span class="mono">${esc(initials(name))}</span><span class="lg-name">${esc(name)}</span>`}</div>`;
+  const marquee = (list, reverse) => `<div class="mq${reverse ? ' rev' : ''}"><div class="mq-track">${[...list, ...list].map(tile).join('')}</div></div>`;
 
   const footer = () => {
     const l = L(); const c = l.contact || {}; const g = l.legal || {};
     return `<footer class="lp-foot"><div class="lp-foot-in">
-      <div class="lp-foot-brand">${BB.brand('')}<p>Recruitment made only for the jewellery business. A BrillBrains Consultants company, in the industry since 2011.</p></div>
-      <div><b>Job seekers</b><a href="/apply">Apply for a job</a><a href="/my-profile">Candidate login</a><a href="/#openings">Current openings</a></div>
-      <div><b>Employers</b><a href="/hire">Hire with us</a><a href="/my-account">Client login</a><a href="/partners">Partner with us</a></div>
-      <div><b>Talk to us</b>${(c.phones || []).map((p) => `<a href="tel:${esc(p.replace(/\s/g, ''))}" data-no-i18n>${esc(p)}</a>`).join('')}${c.email ? `<a href="mailto:${esc(c.email)}" data-no-i18n>${esc(c.email)}</a>` : ''}<a href="https://wa.me/91${esc(BB.boot.business.support_phone)}" target="_blank" rel="noopener">Chat on WhatsApp</a></div>
+      <div class="lp-foot-brand">${BB.brand('')}<p>Hiring for the jewellery trade, since 2011.</p></div>
+      <div><b>Job seekers</b><a href="/apply">Apply</a><a href="/my-profile">Candidate login</a><a href="/#openings">Open jobs</a></div>
+      <div><b>Employers</b><a href="/hire">Hire with us</a><a href="/my-account">Client login</a><a href="/partners">Partners</a></div>
+      <div><b>Talk to us</b>${(c.phones || []).map((p) => `<a href="tel:${esc(p.replace(/\s/g, ''))}" data-no-i18n>${esc(p)}</a>`).join('')}${c.email ? `<a href="mailto:${esc(c.email)}" data-no-i18n>${esc(c.email)}</a>` : ''}<a href="https://wa.me/91${esc(BB.boot.business.support_phone)}" target="_blank" rel="noopener">WhatsApp</a></div>
     </div><div class="lp-legal"><span>© ${new Date().getFullYear()} ${esc(BB.boot.business.name)}</span>${c.site ? `<a href="${esc(c.site)}" target="_blank" rel="noopener">brillbrainsconsultants.com</a>` : ''}${g.terms ? `<a href="${esc(g.terms)}" target="_blank" rel="noopener">Terms</a>` : ''}${g.privacy ? `<a href="${esc(g.privacy)}" target="_blank" rel="noopener">Privacy</a>` : ''}${g.refund ? `<a href="${esc(g.refund)}" target="_blank" rel="noopener">Refunds</a>` : ''}</div></footer>`;
   };
   const top = () => BB.publicTop('', true).replace('<a href="/my-account">Client login</a><a href="/my-profile">', '<a href="/partners">Partners</a><a href="/my-account">Client login</a><a href="/my-profile">').replace('<hr><a href="/my-account">', '<a href="/partners">Partners</a><hr><a href="/my-account">');
   const faq = (list) => `<div class="faq">${list.map(([q, a]) => `<details class="rv"><summary>${esc(q)}</summary><p>${esc(a)}</p></details>`).join('')}</div>`;
-  const head = (eyebrow, title, sub) => `<div class="sec-head rv"><span class="eyebrow">${esc(eyebrow)}</span><h2>${title}</h2>${sub ? `<p>${esc(sub)}</p>` : ''}</div>`;
-
+  // Section heading: eyebrow and title on the left, a short line (or a link) on the right.
+  const head = (eyebrow, title, side) => `<div class="sec-head rv"><div><span class="eyebrow">${esc(eyebrow)}</span><h2>${title}</h2></div>${side ? `<div class="sec-side">${side}</div>` : ''}</div>`;
+  // Proof band: the numbers, then the businesses we hire for sliding past.
+  const proof = (l, title) => `<section class="lp-proof-band rv" aria-label="BrillBrains in numbers"><div class="pb-in">
+      <div class="pb-top"><h2>${title}</h2><div class="pb-stats">${(l.stats || []).filter(([, t]) => !/businesses/i.test(t)).map(([n, t]) => `<div class="st"><b data-count="${esc(n)}" data-no-i18n>${esc(n)}</b><span>${esc(t)}</span></div>`).join('')}</div></div>
+      ${marquee(l.clients || [])}</div></section>`;
+  const steps = (list) => `<ol class="tl">${list.map(([b, s], i) => `<li class="rv" style="--d:${i * 90}ms"><span class="tl-n" data-no-i18n>${String(i + 1).padStart(2, '0')}</span><div><b>${esc(b)}</b><span>${esc(s)}</span></div></li>`).join('')}</ol>`;
 
   BB.views.landing = (r) => {
     const q = (r && r.q) || {}; const l = L(); const clients = l.clients || [];
-    const jobs = BB.boot.jobs || []; const groups = [...new Set(jobs.map((j) => j.group))];
-    const popular = ['Sales Executive', 'CAD Designer', 'Store Manager', 'Goldsmith (Karigar)', 'Diamond Setter', 'Accountant', 'Gemologist', 'Digital Marketing Executive'].filter((t) => jobs.some((j) => j.title === t));
+    const jobs = BB.boot.jobs || [];
+    const popular = ['Sales Executive', 'CAD Designer', 'Store Manager', 'Goldsmith (Karigar)', 'Accountant', 'Gemologist'].filter((t) => jobs.some((j) => j.title === t));
     const cities = [...new Set(clients.map((c) => c[1]).filter(Boolean))];
-    const half = Math.ceil(clients.length / 2);
-    const steps = {
-      hire: [['Tell us who you need', 'Share the role, city and budget in a two-minute form, or on WhatsApp.'], ['We search and screen', 'Our jewellery recruiters call, check and interview every candidate first.'], ['Meet a shortlist', 'See profiles in your client account and pick interview times that suit you.'], ['Hire and relax', `Pay only when someone joins, with a free replacement for ${BB.boot.replacement_days || 90} days.`]],
-      job: [['Share your details', 'Upload your CV or speak your details — in English or Hindi. It is free.'], ['Talk to a recruiter', 'We understand your skills and the job and salary you want.'], ['Interview with brands', 'Get interview dates, reminders and directions on WhatsApp.'], ['Join and grow', 'Accept your offer and start. We stay in touch after you join.']],
-    };
     $('#app').innerHTML = `<div class="pub lp">${top()}
       <main>
         <section class="lp-hero">${BB.deco()}
@@ -67,72 +68,51 @@
             <div class="lp-hero-copy">
               <span class="eyebrow">Jewellery hiring · since 2011</span>
               <h1>Bringing the right <em>people</em> and companies together</h1>
-              <p class="lead">Recruitment for the jewellery business — from the showroom floor to the karigar's bench. Tell us who you need, or the job you want, and our recruiters take it from there.</p>
+              <p class="lead">From the showroom floor to the karigar's bench.</p>
               <form class="lp-search" data-search>
                 <label class="ls-f"><span class="lab">Job</span><select name="want">${BB.jobOptions(q.want || '', false)}</select></label>
                 <label class="ls-f"><span class="lab">City</span><input name="city" list="cities" placeholder="Any city" autocomplete="off" value="${esc(q.city || '')}"></label>
                 <button class="btn gold" type="submit">${BB.icon('search')}<span>Find jobs</span></button>
               </form>
-              ${popular.length ? `<div class="lp-chips"><span class="muted small">Popular:</span>${popular.map((t) => `<a class="chip-link" href="/?want=${encodeURIComponent(t)}#openings" data-want="${esc(t)}">${esc(t)}</a>`).join('')}</div>` : ''}
-              <div class="lp-proof"><div class="lp-faces" aria-hidden="true">${clients.filter((c) => c[3]).slice(0, 5).map((c) => `<span><img src="/img/clients/${esc(c[3])}" alt=""></span>`).join('')}</div><div><b data-no-i18n>${clients.length}+</b> <span>jewellery businesses hire with us across</span> <b data-no-i18n>${cities.length}</b> <span>cities</span></div></div>
+              ${popular.length ? `<div class="lp-chips">${popular.map((t) => `<a class="chip-link" href="/?want=${encodeURIComponent(t)}#openings" data-want="${esc(t)}">${esc(t)}</a>`).join('')}</div>` : ''}
+              <div class="lp-proof"><div class="lp-faces" aria-hidden="true">${clients.filter((c) => c[3]).slice(0, 5).map((c) => `<span><img src="/img/clients/${esc(c[3])}" alt=""></span>`).join('')}</div><div><b data-no-i18n>${clients.length}+</b> <span>jewellers in</span> <b data-no-i18n>${cities.length}</b> <span>cities hire with us</span></div></div>
             </div>
             <section class="card pub-card lp-card" data-leadcard></section>
           </div>
         </section>
 
-        <section class="lp-sec lp-logos" aria-label="Businesses we hire for">
-          <div class="sec-head rv"><span class="eyebrow">Trusted by jewellers</span><h2>Brands that <em>hire with us</em></h2><p>Manufacturers, wholesalers and showrooms across India.</p></div>
-          <div class="rv">${marquee(clients.slice(0, half))}${marquee(clients.slice(half), true)}</div>
-        </section>
-
-        <section class="lp-stats rv" aria-label="BrillBrains in numbers"><div class="lp-stats-in">
-          ${(l.stats || []).map(([n, t]) => `<div class="st"><b data-count="${esc(n)}" data-no-i18n>${esc(n)}</b><span>${esc(t)}</span></div>`).join('')}
-        </div></section>
+        ${proof(l, 'Trusted by <em>leading jewellers</em>')}
 
         <section class="lp-sec" id="openings">
-          ${head('Hiring now', 'Open <em>jewellery jobs</em>', 'Real openings our recruiters are filling right now. Employer names are shared after your first call.')}
+          ${head('Hiring now', 'Open <em>jobs</em>', '<span>Employer names are shared after your first call.</span>')}
+          <div class="pills rv" data-pills></div>
           <div class="search-bar hidden" data-sbar></div>
           <div class="jobs-grid" data-jobs><div class="job-card skel"></div><div class="job-card skel"></div><div class="job-card skel"></div></div>
           <div data-similar></div>
-          <div class="center rv" data-all><a class="btn" href="/apply">See all jobs — apply once</a></div>
-        </section>
-
-        <section class="lp-sec lp-fields">
-          ${head('Browse by field', 'Every role in the <em>jewellery trade</em>', 'From sales and design to karigars, quality and accounts.')}
-          <div class="field-grid">${groups.map((g, i) => { const list = jobs.filter((j) => j.group === g); return `<a class="fg rv" style="--d:${(i % 4) * 70}ms" href="/?group=${encodeURIComponent(g)}#openings" data-pick-group="${esc(g)}"><b>${esc(g)}</b><span class="fg-roles">${list.slice(0, 3).map((j) => esc(j.title)).join(' · ')}</span><span class="fg-count" data-group="${esc(g)}">${list.length} roles</span></a>`; }).join('')}</div>
         </section>
 
         <section class="lp-sec lp-how">
           ${head('How it works', 'Simple for <em>both sides</em>')}
-          <div class="seg how-seg rv" role="tablist"><button type="button" class="on" data-how="hire">For employers</button><button type="button" data-how="job">For job seekers</button></div>
-          ${Object.entries(steps).map(([k, list]) => `<ol class="how-steps${k === 'hire' ? '' : ' hidden'}" data-steps="${k}">${list.map(([b, s], i) => `<li class="rv" style="--d:${i * 110}ms"><span class="hs-n" data-no-i18n>${i + 1}</span><b>${esc(b)}</b><span>${esc(s)}</span></li>`).join('')}</ol>`).join('')}
-        </section>
-
-        <section class="lp-sec lp-why">
-          ${head('Why BrillBrains', 'Hiring that <em>understands jewellery</em>')}
-          <div class="why-grid">
-            ${[['💎', 'Only jewellery', 'We know karat, hallmarking, CAD and the showroom — so we ask candidates the right questions.'], ['✅', 'Screened first', 'Every candidate is called and interviewed before you see them.'], ['💬', 'All on WhatsApp', 'Shortlists, interview times, offers and reminders reach your phone.'], ['🤝', 'Pay on joining', `No upfront fee. Free replacement for ${BB.boot.replacement_days || 90} days if someone leaves.`], ['🗣️', 'English and Hindi', 'Forms, voice typing and accounts work in both languages.'], ['🔒', 'Your data is safe', 'Details are used only for hiring and never shared without consent.']].map(([ic, b, s], i) => `<div class="why rv" style="--d:${(i % 3) * 90}ms"><b>${esc(b)}</b><p>${esc(s)}</p></div>`).join('')}
+          <div class="how-cols">
+            <div class="how-col rv"><span class="how-tag">For employers</span>${steps([['Share the role', 'Two-minute form or WhatsApp.'], ['We screen', 'Every candidate is called and interviewed.'], ['Meet a shortlist', 'Pick interview times in your account.'], ['Pay on joining', `Free replacement for ${days()} days.`]])}<a class="btn gold" href="/hire">Start hiring →</a></div>
+            <div class="how-col alt rv" style="--d:120ms"><span class="how-tag">For job seekers</span>${steps([['Send your details', 'CV or voice, English or Hindi.'], ['Talk to a recruiter', 'Tell us the job and salary you want.'], ['Interview', 'Dates and reminders on WhatsApp.'], ['Join', 'Free for you, always.']])}<a class="btn" href="/apply">Apply now →</a></div>
           </div>
         </section>
 
-        <section class="lp-sec lp-cities">
-          ${head('Where we hire', `Across <em>${cities.length} cities</em>`, 'And remote searches anywhere in India.')}
-          <div class="city-cloud rv">${cities.map((c, i) => `<a class="city" style="--d:${i * 60}ms" href="/apply?city=${encodeURIComponent(c)}" data-no-i18n><i aria-hidden="true"></i>${esc(c)}</a>`).join('')}</div>
+        <section class="lp-sec lp-why">
+          ${head('Why BrillBrains', 'Hiring that <em>knows jewellery</em>')}
+          <div class="why-row">${[['Only jewellery', 'Karat, hallmarking, CAD, showroom — we speak it.'], ['Screened first', 'You meet people we have already interviewed.'], ['Pay on joining', 'No upfront fee.'], ['On WhatsApp', 'Shortlists, interviews and offers on your phone.']].map(([b, s], i) => `<div class="why rv" style="--d:${i * 80}ms"><b>${esc(b)}</b><p>${esc(s)}</p></div>`).join('')}</div>
         </section>
 
         <section class="lp-sec lp-doors">
-          <a class="door door-hire rv" href="/hire"><span class="eyebrow">For employers</span><b>Need staff for your showroom or factory?</b><span>Tell us the role — we send screened candidates, usually within a week.</span><span class="btn gold">Start hiring →</span></a>
-          <a class="door door-job rv" style="--d:120ms" href="/apply"><span class="eyebrow">For job seekers</span><b>Looking for your next jewellery job?</b><span>One form, free for you. Our recruiters match you to openings.</span><span class="btn">Apply now →</span></a>
+          <a class="door door-hire rv" href="/hire"><span class="eyebrow">Employers</span><b>Need staff?</b><span>Screened candidates, usually within a week.</span><span class="door-go">Start hiring →</span></a>
+          <a class="door door-job rv" style="--d:90ms" href="/apply"><span class="eyebrow">Job seekers</span><b>Want a jewellery job?</b><span>One form. Free for you.</span><span class="door-go">Apply now →</span></a>
+          <a class="door door-partner rv" style="--d:180ms" href="/partners"><span class="eyebrow">Partners</span><b>Place people with us</b><span>Agencies, institutes and recruiters.</span><span class="door-go">Become a partner →</span></a>
         </section>
 
-        <section class="lp-sec lp-partner rv"><div class="lp-partner-in">
-          <div><span class="eyebrow">Partners</span><h2>Grow with <em>our network</em></h2><p>Placement agencies, training institutes and industry bodies work with us to place people in jewellery jobs.</p></div>
-          <a class="btn gold" href="/partners">Become a partner →</a>
-        </div></section>
-
-        <section class="lp-sec">
+        <section class="lp-sec lp-faq">
           ${head('Questions', 'Good to <em>know</em>')}
-          ${faq([['Is it free for job seekers?', 'Yes. Candidates never pay anything. Employers pay us only when someone joins.'], ['Which jobs do you hire for?', 'Every role in the jewellery business: sales, design and CAD, karigars and manufacturing, quality, merchandising, accounts, marketing, HR and management.'], ['How fast can you send candidates?', 'Most employers see their first screened profiles within a week of sharing the role.'], ['What if a new hire leaves?', `We find a replacement free of cost if they leave within ${BB.boot.replacement_days || 90} days.`], ['Can I fill the form in Hindi?', 'Yes. Switch to हिन्दी at the top, and type or speak your details.']])}
+          ${faq([['Is it free for job seekers?', 'Yes. Employers pay only when someone joins.'], ['Which jobs do you hire for?', 'Every jewellery role — sales, design, CAD, karigars, quality, accounts, marketing and more.'], ['How fast are candidates sent?', 'Usually within a week.'], ['What if a new hire leaves?', `Free replacement within ${days()} days.`]])}
         </section>
       </main>
       ${footer()}</div>`;
@@ -150,58 +130,54 @@
     };
     $('[data-search]').onsubmit = (e) => { e.preventDefault(); const f = e.target; search({ want: f.want.value, city: f.city.value.trim() }); };
     $$('[data-want]').forEach((a) => (a.onclick = (e) => { e.preventDefault(); search({ want: a.dataset.want, city: $('[data-search]').city.value.trim() }); }));
-    $$('[data-pick-group]').forEach((a) => (a.onclick = (e) => { e.preventDefault(); search({ group: a.dataset.pickGroup }); }));
     BB.landingSearch = search;
-    $$('[data-how]').forEach((b) => (b.onclick = () => {
-      $$('[data-how]').forEach((x) => x.classList.toggle('on', x === b));
-      $$('[data-steps]').forEach((o) => { const on = o.dataset.steps === b.dataset.how; o.classList.toggle('hidden', !on); if (on) $$('.rv', o).forEach((li) => { li.classList.remove('in'); requestAnimationFrame(() => li.classList.add('in')); }); });
-    }));
     animate($('#app'));
     const asked = q.want || q.city || q.group;
     loadJobs({ want: q.want, city: q.city, group: q.group }, !!asked);
     if (!asked && location.hash === '#openings') setTimeout(() => { const o = $('#openings'); if (o) o.scrollIntoView({ behavior: reduced() ? 'auto' : 'smooth' }); }, 60);
   };
 
-  const ago = (t) => { const days = Math.floor((Date.now() - new Date(t)) / 864e5); return days <= 0 ? 'Posted today' : days === 1 ? 'Posted yesterday' : days < 30 ? `Posted ${days} days ago` : 'Posted over a month ago'; };
+  const ago = (t) => { const d = Math.floor((Date.now() - new Date(t)) / 864e5); return d <= 0 ? 'Today' : d === 1 ? 'Yesterday' : d < 30 ? `${d} days ago` : 'Over a month ago'; };
   // One opening. Apply opens the form for this exact job, with the role and city already filled in.
-  const jobCard = (j, i) => `<a class="job-card rv" style="--d:${(i % 3) * 80}ms" href="/apply?job=${encodeURIComponent(j.id)}&want=${encodeURIComponent(j.title)}${j.city ? `&city=${encodeURIComponent(j.city)}` : ''}">
-      <div class="jc-top"><div class="grow"><b>${esc(j.title)}</b><span class="muted small">${esc(j.group)}</span></div>${j.seats > 1 ? `<span class="pill">${j.seats} openings</span>` : ''}</div>
-      <div class="jc-meta"><span><span data-no-i18n>${esc(j.city || 'India')}</span></span><span><span>${esc(j.salary)}</span></span>${j.exp ? `<span><span>${esc(j.exp)}</span></span>` : ''}</div>
-      <div class="jc-foot"><span class="muted small">${ago(j.posted)}</span><span class="jc-go">Apply →</span></div></a>`;
+  const jobCard = (j, i) => `<a class="job-card rv" style="--d:${(i % 3) * 70}ms" href="/apply?job=${encodeURIComponent(j.id)}&want=${encodeURIComponent(j.title)}${j.city ? `&city=${encodeURIComponent(j.city)}` : ''}">
+      <div class="jc-top"><span class="jc-group">${esc(j.group)}</span>${j.seats > 1 ? `<span class="pill">${j.seats} openings</span>` : ''}</div>
+      <b class="jc-title">${esc(j.title)}</b>
+      <div class="jc-meta"><span data-no-i18n>${esc(j.city || 'India')}</span><span>${esc(j.salary)}</span>${j.exp ? `<span>${esc(j.exp)}</span>` : ''}</div>
+      <div class="jc-foot"><span class="faint small">${ago(j.posted)}</span><span class="jc-go">Apply →</span></div></a>`;
 
   // Openings: the latest ones, or what the search asked for (p: want, city, group). scroll: bring the results into view.
   async function loadJobs(p = {}, scroll) {
     const box = $('[data-jobs]'); if (!box) return;
-    const bar = $('[data-sbar]'); const sim = $('[data-similar]'); const all = $('[data-all]');
+    const bar = $('[data-sbar]'); const sim = $('[data-similar]'); const pills = $('[data-pills]');
     const searching = !!(p.want || p.city || p.group);
     const qs = new URLSearchParams(); if (p.want) qs.set('title', p.want); if (p.city) qs.set('city', p.city); if (p.group) qs.set('group', p.group);
     if (searching) box.innerHTML = '<div class="job-card skel"></div><div class="job-card skel"></div><div class="job-card skel"></div>';
     if (scroll) { const o = $('#openings'); if (o) o.scrollIntoView({ behavior: reduced() ? 'auto' : 'smooth', block: 'start' }); }
     let d; try { d = await (await fetch(`/api/public/jobs${qs.toString() ? `?${qs}` : ''}`)).json(); } catch { d = null; }
-    for (const [g, n] of Object.entries((d && d.groups) || {})) { const el = $(`[data-group="${CSS.escape(g)}"]`); if (el) { el.textContent = `${n} open now`; el.classList.add('live'); } }
+    // Field pills: every field that has open jobs, with how many; the active one is highlighted.
+    const groups = Object.entries((d && d.groups) || {});
+    pills.innerHTML = groups.length ? `<button type="button" class="${!p.group && !p.want ? 'on' : ''}" data-g="">All <i data-no-i18n>${d.total}</i></button>${groups.map(([g, n]) => `<button type="button" class="${p.group === g ? 'on' : ''}" data-g="${esc(g)}">${esc(g)} <i data-no-i18n>${n}</i></button>`).join('')}` : '';
+    $$('[data-g]', pills).forEach((b) => (b.onclick = () => BB.landingSearch(b.dataset.g ? { group: b.dataset.g } : {})));
     const what = p.want || p.group || 'jewellery'; const where = p.city ? ` in ${p.city}` : '';
     const applyLink = `/apply?${new URLSearchParams(Object.entries({ want: p.want || '', city: p.city || '' }).filter(([, v]) => v))}`;
-    sim.innerHTML = ''; all.classList.toggle('hidden', searching);
-    if (searching) {
+    sim.innerHTML = '';
+    if (searching && !(p.group && !p.want && !p.city)) {
       const n = d && d.jobs ? d.jobs.length : 0;
       bar.classList.remove('hidden');
-      bar.innerHTML = `<div class="sb-text">${n ? `<b data-no-i18n>${n}</b> <span>${n === 1 ? 'opening' : 'openings'} for</span> <b data-no-i18n>${esc(what)}${esc(where)}</b>` : `<span>You searched for</span> <b data-no-i18n>${esc(what)}${esc(where)}</b>`}</div><button type="button" class="btn sm" data-clear>✕ Clear search</button>`;
+      bar.innerHTML = `<div class="sb-text">${n ? `<b data-no-i18n>${n}</b> <span>${n === 1 ? 'opening for' : 'openings for'}</span> <b data-no-i18n>${esc(what)}${esc(where)}</b>` : `<span>You searched for</span> <b data-no-i18n>${esc(what)}${esc(where)}</b>`}</div><button type="button" class="btn sm" data-clear>✕ Clear</button>`;
       $('[data-clear]', bar).onclick = () => BB.landingSearch({});
     } else { bar.classList.add('hidden'); bar.innerHTML = ''; }
     if (!d || !d.jobs || !d.jobs.length) {
-      box.innerHTML = searching
-        ? `<div class="jobs-empty rv in"><b>No open jobs for this search right now</b><span>New jobs open every week. Send your details once — our recruiters will call you as soon as a matching job opens.</span><a class="btn gold" href="${applyLink}">Send my details</a></div>`
-        : `<div class="jobs-empty rv in"><b>New openings every week</b><span>Send your details once and our recruiters will call you when a matching job opens.</span><a class="btn gold" href="/apply">Send my details</a></div>`;
+      box.innerHTML = `<div class="jobs-empty rv in"><b>${searching ? 'No match right now' : 'New jobs every week'}</b><span>Send your details — we call when a match opens.</span><a class="btn gold" href="${searching ? applyLink : '/apply'}">Send my details</a></div>`;
     } else box.innerHTML = d.jobs.map(jobCard).join('');
     if (searching && d && d.similar && d.similar.length) sim.innerHTML = `<h3 class="sim-head rv">Similar openings</h3><div class="jobs-grid">${d.similar.map(jobCard).join('')}</div>`;
-    if (searching && d && d.jobs && d.jobs.length) sim.insertAdjacentHTML('beforeend', `<div class="center rv in"><span class="muted">Not the right fit?</span> <a href="${applyLink}">Send your details and we will call you</a></div>`);
     animate($('#openings'));
   }
 
   // ---------- partners ----------
   BB.views.partners = () => {
     const l = L(); const share = Math.round(Number(BB.boot.agency_share_pct || 0));
-    const kinds = [['🏢', 'Placement agencies', 'Bring candidates for our open jewellery roles and earn on every person who joins.'], ['🎓', 'Training institutes', 'Place your trained students — jewellery design, CAD, gemology, retail sales — in real jobs.'], ['🏛️', 'Industry bodies', 'Associations and chambers: give your member jewellers a trusted hiring desk.'], ['🧑‍💼', 'Independent recruiters', 'Know people in the trade? Refer them and get paid when they are hired.']];
+    const partnerLogos = (l.partners || []).filter((p) => p[2]);
     $('#app').innerHTML = `<div class="pub lp">${top()}
       <main>
         <section class="lp-hero pt-hero">${BB.deco()}
@@ -209,42 +185,33 @@
             <div class="lp-hero-copy">
               <span class="eyebrow">Partner programme</span>
               <h1>Grow with India's <em>jewellery hiring</em> network</h1>
-              <p class="lead">Work with BrillBrains to place people in jewellery jobs. You bring talent or reach, we bring the openings, screening and the employer relationship.</p>
+              <p class="lead">You bring the people. We bring the jobs.</p>
               <ul class="pt-points">
-                ${share ? `<li><b data-no-i18n>${share}%</b><span>of our fee shared with you on every hire</span></li>` : ''}
-                <li><b data-no-i18n>${(l.clients || []).length}+</b><span>jewellery businesses hiring</span></li>
-                <li><b data-no-i18n>${new Set((l.clients || []).map((c) => c[1]).filter(Boolean)).size}</b><span>cities</span></li>
+                ${share ? `<li><b data-no-i18n>${share}%</b><span>of our fee is yours</span></li>` : ''}
+                <li><b data-no-i18n>${(l.clients || []).length}+</b><span>jewellers hiring</span></li>
+                <li><b>₹0</b><span>to join</span></li>
               </ul>
+              ${partnerLogos.length ? `<div class="pt-with"><span class="faint small">Partnered with</span>${partnerLogos.map(([n, , logo]) => `<img src="/img/clients/${esc(logo)}" alt="${esc(n)}" title="${esc(n)}">`).join('')}</div>` : ''}
             </div>
             <section class="card pub-card lp-card" data-pform></section>
           </div>
         </section>
 
-        <section class="lp-sec">
-          ${head('Who we work with', 'Partners who <em>move people forward</em>')}
-          <div class="why-grid">${kinds.map(([ic, b, s], i) => `<div class="why rv" style="--d:${(i % 4) * 90}ms"><b>${esc(b)}</b><p>${esc(s)}</p></div>`).join('')}</div>
+        <section class="lp-sec lp-why">
+          ${head('Who can partner', 'Built for <em>people networks</em>')}
+          <div class="why-row">${[['Placement agencies', 'Fill our open roles.'], ['Training institutes', 'Place your students.'], ['Industry bodies', 'A hiring desk for members.'], ['Independent recruiters', 'Refer and earn.']].map(([b, s], i) => `<div class="why rv" style="--d:${i * 80}ms"><b>${esc(b)}</b><p>${esc(s)}</p></div>`).join('')}</div>
         </section>
 
         <section class="lp-sec lp-how">
           ${head('How it works', 'Three steps to <em>your first placement</em>')}
-          <ol class="how-steps">${[['Apply to partner', 'Fill the form. We call you within two working days to understand your network.'], ['Get your partner login', 'See the open roles assigned to you and add candidates from your own login.'], ['Earn on every joining', share ? `When your candidate joins and stays, ${share}% of our fee is yours — paid monthly with a clear statement.` : 'When your candidate joins and stays, you earn your share — paid monthly with a clear statement.']].map(([b, s], i) => `<li class="rv" style="--d:${i * 110}ms"><span class="hs-n" data-no-i18n>${i + 1}</span><b>${esc(b)}</b><span>${esc(s)}</span></li>`).join('')}</ol>
+          <div class="how-cols one"><div class="how-col rv">${steps([['Apply', 'We call within two working days.'], ['Get your login', 'See open roles and add candidates.'], ['Earn', share ? `${share}% of our fee on every joining, paid monthly.` : 'Your share on every joining, paid monthly.']])}</div></div>
         </section>
 
-        <section class="lp-sec lp-why">
-          ${head('What you get', 'Everything to <em>place with confidence</em>')}
-          <div class="why-grid">${[['📋', 'Real, verified openings', 'Every role comes from a jewellery business we work with directly.'], ['📲', 'Your own partner login', 'Track each candidate from screening to joining, live.'], ['💬', 'WhatsApp updates', 'Interview times and results reach you and your candidates.'], ['🧾', 'Clear monthly statements', 'See what you earned, per candidate, every month.'], ['🛡️', 'Fair credit', 'The first partner to add a candidate gets the credit for them.'], ['🤝', 'A named contact', 'One person at BrillBrains who knows your account.']].map(([ic, b, s], i) => `<div class="why rv" style="--d:${(i % 3) * 90}ms"><b>${esc(b)}</b><p>${esc(s)}</p></div>`).join('')}</div>
-        </section>
+        ${proof(l, 'The jobs come from <em>leading jewellers</em>')}
 
-        ${(l.partners || []).length ? `<section class="lp-sec">${head('Our partners', 'In <em>good company</em>')}<div class="pt-logos rv">${l.partners.map(([n, t, logo]) => `<div class="pt-logo" data-no-i18n>${logo ? `<img src="/img/clients/${esc(logo)}" alt="${esc(n)}" loading="lazy">` : ''}<b>${esc(n)}</b><span>${esc(t)}</span></div>`).join('')}</div></section>` : ''}
-
-        <section class="lp-sec lp-logos" aria-label="Businesses we hire for">
-          <div class="sec-head rv"><span class="eyebrow">The openings come from</span><h2>Jewellers who <em>hire with us</em></h2></div>
-          <div class="rv">${marquee(l.clients || [])}</div>
-        </section>
-
-        <section class="lp-sec">
+        <section class="lp-sec lp-faq">
           ${head('Questions', 'Partner <em>FAQ</em>')}
-          ${faq([['Does it cost anything to become a partner?', 'No. There is no joining fee. You earn when a candidate you added joins.'], ['When do I get paid?', 'Once the candidate joins and the employer pays our fee, your share is paid in the next monthly statement.'], ['Can a training institute partner?', 'Yes. Many of our candidates come from jewellery design, CAD and gemology courses.'], ['What if two partners add the same person?', 'The first partner to add the candidate gets the credit.']])}
+          ${faq([['Is there a joining fee?', 'No. You earn when your candidate joins.'], ['When do I get paid?', 'In the monthly statement after the employer pays.'], ['Two partners, same person?', 'The first to add them gets the credit.']])}
         </section>
       </main>
       ${footer()}</div>`;
@@ -260,10 +227,10 @@
         ${field({ name: 'kind', label: 'You are a', type: 'select', options: ['Placement agency', 'Training institute', 'Industry body / association', 'Independent recruiter', 'Other'], voice: false })}
         <div class="grid g2">${field({ name: 'whatsapp', label: 'WhatsApp number', type: 'tel', phone: true, placeholder: '10 digits', attrs: 'inputmode="numeric" maxlength="14" autocomplete="tel"' })}${field({ name: 'email', label: 'Email', type: 'email', opt: true, attrs: 'autocomplete="email"' })}</div>
         ${field({ name: 'city', label: 'City', list: 'cities', placeholder: 'Start typing your city…' })}
-        ${field({ name: 'message', label: 'Tell us about your network', type: 'textarea', opt: true, placeholder: 'For example: 40 CAD students a year, or 200 retail candidates' })}
+        ${field({ name: 'message', label: 'Tell us about your network', type: 'textarea', opt: true, placeholder: 'For example: 40 CAD students a year' })}
         <input type="text" name="website" tabindex="-1" autocomplete="off" class="hp" aria-hidden="true">
         <button class="btn gold block" type="submit">Send partner request</button>
-        <p class="muted small center">By sending, you agree that we may contact you on WhatsApp about the partnership.</p>
+        <p class="muted small center">By sending, you agree to be contacted on WhatsApp.</p>
       </form>`;
     const form = $('form', el);
     form.onsubmit = async (e) => {
@@ -272,7 +239,7 @@
       try {
         await BB.post('/api/public/partner', b, { kind: null });
         BB.track('Lead', { content_name: 'Partner request', content_category: 'Partner' });
-        el.innerHTML = `<div class="pt-done"><span class="ty-check" aria-hidden="true">✓</span><div class="card-title">Thank you!</div><p>Your partner request has reached our team. We will call you on WhatsApp within two working days.</p><a class="btn" href="/">Back to home</a></div>`;
+        el.innerHTML = `<div class="pt-done"><span class="ty-check" aria-hidden="true">✓</span><div class="card-title">Thank you!</div><p>We will call you on WhatsApp within two working days.</p><a class="btn" href="/">Back to home</a></div>`;
       } catch (err) { BB.showErr(form, err); btn.disabled = false; }
     };
   }
