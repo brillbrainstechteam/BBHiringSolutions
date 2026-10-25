@@ -129,6 +129,8 @@ module.exports.defaultSettings = () => ({
   meta_pixel_id: '2481511222591423',
   // Testing pause: WhatsApp to candidates is held (saved, not sent) except to these numbers. Login codes and
   // replies a team member types by hand still go. Turn off when the templates have been checked.
+  // Roles shown as open on the home page even before a job opening is entered for them (titles from the job list).
+  landing_roles: ['CAD Designer', 'B2B Sales Executive', 'Merchandiser', 'Purchase Manager', 'Admin Executive'],
   wa_pause: { candidates: true, allow: ['9093400666', '9986950695', '8368372836'] },
   // Home page trust content (editable later): BrillBrains group numbers and the jewellery businesses we hire for.
   // A client shows its logo when it has one (public/img/clients), otherwise its name in the same style.

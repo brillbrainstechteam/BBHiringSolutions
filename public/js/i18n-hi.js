@@ -105,6 +105,8 @@
     'Your share on every joining, paid monthly.': 'हर जॉइनिंग पर आपका हिस्सा, हर महीने।', 'Is there a joining fee?': 'क्या जुड़ने की कोई फ़ीस है?', 'No. You earn when your candidate joins.': 'नहीं। आपका उम्मीदवार जॉइन करे तो आप कमाते हैं।',
     'When do I get paid?': 'भुगतान कब मिलता है?', 'In the monthly statement after the employer pays.': 'नियोक्ता के भुगतान के बाद, मासिक स्टेटमेंट में।', 'Two partners, same person?': 'दो पार्टनर, एक ही व्यक्ति?', 'The first to add them gets the credit.': 'जो पहले जोड़े, क्रेडिट उसे।',
     'For example: 40 CAD students a year': 'जैसे: साल में 40 CAD छात्र', 'By sending, you agree to be contacted on WhatsApp.': 'भेजकर आप WhatsApp पर संपर्क के लिए सहमत हैं।', 'We will call you on WhatsApp within two working days.': 'हम दो कामकाजी दिनों में WhatsApp पर कॉल करेंगे।',
+    'BrillBrains ↗': 'BrillBrains ↗', 'BrillBrains group': 'BrillBrains ग्रुप', 'A BrillBrains Consultants company.': 'BrillBrains Consultants की कंपनी।',
+    'Hiring now': 'अभी भर्ती', 'Salary as per experience': 'सैलरी अनुभव के अनुसार', 'Multiple openings': 'कई पद',
     'Please enter your organisation': 'कृपया अपनी संस्था का नाम लिखें', 'Training partner': 'ट्रेनिंग पार्टनर',
 
     // ---- forms ----

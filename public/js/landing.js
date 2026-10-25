@@ -46,14 +46,21 @@
       <div><b>Talk to us</b>${(c.phones || []).map((p) => `<a href="tel:${esc(p.replace(/\s/g, ''))}" data-no-i18n>${esc(p)}</a>`).join('')}${c.email ? `<a href="mailto:${esc(c.email)}" data-no-i18n>${esc(c.email)}</a>` : ''}<a href="https://wa.me/91${esc(BB.boot.business.support_phone)}" target="_blank" rel="noopener">WhatsApp</a></div>
     </div><div class="lp-legal"><span>© ${new Date().getFullYear()} ${esc(BB.boot.business.name)}</span>${c.site ? `<a href="${esc(c.site)}" target="_blank" rel="noopener">brillbrainsconsultants.com</a>` : ''}${g.terms ? `<a href="${esc(g.terms)}" target="_blank" rel="noopener">Terms</a>` : ''}${g.privacy ? `<a href="${esc(g.privacy)}" target="_blank" rel="noopener">Privacy</a>` : ''}${g.refund ? `<a href="${esc(g.refund)}" target="_blank" rel="noopener">Refunds</a>` : ''}</div></footer>`;
   };
-  const top = () => BB.publicTop('', true).replace('<a href="/my-account">Client login</a><a href="/my-profile">', '<a href="/partners">Partners</a><a href="/my-account">Client login</a><a href="/my-profile">').replace('<hr><a href="/my-account">', '<a href="/partners">Partners</a><hr><a href="/my-account">');
+  const MAIN = 'https://brillbrainsconsultants.com';
+  const top = () => BB.publicTop('', true)
+    .replace('<a href="/my-account">Client login</a><a href="/my-profile">', `<a href="/partners">Partners</a><a href="${MAIN}" target="_blank" rel="noopener">BrillBrains ↗</a><a href="/my-account">Client login</a><a href="/my-profile">`)
+    .replace('<hr><a href="/my-account">', `<a href="/partners">Partners</a><a href="${MAIN}" target="_blank" rel="noopener">BrillBrains ↗</a><hr><a href="/my-account">`);
   const faq = (list) => `<div class="faq">${list.map(([q, a]) => `<details class="rv"><summary>${esc(q)}</summary><p>${esc(a)}</p></details>`).join('')}</div>`;
   // Section heading: eyebrow and title on the left, a short line (or a link) on the right.
   const head = (eyebrow, title, side) => `<div class="sec-head rv"><div><span class="eyebrow">${esc(eyebrow)}</span><h2>${title}</h2></div>${side ? `<div class="sec-side">${side}</div>` : ''}</div>`;
   // Proof band: the numbers, then the businesses we hire for sliding past.
-  const proof = (l, title) => `<section class="lp-proof-band rv" aria-label="BrillBrains in numbers"><div class="pb-in">
-      <div class="pb-top"><h2>${title}</h2><div class="pb-stats">${(l.stats || []).filter(([, t]) => !/businesses/i.test(t)).map(([n, t]) => `<div class="st"><b data-count="${esc(n)}" data-no-i18n>${esc(n)}</b><span>${esc(t)}</span></div>`).join('')}</div></div>
-      ${marquee(l.clients || [])}</div></section>`;
+  const proof = (l, title) => {
+    const list = l.clients || []; const half = Math.ceil(list.length / 2);
+    return `<section class="lp-proof-band rv" aria-label="BrillBrains in numbers"><div class="pb-in">
+      <div class="pb-top"><div class="pb-copy"><span class="eyebrow">BrillBrains group</span><h2>${title}</h2><p>A BrillBrains Consultants company. <a href="${MAIN}" target="_blank" rel="noopener">brillbrainsconsultants.com ↗</a></p></div>
+        <div class="pb-stats">${(l.stats || []).filter(([, t]) => !/businesses/i.test(t)).map(([n, t]) => `<div class="st"><b data-count="${esc(n)}" data-no-i18n>${esc(n)}</b><span>${esc(t)}</span></div>`).join('')}</div></div>
+      <div class="pb-logos">${marquee(list.slice(0, half))}${marquee(list.slice(half), true)}</div></div></section>`;
+  };
   const steps = (list) => `<ol class="tl">${list.map(([b, s], i) => `<li class="rv" style="--d:${i * 90}ms"><span class="tl-n" data-no-i18n>${String(i + 1).padStart(2, '0')}</span><div><b>${esc(b)}</b><span>${esc(s)}</span></div></li>`).join('')}</ol>`;
 
   BB.views.landing = (r) => {
@@ -145,6 +152,14 @@
       <div class="jc-meta"><span data-no-i18n>${esc(j.city || 'India')}</span><span>${esc(j.salary)}</span>${j.exp ? `<span>${esc(j.exp)}</span>` : ''}</div>
       <div class="jc-foot"><span class="faint small">${ago(j.posted)}</span><span class="jc-go">Apply →</span></div></a>`;
 
+  const groupOf = (t) => ((BB.boot.jobs || []).find((j) => j.title === t) || {}).group || 'Other roles';
+  const featured = () => (BB.boot.landing_roles || []).map((t) => ({ title: t, group: groupOf(t) }));
+  const featCard = (j, i) => `<a class="job-card feat rv" style="--d:${(i % 3) * 70}ms" href="/apply?want=${encodeURIComponent(j.title)}">
+      <div class="jc-top"><span class="jc-group">${esc(j.group)}</span><span class="pill">Hiring now</span></div>
+      <b class="jc-title">${esc(j.title)}</b>
+      <div class="jc-meta"><span>Salary as per experience</span></div>
+      <div class="jc-foot"><span class="faint small">Multiple openings</span><span class="jc-go">Apply →</span></div></a>`;
+
   // Openings: the latest ones, or what the search asked for (p: want, city, group). scroll: bring the results into view.
   async function loadJobs(p = {}, scroll) {
     const box = $('[data-jobs]'); if (!box) return;
@@ -154,22 +169,28 @@
     if (searching) box.innerHTML = '<div class="job-card skel"></div><div class="job-card skel"></div><div class="job-card skel"></div>';
     if (scroll) { const o = $('#openings'); if (o) o.scrollIntoView({ behavior: reduced() ? 'auto' : 'smooth', block: 'start' }); }
     let d; try { d = await (await fetch(`/api/public/jobs${qs.toString() ? `?${qs}` : ''}`)).json(); } catch { d = null; }
-    // Field pills: every field that has open jobs, with how many; the active one is highlighted.
-    const groups = Object.entries((d && d.groups) || {});
-    pills.innerHTML = groups.length ? `<button type="button" class="${!p.group && !p.want ? 'on' : ''}" data-g="">All <i data-no-i18n>${d.total}</i></button>${groups.map(([g, n]) => `<button type="button" class="${p.group === g ? 'on' : ''}" data-g="${esc(g)}">${esc(g)} <i data-no-i18n>${n}</i></button>`).join('')}` : '';
+    // Featured roles join the list unless a live opening already has that title.
+    const liveTitles = new Set(((d && d.jobs) || []).map((j) => j.title));
+    const want = String(p.want || '').toLowerCase();
+    const feats = featured().filter((f) => !liveTitles.has(f.title) && (!p.group || f.group === p.group) && (!want || f.title.toLowerCase().includes(want) || want.includes(f.title.toLowerCase())));
+    // Field pills: every field that has open jobs (or featured roles), with how many; the active one is highlighted.
+    const counts = { ...((d && d.groups) || {}) }; for (const f of featured()) counts[f.group] = (counts[f.group] || 0) + 1;
+    const groups = Object.entries(counts); const total = groups.reduce((n, [, c]) => n + c, 0);
+    pills.innerHTML = groups.length ? `<button type="button" class="${!p.group && !p.want ? 'on' : ''}" data-g="">All <i data-no-i18n>${total}</i></button>${groups.map(([g, n]) => `<button type="button" class="${p.group === g ? 'on' : ''}" data-g="${esc(g)}">${esc(g)} <i data-no-i18n>${n}</i></button>`).join('')}` : '';
     $$('[data-g]', pills).forEach((b) => (b.onclick = () => BB.landingSearch(b.dataset.g ? { group: b.dataset.g } : {})));
     const what = p.want || p.group || 'jewellery'; const where = p.city ? ` in ${p.city}` : '';
     const applyLink = `/apply?${new URLSearchParams(Object.entries({ want: p.want || '', city: p.city || '' }).filter(([, v]) => v))}`;
     sim.innerHTML = '';
     if (searching && !(p.group && !p.want && !p.city)) {
-      const n = d && d.jobs ? d.jobs.length : 0;
+      const n = (d && d.jobs ? d.jobs.length : 0) + feats.length;
       bar.classList.remove('hidden');
       bar.innerHTML = `<div class="sb-text">${n ? `<b data-no-i18n>${n}</b> <span>${n === 1 ? 'opening for' : 'openings for'}</span> <b data-no-i18n>${esc(what)}${esc(where)}</b>` : `<span>You searched for</span> <b data-no-i18n>${esc(what)}${esc(where)}</b>`}</div><button type="button" class="btn sm" data-clear>✕ Clear</button>`;
       $('[data-clear]', bar).onclick = () => BB.landingSearch({});
     } else { bar.classList.add('hidden'); bar.innerHTML = ''; }
-    if (!d || !d.jobs || !d.jobs.length) {
+    if ((d && d.jobs && d.jobs.length) || feats.length) box.innerHTML = [...((d && d.jobs) || []).map(jobCard), ...feats.map((f, i) => featCard(f, i))].join('');
+    else {
       box.innerHTML = `<div class="jobs-empty rv in"><b>${searching ? 'No match right now' : 'New jobs every week'}</b><span>Send your details — we call when a match opens.</span><a class="btn gold" href="${searching ? applyLink : '/apply'}">Send my details</a></div>`;
-    } else box.innerHTML = d.jobs.map(jobCard).join('');
+    }
     if (searching && d && d.similar && d.similar.length) sim.innerHTML = `<h3 class="sim-head rv">Similar openings</h3><div class="jobs-grid">${d.similar.map(jobCard).join('')}</div>`;
     animate($('#openings'));
   }
