@@ -55,6 +55,7 @@
   BB.views.team = async (r) => {
     if (!BB.token('team')) return loginView();
     try { BB.me = await BB.api('/api/me'); } catch (e) { return loginView(e.message); }
+    BB.guard(BB.me.user); // watermark, no printing / copying / screenshot keys for admins and sub admins
     if (BB.me.user.must_change || BB.mustChange) return changePassword(true);
     const allowed = MENU.filter((m) => !m[3] || m[3].includes(BB.me.user.level)).map((m) => m[0]);
     pageName = allowed.includes(r.sub[0]) ? r.sub[0] : BB.me.user.level === 'sub' ? 'myday' : 'dashboard';
@@ -74,7 +75,7 @@
         <span class="who-chip"><span class="av">${esc(u.name.split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase())}</span><span><b>${esc(u.name)}</b><span>${BB.levelName(u.level)}${ag ? ' · ' + esc(ag.name) : ''}</span></span></span>
         <button class="btn sm ghost" data-out>Log out</button></header><div class="page" data-page></div></div></div>`;
     updateNav();
-    $('[data-out]').onclick = async () => { await BB.post('/api/team/logout').catch(() => {}); BB.setToken('team', null); BB.closePanels(); loginView(); };
+    $('[data-out]').onclick = async () => { await BB.post('/api/team/logout').catch(() => {}); BB.setToken('team', null); BB.closePanels(); BB.unguard(); loginView(); };
     $('[data-addlead]').onclick = quickLead;
     wireSearch(); wireBell();
   }

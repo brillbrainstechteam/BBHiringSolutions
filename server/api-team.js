@@ -15,6 +15,8 @@ const ADMINS = { auth: 'team', levels: ['super', 'admin'] };
 // Lists: 50 rows a page; filters run on the full data. format=xlsx (or csv) downloads with filters on.
 function page(ctx, rows, name, columns) {
   const fmt = ctx.query.format;
+  // Lists leave the portal (Excel/CSV) only for the super admin; admins and sub admins work on screen.
+  if ((fmt === 'csv' || fmt === 'xlsx') && !isSuper(ctx.user)) { D.history(ctx.actor.label, 'download refused', null, name, null, null, null, ctx.ip); throw httpError(403, 'Downloads are for the super admin only.'); }
   if (fmt === 'csv' || fmt === 'xlsx') {
     D.history(ctx.actor.label, 'download', null, name, null, `${rows.length} rows`, null, ctx.ip);
     const cols = columns || Object.keys(rows[0] || {}).filter((k) => typeof rows[0][k] !== 'object');
@@ -287,6 +289,15 @@ route('POST', '/api/leads/bulk', SUPER, (ctx) => {
   }
   D.history(ctx.actor.label, `bulk ${action}`, null, table, null, `${out.done} of ${ids.length}${value ? ` (${value})` : ''}`, ids.join(','), ctx.ip);
   return out;
+});
+// Screen protection (guard.js): blocked print / copy / screenshot attempts by admins and sub admins go to the
+// history, at most once a minute per person and kind, so the super admin can see who tried what.
+const lastEvent = new Map();
+route('POST', '/api/security-event', { auth: 'team', rate: { key: 'secevent', max: 120, minutes: 60 } }, (ctx) => {
+  const what = String(ctx.body.what || '').slice(0, 40).replace(/[^\w ]/g, '');
+  const key = `${ctx.user.id}:${what}`; const t = Date.now();
+  if (what && (lastEvent.get(key) || 0) < t - 60000) { lastEvent.set(key, t); D.history(ctx.actor.label, `blocked ${what}`, null, 'screen', null, null, null, ctx.ip); }
+  return { ok: true };
 });
 route('POST', '/api/leads/junk', T, (ctx) => {
   const { type, id } = ctx.body; const table = type === 'client' ? 'clients' : 'candidates';

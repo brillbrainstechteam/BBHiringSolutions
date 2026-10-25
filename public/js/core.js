@@ -437,7 +437,7 @@ BB.route = () => {
   const map = { hire: 'hire', apply: 'apply', 'my-account': 'client', 'my-profile': 'candidate', team: 'team' };
   const view = map[r.name] || 'landing';
   BB.portal = { client: 'client', candidate: 'candidate', team: 'team' }[view] || null;
-  if (view !== 'team') BB.closePanels();
+  if (view !== 'team') { BB.closePanels(); if (BB.unguard) BB.unguard(); }
   document.body.dataset.view = view;
   (BB.views[view] || BB.views.landing)(r);
   if (location.pathname !== lastTracked) { lastTracked = location.pathname; if (view !== 'team') BB.track('PageView'); }

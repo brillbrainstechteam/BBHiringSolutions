@@ -3,7 +3,8 @@
   const { $, $$, esc, inr, fmtD, fmtDT, fmtT, field, statusBadge, scoreBadge, resultBadge, ticks, waIcon } = BB;
   const P = BB.pages;
   const isSuper = (me) => me.level === 'super';
-  const dl = (path) => `<button class="btn sm" data-dl="${esc(path)}">Download</button>`;
+  // Download buttons only for the super admin (the server refuses everyone else too).
+  const dl = (path) => (BB.me && BB.me.user && BB.me.user.level === 'super' ? `<button class="btn sm" data-dl="${esc(path)}">Download</button>` : '');
   const wireDl = (root) => $$('[data-dl]', root).forEach((b) => (b.onclick = () => BB.download(b.dataset.dl)));
   const STATUSES = ['Draft', 'Open', 'Sourcing', 'Interviewing', 'Offer stage', 'Filled', 'On hold', 'Closed'];
   const STATUS_KEY = { Closed: 'Team or client closed it', 'On hold': 'Paused by team or client', Filled: 'Accepted or joined ≥ openings — closes on its own', Draft: 'JD not approved and nobody on it', 'Offer stage': 'Someone is at Offer made', Interviewing: 'Someone at Our interview, Sent to client or Client interview', Sourcing: 'Candidates being screened', Open: 'Live, nobody in process right now' };

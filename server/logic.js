@@ -8,6 +8,8 @@ const SYSTEM_CLOSE = ['Position filled', 'Joined elsewhere'];
 const STEPS = ['Applied', 'Screening', 'Our interview', 'Sent to client', 'Client interview', 'Offer made', 'Offer accepted', 'Joined'];
 // Routine messages go by email only (WhatsApp costs per message); everything someone must act on or know at once keeps WhatsApp too.
 const EMAIL_ONLY_RULES = ['log_reminder', 'day_summary', 'monthly_summary', 'still_looking'];
+// The team's daily messages never go on WhatsApp (by email once email is set up, otherwise not at all).
+const NEVER_WHATSAPP_RULES = ['log_reminder', 'day_summary'];
 const ruleChannel = (r) => (r && r.channel) || (r && EMAIL_ONLY_RULES.includes(r.key) ? 'email' : 'both');
 const ACTION_RULES = ['client_welcome', 'candidate_welcome', 'interview_scheduled', 'offer', 'shortlist_ready', 'bill_raised', 'jd_approval'];
 const stepIdx = (s) => STEPS.indexOf(s);
@@ -155,6 +157,7 @@ function sendWA(o) {
   if (waOnlyStop) return { skipped: waOnlyStop, emailed };
   // "Email only" messages skip WhatsApp when the email went; someone without an email still gets WhatsApp.
   if (emailed && o.rule && ruleChannel(s.auto_rules.find((x) => x.key === o.rule)) === 'email') return { skipped: 'Email only (Settings)', emailed };
+  if (o.rule && NEVER_WHATSAPP_RULES.includes(o.rule)) return { skipped: 'Daily team message: email only, never WhatsApp', emailed };
   // The daily cap is for reminders and alerts. Messages that follow something the team or client just did
   // (welcome, interview fixed, offer, profiles sent, bill) always go, or an offer could be dropped on a busy day.
   if (o.auto && p.type !== 'user' && !ACTION_RULES.includes(o.rule)) {
