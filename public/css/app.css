@@ -1232,3 +1232,16 @@ html[lang="hi"] .lp h1 em, html[lang="hi"] .lp h2 em { font-style: normal; }
 .lp-hero.dark .lp-card { color: var(--ink); }
 @media (max-width: 760px) { .lp-foot-in > div:last-child a[href^="mailto:"] { grid-column: 1 / -1; } .why-row { grid-template-columns: 1fr 1fr; gap: 18px 16px; } .why-row > .why b { font-size: 21px; } }
 .lp .pt-points b { font-family: var(--serif); font-size: 40px; font-weight: 700; }
+
+/* Candidates filters, compact: each control only as wide as its text, one tidy row (two on smaller screens). */
+.cand-filters { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.cand-filters > input, .cand-filters > select { width: auto; min-width: 0; max-width: 230px; field-sizing: content; height: 36px; padding: 0 30px 0 14px; font-size: 13.5px; border-radius: 999px; background-position: right 10px center; }
+.cand-filters > input[data-q] { flex: 1 1 220px; max-width: 300px; padding-right: 14px; field-sizing: fixed; }
+.cand-filters > .more-f > summary, .cand-filters > [data-save] { width: auto; min-height: 36px; height: 36px; padding: 0 14px; font-size: 13.5px; }
+.cand-filters > [data-save] { margin-left: auto; }
+.more-pop { top: calc(100% + 6px); }
+@media (max-width: 760px) {
+  .cand-filters > input[data-q] { flex: 1 1 100%; max-width: none; }
+  .cand-filters > select { flex: 1 1 calc(50% - 4px); max-width: none; field-sizing: fixed; }
+  .cand-filters > [data-save] { margin-left: 0; }
+}
