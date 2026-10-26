@@ -425,7 +425,7 @@ document.addEventListener('click', (e) => {
   const a = e.target.closest && e.target.closest('a[href]'); if (!a || e.defaultPrevented || a.target || e.ctrlKey || e.metaKey || e.shiftKey) return;
   const href = a.getAttribute('href');
   if (href === '#' || href.startsWith('//')) return;
-  const appPage = href.startsWith('/') && ['', 'hire', 'apply', 'my-account', 'my-profile', 'team'].includes(href.slice(1).split(/[/?#]/)[0]);
+  const appPage = href.startsWith('/') && ['', 'hire', 'apply', 'partners', 'my-account', 'my-profile', 'team'].includes(href.slice(1).split(/[/?#]/)[0]);
   if (!href.startsWith('#') && !appPage) return;
   e.preventDefault(); BB.go(href.slice(1));
 });

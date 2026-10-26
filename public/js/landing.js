@@ -41,15 +41,41 @@
     const l = L(); const c = l.contact || {}; const g = l.legal || {};
     return `<footer class="lp-foot"><div class="lp-foot-in">
       <div class="lp-foot-brand">${BB.brand('')}<p>Hiring for the jewellery trade, since 2011.</p></div>
-      <div><b>Job seekers</b><a href="/apply">Apply</a><a href="/my-profile">Candidate login</a><a href="/#openings">Open jobs</a></div>
+      <div><b>Job seekers</b><a href="/apply">Apply</a><a href="/my-profile">Candidate login</a><a href="/#openings" data-jobs-link>Open jobs</a></div>
       <div><b>Employers</b><a href="/hire">Hire with us</a><a href="/my-account">Client login</a><a href="/partners">Partners</a></div>
       <div><b>Talk to us</b>${(c.phones || []).map((p) => `<a href="tel:${esc(p.replace(/\s/g, ''))}" data-no-i18n>${esc(p)}</a>`).join('')}${c.email ? `<a href="mailto:${esc(c.email)}" data-no-i18n>${esc(c.email)}</a>` : ''}<a href="https://wa.me/91${esc(BB.boot.business.support_phone)}" target="_blank" rel="noopener">WhatsApp</a></div>
     </div><div class="lp-legal"><span>© ${new Date().getFullYear()} ${esc(BB.boot.business.name)}</span>${c.site ? `<a href="${esc(c.site)}" target="_blank" rel="noopener">brillbrainsconsultants.com</a>` : ''}${g.terms ? `<a href="${esc(g.terms)}" target="_blank" rel="noopener">Terms</a>` : ''}${g.privacy ? `<a href="${esc(g.privacy)}" target="_blank" rel="noopener">Privacy</a>` : ''}${g.refund ? `<a href="${esc(g.refund)}" target="_blank" rel="noopener">Refunds</a>` : ''}</div></footer>`;
   };
   const MAIN = 'https://brillbrainsconsultants.com';
-  const top = () => BB.publicTop('', true)
-    .replace('<a href="/my-account">Client login</a><a href="/my-profile">', `<a href="/partners">Partners</a><a href="${MAIN}" target="_blank" rel="noopener">BrillBrains ↗</a><a href="/my-account">Client login</a><a href="/my-profile">`)
-    .replace('<hr><a href="/my-account">', `<a href="/partners">Partners</a><a href="${MAIN}" target="_blank" rel="noopener">BrillBrains ↗</a><hr><a href="/my-account">`);
+  // Header for the home and partners pages:
+  //   slim strip  — the BrillBrains group link (left), phone and WhatsApp (right)
+  //   main bar    — logo | Find jobs · Hire staff · Partners | Log in ▾ (candidate / client) · language
+  //   phone       — logo | language · Menu ▾ (everything above, grouped)
+  const top = (here) => {
+    const c = L().contact || {}; const phone = (c.phones || [])[0];
+    const nav = [['jobs', '/#openings', 'Find jobs'], ['hire', '/hire', 'Hire staff'], ['partners', '/partners', 'Partners']];
+    const navLinks = nav.map(([k, h, t]) => `<a href="${h}"${k === 'jobs' ? ' data-jobs-link' : ''}${k === here ? ' class="on"' : ''}>${t}</a>`).join('');
+    const logins = `<a href="/my-profile"><b>Candidate login</b><span>Your profile and applications</span></a><a href="/my-account"><b>Client login</b><span>Openings, shortlists and bills</span></a>`;
+    return `<div class="lp-util"><a href="${MAIN}" target="_blank" rel="noopener"><span>Part of</span> <b>BrillBrains Consultants</b> <span>· since 2011</span> ↗</a>
+      <span class="lp-util-r">${phone ? `<a href="tel:${esc(phone.replace(/\s/g, ''))}" data-no-i18n>${esc(phone)}</a>` : ''}<a href="https://wa.me/91${esc(BB.boot.business.support_phone)}" target="_blank" rel="noopener">WhatsApp us</a></span></div>
+      <header class="pub-top lp-top">${BB.brand('')}
+        <nav class="lp-nav">${navLinks}</nav>
+        <div class="lp-right">
+          <details class="lp-dd lp-login"><summary>Log in <i aria-hidden="true">▾</i></summary><div class="lp-dd-menu">${logins}</div></details>
+          ${BB.langSwitch()}
+          <details class="lp-dd lp-menu"><summary aria-label="Menu"><span class="burger" aria-hidden="true"><i></i><i></i><i></i></span>Menu</summary><div class="lp-dd-menu">
+            ${navLinks}<hr><span class="lp-dd-h">Log in</span>${logins}<hr><a href="${MAIN}" target="_blank" rel="noopener">BrillBrains Consultants ↗</a></div></details>
+        </div></header>`;
+  };
+  // "Find jobs" scrolls to the openings on the home page, or opens the home page there.
+  document.addEventListener('click', (e) => {
+    const a = e.target.closest && e.target.closest('[data-jobs-link]'); if (!a || e.ctrlKey || e.metaKey) return;
+    e.preventDefault(); e.stopPropagation(); $$('.lp-dd[open]').forEach((d) => (d.open = false));
+    const go = () => { const o = $('#openings'); if (o) o.scrollIntoView({ behavior: reduced() ? 'auto' : 'smooth' }); };
+    if (document.body.dataset.view === 'landing' && $('#openings')) go(); else { BB.go(''); setTimeout(go, 80); }
+  }, true);
+  // Menus close on a click outside them.
+  document.addEventListener('click', (e) => { $$('.lp-dd[open]').forEach((d) => { if (!d.contains(e.target)) d.open = false; }); });
   const faq = (list) => `<div class="faq">${list.map(([q, a]) => `<details class="rv"><summary>${esc(q)}</summary><p>${esc(a)}</p></details>`).join('')}</div>`;
   // Section heading: eyebrow and title on the left, a short line (or a link) on the right.
   const head = (eyebrow, title, side) => `<div class="sec-head rv"><div><span class="eyebrow">${esc(eyebrow)}</span><h2>${title}</h2></div>${side ? `<div class="sec-side">${side}</div>` : ''}</div>`;
@@ -68,7 +94,7 @@
     const jobs = BB.boot.jobs || [];
     const popular = ['Sales Executive', 'CAD Designer', 'Store Manager', 'Goldsmith (Karigar)', 'Accountant', 'Gemologist'].filter((t) => jobs.some((j) => j.title === t));
     const cities = [...new Set(clients.map((c) => c[1]).filter(Boolean))];
-    $('#app').innerHTML = `<div class="pub lp">${top()}
+    $('#app').innerHTML = `<div class="pub lp">${top('')}
       <main>
         <section class="lp-hero">${BB.deco()}
           <div class="lp-hero-in">
@@ -199,7 +225,7 @@
   BB.views.partners = () => {
     const l = L(); const share = Math.round(Number(BB.boot.agency_share_pct || 0));
     const partnerLogos = (l.partners || []).filter((p) => p[2]);
-    $('#app').innerHTML = `<div class="pub lp">${top()}
+    $('#app').innerHTML = `<div class="pub lp">${top('partners')}
       <main>
         <section class="lp-hero pt-hero">${BB.deco()}
           <div class="lp-hero-in">

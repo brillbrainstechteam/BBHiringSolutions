@@ -107,6 +107,8 @@
     'For example: 40 CAD students a year': 'जैसे: साल में 40 CAD छात्र', 'By sending, you agree to be contacted on WhatsApp.': 'भेजकर आप WhatsApp पर संपर्क के लिए सहमत हैं।', 'We will call you on WhatsApp within two working days.': 'हम दो कामकाजी दिनों में WhatsApp पर कॉल करेंगे।',
     'BrillBrains ↗': 'BrillBrains ↗', 'BrillBrains group': 'BrillBrains ग्रुप', 'A BrillBrains Consultants company.': 'BrillBrains Consultants की कंपनी।',
     'Hiring now': 'अभी भर्ती', 'Salary as per experience': 'सैलरी अनुभव के अनुसार', 'Multiple openings': 'कई पद',
+    'Find jobs': 'नौकरी खोजें', 'Hire staff': 'स्टाफ़ रखें', 'Log in': 'लॉग इन', 'Your profile and applications': 'आपकी प्रोफ़ाइल और आवेदन', 'Openings, shortlists and bills': 'नौकरियाँ, शॉर्टलिस्ट और बिल',
+    'Part of': 'ग्रुप:', 'BrillBrains Consultants': 'BrillBrains Consultants', '· since 2011': '· 2011 से', 'WhatsApp us': 'WhatsApp करें', 'BrillBrains Consultants ↗': 'BrillBrains Consultants ↗',
     'Please enter your organisation': 'कृपया अपनी संस्था का नाम लिखें', 'Training partner': 'ट्रेनिंग पार्टनर',
 
     // ---- forms ----
