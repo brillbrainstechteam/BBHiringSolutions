@@ -21,7 +21,7 @@ const STEPS = {
     { key: 'company', ask: 'What is your company name?\nआपकी कंपनी का नाम क्या है?' },
     { key: 'city', ask: 'Which city is your business in?\nआपका व्यवसाय किस शहर में है?' },
     { key: 'roles', ask: 'Which roles do you need? For example: 2 sales executives, 1 cashier.\nआपको कौन से स्टाफ चाहिए?' },
-    { key: 'need', ask: 'When do you need staff?\nआपको स्टाफ कब चाहिए?', buttons: NEED },
+    { key: 'need', ask: 'When do you want to hire?\nआपको कब भर्ती करनी है?', buttons: NEED },
   ],
 };
 

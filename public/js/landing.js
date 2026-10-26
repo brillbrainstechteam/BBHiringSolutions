@@ -49,24 +49,34 @@
   const MAIN = 'https://brillbrainsconsultants.com';
   // Header for the home and partners pages:
   //   slim strip  — the BrillBrains group link (left), phone and WhatsApp (right)
-  //   main bar    — logo | Find jobs · Hire staff · Partners | Log in ▾ (candidate / client) · language
-  //   phone       — logo | language · Menu ▾ (everything above, grouped)
+  //   main bar    — logo | Job Seekers ▾ · Employers ▾ · Partners | language · Hire with us
+  //   Each audience menu holds that audience's direct actions, including its login.
+  //   phone       — logo | language · Menu ▾ (the same actions, grouped)
   const top = (here) => {
     const c = L().contact || {}; const phone = (c.phones || [])[0];
-    const nav = [['jobs', '/#openings', 'Find jobs'], ['hire', '/hire', 'Hire staff'], ['partners', '/partners', 'Partners']];
-    const navLinks = nav.map(([k, h, t]) => `<a href="${h}"${k === 'jobs' ? ' data-jobs-link' : ''}${k === here ? ' class="on"' : ''}>${t}</a>`).join('');
-    const logins = `<a href="/my-profile"><b>Candidate login</b><span>Your profile and applications</span></a><a href="/my-account"><b>Client login</b><span>Openings, shortlists and bills</span></a>`;
+    const item = (href, b, sub, attr = '') => `<a href="${href}"${attr}><b>${b}</b><span>${sub}</span></a>`;
+    const seekers = item('/apply', 'Apply for a job', 'One form, free for you') + item('/#openings', 'See open jobs', 'Roles we are hiring for now', ' data-jobs-link') + item('/my-profile', 'Candidate login', 'Your profile and applications');
+    const employers = item('/hire', 'Hire with us', 'Share your requirement in two minutes') + item('/my-account', 'Client login', 'Openings, shortlists and bills');
+    const dd = (label, body, on) => `<details class="lp-dd lp-hov"><summary${on ? ' class="on"' : ''}>${label} <i aria-hidden="true">▾</i></summary><div class="lp-dd-menu">${body}</div></details>`;
     return `<div class="lp-util"><a href="${MAIN}" target="_blank" rel="noopener"><span>Part of</span> <b>BrillBrains Consultants</b> <span>· since 2011</span> ↗</a>
       <span class="lp-util-r">${phone ? `<a href="tel:${esc(phone.replace(/\s/g, ''))}" data-no-i18n>${esc(phone)}</a>` : ''}<a href="https://wa.me/91${esc(BB.boot.business.support_phone)}" target="_blank" rel="noopener">WhatsApp us</a></span></div>
       <header class="pub-top lp-top">${BB.brand('')}
-        <nav class="lp-nav">${navLinks}</nav>
+        <nav class="lp-nav">${dd('Job Seekers', seekers)}${dd('Employers', employers)}<a href="/partners"${here === 'partners' ? ' class="on"' : ''}>Partners</a></nav>
         <div class="lp-right">
-          <details class="lp-dd lp-login"><summary>Log in <i aria-hidden="true">▾</i></summary><div class="lp-dd-menu">${logins}</div></details>
           ${BB.langSwitch()}
+          <a class="btn gold sm lp-cta" href="/hire">Hire with us</a>
           <details class="lp-dd lp-menu"><summary aria-label="Menu"><span class="burger" aria-hidden="true"><i></i><i></i><i></i></span>Menu</summary><div class="lp-dd-menu">
-            ${navLinks}<hr><span class="lp-dd-h">Log in</span>${logins}<hr><a href="${MAIN}" target="_blank" rel="noopener">BrillBrains Consultants ↗</a></div></details>
+            <span class="lp-dd-h">Job Seekers</span>${seekers}<hr><span class="lp-dd-h">Employers</span>${employers}<hr>${item('/partners', 'Partners', 'Agencies, institutes and recruiters')}<hr><a href="${MAIN}" target="_blank" rel="noopener"><b>BrillBrains Consultants ↗</b><span>Our group website</span></a></div></details>
         </div></header>`;
   };
+  // Desktop: the audience menus open on hover as well as on click.
+  document.addEventListener('mouseover', (e) => {
+    if (!window.matchMedia('(hover: hover) and (min-width: 1001px)').matches) return;
+    const d = e.target.closest && e.target.closest('.lp-hov');
+    $$('.lp-hov[open]').forEach((x) => { if (x !== d) x.open = false; });
+    if (d && !d.open) d.open = true;
+  });
+  document.addEventListener('mouseleave', (e) => { if (e.target.classList && e.target.classList.contains('lp-hov')) e.target.open = false; }, true);
   // "Find jobs" scrolls to the openings on the home page, or opens the home page there.
   document.addEventListener('click', (e) => {
     const a = e.target.closest && e.target.closest('[data-jobs-link]'); if (!a || e.ctrlKey || e.metaKey) return;
@@ -96,7 +106,7 @@
     const cities = [...new Set(clients.map((c) => c[1]).filter(Boolean))];
     $('#app').innerHTML = `<div class="pub lp">${top('')}
       <main>
-        <section class="lp-hero">${BB.deco()}
+        <section class="lp-hero dark"><div class="lp-glow" aria-hidden="true"></div>
           <div class="lp-hero-in">
             <div class="lp-hero-copy">
               <span class="eyebrow">Jewellery hiring · since 2011</span>
@@ -138,7 +148,7 @@
         </section>
 
         <section class="lp-sec lp-doors">
-          <a class="door door-hire rv" href="/hire"><span class="eyebrow">Employers</span><b>Need staff?</b><span>Screened candidates, usually within a week.</span><span class="door-go">Start hiring →</span></a>
+          <a class="door door-hire rv" href="/hire"><span class="eyebrow">Employers</span><b>Hiring for your business?</b><span>Screened candidates, usually within a week.</span><span class="door-go">Start hiring →</span></a>
           <a class="door door-job rv" style="--d:90ms" href="/apply"><span class="eyebrow">Job seekers</span><b>Want a jewellery job?</b><span>One form. Free for you.</span><span class="door-go">Apply now →</span></a>
           <a class="door door-partner rv" style="--d:180ms" href="/partners"><span class="eyebrow">Partners</span><b>Place people with us</b><span>Agencies, institutes and recruiters.</span><span class="door-go">Become a partner →</span></a>
         </section>
@@ -227,7 +237,7 @@
     const partnerLogos = (l.partners || []).filter((p) => p[2]);
     $('#app').innerHTML = `<div class="pub lp">${top('partners')}
       <main>
-        <section class="lp-hero pt-hero">${BB.deco()}
+        <section class="lp-hero pt-hero dark"><div class="lp-glow" aria-hidden="true"></div>
           <div class="lp-hero-in">
             <div class="lp-hero-copy">
               <span class="eyebrow">Partner programme</span>

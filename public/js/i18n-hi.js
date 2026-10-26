@@ -16,7 +16,7 @@
     'Screened': 'जाँचे हुए', 'every candidate is called and interviewed first': 'हर उम्मीदवार से पहले बात और इंटरव्यू होता है',
     'On WhatsApp': 'WhatsApp पर', 'interviews, offers and updates on your phone': 'इंटरव्यू, ऑफ़र और अपडेट आपके फ़ोन पर',
     'Free for candidates': 'उम्मीदवारों के लिए मुफ़्त', 'employers pay only when someone joins': 'नियोक्ता तभी भुगतान करते हैं जब कोई जॉइन करे',
-    'I want to hire': 'मुझे स्टाफ़ चाहिए', 'I want a job': 'मुझे नौकरी चाहिए', 'What do you want to do?': 'आप क्या करना चाहते हैं?',
+    'I want to hire': 'मुझे भर्ती करनी है', 'I want a job': 'मुझे नौकरी चाहिए', 'What do you want to do?': 'आप क्या करना चाहते हैं?',
     // ---- home page sections and partners page (landing.js) ----
     'Partners': 'पार्टनर', 'Jewellery hiring · since 2011': 'ज्वेलरी हायरिंग · 2011 से', 'Job': 'नौकरी', 'Any city': 'कोई भी शहर', 'Find jobs': 'नौकरी खोजें', 'Popular:': 'लोकप्रिय:',
     'jewellery businesses hire with us across': 'ज्वेलरी बिज़नेस हमारे साथ हायर करते हैं —', 'cities': 'शहर',
@@ -109,6 +109,8 @@
     'Hiring now': 'अभी भर्ती', 'Salary as per experience': 'सैलरी अनुभव के अनुसार', 'Multiple openings': 'कई पद',
     'Find jobs': 'नौकरी खोजें', 'Hire staff': 'स्टाफ़ रखें', 'Log in': 'लॉग इन', 'Your profile and applications': 'आपकी प्रोफ़ाइल और आवेदन', 'Openings, shortlists and bills': 'नौकरियाँ, शॉर्टलिस्ट और बिल',
     'Part of': 'ग्रुप:', 'BrillBrains Consultants': 'BrillBrains Consultants', '· since 2011': '· 2011 से', 'WhatsApp us': 'WhatsApp करें', 'BrillBrains Consultants ↗': 'BrillBrains Consultants ↗',
+    'Hiring for your business?': 'अपने बिज़नेस के लिए भर्ती?', 'Job Seekers': 'नौकरी ढूँढने वाले', 'One form, free for you': 'एक फ़ॉर्म, आपके लिए मुफ़्त', 'See open jobs': 'खुली नौकरियाँ देखें', 'Roles we are hiring for now': 'जिन पदों पर अभी भर्ती है',
+    'Share your requirement in two minutes': 'दो मिनट में अपनी ज़रूरत बताइए', 'Agencies, institutes and recruiters': 'एजेंसियाँ, संस्थान और रिक्रूटर', 'Our group website': 'हमारी ग्रुप वेबसाइट',
     'Please enter your organisation': 'कृपया अपनी संस्था का नाम लिखें', 'Training partner': 'ट्रेनिंग पार्टनर',
 
     // ---- forms ----
@@ -121,7 +123,7 @@
     'Job you want': 'आपको कौन-सी नौकरी चाहिए', 'Choose…': 'चुनें…', 'Other': 'अन्य', 'Type the job you want': 'अपनी चाहत की नौकरी लिखें',
     'City': 'शहर', 'City you want to work in': 'किस शहर में काम करना है', 'Start typing your city…': 'अपना शहर लिखना शुरू करें…', 'State': 'राज्य', 'Fills in from the city': 'शहर से अपने-आप भरेगा',
     'Your business': 'आपका बिज़नेस', 'B2C': 'B2C', 'B2B': 'B2B', 'Both': 'दोनों', 'Showroom B2C': 'शोरूम B2C', 'Manufacturer B2B': 'मैन्युफ़ैक्चरर B2B',
-    'When do you need staff?': 'स्टाफ़ कब चाहिए?', 'Hiring now': 'अभी चाहिए', 'Hiring soon': 'जल्द चाहिए', 'Just exploring': 'बस देख रहे हैं',
+    'When do you want to hire?': 'आपको कब भर्ती करनी है?', 'Tell us when you want to hire': 'बताइए आपको कब भर्ती करनी है', 'Hiring now': 'अभी चाहिए', 'Hiring soon': 'जल्द चाहिए', 'Just exploring': 'बस देख रहे हैं',
     'Which roles?': 'कौन-से पद?', 'e.g. 2 sales executives, 1 cashier': 'जैसे 2 सेल्स एग्ज़ीक्यूटिव, 1 कैशियर',
     'Experience': 'अनुभव', 'Where have you worked?': 'आपने कहाँ काम किया है?', 'Tick all that apply.': 'जो भी लागू हों, सब पर टिक करें।', 'Wholesaler': 'होलसेलर', 'Manufacturer': 'मैन्युफ़ैक्चरर', 'Retailer': 'रिटेलर', 'Worked in': 'काम किया',
     'Tick where you have worked: wholesaler, manufacturer or retailer': 'टिक करें आपने कहाँ काम किया है: होलसेलर, मैन्युफ़ैक्चरर या रिटेलर', 'Fresher': 'फ़्रेशर', '1–3 years': '1–3 साल', '3–5 years': '3–5 साल', '5–10 years': '5–10 साल', '10+ years': '10+ साल',

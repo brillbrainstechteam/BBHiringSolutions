@@ -31,7 +31,7 @@
         <div class="grid g2">${field({ name: 'city', label: 'City', list: 'cities', value: q.city || '', placeholder: 'Start typing your city…' })}${field({ name: 'state', label: 'State', placeholder: 'Fills in from the city', voice: false })}</div>
         <div data-only="hire" class="stack">
           ${field({ name: 'business_type', label: 'Your business', type: 'choice', options: [['Showroom B2C', 'B2C'], ['Manufacturer B2B', 'B2B'], ['Both', 'Both']] })}
-          ${field({ name: 'need', label: 'When do you need staff?', type: 'choice', options: ['Hiring now', 'Hiring soon', 'Just exploring'] })}
+          ${field({ name: 'need', label: 'When do you want to hire?', type: 'choice', options: ['Hiring now', 'Hiring soon', 'Just exploring'] })}
           ${field({ name: 'roles', label: 'Which roles?', opt: true, placeholder: 'e.g. 2 sales executives, 1 cashier' })}
         </div>
         <div data-only="job" class="stack">
@@ -73,7 +73,7 @@
       const email = mode === 'hire' ? v.email_hire : v.email;
       const common = [['name', v.name, 'Please enter your name'], ['whatsapp', phoneOk(v.whatsapp), 'Enter a 10-digit WhatsApp number starting with 6, 7, 8 or 9'], [mode === 'hire' ? 'email_hire' : 'email', emailOk(email), 'Enter a valid email, or leave it empty']];
       const rules = mode === 'hire'
-        ? [...common, ['company', v.company, 'Please enter your company name'], ['city', v.city, 'Please enter your city'], ['business_type', v.business_type, 'Pick your type of business'], ['need', v.need, 'Tell us when you need staff']]
+        ? [...common, ['company', v.company, 'Please enter your company name'], ['city', v.city, 'Please enter your city'], ['business_type', v.business_type, 'Pick your type of business'], ['need', v.need, 'Tell us when you want to hire']]
         : [...common, ['job_wanted', v.job_wanted, 'Pick the job you want'], ['job_other', v.job_wanted !== 'Other' || v.job_other, 'Type the job you want'], ['city', v.city, 'Please enter the city you want to work in']];
       v.exp_business = $$('[name=exp_business]:checked', form).map((x) => x.value);
       if (mode === 'job' && v.experience && v.experience !== 'Fresher') rules.push(['exp_business', v.exp_business.length, 'Tick where you have worked: wholesaler, manufacturer or retailer']);
