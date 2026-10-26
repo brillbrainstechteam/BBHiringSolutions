@@ -1245,3 +1245,7 @@ html[lang="hi"] .lp h1 em, html[lang="hi"] .lp h2 em { font-style: normal; }
   .cand-filters > select { flex: 1 1 calc(50% - 4px); max-width: none; field-sizing: fixed; }
   .cand-filters > [data-save] { margin-left: 0; }
 }
+
+/* Top strip: its own warm champagne-to-navy gradient so it reads as a separate band above the header. */
+.lp-util { background: linear-gradient(90deg, #4A3A14 0%, #2A2318 42%, #17203D 100%); border-bottom: 1px solid rgba(232, 207, 138, .35); box-shadow: inset 0 -1px 0 rgba(0, 0, 0, .25); }
+.lp-util a { color: #E9E2CF; } .lp-util b { color: #F0D489; }
