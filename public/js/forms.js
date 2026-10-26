@@ -135,7 +135,7 @@
     hire: { head: 'Your hiring request has been submitted.', sub: 'Our team will connect with you within 1 working day.', access: 'Open your client dashboard', open: 'Open my dashboard',
       features: [['doc', 'Track requests'], ['users', 'View shortlisted profiles'], ['chat', 'Manage communication']],
       steps: [['doc', 'Request received'], ['phone', 'Team connects'], ['doc', 'Agreement & activation'], ['users', 'Receive candidates']] },
-    job: { head: 'Your application has been submitted.', sub: '', access: 'Open your candidate profile', open: 'Open my profile',
+    job: { head: 'Your application has been submitted.', sub: '', access: 'Activate your profile', open: 'Open my profile',
       features: [['brief', 'See jobs that match you'], ['doc', 'Track your applications'], ['cal', 'Interview & offer updates']],
       steps: [['doc', 'Application received'], ['search', 'Profile check'], ['cal', 'Interview'], ['star', 'Offer & joining']] },
   };
@@ -173,7 +173,7 @@
     const wireEdit = () => { $('[data-edit]', acc).onclick = (e) => { e.preventDefault(); if (main) main.classList.remove('ty-mode'); if (pubCard) pubCard.classList.remove('ty-card'); editAgain(); }; };
     // Email instead of WhatsApp: a new sign-up creates an account (email + password) and then logs in with it;
     // someone already known logs in, or creates one after a WhatsApp code. Forgot password lives in the same box.
-    const emailSwitch = (isNew) => {
+    const emailSwitch = (isNew, start) => {
       const box = $('[data-byemail]', acc); let mounted = false;
       $('[data-switch]', acc).onclick = (e) => {
         e.preventDefault(); const toEmail = box.classList.contains('hidden');
@@ -181,7 +181,7 @@
         e.currentTarget.textContent = toEmail ? 'Use WhatsApp instead' : 'Use email and password instead';
         if (toEmail && !mounted) {
           mounted = true;
-          BB.emailAuth(box, { kind: m.kind, email: res.email || '', phone: res.phone, session: isNew, start: isNew ? 'register' : 'login', onLogin: (tk) => { BB.setToken(m.kind, tk); BB.go(m.go); }, onView: (v) => $('.login-switch', acc).classList.toggle('hidden', !['login', 'register'].includes(v)) });
+          BB.emailAuth(box, { kind: m.kind, email: res.email || '', phone: res.phone, session: isNew, start: start || (isNew ? 'register' : 'login'), onLogin: (tk) => { BB.setToken(m.kind, tk); BB.go(m.go); }, onView: (v) => $('.login-switch', acc).classList.toggle('hidden', !['login', 'register'].includes(v)) });
         }
         if (toEmail) { const i = $$('input', box).find((x) => !x.value) || $('input', box); if (i) i.focus(); }
       };
@@ -205,7 +205,8 @@
         <button class="btn primary lg ty-go">Verify and ${t.open.toLowerCase()}</button>
         <div class="small"><a href="#" data-resend>Send the code again</a> <span class="muted" data-wait></span></div>
       </form>`);
-    wireEdit(); emailSwitch(false);
+    wireEdit(); emailSwitch(false, res.activate ? 'register' : null);
+    if (res.activate) acc.insertAdjacentHTML('afterbegin', '<p class="small muted" style="margin:0 0 8px">To keep your profile safe, confirm it is your number: get a 6-digit code on WhatsApp, or create a login with your email and a password.</p>');
     const codeForm = $('[data-codeform]', acc); const code = $('[name=code]', acc); let timer;
     const wait = (s) => { clearInterval(timer); const a = $('[data-resend]', acc); a.classList.add('disabled'); const w = $('[data-wait]', acc);
       const tick = () => { w.textContent = s > 0 ? `(in ${s} s)` : ''; if (s-- <= 0) { clearInterval(timer); a.classList.remove('disabled'); } }; tick(); timer = setInterval(tick, 1000); };

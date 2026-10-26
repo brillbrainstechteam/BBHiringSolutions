@@ -28,7 +28,8 @@
     $('#app').innerHTML = `<div class="pub">${BB.publicTop('My profile')}
       <div class="acct-band cp-hero"><div class="in">
         <div class="cp-avatar">${esc(initials(p.name))}</div>
-        <div class="grow"><span class="eyebrow">Candidate profile</span><h1>Hello, <span class="hl">${first}</span></h1>
+        <div class="grow"><span class="eyebrow">${BB.greeting()}</span><h1>Welcome, <span class="hl">${first}</span></h1>
+          <p class="welcome-line">Your BrillBrains profile: jobs that match you, your applications and interview updates.</p>
           <div class="cp-meta">${p.job_wanted ? `<span>${esc(p.job_wanted)}</span>` : ''}${p.city ? `<span>${esc(p.city)}</span>` : ''}</div>
           <button class="cp-status ${p.looking === 'Not looking' ? 'off' : ''}" data-goto="profile" data-f="looking" title="Change in your profile">${esc(p.looking || 'Actively looking')}</button></div>
         <button class="cp-strength" data-goto="profile" title="Profile strength">${ring(D.pct, 50)}<span><b>Profile</b><br>strength</span></button>
@@ -114,6 +115,29 @@
   }
 
   // ---------- Profile ----------
+  // Resume check: a score with what to improve, and a better resume made from the profile and CV.
+  function resumeCard() {
+    const r = D.resume; if (!r) return '';
+    const todo = r.items.filter((x) => !x.ok);
+    return `<div class="card pad stack-sm resume-card"><div class="cp-h">${icon('report')}<h3>Resume check</h3></div>
+      <div class="row" style="gap:14px">${ring(r.score, 64)}<div><b class="rc-grade g-${esc(r.grade.replace(/\s+/g, '-').toLowerCase())}">${esc(r.grade)}</b><div class="small muted">${todo.length ? `${todo.length} thing${todo.length > 1 ? 's' : ''} to improve` : 'Your resume looks complete.'}</div></div></div>
+      ${todo.length ? `<ul class="rc-tips">${todo.slice(0, 5).map((x) => `<li><b>${esc(x.label)}</b><span>${esc(x.tip)}</span></li>`).join('')}</ul>` : ''}
+      <div class="row"><button type="button" class="btn primary sm" data-rbuild>${r.built ? 'Create again' : 'Create a better resume'}</button>${r.built ? '<button type="button" class="btn sm" data-rview>View resume</button><button type="button" class="btn sm" data-rpdf>Download PDF</button>' : ''}</div>
+      <p class="tiny faint" style="margin:0">${r.ai ? 'Written by AI from your profile and CV — only your real details are used. Check it before you share it.' : 'Made from your profile details.'}</p></div>`;
+  }
+  function showResume(res) {
+    const sec = (t, body) => (body ? `<div class="rs-sec"><h4>${t}</h4>${body}</div>` : '');
+    const list = (xs) => ((xs || []).length ? `<ul>${xs.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : '');
+    const md = BB.modal({ title: 'Your resume', wide: true, foot: '<button class="btn" data-c>Close</button><button class="btn primary" data-p>Download PDF</button>', body: `<div class="rs" data-no-i18n>
+      <div class="rs-head"><h2>${esc(res.name)}</h2><div class="rs-hl">${esc(res.headline)}</div><div class="small muted">${[res.phone ? `+91 ${res.phone}` : '', res.email, res.city].filter(Boolean).map(esc).join(' · ')}</div></div>
+      ${sec('Profile', res.summary ? `<p>${esc(res.summary)}</p>` : '')}
+      ${sec('Skills', (res.skills || []).length ? `<div class="row">${res.skills.map((s) => `<span class="badge b-outline">${esc(s)}</span>`).join('')}</div>` : '')}
+      ${sec('Experience', (res.experience || []).map((x) => `<div class="rs-job"><b>${esc(x.role)}</b>${x.company ? ` — ${esc(x.company)}` : ''} <span class="faint">${esc(x.period || '')}</span>${list(x.points)}</div>`).join(''))}
+      ${sec('Education', list(res.education))}${sec('Strengths', list(res.strengths))}${sec('Languages', list(res.languages))}
+      ${(res.suggestions || []).length ? `<div class="notice gold small"><b>Add these to make it stronger:</b>${list(res.suggestions)}</div>` : ''}</div>` });
+    $('[data-c]', md.el).onclick = md.close;
+    $('[data-p]', md.el).onclick = () => BB.download('/api/cand/resume/pdf');
+  }
   function profile(el) {
     const p = D.profile; const fresher = p.exp_total === 0;
     const skills = new Set(p.skills || []);
@@ -146,6 +170,9 @@
         <div class="card pad stack-sm"><div class="cp-h">${icon('search')}<h3>Are you looking for a new job?</h3></div>
           <div class="cp-looking" data-looking>${['Actively looking', 'Open to offers', 'Not looking'].map((v) => `<label><input type="radio" name="looking" value="${v}" ${(p.looking === 'Placed' ? 'Not looking' : p.looking || 'Actively looking') === v ? 'checked' : ''}><span>${v}</span></label>`).join('')}</div></div>
         <div class="card pad stack-sm"><div class="cp-h">${icon('note')}<h3>Your CV</h3></div>${D.files.filter((f) => f.type === 'cv').map((f) => `<button type="button" class="cp-file" data-file="${f.id}"><span class="cp-file-ic">CV</span><span class="grow"><b>${esc(f.name)}</b><span class="small muted">Version ${f.version} · ${fmtD(f.at)}</span></span></button>`).join('') || '<div class="small muted">No CV yet. Upload one and we fill in your details from it.</div>'}<button type="button" class="btn sm" data-cv>Upload CV</button></div>
+        ${resumeCard()}
+        <div class="card pad stack-sm"><div class="cp-h">${icon('users')}<h3>Social profiles</h3></div><p class="small muted" style="margin:0">Optional. Our team may share these with employers along with your profile.</p>
+          ${[['linkedin', 'LinkedIn', 'linkedin.com/in/your-name'], ['instagram', 'Instagram', 'instagram.com/your-page'], ['facebook', 'Facebook', 'facebook.com/your-name'], ['portfolio', 'Portfolio / website', 'Behance, Google Drive or your site'], ['youtube', 'YouTube', 'youtube.com/@your-channel']].map(([k, l, ph]) => field({ name: `social_${k}`, label: l, value: (p.social || {})[k] || '', placeholder: ph, voice: false, attrs: 'inputmode="url" autocomplete="url"' })).join('')}</div>
       ${BB.passwordCard(p.email, D.has_password)}
       </div></div>
       </form>`;
@@ -172,6 +199,10 @@
     };
     $('[data-skill-new]', el).onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); $('[data-skill-add]', el).click(); } };
     BB.wirePassword(el, '/api/cand/password', p.email, () => reload());
+    const rb = $('[data-rbuild]', el);
+    if (rb) rb.onclick = async () => { rb.disabled = true; rb.textContent = D.resume.ai ? 'Writing your resume… (up to a minute)' : 'Making your resume…'; try { const res = await BB.post('/api/cand/resume/build', {}); D.resume.built = res; showResume(res); reload().catch(() => {}); } catch (e) { BB.fail(e); } finally { rb.disabled = false; rb.textContent = 'Create again'; } };
+    const rv = $('[data-rview]', el); if (rv) rv.onclick = () => showResume(D.resume.built);
+    const rp = $('[data-rpdf]', el); if (rp) rp.onclick = () => BB.download('/api/cand/resume/pdf');
     // New WhatsApp number: a code goes to the new number; it is saved only when that code is right.
     $('[data-chphone]', el).onclick = async () => {
       const a = await BB.ask({ title: 'Change your WhatsApp number', note: 'We send a 6-digit code on WhatsApp to the new number to check that it is yours.', ok: 'Send code',
@@ -186,6 +217,7 @@
     form.onsubmit = (e) => {
       e.preventDefault(); BB.romanizeNow(form); const v = BB.formValues(form);
       v.skills = $$('[data-skill].on', el).map((b) => b.dataset.skill);
+      v.social = {}; for (const k of Object.keys(v)) if (k.startsWith('social_')) { if (v[k]) v.social[k.slice(7)] = v[k]; delete v[k]; }
       v.exp_business = isFresher ? [] : $$('[name=exp_business]:checked', el).map((x) => x.value);
       // A fresher has no experience, current salary, notice period or current company.
       if (isFresher) Object.assign(v, { exp_total: 0, exp_jewellery: 0, notice_days: 0, cur_month: '', current_company: '' });

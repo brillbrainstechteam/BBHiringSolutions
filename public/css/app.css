@@ -1252,3 +1252,21 @@ html[lang="hi"] .lp h1 em, html[lang="hi"] .lp h2 em { font-style: normal; }
 /* Top strip, refined: royal navy with a soft champagne glow on the left; no dividing line. */
 .lp-util { background: radial-gradient(55% 320% at 0% 50%, rgba(214, 178, 92, .30), transparent 62%), linear-gradient(90deg, #1A2858 0%, #25377C 55%, #1C2B60 100%); border-bottom: 0; box-shadow: none; }
 .lp-util a { color: #E8ECF8; } .lp-util b { color: #F2D58C; }
+
+/* Portal welcome line under the name. */
+.acct-band .welcome-line { margin: 6px 0 4px; font-size: 14px; color: rgba(255, 255, 255, .78); max-width: 640px; }
+
+/* Interview notes: our team's in blue, the client's in violet. */
+.iv-note { padding: 6px 10px; border-left: 3px solid var(--blue); background: var(--blue-50); border-radius: 0 8px 8px 0; margin: 4px 0; }
+.iv-note.by-client { border-left-color: var(--violet); background: var(--violet-50); }
+
+.rounds-box { border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
+.round-row { padding-top: 8px; border-top: 1px dashed var(--border); } .round-row:first-of-type { border-top: 0; padding-top: 2px; }
+
+/* Candidate resume check and preview. */
+.rc-grade { font: 700 18px var(--display); } .rc-grade.g-excellent { color: var(--green); } .rc-grade.g-good { color: var(--blue); } .rc-grade.g-needs-work { color: var(--amber); } .rc-grade.g-weak { color: var(--red); }
+.rc-tips { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px; }
+.rc-tips li { display: flex; flex-direction: column; font-size: 13px; padding-left: 12px; border-left: 2px solid var(--mustard-300); } .rc-tips li span { color: var(--muted); }
+.rs { display: flex; flex-direction: column; gap: 14px; } .rs-head h2 { font: 700 24px var(--display); margin: 0; } .rs-hl { font-weight: 600; color: var(--mustard-600); margin: 2px 0 4px; }
+.rs-sec h4 { margin: 0 0 6px; font-size: 12px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); } .rs-sec p { margin: 0; } .rs-sec ul { margin: 4px 0 0; padding-left: 18px; }
+.rs-job { margin-bottom: 8px; }

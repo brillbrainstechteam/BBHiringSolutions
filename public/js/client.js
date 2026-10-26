@@ -168,7 +168,8 @@
     const c = D.client; const p = D.perms;
     const tabs = [['home', 'Home'], ['jobs', 'Job openings'], ...(p.candidates ? [['candidates', 'Candidates', D.counts.to_review]] : []), ['interviews', 'Interviews'], ...(p.bills ? [['bills', 'Bills']] : []), ['company', 'Company & papers']];
     $('#app').innerHTML = `<div class="pub">${BB.publicTop('Client account')}
-      <div class="acct-band"><div class="in"><div class="grow"><span class="eyebrow">Client account</span><h1 style="margin-top:8px">${esc(c.company)}</h1><div class="meta"><span class="mono">${esc(c.id)}</span> · ${esc(c.city || '')}${D.member ? ` · logged in as ${esc(D.member.name)} (${esc(D.member.role)})` : ''}</div></div>
+      <div class="acct-band"><div class="in"><div class="grow"><span class="eyebrow">${BB.greeting()}, ${esc(String((D.member && D.member.name) || c.contact || '').split(' ')[0] || 'there')}</span><h1 style="margin-top:8px">${esc(c.company)}</h1>
+        <p class="welcome-line">Welcome to your BrillBrains client account. Your openings, shortlisted candidates and interviews are all here.</p><div class="meta"><span class="mono">${esc(c.id)}</span> · ${esc(c.city || '')}${D.member ? ` · logged in as ${esc(D.member.name)} (${esc(D.member.role)})` : ''}</div></div>
         <div class="row"><button class="btn gold" data-raise>${BB.icon('plus', 'wa-ico')} Raise a job opening</button><button class="btn" data-out>Log out</button></div></div></div>
       <div class="acct">
         <div class="tabs">${tabs.map(([k, l, n]) => `<button data-tab="${k}" class="${tab === k ? 'on' : ''}">${l}${n ? ` <span class="n">${n}</span>` : ''}</button>`).join('')}</div>
@@ -274,7 +275,10 @@
       <div class="grid g4 small"><div><div class="muted">Experience</div><b>${a.exp_total ?? '—'} yrs</b>${a.exp_jewellery ? ` <span class="faint">(${a.exp_jewellery} in jewellery)</span>` : ''}${(a.exp_business || []).length ? `<div class="faint">${esc(a.exp_business.join(', '))}</div>` : ''}</div><div><div class="muted">Current salary</div><b>${a.cur_salary ? inr(a.cur_salary / 12) + '/mo' : '—'}</b></div><div><div class="muted">Expected</div><b>${a.exp_salary ? inr(a.exp_salary / 12) + '/mo' : '—'}</b></div><div><div class="muted">Notice</div><b>${a.notice_days ?? '—'} days</b></div></div>
       <div class="row small">${a.skills.map((s) => `<span class="badge ${s.match ? 'b-green' : 'b-outline'}">${s.match ? '✓ ' : ''}${esc(s.s)}</span>`).join('') || '<span class="faint">No skills listed</span>'}</div>
       ${a.reasons.length ? `<div class="small muted">Why it matches: ${a.reasons.map(esc).join(' · ')}</div>` : ''}
-      ${a.our_notes.length ? `<div class="notice small"><b>Our interview notes</b>${a.our_notes.map((n) => `<div>${n.rating ? '★'.repeat(n.rating) + ' ' : ''}${esc(n.remark || '')}</div>${(n.qa || []).map((q) => `<div class="faint">Q: ${esc(q.q)} — ${esc(q.a)}</div>`).join('')}`).join('')}</div>` : ''}
+      ${(a.rounds || []).length ? `<div class="rounds-box"><b class="small">Interview rounds</b>${a.rounds.map((r) => `<div class="round-row"><div class="row between small"><span><b>${esc(r.mode_label)}</b> · ${fmtDT(r.at)}</span><span>${r.result ? `<span class="badge b-primary">${esc(r.result)}</span>` : `<span class="badge b-outline">${esc(r.status)}</span>`}</span></div>
+        ${r.remark ? `<div class="small">${r.rating ? '★'.repeat(r.rating) + ' ' : ''}${esc(r.remark)}</div>` : ''}${(r.qa || []).map((q) => `<div class="small faint">Q: ${esc(q.q)} — ${esc(q.a)}</div>`).join('')}
+        ${(r.notes || []).map((n) => `<div class="small iv-note ${n.author_kind === 'client' ? 'by-client' : ''}"><b>${esc(n.author)}</b> <span class="faint">${fmtDT(n.at)}</span><div>${esc(n.text)}</div></div>`).join('')}
+        ${r.client_joins && D.perms.candidates ? `<a href="#" class="small" data-ivnote="${r.id}">+ Add a note</a>` : ''}</div>`).join('')}</div>` : ''}
       ${a.short_cv ? `<div class="row small"><button class="btn sm" data-file="${a.short_cv}">Short CV</button><span class="faint">Contact details stay with our team, who arrange everything.</span></div>` : ''}
       ${a.result === 'open' && ['Sent to client', 'Client interview'].includes(a.step) ? (a.availability ? `<div class="notice small"><b>✓ Availability shared</b> · ${fmtD(a.availability.at)}<div>${esc(a.availability.text.replace(/^Interview availability from [^:]*: /, ''))}</div><a href="#" data-avail="${a.id}" data-name="${esc(a.name)}">Change times</a></div>` : `<div class="row"><button class="btn primary" data-avail="${a.id}" data-name="${esc(a.name)}">Share interview availability</button><span class="small muted">Our team fixes the interview with the candidate.</span></div>`) : ''}
       ${(a.result === 'open' && ['Offer made', 'Offer accepted'].includes(a.step)) || a.result === 'Hired' ? offerBox(a) : ''}
@@ -301,31 +305,36 @@
         }
         return BB.post(`/api/client/apps/${b.dataset.avail}/availability`, { slots, place: v.place, interviewer: v.interviewer, note: v.note });
       } }).then((x) => x && (BB.toast('Thank you — our team will confirm the interview time'), reload())); }));
-    $$('[data-offer-add]', el).forEach((b) => (b.onclick = () => BB.ask({ title: `Offer for ${b.dataset.name}`, note: 'The candidate gets the offer on WhatsApp and in their profile. Our team helps with the rest.',
-      fields: [{ name: 'month', label: 'Monthly salary (₹)', type: 'number', voice: false }, { name: 'joining_date', label: 'Joining date', type: 'date', voice: false, attrs: `min="${new Date().toISOString().slice(0, 10)}"` }, { name: 'reporting_to', label: 'Reports to', opt: true }],
-      ok: 'Make the offer', submit: (v) => BB.post(`/api/client/apps/${b.dataset.offerAdd}/offer`, v) }).then((x) => x && (BB.toast('Offer recorded — the candidate has been told'), reload()))));
-    $$('[data-offer-send]', el).forEach((b) => (b.onclick = () => act(() => BB.post(`/api/client/apps/${b.dataset.offerSend}/offer-letter`, { send: true }), 'Offer letter sent to the candidate')));
-    $$('[data-offer-make]', el).forEach((b) => (b.onclick = () => act(() => BB.post(`/api/client/apps/${b.dataset.offerMake}/offer-letter`, {}), 'Offer letter made — check it, then send')));
     $$('[data-ck]', el).forEach((b) => (b.onchange = () => act(() => BB.post(`/api/client/apps/${b.dataset.ck}/checklist`, { item: b.dataset.item, done: b.checked }))));
   }
+  // Offers are handled by our team: the client sees where it stands, and the joining checklist once accepted.
   function offerBox(a) {
     const items = (D.standard_templates.joining_checklist || '').split('\n').filter(Boolean);
-    // No salary or joining date yet: ask for them first (a letter needs both).
-    if (!a.offer_ctc && a.result === 'open') return `<div class="notice gold small stack-sm"><div><b>Offer details needed</b> — add the salary and joining date, and we share the offer with ${esc(a.name)}.</div>
-      ${D.perms.approve ? `<div class="row"><button class="btn primary sm" data-offer-add="${a.id}" data-name="${esc(a.name)}">Add offer details</button></div>` : '<div class="faint">Someone with approval rights in your company can add them.</div>'}</div>`;
-    return `<div class="notice gold small stack-sm"><div><b>Offer:</b> ${inr(a.offer_ctc)} a year · joining ${fmtD(a.joining_date)}</div>
-      <div class="row">${a.offer_letter ? `<button class="btn sm" data-file="${a.offer_letter}">View offer letter</button>${a.offer_sent ? '<span class="badge b-green">Sent to candidate</span>' : `<button class="btn primary sm" data-offer-send="${a.id}">Send to candidate</button>`}` : `<button class="btn sm" data-offer-make="${a.id}">Make offer letter</button>`}</div>
-      ${a.step === 'Offer accepted' || a.result === 'Hired' ? `<div><b>Joining checklist</b>${items.map((it) => `<label class="row"><input type="checkbox" data-ck="${a.id}" data-item="${esc(it)}" ${a.checklist && a.checklist[it] ? 'checked' : ''}> ${esc(it)}</label>`).join('')}${(a.joining_docs || []).length ? `<div class="row" style="margin-top:4px">${a.joining_docs.map((d) => `<button class="btn sm" data-file="${d.file}">${esc(d.label)}</button>`).join('')}</div>` : ''}</div>` : ''}</div>`;
+    const accepted = a.step === 'Offer accepted' || a.result === 'Hired';
+    return `<div class="notice gold small stack-sm"><div><b>${a.result === 'Hired' ? 'Joined' : accepted ? 'Offer accepted' : 'Offer stage'}</b> — our team is handling the offer with ${esc(a.name)} and keeps you posted.</div>
+      ${accepted ? `<div><b>Joining checklist</b>${items.map((it) => `<label class="row"><input type="checkbox" data-ck="${a.id}" data-item="${esc(it)}" ${a.checklist && a.checklist[it] ? 'checked' : ''}> ${esc(it)}</label>`).join('')}</div>` : ''}</div>`;
   }
 
   function interviews(el) {
     const now = new Date().toISOString();
-    el.innerHTML = `<div class="card"><div class="tbl-wrap"><table class="tbl cards"><thead><tr><th>Time</th><th>Candidate</th><th>Job</th><th>Place</th><th>Status</th><th></th></tr></thead><tbody>${D.interviews.map((i) => `<tr>
-      <td>${fmtDT(i.at)}</td><td><b>${esc(i.candidate)}</b></td><td>${esc(i.job)}</td><td>${esc(i.place)}</td><td>${i.view_status === 'Result pending' ? '<span class="badge b-amber">Waiting for your feedback</span>' : `<span class="badge b-outline">${esc(i.view_status)}</span>`}${i.result ? ` <span class="badge b-primary">${esc(i.result)}</span>` : ''}</td>
-      <td>${i.status !== 'Completed' && i.status !== 'Cancelled' && D.perms.feedback ? `<button class="btn sm primary" data-fb="${i.id}">Give feedback</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="6" class="empty">No interviews yet.</td></tr>'}</tbody></table></div></div>`;
+    const upcoming = (i) => ['Scheduled', 'Rescheduled'].includes(i.status) && i.at > now;
+    el.innerHTML = `<div class="notice small" style="margin-bottom:12px">Usual rounds: <b>telephonic</b> and <b>virtual</b> with our team (you may join the virtual one), then the <b>final round in person</b> with you. Add any round to your Google Calendar with one tap.</div>
+      <div class="card"><div class="tbl-wrap"><table class="tbl cards"><thead><tr><th>Time</th><th>Candidate</th><th>Round</th><th>Place</th><th>Status</th><th></th></tr></thead><tbody>${D.interviews.map((i) => `<tr>
+      <td>${fmtDT(i.at)}</td><td><b>${esc(i.candidate)}</b><div class="small muted">${esc(i.job)}</div></td><td>${esc(i.mode_label || i.name)}</td><td>${esc(i.place)}${i.link ? `<div><a href="${esc(i.link)}" target="_blank" rel="noopener" class="small">Join link</a></div>` : ''}</td><td>${i.view_status === 'Result pending' ? '<span class="badge b-amber">Waiting for your feedback</span>' : `<span class="badge b-outline">${esc(i.view_status)}</span>`}${i.result ? ` <span class="badge b-primary">${esc(i.result)}</span>` : ''}
+        ${(i.notes || []).map((n) => `<div class="small iv-note ${n.author_kind === 'client' ? 'by-client' : ''}"><b>${esc(n.author)}</b><div>${esc(n.text)}</div></div>`).join('')}</td>
+      <td><div class="row">${i.status !== 'Completed' && i.status !== 'Cancelled' && D.perms.feedback ? `<button class="btn sm primary" data-fb="${i.id}">Give feedback</button>` : ''}
+        ${upcoming(i) ? `<a class="btn sm" href="${BB.gcal(i, `Interview: ${i.candidate} — ${i.job} (${i.name})`, `${i.name} arranged by BrillBrains Hiring Solutions.`)}" target="_blank" rel="noopener">+ Google Calendar</a><button class="btn sm ghost" data-ics="${i.id}">.ics</button>` : ''}
+        ${D.perms.candidates ? `<button class="btn sm ghost" data-ivnote="${i.id}">+ Note</button>` : ''}</div></td></tr>`).join('') || '<tr><td colspan="6" class="empty">No interviews yet.</td></tr>'}</tbody></table></div></div>`;
+    $$('[data-ics]', el).forEach((b) => (b.onclick = () => BB.download(`/api/client/interviews/${b.dataset.ics}/ics`)));
     $$('[data-fb]', el).forEach((b) => (b.onclick = () => BB.ask({ title: 'Interview feedback', fields: [{ name: 'result', label: 'Result', type: 'choice', options: ['Selected', 'Another round', 'Not selected'] }, { name: 'remark', label: 'One line about the candidate', type: 'textarea' }], ok: 'Save feedback', submit: (v) => { if (!v.result) { const e = new Error('Pick a result'); e.field = 'result'; throw e; } return BB.post(`/api/client/interviews/${b.dataset.fb}/feedback`, v); } }).then((x) => x && (BB.toast('Thank you — our recruiter has been told'), reload()))));
   }
 
+  // A note on an interview round the client takes part in: our team sees it on the candidate everywhere.
+  document.addEventListener('click', (e) => {
+    const b = e.target.closest && e.target.closest('[data-ivnote]'); if (!b || BB.portal !== 'client') return; e.preventDefault();
+    BB.ask({ title: 'Note on this interview', note: 'Our team sees your note with the candidate. The candidate does not.', fields: [{ name: 'text', label: 'Your note', type: 'textarea' }], ok: 'Save note',
+      submit: (v) => BB.post(`/api/client/interviews/${b.dataset.ivnote}/notes`, v) }).then((x) => x && (BB.toast('Note saved — our team can see it'), reload()));
+  });
   function bills(el) {
     el.innerHTML = `<div class="card"><div class="tbl-wrap"><table class="tbl cards"><thead><tr><th>Bill no.</th><th>Candidate</th><th>Joined</th><th class="num">CTC</th><th class="num">Amount</th><th>Status</th><th></th></tr></thead><tbody>${D.bills.map((b) => `<tr>
       <td class="mono">${esc(b.bill_no)}${b.is_replacement ? ' <span class="badge b-gold">Replacement</span>' : ''}</td><td>${esc(b.candidate)}<div class="small muted">${esc(b.job)}</div></td><td>${fmtD(b.joining_date)}</td><td class="num">${inr(b.ctc)}</td><td class="num"><b>${inr(b.total)}</b><div class="tiny muted">fee ${inr(b.fee)} + GST ${inr(b.gst)}</div></td>

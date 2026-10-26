@@ -430,6 +430,17 @@ document.addEventListener('click', (e) => {
   e.preventDefault(); BB.go(href.slice(1));
 });
 // Meta Pixel events (fbq comes from the page head; absent on the team portal and when the pixel is off).
+// Google Calendar "add event" link for an interview (opens the event filled in; nothing to connect).
+BB.gcal = (iv, title, details) => {
+  const st = (d) => new Date(d).toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+  const end = new Date(new Date(iv.at).getTime() + 45 * 60000);
+  const q = new URLSearchParams({ action: 'TEMPLATE', text: title, dates: `${st(iv.at)}/${st(end)}`, details: `${details || ''}${iv.link ? `\nJoin: ${iv.link}` : ''}`, location: iv.link || iv.place || '' });
+  return `https://calendar.google.com/calendar/render?${q}`;
+};
+// The three usual rounds: telephonic (our team), virtual (our team, sometimes with the client), final in person (client).
+BB.ivModes = { phone: 'Telephonic round', video: 'Virtual round', in_person: 'Final round (in person)' };
+// "Good morning / afternoon / evening", by the time in India.
+BB.greeting = () => { const h = Number(new Date().toLocaleString('en-IN', { hour: 'numeric', hour12: false, timeZone: 'Asia/Kolkata' })); return h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening'; };
 BB.track = (event, params) => { try { if (window.fbq && document.body.dataset.view !== 'team') window.fbq('track', event, params || {}); } catch { /* ads tracking never breaks the page */ } };
 let lastTracked = location.pathname;
 BB.route = () => {

@@ -12,7 +12,7 @@ const DB_FILE = path.join(DATA_DIR, 'bbhs.db');
 const db = new DatabaseSync(DB_FILE);
 db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;'); // wait up to 5 s if another write is in progress
 
-const JSON_COLS = new Set(['exp_business', 'kyc', 'extra', 'perms', 'jd', 'qa', 'buttons', 'checklist', 'onboarding', 'work_cities', 'skills', 'rounds', 'screening_qs', 'value', 'map', 'vars', 'joining_docs']);
+const JSON_COLS = new Set(['exp_business', 'kyc', 'extra', 'perms', 'jd', 'qa', 'buttons', 'checklist', 'onboarding', 'work_cities', 'skills', 'rounds', 'screening_qs', 'value', 'map', 'vars', 'joining_docs', 'social', 'resume_check']);
 
 db.exec(`
 CREATE TABLE IF NOT EXISTS counters (name TEXT PRIMARY KEY, next INTEGER NOT NULL);
@@ -20,6 +20,10 @@ CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT);
 CREATE TABLE IF NOT EXISTS agencies (id TEXT PRIMARY KEY, name TEXT, city TEXT, since TEXT, status TEXT DEFAULT 'Active', share_pct REAL, is_sample INTEGER DEFAULT 0, created_at TEXT);
 CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, name TEXT, whatsapp TEXT, level TEXT, agency_id TEXT, role TEXT, username TEXT UNIQUE, pass_hash TEXT, status TEXT DEFAULT 'On', must_change INTEGER DEFAULT 1, failed INTEGER DEFAULT 0, locked_until TEXT, last_login TEXT, last_action TEXT, created_by TEXT, created_at TEXT, devices TEXT DEFAULT '[]', is_sample INTEGER DEFAULT 0);
 CREATE TABLE IF NOT EXISTS sessions (token TEXT PRIMARY KEY, kind TEXT, subject_id TEXT, member_id TEXT, created_at TEXT, last_seen TEXT, pending_2fa INTEGER DEFAULT 0, device TEXT);
+CREATE TABLE IF NOT EXISTS iv_notes (id INTEGER PRIMARY KEY AUTOINCREMENT, iv_id TEXT, app_id TEXT, candidate_id TEXT, author TEXT, author_kind TEXT, text TEXT, at TEXT);
+CREATE INDEX IF NOT EXISTS ix_ivn_app ON iv_notes(app_id);
+CREATE TABLE IF NOT EXISTS calls (id INTEGER PRIMARY KEY AUTOINCREMENT, candidate_id TEXT, app_id TEXT, iv_id TEXT, user_id TEXT, by TEXT, at TEXT, outcome TEXT, minutes REAL, note TEXT);
+CREATE INDEX IF NOT EXISTS ix_calls_cand ON calls(candidate_id);
 CREATE TABLE IF NOT EXISTS partner_requests (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, organisation TEXT, kind TEXT, whatsapp TEXT, email TEXT, city TEXT, message TEXT, source TEXT, status TEXT DEFAULT 'New', created_at TEXT);
 CREATE TABLE IF NOT EXISTS account_passwords (kind TEXT, subject_id TEXT, pass_hash TEXT, updated_at TEXT, PRIMARY KEY (kind, subject_id));
 CREATE TABLE IF NOT EXISTS otps (id INTEGER PRIMARY KEY AUTOINCREMENT, phone TEXT, purpose TEXT, code_hash TEXT, expires TEXT, tries INTEGER DEFAULT 0, used INTEGER DEFAULT 0, created_at TEXT);
@@ -88,7 +92,7 @@ CREATE INDEX IF NOT EXISTS ix_client_phone ON clients(whatsapp);
 `);
 
 // Columns added after the first version.
-for (const [table, col] of [['candidates', 'state TEXT'], ['candidates', "language TEXT DEFAULT 'en'"], ['candidates', "industry TEXT DEFAULT 'Jewellery'"], ['candidates', "exp_business TEXT DEFAULT '[]'"], ['users', 'email TEXT'], ['emails', 'send_after TEXT'], ['emails', 'dedupe TEXT']]) { try { db.exec(`ALTER TABLE ${table} ADD COLUMN ${col}`); } catch { /* already there */ } }
+for (const [table, col] of [['candidates', 'state TEXT'], ['candidates', "language TEXT DEFAULT 'en'"], ['candidates', "industry TEXT DEFAULT 'Jewellery'"], ['candidates', "exp_business TEXT DEFAULT '[]'"], ['users', 'email TEXT'], ['emails', 'send_after TEXT'], ['emails', 'dedupe TEXT'], ['interviews', 'mode TEXT'], ['interviews', 'link TEXT'], ['interviews', 'client_joins INTEGER DEFAULT 0'], ['candidates', "social TEXT DEFAULT '{}'"], ['candidates', "resume_check TEXT DEFAULT '{}'"]]) { try { db.exec(`ALTER TABLE ${table} ADD COLUMN ${col}`); } catch { /* already there */ } }
 db.exec('CREATE INDEX IF NOT EXISTS ix_emails_dedupe ON emails(dedupe); CREATE INDEX IF NOT EXISTS ix_emails_after ON emails(status, send_after);');
 
 // ---------- small helpers ----------

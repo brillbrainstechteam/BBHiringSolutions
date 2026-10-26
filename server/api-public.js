@@ -360,7 +360,9 @@ route('POST', '/api/public/apply', { rate: { key: 'form', max: 60, minutes: 60 }
 // A number we already know never opens without the WhatsApp code (someone could type another person's number).
 function formDone(kind, isNew, id, phone) {
   const out = { id, isNew, phone, can_verify: canSendCodes() };
-  if (isNew) { openedAccount(kind, id); out.token = newSession(kind, id); }
+  // New job seekers activate their profile first: a WhatsApp code or email + password proves the number is theirs.
+  if (isNew && kind === 'client') { openedAccount(kind, id); out.token = newSession(kind, id); }
+  if (isNew && kind === 'candidate') out.activate = true;
   return out;
 }
 
@@ -375,13 +377,15 @@ function clientAppView(a, client) {
   // Clients never get a candidate's phone, email or full CV (it carries both); our team stays in between.
   const avail = get("SELECT note, at FROM app_history WHERE app_id=? AND kind='availability' ORDER BY id DESC LIMIT 1", a.id);
   const ours = all("SELECT * FROM interviews WHERE app_id=? AND round='ours' AND status='Completed'", a.id);
+  // Every round's result and notes (ours and theirs) travel with the candidate; the candidate never sees these.
+  const rounds = all('SELECT * FROM interviews WHERE app_id=? ORDER BY at', a.id).map(L.interviewView).map((i) => ({ id: i.id, name: i.name, mode_label: i.mode_label, at: i.at, status: i.view_status, result: i.result, remark: i.status === 'Completed' ? i.remark : null, rating: i.rating, qa: i.qa, notes: i.notes, client_joins: L.clientSeesIv(i) }));
   const sc = L.matchScore(cand, job, L.ratingOf(cand.id));
   const js = (job.skills || []).map((x) => x.toLowerCase());
   return {
     id: a.id, step: a.step, result: a.result, job_id: job.id, job_title: job.title, candidate_id: cand.id, name: cand.name, city: cand.city, phone: null, availability: avail ? { text: avail.note, at: avail.at } : null,
     exp_total: cand.exp_total, exp_jewellery: cand.exp_jewellery, exp_business: cand.exp_business || [], cur_salary: cand.cur_salary, exp_salary: cand.exp_salary, notice_days: cand.notice_days, current_company: cand.current_company,
     skills: (cand.skills || []).map((s) => ({ s, match: js.includes(s.toLowerCase()) })), score: sc.score, reasons: sc.reasons, short_cv: cand.short_cv_file || null, cv: null,
-    our_notes: ours.map((i) => ({ remark: i.remark, rating: i.rating, qa: i.qa })), interviews: v.interviews.filter((i) => i.round === 'client'), offer_ctc: a.offer_ctc, joining_date: a.joining_date,
+    our_notes: ours.map((i) => ({ remark: i.remark, rating: i.rating, qa: i.qa })), rounds, interviews: v.interviews.filter((i) => L.clientSeesIv(i)), offer_ctc: a.offer_ctc, joining_date: a.joining_date,
     offer_letter: a.offer_letter, offer_sent: a.offer_sent, checklist: a.checklist, joining_docs: a.joining_docs, client_choice: a.client_choice,
   };
 }
@@ -392,7 +396,7 @@ route('GET', '/api/client/me', C, (ctx) => {
   // Everyone shared with the client stays on their list, closed ones too (with a plain reason), so nobody just disappears.
   const sent = apps.filter((a) => L.stepIdx(a.step) >= 3);
   const candidates = perms.candidates ? sent.map((a) => clientAppView(a, c)) : [];
-  const ivs = all("SELECT i.* FROM interviews i JOIN applications a ON a.id=i.app_id JOIN jobs j ON j.id=a.job_id WHERE j.client_id=? AND i.round='client' ORDER BY i.at DESC", c.id).map(L.interviewView)
+  const ivs = all("SELECT i.* FROM interviews i JOIN applications a ON a.id=i.app_id JOIN jobs j ON j.id=a.job_id WHERE j.client_id=? AND (i.round='client' OR i.client_joins=1) ORDER BY i.at DESC", c.id).map(L.interviewView)
     .map((i) => { const a = apps.find((x) => x.id === i.app_id); const cand = get('SELECT name FROM candidates WHERE id=?', a.candidate_id); return { ...i, candidate: cand.name, job: get('SELECT title FROM jobs WHERE id=?', a.job_id).title }; });
   const bills = perms.bills ? all("SELECT * FROM bills WHERE client_id=? AND status!='Draft' ORDER BY created_at DESC", c.id).map(L.billView).map((b) => {
     const a = V.appView(get('SELECT * FROM applications WHERE id=?', b.app_id)); const ap = get('SELECT * FROM applications WHERE id=?', b.app_id);
@@ -480,27 +484,36 @@ route('POST', '/api/client/interviews/:id/feedback', { auth: 'client', perm: 'fe
   const iv = get('SELECT * FROM interviews WHERE id=?', ctx.params.id); if (!iv) throw httpError(404, 'Interview not found');
   ctx.params.id = iv.app_id; const a = clientApp(ctx);
   if (!['Selected', 'Another round', 'Not selected'].includes(ctx.body.result)) throw httpError(400, 'Pick a result', 'result');
-  const r = L.recordInterview(iv.id, { status: 'Completed', result: ctx.body.result, remark: ctx.body.remark || `Feedback by ${ctx.actor.label}`, rating: ctx.body.rating }, ctx.actor);
+  if (!L.clientSeesIv(iv)) throw httpError(403, 'Our team records this round.');
+  // A virtual round the client joined is one of ours: "Selected" there means move ahead to the final round.
+  const result = iv.round === 'ours' ? ({ Selected: 'Move ahead', 'Not selected': 'Not selected', 'Another round': 'On hold' }[ctx.body.result]) : ctx.body.result;
+  const r = L.recordInterview(iv.id, { status: 'Completed', result, remark: ctx.body.remark || `Feedback by ${ctx.actor.label}`, rating: ctx.body.rating }, ctx.actor);
   const job = get('SELECT * FROM jobs WHERE id=?', a.job_id);
   L.alertUser(a.owner_id || job.recruiter_id, `${ctx.client.company}: ${ctx.body.result} on ${a.id}${ctx.body.result === 'Selected' ? ' — record the offer' : ''}`, a.id);
   return r;
 });
-// The client (the employer) can record the offer itself: salary and joining date. The candidate gets the offer on WhatsApp.
-route('POST', '/api/client/apps/:id/offer', { auth: 'client', perm: 'approve' }, (ctx) => {
-  const a = clientApp(ctx);
-  if (!['Client interview', 'Sent to client', 'Offer made'].includes(a.step)) throw httpError(400, 'An offer can be made after the interview.');
-  const month = Number(ctx.body.month); if (!month || month < 1000) throw httpError(400, 'Enter the monthly salary in rupees', 'month');
-  return L.recordOffer(a.id, { ctc: Math.round(month * 12), joining_date: ctx.body.joining_date, reporting_to: ctx.body.reporting_to }, ctx.actor);
+// Offers are recorded by our team (team portal); clients no longer add offer details or letters themselves.
+// A client's note on an interview they take part in (shown to our team and on the candidate everywhere but the candidate's own page).
+route('POST', '/api/client/interviews/:id/notes', { auth: 'client', perm: 'candidates' }, (ctx) => {
+  const iv = get('SELECT * FROM interviews WHERE id=?', ctx.params.id); if (!iv) throw httpError(404, 'Interview not found');
+  ctx.params.id = iv.app_id; const a = clientApp(ctx);
+  if (!L.clientSeesIv(iv)) throw httpError(403, 'Notes can be added to your interview rounds.');
+  const r = L.addIvNote(iv.id, ctx.body.text, `${ctx.actor.label} (${ctx.client.company})`, 'client');
+  const job = get('SELECT * FROM jobs WHERE id=?', a.job_id);
+  L.alertUser(a.owner_id || job.recruiter_id, `${ctx.client.company} added a note on ${iv.id} (${a.id})`, a.id, false);
+  return r;
 });
-route('POST', '/api/client/apps/:id/offer-letter', { auth: 'client', perm: 'approve' }, (ctx) => {
-  const a = clientApp(ctx);
-  if (!a.offer_letter) return TEAM.makeOfferLetter(a, ctx.actor, !!ctx.body.send);
-  if (ctx.body.send) {
-    update('applications', a.id, { offer_sent: 1 }); L.appHist(a.id, a.step, ctx.actor, 'Offer letter checked and sent by client', 'paper');
-    const job = get('SELECT * FROM jobs WHERE id=?', a.job_id);
-    L.sendWA({ ptype: 'candidate', pid: a.candidate_id, format: 'bbhs_offer', vars: { job: job.title, company: ctx.client.company, ctc: L.inr(a.offer_ctc), joining_date: L.istFmt(a.joining_date, false) }, ap: a.id, by: ctx.actor, dedupe: `offersent:${a.id}:${a.offer_letter}` });
-  }
-  return { ok: true };
+// Calendar file for one interview (Google Calendar, Outlook, phone calendars all open .ics).
+route('GET', '/api/client/interviews/:id/ics', { auth: 'client' }, (ctx) => {
+  const iv = get('SELECT * FROM interviews WHERE id=?', ctx.params.id); if (!iv) throw httpError(404, 'Interview not found');
+  ctx.params.id = iv.app_id; const a = clientApp(ctx); if (!L.clientSeesIv(iv)) throw httpError(403, 'Not your round');
+  const cand = get('SELECT name FROM candidates WHERE id=?', a.candidate_id); const job = get('SELECT title FROM jobs WHERE id=?', a.job_id);
+  const st = (d) => new Date(d).toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+  const end = new Date(new Date(iv.at).getTime() + 45 * 60000);
+  const esc = (t) => String(t || '').replace(/[\\,;]/g, (m) => `\\${m}`).replace(/\n/g, '\\n');
+  const body = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//BrillBrains Hiring//EN', 'BEGIN:VEVENT', `UID:${iv.id}@hire.brillbrainsconsultants.com`, `DTSTAMP:${st(new Date())}`, `DTSTART:${st(iv.at)}`, `DTEND:${st(end)}`,
+    `SUMMARY:${esc(`Interview: ${cand.name} — ${job.title} (${iv.name})`)}`, `LOCATION:${esc(iv.link || iv.place)}`, `DESCRIPTION:${esc(`${iv.name} with ${cand.name} for ${job.title}. Arranged by BrillBrains Hiring Solutions.${iv.link ? `\nJoin: ${iv.link}` : ''}`)}`, 'END:VEVENT', 'END:VCALENDAR'].join('\r\n');
+  return { __file: { buf: Buffer.from(body, 'utf8'), mime: 'text/calendar; charset=utf-8', name: `${iv.id}.ics` } };
 });
 route('POST', '/api/client/apps/:id/checklist', { auth: 'client', perm: 'candidates' }, (ctx) => {
   const a = clientApp(ctx); const cl = { ...(a.checklist || {}) }; cl[ctx.body.item] = ctx.body.done ? { by: ctx.actor.label, at: now() } : null;
@@ -592,7 +605,7 @@ route('GET', '/api/cand/me', K, (ctx) => {
   const c = ctx.candidate; const s = D.settings();
   const apps = all('SELECT * FROM applications WHERE candidate_id=? ORDER BY created_at DESC', c.id).map((a) => {
     const job = get('SELECT * FROM jobs WHERE id=?', a.job_id); const cl = get('SELECT * FROM clients WHERE id=?', job.client_id);
-    const ivs = all('SELECT * FROM interviews WHERE app_id=? ORDER BY at', a.id).map(L.interviewView);
+    const ivs = all('SELECT * FROM interviews WHERE app_id=? ORDER BY at', a.id).map(L.interviewView).map(({ notes, remark, rating, qa, ...i }) => i);
     return { id: a.id, step: a.step, result: a.result, job_title: job.title, city: job.city, company: companyShown(a, cl) ? cl.company : companyLabel(cl), company_shown: companyShown(a, cl), interviews: ivs, offer_ctc: a.offer_ctc, joining_date: a.joining_date, offer_letter: a.offer_sent ? a.offer_letter : null, joining_docs: a.joining_docs || [], checklist: a.checklist, left_date: a.left_date, steps: L.STEPS };
   });
   const rating = L.ratingOf(c.id);
@@ -604,7 +617,8 @@ route('GET', '/api/cand/me', K, (ctx) => {
   const next = apps.flatMap((a) => a.interviews.filter((i) => ['Scheduled', 'Rescheduled'].includes(i.status) && i.at > now()).map((i) => ({ ...i, app: a.id, job_title: a.job_title, company: a.company }))).sort((a, b) => (a.at < b.at ? -1 : 1))[0] || null;
   const offer = apps.find((a) => a.result === 'open' && a.step === 'Offer made') || null;
   return {
-    profile: { ...c, cur_month: c.cur_salary ? Math.round(c.cur_salary / 12) : null, exp_month: c.exp_salary ? Math.round(c.exp_salary / 12) : null }, pct: profilePct(c), missing: profileGaps(c).missing, has_password: hasPassword('candidate', c.id), apps, jobs, next, offer,
+    profile: { ...c, resume_check: undefined, cur_month: c.cur_salary ? Math.round(c.cur_salary / 12) : null, exp_month: c.exp_salary ? Math.round(c.exp_salary / 12) : null }, pct: profilePct(c),
+    resume: resumeState(c), missing: profileGaps(c).missing, has_password: hasPassword('candidate', c.id), apps, jobs, next, offer,
     referral: L.link('apply', `?ref=${c.id}`), files: all('SELECT id, type, name, version, at FROM files WHERE record_id=? AND replaced=0', c.id), joining_items: s.templates.joining_checklist.split('\n').filter(Boolean), active: onJob.size,
   };
 });
@@ -615,10 +629,37 @@ route('POST', '/api/cand/apply', K, (ctx) => {
   if (j.recruiter_id) L.alertUser(j.recruiter_id, `${ctx.candidate.name} applied to ${j.id}`, a.id, false);
   return a;
 });
+// Social profiles: only web links, one per network.
+const SOCIAL_KEYS = ['linkedin', 'instagram', 'facebook', 'portfolio', 'youtube'];
+function cleanSocial(v) {
+  const out = {};
+  for (const k of SOCIAL_KEYS) {
+    let u = String((v || {})[k] || '').trim(); if (!u) continue;
+    if (!/^https?:\/\//i.test(u)) u = `https://${u.replace(/^\/+/, '')}`;
+    try { const x = new URL(u); if (!['http:', 'https:'].includes(x.protocol) || !x.hostname.includes('.')) throw new Error(); out[k] = x.toString().slice(0, 300); } catch { throw httpError(400, 'That link does not look right', `social_${k}`); }
+  }
+  return out;
+}
+// Resume score (kept with the profile; the CV is read again only when a new one is uploaded).
+const RES = require('./resume');
+function resumeState(c) {
+  const rc = c.resume_check || {};
+  let len = rc.cv_len;
+  if (rc.cv_for !== (c.cv_file || null)) { len = RES.cvTextOf(c).length; update('candidates', c.id, { resume_check: { ...rc, cv_for: c.cv_file || null, cv_len: len } }); }
+  return { ...RES.check(c, len || 0), built: rc.resume || null, ai: RES.aiAvailable() };
+}
+route('POST', '/api/cand/resume/build', { auth: 'candidate', rate: { key: 'resume', max: 12, minutes: 60 } }, async (ctx) => RES.build(get('SELECT * FROM candidates WHERE id=?', ctx.candidate.id), ctx.actor.label));
+route('GET', '/api/cand/resume/pdf', K, (ctx) => {
+  const c = get('SELECT * FROM candidates WHERE id=?', ctx.candidate.id); const r = (c.resume_check || {}).resume;
+  if (!r) throw httpError(400, 'Create your resume first.');
+  const f = RES.savePdf(c, r, ctx.actor.label);
+  return { __file: { buf: require('./files').readStored(f), mime: 'application/pdf', name: f.name } };
+});
 route('PUT', '/api/cand/profile', K, (ctx) => {
   const b = ctx.body; const patch = {};
   if (b.exp_business !== undefined) b.exp_business = L.cleanBusiness(b.exp_business);
   for (const k of ['exp_business', 'name', 'email', 'city', 'state', 'job_wanted', 'exp_total', 'exp_jewellery', 'notice_days', 'skills', 'current_company', 'looking', 'work_cities']) if (b[k] !== undefined) patch[k] = b[k] === '' ? null : b[k];
+  if (b.social !== undefined) patch.social = cleanSocial(b.social);
   // A new city brings its own state (the profile has no State box), unless a state was sent with it.
   if (patch.city && patch.city !== ctx.candidate.city && b.state === undefined) patch.state = L.stateOf(patch.city) || null;
   const yearly = (month, now) => (month === '' ? null : Number(month) === Math.round((now || 0) / 12) ? now : Number(month) * 12);

@@ -111,6 +111,28 @@
     'Part of': 'ग्रुप:', 'BrillBrains Consultants': 'BrillBrains Consultants', '· since 2011': '· 2011 से', 'WhatsApp us': 'WhatsApp करें', 'BrillBrains Consultants ↗': 'BrillBrains Consultants ↗',
     'Hiring for your business?': 'अपने बिज़नेस के लिए भर्ती?', 'Job Seekers': 'नौकरी ढूँढने वाले', 'One form, free for you': 'एक फ़ॉर्म, आपके लिए मुफ़्त', 'See open jobs': 'खुली नौकरियाँ देखें', 'Roles we are hiring for now': 'जिन पदों पर अभी भर्ती है',
     'Share your requirement in two minutes': 'दो मिनट में अपनी ज़रूरत बताइए', 'Agencies, institutes and recruiters': 'एजेंसियाँ, संस्थान और रिक्रूटर', 'Our group website': 'हमारी ग्रुप वेबसाइट',
+    'Good morning': 'सुप्रभात', 'Good afternoon': 'नमस्कार', 'Good evening': 'शुभ संध्या', 'Welcome,': 'स्वागत है,',
+    'Welcome to your BrillBrains client account. Your openings, shortlisted candidates and interviews are all here.': 'आपके BrillBrains क्लाइंट अकाउंट में स्वागत है। आपकी नौकरियाँ, शॉर्टलिस्ट उम्मीदवार और इंटरव्यू सब यहाँ हैं।',
+    'Your BrillBrains profile: jobs that match you, your applications and interview updates.': 'आपकी BrillBrains प्रोफ़ाइल: आपसे मेल खाती नौकरियाँ, आपके आवेदन और इंटरव्यू की जानकारी।',
+    'Offer stage': 'ऑफ़र चरण', 'Offer accepted': 'ऑफ़र स्वीकार', 'Joined': 'जॉइन किया',
+    'Interview rounds': 'इंटरव्यू राउंड', 'Telephonic round': 'टेलीफ़ोन राउंड', 'Virtual round': 'वीडियो राउंड', 'Final round (in person)': 'फ़ाइनल राउंड (आमने-सामने)', '+ Add a note': '+ नोट जोड़ें', '+ Note': '+ नोट',
+    'Note on this interview': 'इस इंटरव्यू पर नोट', 'Our team sees your note with the candidate. The candidate does not.': 'आपका नोट हमारी टीम उम्मीदवार के साथ देखती है। उम्मीदवार नहीं देखता।', 'Your note': 'आपका नोट', 'Save note': 'नोट सेव करें',
+    'Round': 'राउंड', 'Join link': 'जुड़ने का लिंक', '+ Google Calendar': '+ Google Calendar',
+    'Resume check': 'रिज़्यूमे जाँच', 'Excellent': 'बहुत अच्छा', 'Good': 'अच्छा', 'Needs work': 'सुधार चाहिए', 'Weak': 'कमज़ोर', 'Your resume looks complete.': 'आपका रिज़्यूमे पूरा लगता है।',
+    'Create a better resume': 'बेहतर रिज़्यूमे बनाएँ', 'Create again': 'फिर से बनाएँ', 'View resume': 'रिज़्यूमे देखें', 'Download PDF': 'PDF डाउनलोड करें', 'Your resume': 'आपका रिज़्यूमे',
+    'Written by AI from your profile and CV — only your real details are used. Check it before you share it.': 'आपकी प्रोफ़ाइल और CV से AI ने लिखा — सिर्फ़ आपकी असली जानकारी इस्तेमाल हुई है। शेयर करने से पहले जाँच लें।',
+    'Made from your profile details.': 'आपकी प्रोफ़ाइल की जानकारी से बना।', 'Add these to make it stronger:': 'इसे और मज़बूत बनाने के लिए यह जोड़ें:',
+    'Social profiles': 'सोशल प्रोफ़ाइल', 'Optional. Our team may share these with employers along with your profile.': 'वैकल्पिक। हमारी टीम इन्हें आपकी प्रोफ़ाइल के साथ नियोक्ताओं को दिखा सकती है।', 'Portfolio / website': 'पोर्टफ़ोलियो / वेबसाइट',
+    'Name and WhatsApp number': 'नाम और WhatsApp नंबर', 'Job you want and city': 'पसंद की नौकरी और शहर', 'CV uploaded': 'CV अपलोड', 'CV has enough detail': 'CV में पूरी जानकारी', 'At least 5 skills': 'कम से कम 5 हुनर',
+    'Current or last company': 'मौजूदा या पिछली कंपनी', 'Type of jewellery business': 'ज्वेलरी बिज़नेस का प्रकार', 'Salary and notice period': 'सैलरी और नोटिस पीरियड', 'A social or portfolio link': 'सोशल या पोर्टफ़ोलियो लिंक', 'Updated in the last 90 days': 'पिछले 90 दिनों में अपडेट',
+    'Add your full name and WhatsApp number.': 'अपना पूरा नाम और WhatsApp नंबर जोड़ें।', 'Add an email address — many employers expect one on a resume.': 'ईमेल जोड़ें — कई नियोक्ता रिज़्यूमे पर ईमेल चाहते हैं।',
+    'Say which job you want and the city you want to work in.': 'बताइए कौन-सी नौकरी चाहिए और किस शहर में।', 'Upload your CV (PDF or Word), or create one below.': 'अपना CV (PDF या Word) अपलोड करें, या नीचे बनाएँ।',
+    'Your CV is very short. Describe what you did in each job, with numbers where you can (sales, pieces, customers).': 'आपका CV बहुत छोटा है। हर नौकरी में क्या किया, लिखें — जहाँ हो सके संख्या के साथ (सेल्स, पीस, ग्राहक)।',
+    'Add at least 5 skills, for example: gold knowledge, diamond grading, billing, customer handling, CAD.': 'कम से कम 5 हुनर जोड़ें, जैसे: सोने की जानकारी, डायमंड ग्रेडिंग, बिलिंग, ग्राहक संभालना, CAD।',
+    'Add the company you work at now (or last worked at).': 'जिस कंपनी में अभी (या पिछली बार) काम किया, वह जोड़ें।', 'Say whether you worked with a wholesaler, manufacturer or retailer.': 'बताइए आपने होलसेलर, मैन्युफ़ैक्चरर या रिटेलर के साथ काम किया।',
+    'Add your expected salary and notice period so we match you to the right jobs.': 'अपेक्षित सैलरी और नोटिस पीरियड जोड़ें ताकि हम सही नौकरी से मिला सकें।', 'Add your LinkedIn, or a portfolio / Instagram link for design work.': 'अपना LinkedIn, या डिज़ाइन काम के लिए पोर्टफ़ोलियो / Instagram लिंक जोड़ें।',
+    'Review your profile — employers prefer recently updated profiles.': 'अपनी प्रोफ़ाइल देखें — नियोक्ता हाल में अपडेट प्रोफ़ाइल पसंद करते हैं।',
+    'Activate your profile': 'अपनी प्रोफ़ाइल चालू करें', 'To keep your profile safe, confirm it is your number: get a 6-digit code on WhatsApp, or create a login with your email and a password.': 'आपकी प्रोफ़ाइल सुरक्षित रहे, इसलिए पुष्टि करें कि नंबर आपका है: WhatsApp पर 6 अंकों का कोड पाएँ, या ईमेल और पासवर्ड से लॉगिन बनाएँ।',
     'Please enter your organisation': 'कृपया अपनी संस्था का नाम लिखें', 'Training partner': 'ट्रेनिंग पार्टनर',
 
     // ---- forms ----
@@ -356,6 +378,9 @@
   ];
   // Home page and partners page (landing.js).
   patterns.push(
+    [/^(\d+) things? to improve$/, '$1 सुधार बाकी'],
+    [/^(Good morning|Good afternoon|Good evening), (.+)$/, (m, g, n) => `${BB.tr(g)}, ${n}`],
+    [/^— our team is handling the offer with (.+) and keeps you posted\.$/, '— हमारी टीम $1 के साथ ऑफ़र संभाल रही है और आपको बताती रहेगी।'],
     [/^(\d+) openings$/, '$1 पद'], [/^(\d+) roles$/, '$1 रोल'], [/^(\d+) open now$/, '$1 अभी खुली'], [/^(\d+) cities$/, '$1 शहरों में'],
     [/^Posted (\d+) days ago$/, '$1 दिन पहले डाली गई'],
     [/^(\d+) days ago$/, '$1 दिन पहले'], [/^Free replacement for (\d+) days\.$/, '$1 दिन तक मुफ़्त रिप्लेसमेंट।'], [/^Free replacement within (\d+) days\.$/, '$1 दिन के भीतर मुफ़्त रिप्लेसमेंट।'],

@@ -550,9 +550,13 @@ function scheduleInterview(appId, o, by) {
   const app = get('SELECT * FROM applications WHERE id=?', appId);
   if (!app || app.result !== 'open') throw httpError(400, 'Interviews can only be set on an open application.');
   if (!o.at) throw httpError(400, 'Pick a date and time', 'at');
-  const round = o.round === 'client' ? 'client' : 'ours';
+  // Our usual rounds: 1) telephonic (our team), 2) virtual (our team, sometimes with the client), 3) in person with the client.
+  const mode = IV_MODES[o.mode] ? o.mode : (o.round === 'client' ? 'in_person' : null);
+  const round = mode === 'in_person' || (!mode && o.round === 'client') ? 'client' : 'ours';
+  const clientJoins = mode === 'video' && (o.client_joins === true || o.client_joins === '1' || o.client_joins === 1 || o.client_joins === 'on') ? 1 : 0;
   const id = nextId('IV');
-  insert('interviews', { id, app_id: appId, round, name: o.name || (round === 'ours' ? 'Round 1' : 'Client round'), at: new Date(o.at).toISOString(), place: o.place || 'Office', interviewer: o.interviewer || '', status: 'Scheduled', qa: [], confirmed: 0, created_by: by && by.uid, created_at: now() });
+  const place = mode === 'phone' ? 'Phone call' : mode === 'video' ? (o.place || 'Video call') : (o.place || 'Office');
+  insert('interviews', { id, app_id: appId, round, mode, link: mode === 'video' ? String(o.link || '').trim() : '', client_joins: clientJoins, name: o.name || (mode ? IV_MODES[mode] : (round === 'ours' ? 'Round 1' : 'Client round')), at: new Date(o.at).toISOString(), place, interviewer: o.interviewer || '', status: 'Scheduled', qa: [], confirmed: 0, created_by: by && by.uid, created_at: now() });
   history(actorName(by), 'create', id, null, null, `${round} interview on ${appId}`);
   const target = round === 'ours' ? 'Our interview' : 'Client interview';
   if (stepIdx(app.step) < stepIdx(target)) moveStep(appId, target, by, `${id} scheduled`);
@@ -563,8 +567,9 @@ function scheduleInterview(appId, o, by) {
   recalcJob(job.id, actorName(by));
   return iv;
 }
+const IV_MODES = { phone: 'Telephonic round', video: 'Virtual round', in_person: 'Final round (in person)' };
 function ivVars(iv, job) {
-  return { round: iv.round === 'ours' ? 'interview' : 'interview with the client', job: job.title, date: istFmt(iv.at, false), time: istTime(iv.at), place: iv.place };
+  return { round: iv.mode === 'phone' ? 'telephonic interview' : iv.mode === 'video' ? (iv.client_joins ? 'video interview with the client' : 'video interview') : iv.round === 'ours' ? 'interview' : 'interview with the client', job: job.title, date: istFmt(iv.at, false), time: istTime(iv.at), place: iv.place };
 }
 // Result of an interview (pop-up). Returns what happened next so the screen can say it.
 function recordInterview(ivId, o, by) {
@@ -587,7 +592,8 @@ function recordInterview(ivId, o, by) {
   let next = 'Saved';
   if (o.status === 'Completed' && app.result === 'open') {
     if (iv.round === 'ours') {
-      if (o.result === 'Move ahead') { moveStep(app.id, 'Sent to client', by, `${ivId}: ${o.remark}`); next = `${app.id} moved to Sent to client`; }
+      if (o.result === 'Move ahead' && iv.mode === 'phone') { appHist(app.id, app.step, by, `${ivId} (telephonic) cleared: ${o.remark}`, 'interview'); next = 'Schedule the virtual round'; }
+      else if (o.result === 'Move ahead') { moveStep(app.id, 'Sent to client', by, `${ivId}: ${o.remark}`); next = `${app.id} moved to Sent to client`; }
       else if (o.result === 'Not selected') { closeApplication(app.id, 'Not suitable', by, `${ivId}: ${o.remark}`); next = `${app.id} closed (Not suitable)`; }
       else if (o.result === 'On hold') { update('applications', app.id, { on_hold: 1, hold_reason: o.remark }); appHist(app.id, app.step, by, `On hold after ${ivId}`, 'hold'); next = `${app.id} put on hold`; }
     } else {
@@ -603,7 +609,29 @@ function recordInterview(ivId, o, by) {
 function interviewView(iv) {
   if (!iv) return iv;
   const pending = ['Scheduled', 'Rescheduled'].includes(iv.status) && new Date(iv.at) < new Date();
-  return { ...iv, view_status: pending ? 'Result pending' : iv.status };
+  return { ...iv, view_status: pending ? 'Result pending' : iv.status, mode_label: IV_MODES[iv.mode] || (iv.round === 'ours' ? 'Our interview' : 'Client interview'),
+    notes: all('SELECT id, author, author_kind, text, at FROM iv_notes WHERE iv_id=? ORDER BY at', iv.id) };
+}
+// Interviews the client takes part in: the in-person (client) rounds and any virtual round they join.
+const clientSeesIv = (iv) => iv.round === 'client' || !!iv.client_joins;
+// A note on one interview, by our team or by the client. Shown wherever the candidate is shown, except to the candidate.
+function addIvNote(ivId, text, author, kind) {
+  const iv = get('SELECT * FROM interviews WHERE id=?', ivId); if (!iv) throw httpError(404, 'Interview not found');
+  const t = String(text || '').trim(); if (!t) throw httpError(400, 'Write the note', 'text');
+  const app = get('SELECT candidate_id FROM applications WHERE id=?', iv.app_id) || {};
+  insert('iv_notes', { iv_id: iv.id, app_id: iv.app_id, candidate_id: app.candidate_id, author, author_kind: kind, text: t.slice(0, 2000), at: now() });
+  appHist(iv.app_id, (get('SELECT step FROM applications WHERE id=?', iv.app_id) || {}).step, { label: author }, `Note on ${iv.id}: ${t.slice(0, 140)}`, 'note');
+  return { ok: true };
+}
+// Phone calls to candidates (the telephonic round and every follow-up): who called, when, what happened.
+const CALL_OUTCOMES = ['Connected', 'No answer', 'Busy', 'Call back later', 'Switched off', 'Wrong number', 'Not interested'];
+function logCall(o, by) {
+  const cand = get('SELECT id FROM candidates WHERE id=?', o.candidate_id); if (!cand) throw httpError(404, 'Candidate not found');
+  if (!CALL_OUTCOMES.includes(o.outcome)) throw httpError(400, 'Pick what happened on the call', 'outcome');
+  const minutes = o.minutes === '' || o.minutes == null ? null : Math.max(0, Math.min(600, Number(o.minutes) || 0));
+  insert('calls', { candidate_id: cand.id, app_id: o.app_id || null, iv_id: o.iv_id || null, user_id: by && by.uid, by: actorName(by), at: now(), outcome: o.outcome, minutes, note: String(o.note || '').slice(0, 2000) });
+  if (o.app_id) appHist(o.app_id, (get('SELECT step FROM applications WHERE id=?', o.app_id) || {}).step, by, `Call: ${o.outcome}${minutes ? ` (${minutes} min)` : ''}${o.note ? ` — ${String(o.note).slice(0, 120)}` : ''}`, 'call');
+  return { ok: true };
 }
 
 // ---------- offers ----------
@@ -865,7 +893,7 @@ function sendSystemText(ptype, pid, text) {
 
 module.exports = {
   STEPS, stepIdx, digits10, validPhone, inr, istDay, istFmt, istTime, istHour, inQuiet, next9am, daysBetween, addDays, hashPassword, checkPassword, newPassword, sha,
-  waHeld, jobList, deptOf, stateOf, person, fillFormat, windowOpenUntil, sendWA, setDispatcher, alertUser, link, agencyAdmin, superAdmins,
+  waHeld, IV_MODES, clientSeesIv, addIvNote, CALL_OUTCOMES, logCall, jobList, deptOf, stateOf, person, fillFormat, windowOpenUntil, sendWA, setDispatcher, alertUser, link, agencyAdmin, superAdmins,
   computeJobStatus, jobStatusReason, recalcJob, filledCount, appsOfJob, matchScore, jobsFor, cleanBusiness, BUSINESS_TYPES, ratingOf, bestMatches, isPlaced, salaryText, autoJobAlert,
   feeFor, gstFor, fyOf, billView, refreshBill, createBillForApp, issueBill, upiLink,
   appHist, createApplication, moveStep, closeApplication, reopenApplication, scheduleInterview, recordInterview, interviewView, ivVars, recordOffer, leftJob, jobAction,

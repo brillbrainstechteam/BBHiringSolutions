@@ -411,7 +411,7 @@ function createJob(c, b, actor, byClient) {
     id, client_id: c.id, title: b.title === 'Other' ? (b.title_other || 'Other') : b.title, department: L.deptOf(b.title), city: b.city || c.city, openings: Math.max(1, Number(b.openings) || 1),
     sal_from: toYear(b.sal_from), sal_to: toYear(b.sal_to), exp_from: b.exp_from === '' ? null : b.exp_from ?? null, exp_to: b.exp_to === '' ? null : b.exp_to ?? null, notice_days: b.notice_days === '' ? null : b.notice_days ?? null,
     skills: b.skills || [], agency_id: c.agency_id, recruiter_id: recruiter || null, priority: b.priority || 'Medium', jd_approved: byClient ? 0 : (b.jd_approved ? 1 : 0), jd_status: b.jd_approved && !byClient ? 'Approved' : 'Not written',
-    rounds: b.rounds || ['Our interview', 'Client interview'], screening_qs: b.screening_qs || [], notes: b.notes || '', created_by: L.actorName(actor), created_at: now(), status: null,
+    rounds: b.rounds || ['Telephonic round', 'Virtual round', 'Final round (in person)'], screening_qs: b.screening_qs || [], notes: b.notes || '', created_by: L.actorName(actor), created_at: now(), status: null,
   });
   D.history(L.actorName(actor), 'create', id, null, null, `${b.title} for ${c.company}`);
   for (const ch of D.settings().posting_channels) insert('postings', { job_id: id, channel: ch.channel, owner: ch.owner, tag: ch.tag });
@@ -534,7 +534,8 @@ route('GET', '/api/candidates/:id', T, (ctx) => {
     ...candidateOut(u, c), status: V.candStatus(c.id), apps, messages: msgs, rating: L.ratingOf(c.id), can_message: seeThread(u, 'candidate', c.id) || isSuper(u),
     job_matches: L.jobsFor(c, 20).filter((m) => seeJob(u, m.j)).slice(0, 6).map((m) => ({ id: m.j.id, title: m.j.title, city: m.j.city, client_name: (get('SELECT company FROM clients WHERE id=?', m.j.client_id) || {}).company, score: m.score, reasons: m.reasons, gaps: m.gaps })),
     files: show ? all('SELECT * FROM files WHERE record_id=? AND replaced=0 ORDER BY at DESC', c.id) : all("SELECT * FROM files WHERE record_id=? AND replaced=0 AND type='short_cv'", c.id),
-    notes: all('SELECT * FROM notes WHERE record_id=? ORDER BY at DESC', c.id), consents: all("SELECT * FROM consents WHERE person_type='candidate' AND person_id=? ORDER BY at DESC", c.id),
+    notes: all('SELECT * FROM notes WHERE record_id=? ORDER BY at DESC', c.id), calls: all('SELECT * FROM calls WHERE candidate_id=? ORDER BY at DESC LIMIT 50', c.id), call_outcomes: L.CALL_OUTCOMES,
+    iv_notes: all('SELECT n.*, i.name iv_name, i.mode, i.at iv_at FROM iv_notes n JOIN interviews i ON i.id=n.iv_id WHERE n.candidate_id=? ORDER BY n.at DESC', c.id), consents: all("SELECT * FROM consents WHERE person_type='candidate' AND person_id=? ORDER BY at DESC", c.id),
     tieup: c.tieup_id ? get('SELECT * FROM tieups WHERE id=?', c.tieup_id) : null, referral_link: L.link('apply', `?ref=${c.id}`), agency_name: V.agencyName(c.agency_id), recruiter_name: V.userName(c.recruiter_id),
   };
 });
@@ -633,6 +634,7 @@ route('GET', '/api/applications/:id', T, (ctx) => {
     history: all('SELECT * FROM app_history WHERE app_id=? ORDER BY at DESC, id DESC', a.id), messages: all('SELECT * FROM messages WHERE ap=? ORDER BY at DESC', a.id),
     score: L.matchScore(cand, job, L.ratingOf(cand.id)), bill: bill ? L.billView(bill) : null, suggest: suggestFor(a), steps: L.STEPS,
     files: all('SELECT * FROM files WHERE record_id=? AND replaced=0 ORDER BY at DESC', a.id), notes: all('SELECT * FROM notes WHERE record_id=? ORDER BY at DESC', a.id),
+    calls: all('SELECT * FROM calls WHERE candidate_id=? ORDER BY at DESC LIMIT 50', a.candidate_id), call_outcomes: L.CALL_OUTCOMES, client_city: client.city,
     checklist_items: D.settings().templates.joining_checklist.split('\n').filter(Boolean),
     replacement_window: (client.replacement_days || D.settings().replacement_days),
   };
@@ -748,6 +750,15 @@ route('POST', '/api/interviews', T, (ctx) => {
 route('POST', '/api/interviews/:id/result', T, (ctx) => {
   const iv = get('SELECT * FROM interviews WHERE id=?', ctx.params.id); const a = iv && get('SELECT * FROM applications WHERE id=?', iv.app_id);
   mustSee(a && seeApp(ctx.user, a), 'interview'); return L.recordInterview(iv.id, ctx.body, ctx.actor);
+});
+route('POST', '/api/interviews/:id/notes', T, (ctx) => {
+  const iv = get('SELECT * FROM interviews WHERE id=?', ctx.params.id); const a = iv && get('SELECT * FROM applications WHERE id=?', iv.app_id);
+  mustSee(a && seeApp(ctx.user, a), 'interview'); return L.addIvNote(iv.id, ctx.body.text, ctx.actor.label, 'team');
+});
+route('POST', '/api/calls', T, (ctx) => {
+  const c = get('SELECT * FROM candidates WHERE id=?', ctx.body.candidate_id); if (!c) throw httpError(404, 'Candidate not found');
+  if (ctx.body.app_id) { const a = get('SELECT * FROM applications WHERE id=?', ctx.body.app_id); mustSee(a && seeApp(ctx.user, a), 'application'); }
+  return L.logCall(ctx.body, ctx.actor);
 });
 route('POST', '/api/interviews/:id/confirm', T, (ctx) => {
   const iv = get('SELECT * FROM interviews WHERE id=?', ctx.params.id); const a = iv && get('SELECT * FROM applications WHERE id=?', iv.app_id);
