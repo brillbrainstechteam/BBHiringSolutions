@@ -133,6 +133,7 @@
     'Add your expected salary and notice period so we match you to the right jobs.': 'अपेक्षित सैलरी और नोटिस पीरियड जोड़ें ताकि हम सही नौकरी से मिला सकें।', 'Add your LinkedIn, or a portfolio / Instagram link for design work.': 'अपना LinkedIn, या डिज़ाइन काम के लिए पोर्टफ़ोलियो / Instagram लिंक जोड़ें।',
     'Review your profile — employers prefer recently updated profiles.': 'अपनी प्रोफ़ाइल देखें — नियोक्ता हाल में अपडेट प्रोफ़ाइल पसंद करते हैं।',
     'Activate your profile': 'अपनी प्रोफ़ाइल चालू करें', 'To keep your profile safe, confirm it is your number: get a 6-digit code on WhatsApp, or create a login with your email and a password.': 'आपकी प्रोफ़ाइल सुरक्षित रहे, इसलिए पुष्टि करें कि नंबर आपका है: WhatsApp पर 6 अंकों का कोड पाएँ, या ईमेल और पासवर्ड से लॉगिन बनाएँ।',
+    'Type to search roles…': 'रोल खोजने के लिए लिखें…', 'No roles': 'कोई रोल नहीं', 'Not listed — choose "Other" and type it': 'सूची में नहीं — "अन्य" चुनें और लिखें',
     'Please enter your organisation': 'कृपया अपनी संस्था का नाम लिखें', 'Training partner': 'ट्रेनिंग पार्टनर',
 
     // ---- forms ----

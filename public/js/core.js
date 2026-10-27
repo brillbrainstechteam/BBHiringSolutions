@@ -494,6 +494,60 @@ BB.start = async () => {
   window.addEventListener('hashchange', () => { if (fromHash()) BB.route(); });
   fromHash(); BB.route();
 };
+// Type-to-search on every job list ("Job you want", the home search, client and team job pickers).
+// The real <select> stays in the form (values, validation, change events all work as before); a text box with a
+// filtered list sits on top of it. Words match anywhere and in any order ("cad matrix", "karigar", "sales mumbai"
+// finds "Sales Executive"); the group name counts too ("design" lists all design roles).
+const JOB_SELECTS = 'select[name="job_wanted"], select[name="want"], select[name="title"], select[name^="title_"], select[data-searchable]';
+const ssNorm = (t) => String(t || '').toLowerCase().normalize('NFKD').replace(/[^a-z0-9\u0900-\u097f]+/g, ' ').trim();
+function searchSelect(sel) {
+  if (sel.dataset.ss) return; sel.dataset.ss = '1';
+  const wrap = document.createElement('div'); wrap.className = 'ss';
+  sel.parentNode.insertBefore(wrap, sel); wrap.appendChild(sel);
+  const inp = document.createElement('input'); inp.type = 'text'; inp.className = 'ss-in'; inp.autocomplete = 'off'; inp.spellcheck = false;
+  inp.setAttribute('role', 'combobox'); inp.setAttribute('aria-autocomplete', 'list'); inp.setAttribute('aria-expanded', 'false');
+  inp.placeholder = sel.dataset.ssPlaceholder || 'Type to search roles…';
+  const list = document.createElement('div'); list.className = 'ss-list'; list.setAttribute('role', 'listbox'); list.hidden = true;
+  wrap.append(inp, list); sel.classList.add('ss-native'); sel.tabIndex = -1;
+  const opts = () => [...sel.options].filter((o) => o.value !== '').map((o) => ({ v: o.value, t: o.textContent, g: o.parentElement.tagName === 'OPTGROUP' ? o.parentElement.label : '' }));
+  const labelOf = () => { const o = sel.options[sel.selectedIndex]; return o && o.value !== '' ? o.textContent : ''; };
+  const sync = () => { if (document.activeElement !== inp) inp.value = labelOf(); };
+  // Programmatic value changes (CV reading, search links) update the text box too.
+  const desc = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value');
+  Object.defineProperty(sel, 'value', { configurable: true, get() { return desc.get.call(this); }, set(v) { desc.set.call(this, v); sync(); } });
+  sel.addEventListener('change', sync); sel.addEventListener('focus', () => inp.focus());
+  let hits = []; let cur = -1;
+  const draw = () => {
+    const words = ssNorm(inp.value).split(' ').filter(Boolean);
+    const all = opts(); const showAll = !words.length || inp.value === labelOf();
+    hits = showAll ? all : all.filter((o) => { const hay = ssNorm(`${o.t} ${o.g}`); return words.every((w) => hay.includes(w)); })
+      .sort((a, b) => Number(!ssNorm(b.t).startsWith(words[0])) - Number(!ssNorm(a.t).startsWith(words[0])));
+    const other = all.find((o) => o.v === 'Other');
+    if (!hits.length && other) hits = [{ ...other, t: `Not listed — choose "Other" and type it` }];
+    cur = hits.findIndex((o) => o.v === sel.value); if (cur < 0 && !showAll) cur = 0;
+    let g = null;
+    list.innerHTML = hits.map((o, i) => { const head = o.g && o.g !== g && showAll ? `<div class="ss-g">${esc(o.g)}</div>` : ''; g = o.g; return `${head}<div class="ss-o${i === cur ? ' on' : ''}${o.v === sel.value ? ' sel' : ''}" role="option" data-i="${i}">${esc(o.t)}${!showAll && o.g ? `<span>${esc(o.g)}</span>` : ''}</div>`; }).join('') || '<div class="ss-none">No roles</div>';
+    const on = list.querySelector('.ss-o.on'); if (on) on.scrollIntoView({ block: 'nearest' });
+  };
+  const open = () => { list.hidden = false; inp.setAttribute('aria-expanded', 'true'); wrap.classList.add('open'); draw(); };
+  const close = () => { list.hidden = true; inp.setAttribute('aria-expanded', 'false'); wrap.classList.remove('open'); inp.value = labelOf(); };
+  const pick = (o) => { if (!o) return; desc.set.call(sel, o.v); inp.value = labelOf(); close(); sel.dispatchEvent(new Event('input', { bubbles: true })); sel.dispatchEvent(new Event('change', { bubbles: true })); };
+  inp.addEventListener('focus', () => { inp.select(); open(); });
+  inp.addEventListener('input', () => { if (list.hidden) open(); else draw(); });
+  inp.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); if (list.hidden) open(); cur = Math.max(0, Math.min(hits.length - 1, cur + (e.key === 'ArrowDown' ? 1 : -1))); list.querySelectorAll('.ss-o').forEach((x, i) => x.classList.toggle('on', i === cur)); const on = list.querySelector('.ss-o.on'); if (on) on.scrollIntoView({ block: 'nearest' }); }
+    else if (e.key === 'Enter') { if (!list.hidden) { e.preventDefault(); pick(hits[cur]); } }
+    else if (e.key === 'Escape') { if (!list.hidden) { e.preventDefault(); close(); } }
+    else if (e.key === 'Tab') close();
+  });
+  list.addEventListener('mousedown', (e) => { const o = e.target.closest('[data-i]'); e.preventDefault(); if (o) pick(hits[Number(o.dataset.i)]); });
+  inp.addEventListener('blur', () => setTimeout(() => { if (!wrap.contains(document.activeElement)) close(); }, 120));
+  sync();
+}
+BB.searchSelects = (root = document) => root.querySelectorAll(JOB_SELECTS).forEach(searchSelect);
+new MutationObserver((ms) => { for (const m of ms) for (const n of m.addedNodes) if (n.nodeType === 1) { if (n.matches && n.matches(JOB_SELECTS)) searchSelect(n); else if (n.querySelector && n.querySelector('select')) BB.searchSelects(n); } })
+  .observe(document.documentElement, { childList: true, subtree: true });
+
 // Job list grouped by its 11 groups, for selects.
 BB.jobOptions = (selected, withOther = true, industry) => {
   const list = (industry && BB.boot.industries && BB.boot.industries[industry]) || BB.boot.jobs;
