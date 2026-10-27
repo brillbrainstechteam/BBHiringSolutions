@@ -40,6 +40,25 @@
     $$('[data-st]', el).forEach((b) => (b.onclick = () => BB.go(`team/jobs?status=${encodeURIComponent(b.dataset.st)}`)));
   };
 
+  // Candidate filters used on both Candidates and Candidate leads (the server applies the same rules, and the
+  // download link carries the same address, so a download always matches what is on screen).
+  const CAND_MORE = ['from', 'to', 'exp_min', 'exp_max', 'sal_min', 'sal_max'];
+  function candFilters(q, desigs) {
+    const s = BB.boot;
+    const sel = (k, label, opts) => `<select data-f="${k}"><option value="">${label}</option>${opts.map((o) => { const [v, t] = Array.isArray(o) ? o : [o, o]; return `<option value="${esc(v)}" ${String(q[k] || '') === String(v) ? 'selected' : ''}>${esc(t)}</option>`; }).join('')}</select>`;
+    const states = [...new Set((s.places || []).map((x) => x.state).filter(Boolean))].sort();
+    const n = (k, ph) => `<input type="number" min="0" placeholder="${ph}" data-f="${k}" value="${esc(q[k] || '')}">`;
+    return {
+      main: `${sel('dept', 'All departments', s.departments || [])}${sel('job', 'All designations', desigs)}${sel('city', 'All cities', s.cities || [])}${sel('state', 'All states', states)}`,
+      more: `<div class="grid g2"><label class="mf"><span>Applied from</span><input type="date" data-f="from" value="${esc(q.from || '')}"></label><label class="mf"><span>Applied up to</span><input type="date" data-f="to" value="${esc(q.to || '')}"></label></div>
+        <div class="grid g4"><label class="mf"><span>Experience from (years)</span>${n('exp_min', 'Min')}</label><label class="mf"><span>Experience up to (years)</span>${n('exp_max', 'Max')}</label><label class="mf"><span>Expected salary from (₹/month)</span>${n('sal_min', 'Min')}</label><label class="mf"><span>Expected salary up to (₹/month)</span>${n('sal_max', 'Max')}</label></div>`,
+      count: (extra = []) => [...CAND_MORE, ...extra].filter((k) => q[k]).length,
+    };
+  }
+  const moreBtn = (n) => `More filters${n ? ` <span class="badge b-primary tiny">${n}</span>` : ''}`;
+  const anyCandFilter = (q) => ['dept', 'job', 'city', 'state', ...CAND_MORE].some((k) => q[k]);
+  const clearCandFilters = () => BB.setQ(Object.fromEntries(['dept', 'job', 'city', 'state', ...CAND_MORE, 'q', 'source', 'looking', 'status', 'notice', 'updated', 'stale'].map((k) => [k, ''])));
+
   // ---------- Leads ----------
   P.leads = async ({ el, actions, q }) => {
     const tab = q.tab || 'client';
@@ -50,6 +69,8 @@
     const src = Object.entries(d.sources).sort((a, b) => b[1] - a[1]);
     el.innerHTML = `<div class="card pad" style="margin-bottom:14px"><div class="row between"><b>Leads by source · last ${q.days || 30} days</b><div class="seg">${[7, 30].map((n) => `<button data-days="${n}" class="${String(q.days || 30) === String(n) ? 'on' : ''}">${n} days</button>`).join('')}</div></div><div class="row" style="margin-top:8px">${src.map(([s, n]) => `<span class="chip" data-src="${esc(s)}">${esc(s)} <span class="n">${n}</span>${d.hires[s] ? ` <span class="badge b-green tiny">${d.hires[s]} hired</span>` : ''}</span>`).join('') || '<span class="faint">No leads yet.</span>'}</div></div>
       <div class="tabs">${[['client', 'Client leads', d.clients.length], ['candidate', 'Candidate leads', d.candidates.length], ['check', 'Needs checking', d.check.length]].map(([k, l, n]) => `<button data-tab="${k}" class="${tab === k ? 'on' : ''}">${l} <span class="n">${n}</span></button>`).join('')}</div>
+      ${tab === 'candidate' ? (() => { const cf = candFilters(q, [...new Set([...BB.boot.jobs.map((j) => j.title), ...d.candidates.map((c) => c.job_wanted).filter(Boolean)])]); return `<div class="filters cand-filters">${cf.main}
+        <details class="more-f" ${BB.moreFiltersOpen ? 'open' : ''}><summary class="btn sm">${moreBtn(cf.count())}</summary><div class="card more-pop">${cf.more}</div></details>${anyCandFilter(q) ? '<button class="btn sm ghost" data-clear>Clear filters</button>' : ''}</div>`; })() : ''}
       <div class="filters"><select data-f="source"><option value="">All sources</option>${BB.boot.lead_sources.map((s) => `<option ${q.source === s ? 'selected' : ''}>${esc(s)}</option>`).join('')}</select><label class="row small"><input type="checkbox" data-f="all" ${q.all ? 'checked' : ''}> Include assigned</label><label class="row small"><input type="checkbox" data-f="new" ${q.new ? 'checked' : ''}> New only</label></div>
       ${tab !== 'check' ? `<div class="row small bulkbar" data-leadbar><span class="muted" data-selcount>Tick leads to act on them:</span>
         <button class="btn sm" data-lb="download">Download selected</button>
@@ -67,6 +88,7 @@
     $$('[data-days]', el).forEach((b) => (b.onclick = () => BB.setQ({ days: b.dataset.days })));
     $$('[data-src]', el).forEach((b) => (b.onclick = () => BB.setQ({ source: q.source === b.dataset.src ? '' : b.dataset.src })));
     $$('[data-f]', el).forEach((i) => (i.onchange = () => BB.setQ({ [i.dataset.f]: i.type === 'checkbox' ? (i.checked ? '1' : '') : i.value })));
+    { const mf = $('.more-f', el); if (mf) mf.ontoggle = () => { BB.moreFiltersOpen = mf.open; }; const cl = $('[data-clear]', el); if (cl) cl.onclick = clearCandFilters; }
     $$('[data-assign]', el).forEach((s) => { s.onclick = (e) => e.stopPropagation(); s.onchange = async () => { const [type, id] = s.dataset.assign.split(':'); try { await BB.post('/api/leads/assign', { type, id, agency_id: s.value }); BB.toast(`${id} assigned — the agency admin got a task alert`); BB.refreshPage(); } catch (e) { BB.fail(e); } }; });
     $$('[data-junk]', el).forEach((b) => (b.onclick = async () => { const [type, id] = b.dataset.junk.split(':'); if (await BB.confirm('Mark as junk', `${id} will be hidden from lists (not deleted).`, 'Mark junk')) { await BB.post('/api/leads/junk', { type, id }); BB.refreshPage(); } }));
     $$('[data-merge]', el).forEach((b) => (b.onclick = () => { const [type, a, c] = b.dataset.merge.split(':'); BB.mergeScreen(type, a, c); }));
@@ -146,16 +168,19 @@
     const indSel = `<select data-f="industry" title="Industry">${[['all', 'All industries'], ...(s.industry_list || ['Jewellery'])].map((o) => { const [v, t] = Array.isArray(o) ? o : [o, o]; return `<option value="${esc(v)}" ${indNow === v ? 'selected' : ''}>${esc(t)}</option>`; }).join('')}</select>`;
     const desigs = [...new Set([...(indNow === 'Jewellery' || indNow === 'all' ? s.jobs.map((j) => j.title) : []), ...(r.designations || [])])];
     const sel = (k, label, opts) => `<select data-f="${k}"><option value="">${label}</option>${opts.map((o) => { const [v, t] = Array.isArray(o) ? o : [o, o]; return `<option value="${esc(v)}" ${String(q[k] || '') === String(v) ? 'selected' : ''}>${esc(t)}</option>`; }).join('')}</select>`;
-    el.innerHTML = `<div class="filters cand-filters"><input placeholder="Search name, ID, phone, job…" value="${esc(q.q || '')}" data-q>${indSel}${sel('dept', 'All departments', s.departments)}${sel('job', 'All designations', desigs)}${sel('city', 'All cities', s.cities)}${sel('looking', 'Any looking status', ['Actively looking', 'Open to offers', 'Not looking', 'Placed'])}${sel('status', 'Any status', ['Available', 'In process', 'Hired'])}
-      <details class="more-f" ${BB.moreFiltersOpen ? 'open' : ''}><summary class="btn sm">More filters${['source', 'exp_min', 'exp_max', 'sal_max', 'notice', 'updated', 'stale'].filter((k) => q[k]).length ? ` <span class="badge b-primary tiny">${['source', 'exp_min', 'exp_max', 'sal_max', 'notice', 'updated', 'stale'].filter((k) => q[k]).length}</span>` : ''}</summary><div class="card more-pop">
-        <div class="grid g2"><label class="mf"><span>Source</span>${sel('source', 'Any source', s.lead_sources)}</label><label class="mf"><span>Profile last updated</span>${sel('updated', 'Any time', [['7', 'Last 7 days'], ['30', 'Last 30 days'], ['90', 'Last 90 days']])}</label></div>
-        <div class="grid g4"><label class="mf"><span>Experience from</span><input type="number" min="0" placeholder="Years" data-f="exp_min" value="${esc(q.exp_min || '')}"></label><label class="mf"><span>Experience up to</span><input type="number" min="0" placeholder="Years" data-f="exp_max" value="${esc(q.exp_max || '')}"></label><label class="mf"><span>Expects at most</span><input type="number" min="0" placeholder="₹ a month" data-f="sal_max" value="${esc(q.sal_max || '')}"></label><label class="mf"><span>Notice period up to</span><input type="number" min="0" placeholder="Days" data-f="notice" value="${esc(q.notice || '')}"></label></div>
+    const cf = candFilters(q, desigs);
+    el.innerHTML = `<div class="filters cand-filters"><input placeholder="Search name, ID, phone, job…" value="${esc(q.q || '')}" data-q>${indSel}${cf.main}${sel('looking', 'Any looking status', ['Actively looking', 'Open to offers', 'Not looking', 'Placed'])}${sel('status', 'Any status', ['Available', 'In process', 'Hired'])}
+      <details class="more-f" ${BB.moreFiltersOpen ? 'open' : ''}><summary class="btn sm">${moreBtn(cf.count(['source', 'notice', 'updated', 'stale']))}</summary><div class="card more-pop">
+        ${cf.more}
+        <div class="grid g3"><label class="mf"><span>Source</span>${sel('source', 'Any source', s.lead_sources)}</label><label class="mf"><span>Profile last updated</span>${sel('updated', 'Any time', [['7', 'Last 7 days'], ['30', 'Last 30 days'], ['90', 'Last 90 days']])}</label><label class="mf"><span>Notice period up to (days)</span><input type="number" min="0" placeholder="Days" data-f="notice" value="${esc(q.notice || '')}"></label></div>
         <label class="row small mf-check"><input type="checkbox" data-f="stale" ${q.stale ? 'checked' : ''}> Only profiles not updated in 90+ days</label></div></details>
-      ${saved.length ? sel('saved', 'Saved searches…', saved.map((x) => [x.id, x.name])) : ''}<button class="btn sm ghost" data-save>Save this search</button></div>
+      ${saved.length ? sel('saved', 'Saved searches…', saved.map((x) => [x.id, x.name])) : ''}${anyCandFilter(q) || q.q ? '<button class="btn sm ghost" data-clear>Clear filters</button>' : ''}<button class="btn sm ghost" data-save>Save this search</button></div>
+      <div class="small muted" style="margin:-4px 0 8px">${r.total ?? r.rows.length} candidate${(r.total ?? r.rows.length) === 1 ? '' : 's'} match${(r.total ?? r.rows.length) === 1 ? 'es' : ''}${superAdmin ? ' · Download gives exactly this list' : ''}</div>
       <div class="row small" data-bulkbar style="margin-bottom:8px"><span class="muted">Select rows to:</span><button class="btn sm" data-bulk="add_to_job">Add to a job</button>${me.level !== 'sub' ? '<button class="btn sm gold" data-bulk="alert">Send job alert</button>' : ''}${superAdmin ? '<button class="btn sm" data-bulk="download">Download selected</button>' : ''}</div>
-      <div class="card">${BB.table([{ t: 'ID', f: (c) => `<span class="mono">${c.id}</span>${c.is_new ? ' <span class="dot new"></span>' : ''}` }, { t: 'Name', f: (c) => `<b>${esc(c.name)}</b>${c.opted_out ? ' <span class="badge b-red tiny">STOP</span>' : ''}` }, { t: 'Phone', f: (c) => `<span class="mono small ${c.phone_hidden ? 'faint' : ''}">${esc(c.whatsapp)}</span>` }, { t: 'Job wanted', f: (c) => esc(c.job_wanted) }, { t: 'City', f: (c) => esc(c.city) }, { t: 'Exp', num: 1, f: (c) => c.exp_total ?? '—' }, { t: 'Expects /mo', num: 1, f: (c) => (c.exp_salary ? inr(c.exp_salary / 12) : '—'), hideSm: 1 }, { t: 'Source', f: (c) => esc(c.source), hideSm: 1 }, { t: 'Status', f: (c) => `<span class="badge ${c.status === 'Hired' ? 'b-green' : c.status.startsWith('In process') ? 'b-primary' : 'b-outline'}">${esc(c.status)}</span>` }], r.rows, { open: (c) => `candidate:${c.id}`, select: true })}${BB.pager(r)}</div>`;
+      <div class="card">${BB.table([{ t: 'ID', f: (c) => `<span class="mono">${c.id}</span>${c.is_new ? ' <span class="dot new"></span>' : ''}` }, { t: 'Name', f: (c) => `<b>${esc(c.name)}</b>${c.opted_out ? ' <span class="badge b-red tiny">STOP</span>' : ''}` }, { t: 'Phone', f: (c) => `<span class="mono small ${c.phone_hidden ? 'faint' : ''}">${esc(c.whatsapp)}</span>` }, { t: 'Job wanted', f: (c) => esc(c.job_wanted) }, { t: 'City', f: (c) => esc(c.city) }, { t: 'Exp', num: 1, f: (c) => c.exp_total ?? '—' }, { t: 'Expects /mo', num: 1, f: (c) => (c.exp_salary ? inr(c.exp_salary / 12) : '—'), hideSm: 1 }, { t: 'Source', f: (c) => esc(c.source), hideSm: 1 }, { t: 'Applied', f: (c) => fmtD(c.created_at), hideSm: 1 }, { t: 'Status', f: (c) => `<span class="badge ${c.status === 'Hired' ? 'b-green' : c.status.startsWith('In process') ? 'b-primary' : 'b-outline'}">${esc(c.status)}</span>` }], r.rows, { open: (c) => `candidate:${c.id}`, select: true })}${BB.pager(r)}</div>`;
     // More filters stays open while filters in it are changed (each change redraws the list).
     const mf = $('.more-f', el); if (mf) mf.ontoggle = () => { BB.moreFiltersOpen = mf.open; };
+    { const cl = $('[data-clear]', el); if (cl) cl.onclick = clearCandFilters; }
     wireDl(actions); BB.wirePager(el); BB.wireSelect(el);
     let t; $('[data-q]', el).oninput = (e) => { clearTimeout(t); t = setTimeout(() => BB.setQ({ q: e.target.value, page: 1 }), 350); };
     $$('[data-f]', el).forEach((i) => (i.onchange = () => { if (i.dataset.f === 'saved') { const sv = saved.find((x) => String(x.id) === i.value); if (sv) { const sq = JSON.parse(sv.query); BB.setQ(Object.fromEntries(Object.keys({ ...q, ...sq }).map((k) => [k, sq[k] || '']))); } return; } BB.setQ({ [i.dataset.f]: i.type === 'checkbox' ? (i.checked ? '1' : '') : i.value, ...(i.dataset.f === 'industry' ? { job: '' } : {}), page: 1 }); }));

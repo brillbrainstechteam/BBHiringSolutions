@@ -239,11 +239,37 @@ route('GET', '/api/myday', T, (ctx) => {
 });
 
 // ---------- leads (11.3) ----------
+// Candidate filters shared by the Candidates page and Candidate leads (same names in the address, so a download
+// always matches the screen): designation (job), department, city (or a city they would work in), state,
+// application date (from / to, India time), experience in years (min / max) and expected salary a month (min / max).
+// A salary filter leaves out people who have not given an expected salary.
+function candMatch(q) {
+  const num = (v) => (v === undefined || v === null || v === '' || Number.isNaN(Number(v)) ? null : Number(v));
+  const eMin = num(q.exp_min); const eMax = num(q.exp_max); const sMin = num(q.sal_min); const sMax = num(q.sal_max);
+  const from = /^\d{4}-\d{2}-\d{2}$/.test(q.from || '') ? q.from : null; const to = /^\d{4}-\d{2}-\d{2}$/.test(q.to || '') ? q.to : null;
+  return (c) => {
+    if (q.dept && c.department !== q.dept) return false;
+    if (q.job && c.job_wanted !== q.job) return false;
+    if (q.city && c.city !== q.city && !(c.work_cities || []).includes(q.city)) return false;
+    if (q.state && (c.state || L.stateOf(c.city)) !== q.state) return false;
+    if (from || to) { const day = L.istDay(c.created_at); if ((from && day < from) || (to && day > to)) return false; }
+    if (eMin !== null && !((c.exp_total ?? -1) >= eMin)) return false;
+    if (eMax !== null && !((c.exp_total ?? Infinity) <= eMax)) return false;
+    if (sMin !== null || sMax !== null) {
+      if (!c.exp_salary) return false; const m = c.exp_salary / 12;
+      if (sMin !== null && m < sMin) return false;
+      if (sMax !== null && m > sMax) return false;
+    }
+    return true;
+  };
+}
+const CAND_EXPORT = ['id', 'name', 'whatsapp', 'email', 'industry', 'job_wanted', 'department', 'city', 'state', 'exp_total', 'exp_jewellery', [(r) => (r.exp_business || []).join(', '), 'worked_in'], [(r) => (r.cur_salary ? Math.round(r.cur_salary / 12) : ''), 'current_per_month'], [(r) => (r.exp_salary ? Math.round(r.exp_salary / 12) : ''), 'expected_per_month'], 'notice_days', 'current_company', 'looking', 'source', [(r) => L.istDay(r.created_at), 'applied_on']];
 route('GET', '/api/leads', SUPER, (ctx) => {
   const q = ctx.query; const days = Number(q.days) || 30; const since = new Date(Date.now() - days * 86400000).toISOString();
-  const filt = (r) => (!q.source || r.source === q.source) && (!q.agency || (q.agency === 'none' ? !r.agency_id : r.agency_id === q.agency)) && (!q.new || r.is_new) && (!q.from || r.created_at >= q.from);
+  const filt = (r) => (!q.source || r.source === q.source) && (!q.agency || (q.agency === 'none' ? !r.agency_id : r.agency_id === q.agency)) && (!q.new || r.is_new) && (!q.from || L.istDay(r.created_at) >= q.from) && (!q.to || L.istDay(r.created_at) <= q.to);
   const clients = all('SELECT * FROM clients WHERE junk=0 AND merged_into IS NULL AND removed=0 ORDER BY created_at DESC').filter((c) => (!c.agency_id || q.all) && filt(c)).map(V.clientView);
-  const cands = all('SELECT * FROM candidates WHERE junk=0 AND merged_into IS NULL AND removed=0 ORDER BY created_at DESC').filter((c) => ((!c.agency_id && c.is_new) || q.all) && filt(c));
+  const match = candMatch(q);
+  const cands = all('SELECT * FROM candidates WHERE junk=0 AND merged_into IS NULL AND removed=0 ORDER BY created_at DESC').filter((c) => ((!c.agency_id && c.is_new) || q.all) && filt(c) && match(c));
   const check = [
     ...all("SELECT id, name AS label, whatsapp, email, source, needs_check, possible_repeat_of, created_at, 'candidate' AS type FROM candidates WHERE (needs_check IS NOT NULL OR possible_repeat_of IS NOT NULL) AND merged_into IS NULL AND junk=0"),
     ...all("SELECT id, company AS label, whatsapp, email, source, needs_check, possible_repeat_of, created_at, 'client' AS type FROM clients WHERE (needs_check IS NOT NULL OR possible_repeat_of IS NOT NULL) AND merged_into IS NULL AND junk=0"),
@@ -254,7 +280,7 @@ route('GET', '/api/leads', SUPER, (ctx) => {
   for (const a of all("SELECT a.source, a.joined_at FROM applications a WHERE a.result='Hired'")) if (a.joined_at >= since) hires[a.source || 'Other'] = (hires[a.source || 'Other'] || 0) + 1;
   if (q.format) {
     const only = q.ids ? new Set(String(q.ids).split(',')) : null; const pick = (rows) => (only ? rows.filter((r) => only.has(r.id)) : rows);
-    if (q.tab === 'candidate') return page(ctx, pick(cands), 'candidate-leads', ['id', 'name', 'whatsapp', 'email', 'job_wanted', 'department', 'city', 'state', 'exp_total', [(r) => (r.exp_business || []).join(', '), 'worked_in'], [(r) => (r.exp_salary ? Math.round(r.exp_salary / 12) : ''), 'expected_per_month'], 'notice_days', 'looking', 'source', 'created_at', 'agency_id']);
+    if (q.tab === 'candidate') return page(ctx, pick(cands), 'candidate-leads', [...CAND_EXPORT, 'agency_id']);
     if (q.tab === 'check') return page(ctx, check, 'leads-to-check', ['id', 'type', 'label', 'whatsapp', 'email', 'source', 'needs_check', 'possible_repeat_of']);
     return page(ctx, pick(clients), 'client-leads', ['id', 'company', 'contact', 'whatsapp', 'email', 'city', 'state', 'business_type', 'need', 'roles', 'stage', 'source', 'created_at', 'agency_name']);
   }
@@ -503,12 +529,10 @@ route('POST', '/api/jobs/:id/send-profiles', T, (ctx) => {
 // ---------- candidates (resume bank) ----------
 route('GET', '/api/candidates', T, (ctx) => {
   const q = ctx.query; const u = ctx.user; const s = D.settings();
-  const minE = q.exp_min === undefined || q.exp_min === '' ? null : Number(q.exp_min); const maxE = q.exp_max === undefined || q.exp_max === '' ? null : Number(q.exp_max);
-  const maxSal = q.sal_max ? Number(q.sal_max) * 12 : null; const fresh = q.updated ? Number(q.updated) : null;
+  const fresh = q.updated ? Number(q.updated) : null; const match = candMatch(q);
   const ind = q.industry || D.settings().default_industry || 'Jewellery'; const inInd = (c) => ind === 'all' || (c.industry || 'Jewellery') === ind;
   const rows = all('SELECT * FROM candidates WHERE merged_into IS NULL AND removed=0 AND junk=0 ORDER BY created_at DESC')
-    .filter((c) => (q.archived ? c.archived : !c.archived) && inInd(c) && (!q.dept || c.department === q.dept) && (!q.city || c.city === q.city || (c.work_cities || []).includes(q.city)) && (!q.job || c.job_wanted === q.job)
-      && (minE === null || (c.exp_total ?? -1) >= minE) && (maxE === null || (c.exp_total ?? 999) <= maxE) && (!maxSal || (c.exp_salary || 0) <= maxSal) && (!q.notice || (c.notice_days ?? 999) <= Number(q.notice))
+    .filter((c) => (q.archived ? c.archived : !c.archived) && inInd(c) && match(c) && (!q.notice || (c.notice_days ?? 999) <= Number(q.notice))
       && (!q.looking || c.looking === q.looking) && (!q.source || c.source === q.source) && (!q.tieup || String(c.tieup_id) === String(q.tieup)) && (!q.agency || c.agency_id === q.agency)
       && (!fresh || L.daysBetween(c.last_updated || c.created_at) <= fresh) && (!q.stale || L.daysBetween(c.last_updated || c.created_at) > 90)
       && like(q.q, c.id, c.name, R.phoneVisible(u, c) ? c.whatsapp : '', c.job_wanted, c.city, c.current_company, c.old_code))
@@ -517,7 +541,7 @@ route('GET', '/api/candidates', T, (ctx) => {
   ctx.designations = [...new Set(all('SELECT industry, job_wanted FROM candidates WHERE merged_into IS NULL AND removed=0 AND junk=0').filter(inInd).map((c) => c.job_wanted).filter(Boolean))].sort();
   // Only the super admin downloads candidates (as filtered on screen); agencies and recruiters work in the portal.
   if (['csv', 'xlsx'].includes(ctx.query.format) && !isSuper(u)) throw httpError(403, 'Only the super admin can download candidates.');
-  return { ...page(ctx, rows, 'candidates', ['id', 'name', 'whatsapp', 'industry', 'job_wanted', 'department', 'city', 'exp_total', [(r) => r.exp_salary ? Math.round(r.exp_salary / 12) : '', 'expected_per_month'], 'notice_days', [(r) => (r.exp_business || []).join(', '), 'worked_in'], 'source', 'looking', 'status']), designations: ctx.designations };
+  return { ...page(ctx, rows, 'candidates', [...CAND_EXPORT, 'status']), designations: ctx.designations };
 });
 route('POST', '/api/candidates', T, (ctx) => {
   const b = ctx.body;
