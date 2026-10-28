@@ -738,6 +738,8 @@ a.disabled { pointer-events: none; color: var(--faint); }
 .pub-card input:not([type=checkbox]):not([type=radio]), .pub-card select { min-height: 46px; background: var(--surface-2); border-color: transparent; }
 .pub-card input:not([type=checkbox]):not([type=radio]):hover, .pub-card select:hover { border-color: var(--border); }
 .pub-card input:focus, .pub-card select:focus { background: var(--surface); border-color: var(--mustard); }
+/* Drawn arrow so it can sit a little in from the right edge (the browser's own arrow hugs the border). */
+.pub-card select, .pub-card select:focus { appearance: none; padding-right: 44px; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%23596080' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round' viewBox='0 0 24 24'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 18px center; }
 .pub-card .field .lab { font-size: 13px; font-weight: 600; color: var(--ink); }
 .pub-card .inp-wrap.has-cc .cc { background: transparent; }
 .cv-first { display: flex; align-items: center; gap: 14px; border: 1.5px dashed color-mix(in srgb, var(--mustard) 60%, transparent); background: var(--mustard-50); border-radius: 14px; padding: 12px 14px; }
