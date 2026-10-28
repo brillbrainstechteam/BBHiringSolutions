@@ -92,7 +92,7 @@ CREATE INDEX IF NOT EXISTS ix_client_phone ON clients(whatsapp);
 `);
 
 // Columns added after the first version.
-for (const [table, col] of [['candidates', 'state TEXT'], ['candidates', "language TEXT DEFAULT 'en'"], ['candidates', "industry TEXT DEFAULT 'Jewellery'"], ['candidates', "exp_business TEXT DEFAULT '[]'"], ['users', 'email TEXT'], ['emails', 'send_after TEXT'], ['emails', 'dedupe TEXT'], ['interviews', 'mode TEXT'], ['interviews', 'link TEXT'], ['interviews', 'client_joins INTEGER DEFAULT 0'], ['candidates', "social TEXT DEFAULT '{}'"], ['candidates', "resume_check TEXT DEFAULT '{}'"], ['candidates', 'in_jewellery INTEGER DEFAULT 0']]) { try { db.exec(`ALTER TABLE ${table} ADD COLUMN ${col}`); } catch { /* already there */ } }
+for (const [table, col] of [['candidates', 'state TEXT'], ['candidates', "language TEXT DEFAULT 'en'"], ['candidates', "industry TEXT DEFAULT 'Jewellery'"], ['candidates', "exp_business TEXT DEFAULT '[]'"], ['users', 'email TEXT'], ['emails', 'send_after TEXT'], ['emails', 'dedupe TEXT'], ['interviews', 'mode TEXT'], ['interviews', 'link TEXT'], ['interviews', 'client_joins INTEGER DEFAULT 0'], ['candidates', "social TEXT DEFAULT '{}'"], ['candidates', "resume_check TEXT DEFAULT '{}'"]]) { try { db.exec(`ALTER TABLE ${table} ADD COLUMN ${col}`); } catch { /* already there */ } }
 db.exec('CREATE INDEX IF NOT EXISTS ix_emails_dedupe ON emails(dedupe); CREATE INDEX IF NOT EXISTS ix_emails_after ON emails(status, send_after);');
 
 // ---------- small helpers ----------
