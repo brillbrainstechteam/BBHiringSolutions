@@ -241,7 +241,7 @@ route('GET', '/api/myday', T, (ctx) => {
 // ---------- leads (11.3) ----------
 // Candidate filters shared by the Candidates page and Candidate leads (same names in the address, so a download
 // always matches the screen): designation (job), department, city (or a city they would work in), state,
-// application date (from / to, India time), experience in years (min / max) and expected salary a month (min / max).
+// application date (from / to, India time), jewellery-industry experience ticked (yes / no), experience in years (min / max) and expected salary a month (min / max).
 // A salary filter leaves out people who have not given an expected salary.
 function candMatch(q) {
   const num = (v) => (v === undefined || v === null || v === '' || Number.isNaN(Number(v)) ? null : Number(v));
@@ -253,6 +253,8 @@ function candMatch(q) {
     if (q.city && c.city !== q.city && !(c.work_cities || []).includes(q.city)) return false;
     if (q.state && (c.state || L.stateOf(c.city)) !== q.state) return false;
     if (from || to) { const day = L.istDay(c.created_at); if ((from && day < from) || (to && day > to)) return false; }
+    if (q.jewellery === 'yes' && !c.in_jewellery) return false;
+    if (q.jewellery === 'no' && c.in_jewellery) return false;
     if (eMin !== null && !((c.exp_total ?? -1) >= eMin)) return false;
     if (eMax !== null && !((c.exp_total ?? Infinity) <= eMax)) return false;
     if (sMin !== null || sMax !== null) {
@@ -263,7 +265,7 @@ function candMatch(q) {
     return true;
   };
 }
-const CAND_EXPORT = ['id', 'name', 'whatsapp', 'email', 'industry', 'job_wanted', 'department', 'city', 'state', 'exp_total', 'exp_jewellery', [(r) => (r.exp_business || []).join(', '), 'worked_in'], [(r) => (r.cur_salary ? Math.round(r.cur_salary / 12) : ''), 'current_per_month'], [(r) => (r.exp_salary ? Math.round(r.exp_salary / 12) : ''), 'expected_per_month'], 'notice_days', 'current_company', 'looking', 'source', [(r) => L.istDay(r.created_at), 'applied_on']];
+const CAND_EXPORT = ['id', 'name', 'whatsapp', 'email', 'industry', 'job_wanted', 'department', 'city', 'state', 'exp_total', 'exp_jewellery', [(r) => (r.in_jewellery ? 'Yes' : 'No'), 'jewellery_industry'], [(r) => (r.exp_business || []).join(', '), 'worked_in'], [(r) => (r.cur_salary ? Math.round(r.cur_salary / 12) : ''), 'current_per_month'], [(r) => (r.exp_salary ? Math.round(r.exp_salary / 12) : ''), 'expected_per_month'], 'notice_days', 'current_company', 'looking', 'source', [(r) => L.istDay(r.created_at), 'applied_on']];
 route('GET', '/api/leads', SUPER, (ctx) => {
   const q = ctx.query; const days = Number(q.days) || 30; const since = new Date(Date.now() - days * 86400000).toISOString();
   const filt = (r) => (!q.source || r.source === q.source) && (!q.agency || (q.agency === 'none' ? !r.agency_id : r.agency_id === q.agency)) && (!q.new || r.is_new) && (!q.from || L.istDay(r.created_at) >= q.from) && (!q.to || L.istDay(r.created_at) <= q.to);
@@ -567,7 +569,7 @@ route('PATCH', '/api/candidates/:id', T, (ctx) => {
   const c = get('SELECT * FROM candidates WHERE id=?', ctx.params.id); if (!c) throw httpError(404, 'Not found');
   if (!R.phoneVisible(ctx.user, c)) throw httpError(403, 'Only the candidate\'s own agency can edit this profile.');
   if (ctx.body.exp_business !== undefined) ctx.body.exp_business = L.cleanBusiness(ctx.body.exp_business);
-  const allowed = ['exp_business', 'name', 'whatsapp', 'email', 'city', 'state', 'work_cities', 'industry', 'job_wanted', 'exp_total', 'exp_jewellery', 'cur_salary', 'exp_salary', 'notice_days', 'skills', 'current_company', 'looking', 'tieup_id', 'archived', 'recruiter_id'];
+  const allowed = ['exp_business', 'in_jewellery', 'name', 'whatsapp', 'email', 'city', 'state', 'work_cities', 'industry', 'job_wanted', 'exp_total', 'exp_jewellery', 'cur_salary', 'exp_salary', 'notice_days', 'skills', 'current_company', 'looking', 'tieup_id', 'archived', 'recruiter_id'];
   const patch = {}; for (const k of allowed) if (ctx.body[k] !== undefined) patch[k] = ctx.body[k];
   if (patch.whatsapp) { patch.whatsapp = L.digits10(patch.whatsapp); if (!L.validPhone(patch.whatsapp)) throw httpError(400, 'Enter a 10-digit WhatsApp number', 'whatsapp'); }
   if (patch.job_wanted) patch.department = L.deptOf(patch.job_wanted);

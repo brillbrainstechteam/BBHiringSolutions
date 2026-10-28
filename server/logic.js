@@ -756,6 +756,7 @@ function intakeCandidate(d, o) {
     const fill = {};
     for (const k of fields) if ((existing[k] === null || existing[k] === '' || existing[k] === undefined) && d[k] !== undefined && d[k] !== '' && d[k] !== null) fill[k] = d[k];
     if (d.job_wanted) { fill.job_wanted = d.job_wanted; fill.department = dept; }
+    if (d.in_jewellery) fill.in_jewellery = 1;
     if (d.city) { fill.city = d.city; fill.state = d.state || stateOf(d.city); }
     if (d.exp_total !== undefined && d.exp_total !== null && d.exp_total !== '') fill.exp_total = d.exp_total;
     update('candidates', existing.id, { ...fill, is_new: 1, last_updated: now() });
@@ -768,7 +769,7 @@ function intakeCandidate(d, o) {
   const repeat = d.email ? get('SELECT id FROM candidates WHERE lower(email)=lower(?) AND merged_into IS NULL', d.email) : null;
   const agency = by && by.agency_id ? by.agency_id : null;
   insert('candidates', {
-    id, name: d.name, whatsapp: phone, email: d.email || '', city: d.city || '', state: d.state || stateOf(d.city), work_cities: d.work_cities || (d.city ? [d.city] : []), language: d.language === 'hi' ? 'hi' : 'en', industry: d.industry || settings().default_industry || 'Jewellery', exp_business: cleanBusiness(d.exp_business),
+    id, name: d.name, whatsapp: phone, email: d.email || '', city: d.city || '', state: d.state || stateOf(d.city), work_cities: d.work_cities || (d.city ? [d.city] : []), language: d.language === 'hi' ? 'hi' : 'en', industry: d.industry || settings().default_industry || 'Jewellery', exp_business: cleanBusiness(d.exp_business), in_jewellery: d.in_jewellery ? 1 : 0,
     job_wanted: d.job_wanted || '', department: dept, exp_total: d.exp_total ?? null, exp_jewellery: d.exp_jewellery ?? null,
     cur_salary: d.cur_salary ?? null, exp_salary: d.exp_salary ?? null, notice_days: d.notice_days ?? null, skills: d.skills || [], current_company: d.current_company || '',
     cv_file: d.cv_file || null, source, ref_by: d.ref_by || null, tieup_id: d.tieup_id || null, agency_id: agency, recruiter_id: by && by.uid ? by.uid : null,

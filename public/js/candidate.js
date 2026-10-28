@@ -158,6 +158,7 @@
             ${field({ name: 'cur_month', label: 'Current salary (₹ per month)', type: 'number', value: p.cur_month ?? '', attrs: 'min="0"' })}
             <div class="field" data-f="exp_business"><span class="lab">Where have you worked?</span><div class="choice biz-choice">${['Wholesaler', 'Manufacturer', 'Retailer'].map((x) => `<label><input type="checkbox" name="exp_business" value="${x}" ${(p.exp_business || []).includes(x) ? 'checked' : ''}> ${x}</label>`).join('')}</div><span class="hint">Tick all that apply.</span></div>
           </div>
+          <label class="row small" style="gap:8px"><input type="checkbox" name="in_jewellery" ${p.in_jewellery ? 'checked' : ''}> <span>I have experience in the jewellery industry</span></label>
           ${field({ name: 'exp_month', label: 'Expected salary (₹ per month)', type: 'number', value: p.exp_month ?? '', attrs: 'min="0"' })}
         </div>
         <div class="card pad stack-sm"><div class="cp-h">${icon('chart')}<h3>Skills</h3></div><div class="small muted">Tap the ones you have.</div>

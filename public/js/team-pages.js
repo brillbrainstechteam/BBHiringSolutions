@@ -49,15 +49,15 @@
     const states = [...new Set((s.places || []).map((x) => x.state).filter(Boolean))].sort();
     const n = (k, ph) => `<input type="number" min="0" placeholder="${ph}" data-f="${k}" value="${esc(q[k] || '')}">`;
     return {
-      main: `${sel('dept', 'All departments', s.departments || [])}${sel('job', 'All designations', desigs)}${sel('city', 'All cities', s.cities || [])}${sel('state', 'All states', states)}`,
+      main: `${sel('dept', 'All departments', s.departments || [])}${sel('job', 'All designations', desigs)}${sel('city', 'All cities', s.cities || [])}${sel('state', 'All states', states)}${sel('jewellery', 'Jewellery experience: any', [['yes', 'Jewellery experience: yes'], ['no', 'Jewellery experience: no']])}`,
       more: `<div class="grid g2"><label class="mf"><span>Applied from</span><input type="date" data-f="from" value="${esc(q.from || '')}"></label><label class="mf"><span>Applied up to</span><input type="date" data-f="to" value="${esc(q.to || '')}"></label></div>
         <div class="grid g4"><label class="mf"><span>Experience from (years)</span>${n('exp_min', 'Min')}</label><label class="mf"><span>Experience up to (years)</span>${n('exp_max', 'Max')}</label><label class="mf"><span>Expected salary from (₹/month)</span>${n('sal_min', 'Min')}</label><label class="mf"><span>Expected salary up to (₹/month)</span>${n('sal_max', 'Max')}</label></div>`,
       count: (extra = []) => [...CAND_MORE, ...extra].filter((k) => q[k]).length,
     };
   }
   const moreBtn = (n) => `More filters${n ? ` <span class="badge b-primary tiny">${n}</span>` : ''}`;
-  const anyCandFilter = (q) => ['dept', 'job', 'city', 'state', ...CAND_MORE].some((k) => q[k]);
-  const clearCandFilters = () => BB.setQ(Object.fromEntries(['dept', 'job', 'city', 'state', ...CAND_MORE, 'q', 'source', 'looking', 'status', 'notice', 'updated', 'stale'].map((k) => [k, ''])));
+  const anyCandFilter = (q) => ['dept', 'job', 'city', 'state', 'jewellery', ...CAND_MORE].some((k) => q[k]);
+  const clearCandFilters = () => BB.setQ(Object.fromEntries(['dept', 'job', 'city', 'state', 'jewellery', ...CAND_MORE, 'q', 'source', 'looking', 'status', 'notice', 'updated', 'stale'].map((k) => [k, ''])));
 
   // ---------- Leads ----------
   P.leads = async ({ el, actions, q }) => {
