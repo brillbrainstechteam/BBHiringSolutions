@@ -530,17 +530,22 @@ route('POST', '/api/jobs/:id/send-profiles', T, (ctx) => {
 });
 
 // ---------- candidates (resume bank) ----------
-route('GET', '/api/candidates', T, (ctx) => {
-  const q = ctx.query; const u = ctx.user; const s = D.settings();
+// The resume bank as filtered by q (the same filters a segment saves), as this user may see it.
+function candRows(q, u) {
   const fresh = q.updated ? Number(q.updated) : null; const match = candMatch(q);
   const ind = q.industry || D.settings().default_industry || 'Jewellery'; const inInd = (c) => ind === 'all' || (c.industry || 'Jewellery') === ind;
-  const rows = all('SELECT * FROM candidates WHERE merged_into IS NULL AND removed=0 AND junk=0 ORDER BY created_at DESC')
+  return all('SELECT * FROM candidates WHERE merged_into IS NULL AND removed=0 AND junk=0 ORDER BY created_at DESC')
     .filter((c) => (q.archived ? c.archived : !c.archived) && inInd(c) && match(c) && (!q.notice || (c.notice_days ?? 999) <= Number(q.notice))
       && (!q.looking || c.looking === q.looking) && (!q.source || c.source === q.source) && (!q.tieup || String(c.tieup_id) === String(q.tieup)) && (!q.agency || c.agency_id === q.agency)
       && (!fresh || L.daysBetween(c.last_updated || c.created_at) <= fresh) && (!q.stale || L.daysBetween(c.last_updated || c.created_at) > 90)
       && like(q.q, c.id, c.name, R.phoneVisible(u, c) ? c.whatsapp : '', c.job_wanted, c.city, c.current_company, c.old_code))
     .map((c) => ({ ...candidateOut(u, c), status: V.candStatus(c.id) }))
     .filter((c) => !q.status || c.status.startsWith(q.status));
+}
+route('GET', '/api/candidates', T, (ctx) => {
+  const q = ctx.query; const u = ctx.user;
+  const ind = q.industry || D.settings().default_industry || 'Jewellery'; const inInd = (c) => ind === 'all' || (c.industry || 'Jewellery') === ind;
+  const rows = candRows(q, u);
   ctx.designations = [...new Set(all('SELECT industry, job_wanted FROM candidates WHERE merged_into IS NULL AND removed=0 AND junk=0').filter(inInd).map((c) => c.job_wanted).filter(Boolean))].sort();
   // Only the super admin downloads candidates (as filtered on screen); agencies and recruiters work in the portal.
   if (['csv', 'xlsx'].includes(ctx.query.format) && !isSuper(u)) throw httpError(403, 'Only the super admin can download candidates.');
@@ -612,8 +617,47 @@ route('POST', '/api/tieups', T, (ctx) => {
   const r = D.run('INSERT INTO tieups (name,type,city,contact,phone,owner_id,last_list) VALUES (?,?,?,?,?,?,?)', b.name, b.type || 'College', b.city || '', b.contact || '', L.digits10(b.phone), b.owner_id || ctx.user.id, b.last_list || null);
   D.history(ctx.actor.label, 'create', `TU-${r.lastInsertRowid}`, null, null, b.name); return { id: Number(r.lastInsertRowid) };
 });
-route('GET', '/api/saved-searches', T, (ctx) => all('SELECT * FROM saved_searches WHERE user_id=?', ctx.user.id));
-route('POST', '/api/saved-searches', T, (ctx) => { D.run('INSERT INTO saved_searches (user_id,name,query) VALUES (?,?,?)', ctx.user.id, ctx.body.name, JSON.stringify(ctx.body.query)); return { ok: true }; });
+// ---------- segments (saved candidate searches) ----------
+// A segment is a named set of resume-bank filters. Its owner sees it; shared ones are seen by the whole team.
+// The list of people is worked out again each time, so counts and downloads are always current.
+const SEG_KEYS = ['q', 'industry', 'dept', 'job', 'city', 'state', 'jewellery', 'from', 'to', 'exp_min', 'exp_max', 'sal_min', 'sal_max', 'looking', 'status', 'source', 'updated', 'notice', 'stale', 'archived'];
+const segQuery = (raw) => { const q = typeof raw === 'string' ? JSON.parse(raw || '{}') : raw || {}; return Object.fromEntries(SEG_KEYS.filter((k) => q[k] !== undefined && q[k] !== null && q[k] !== '').map((k) => [k, String(q[k])])); };
+const segVisible = (u) => all('SELECT s.*, us.name AS owner_name FROM saved_searches s LEFT JOIN users us ON us.id=s.user_id WHERE s.user_id=? OR s.shared=1 ORDER BY s.name COLLATE NOCASE', u.id);
+function segOwn(ctx) {
+  const s = get('SELECT * FROM saved_searches WHERE id=?', Number(ctx.params.id)); if (!s) throw httpError(404, 'Segment not found');
+  if (s.user_id !== ctx.user.id && !s.shared) throw httpError(404, 'Segment not found');
+  return s;
+}
+const canEditSeg = (u, s) => s.user_id === u.id || isSuper(u);
+route('GET', '/api/saved-searches', T, (ctx) => segVisible(ctx.user).map((s) => ({ id: s.id, name: s.name, query: JSON.stringify(segQuery(s.query)), shared: s.shared })));
+route('POST', '/api/saved-searches', T, (ctx) => {
+  const b = ctx.body; const name = String(b.name || '').trim(); if (!name) throw httpError(400, 'Give the segment a name', 'name');
+  const q = segQuery(b.query); const t = D.now();
+  const r = D.run('INSERT INTO saved_searches (user_id,name,query,shared,created_at,updated_at) VALUES (?,?,?,?,?,?)', ctx.user.id, name, JSON.stringify(q), b.shared ? 1 : 0, t, t);
+  D.history(ctx.actor.label, 'create', `SEG-${r.lastInsertRowid}`, null, null, name); return { ok: true, id: Number(r.lastInsertRowid) };
+});
+route('GET', '/api/segments', T, (ctx) => ({
+  segments: segVisible(ctx.user).map((s) => { const q = segQuery(s.query); return { id: s.id, name: s.name, query: q, count: candRows(q, ctx.user).length, shared: !!s.shared, owner: s.owner_name || s.user_id, mine: s.user_id === ctx.user.id, can_edit: canEditSeg(ctx.user, s), updated_at: s.updated_at || s.created_at }; }),
+  can_download: isSuper(ctx.user),
+}));
+route('PATCH', '/api/segments/:id', T, (ctx) => {
+  const s = segOwn(ctx); if (!canEditSeg(ctx.user, s)) throw httpError(403, 'Only the person who made this segment can change it.');
+  const b = ctx.body; const patch = { updated_at: D.now() };
+  if (b.name !== undefined) { patch.name = String(b.name).trim(); if (!patch.name) throw httpError(400, 'Give the segment a name', 'name'); }
+  if (b.shared !== undefined) patch.shared = b.shared ? 1 : 0;
+  if (b.query !== undefined) patch.query = JSON.stringify(segQuery(b.query));
+  update('saved_searches', s.id, patch); return { ok: true };
+});
+route('POST', '/api/segments/:id/delete', T, (ctx) => {
+  const s = segOwn(ctx); if (!canEditSeg(ctx.user, s)) throw httpError(403, 'Only the person who made this segment can delete it.');
+  D.run('DELETE FROM saved_searches WHERE id=?', s.id); D.history(ctx.actor.label, 'delete', `SEG-${s.id}`, null, s.name, null); return { ok: true };
+});
+// The people in a segment, as an Excel file named after it (super admin only, like every candidate download).
+route('GET', '/api/segments/:id/candidates', T, (ctx) => {
+  const s = segOwn(ctx); const rows = candRows(segQuery(s.query), ctx.user);
+  const slug = String(s.name).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || `segment-${s.id}`;
+  return page(ctx, rows, `segment-${slug}`, [...CAND_EXPORT, 'status']);
+});
 
 // ---------- Excel import ----------
 route('POST', '/api/import/preview', T, (ctx) => {

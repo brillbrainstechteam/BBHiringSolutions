@@ -148,6 +148,34 @@
     const n = $('[data-new]', actions); if (n) n.onclick = () => BB.newJob();
   };
 
+  // ---------- Segments: saved candidate filters, shared with the team, downloadable ----------
+  const JEW_LABEL = { 0: 'no experience', lt1: 'under 1 year', '1-3': '1–3 years', '3-5': '3–5 years', '5-10': '5–10 years', '10+': '10+ years' };
+  const SEG_LABEL = [['q', 'Search'], ['industry', 'Industry', (v) => (v === 'all' ? 'All industries' : v)], ['dept', 'Department'], ['job', 'Designation'], ['city', 'City'], ['state', 'State'], ['jewellery', 'Jewellery', (v) => JEW_LABEL[v] || v],
+    ['from', 'Applied from'], ['to', 'Applied up to'], ['exp_min', 'Experience from', (v) => `${v} yrs`], ['exp_max', 'Experience up to', (v) => `${v} yrs`], ['sal_min', 'Expected salary from', (v) => `${inr(v)}/mo`], ['sal_max', 'Expected salary up to', (v) => `${inr(v)}/mo`],
+    ['looking', 'Looking'], ['status', 'Status'], ['source', 'Source'], ['updated', 'Updated in last', (v) => `${v} days`], ['notice', 'Notice up to', (v) => `${v} days`], ['stale', 'Not updated in 90+ days', () => 'yes'], ['archived', 'Archived', () => 'yes']];
+  const segChips = (q) => SEG_LABEL.filter(([k]) => q[k]).map(([k, l, f]) => `<span class="chip">${esc(l)}: <b>${esc(f ? f(q[k]) : q[k])}</b></span>`).join('') || '<span class="faint">All candidates</span>';
+  const segLink = (q) => `${location.origin}/team/candidates?${BB.qs(q)}`;
+  P.segments = async ({ el, actions }) => {
+    const d = await BB.api('/api/segments');
+    actions.innerHTML = '<button class="btn primary" data-new>+ New segment</button>';
+    $('[data-new]', actions).onclick = () => { BB.go('team/candidates'); BB.toast('Pick the filters, then tap "Save as segment"'); };
+    el.innerHTML = `<p class="muted small" style="margin:0 0 12px">A segment is a saved set of candidate filters. The list updates itself as candidates join or change. Shared segments are visible to the whole team.${d.can_download ? '' : ' Only the super admin can download them.'}</p>
+      <div class="card">${d.segments.length ? BB.table([
+        { t: 'Segment', f: (s) => `<b>${esc(s.name)}</b>${s.shared ? ' <span class="badge b-primary tiny">Shared</span>' : ''}<div class="row" style="gap:4px;margin-top:4px">${segChips(s.query)}</div>` },
+        { t: 'Candidates', num: 1, f: (s) => `<b>${s.count}</b>` },
+        { t: 'Made by', f: (s) => (s.mine ? 'You' : esc(s.owner)), hideSm: 1 },
+        { t: 'Updated', f: (s) => (s.updated_at ? `<span class="nw">${BB.daysAgo(s.updated_at)}</span>` : '—'), hideSm: 1 },
+        { t: '', f: (s) => `<div class="row nowrap" onclick="event.stopPropagation()"><button class="btn sm" data-open="${s.id}">Open</button>${d.can_download ? `<button class="btn sm" data-sdl="${s.id}">Download</button>` : ''}<button class="btn sm" data-link="${s.id}">Copy link</button>${s.can_edit ? `<button class="btn sm" data-share="${s.id}">${s.shared ? 'Unshare' : 'Share with team'}</button><button class="btn sm" data-ren="${s.id}">Rename</button><button class="btn sm danger" data-del="${s.id}">Delete</button>` : ''}</div>` },
+      ], d.segments) : '<div class="pad muted">No segments yet. Tap <b>+ New segment</b>, pick filters on the Candidates page, then <b>Save as segment</b>.</div>'}</div>`;
+    const seg = (id) => d.segments.find((s) => String(s.id) === String(id));
+    $$('[data-open]', el).forEach((b) => (b.onclick = () => BB.go(`team/candidates?${BB.qs(seg(b.dataset.open).query)}`)));
+    $$('[data-sdl]', el).forEach((b) => (b.onclick = () => BB.download(`/api/segments/${b.dataset.sdl}/candidates?format=xlsx`)));
+    $$('[data-link]', el).forEach((b) => (b.onclick = () => BB.copy(segLink(seg(b.dataset.link).query))));
+    $$('[data-share]', el).forEach((b) => (b.onclick = async () => { const s = seg(b.dataset.share); await BB.patch(`/api/segments/${s.id}`, { shared: !s.shared }).catch(BB.fail); BB.toast(s.shared ? 'Now only you can see it' : 'Shared with the whole team'); BB.refreshPage(); }));
+    $$('[data-ren]', el).forEach((b) => (b.onclick = () => { const s = seg(b.dataset.ren); BB.ask({ title: 'Rename segment', fields: [{ name: 'name', label: 'Name', value: s.name }], submit: (v) => BB.patch(`/api/segments/${s.id}`, { name: v.name }) }).then((x) => x && BB.refreshPage()); }));
+    $$('[data-del]', el).forEach((b) => (b.onclick = async () => { const s = seg(b.dataset.del); if (await BB.confirm('Delete segment', `"${s.name}" will be deleted${s.shared ? ' for the whole team' : ''}. The candidates are not touched.`, 'Delete')) { await BB.post(`/api/segments/${s.id}/delete`).catch(BB.fail); BB.refreshPage(); } }));
+  };
+
   // ---------- Candidates: resume bank, gap view, tie-ups, Excel import ----------
   P.candidates = async (ctx) => {
     const { el, actions, q } = ctx; const tab = q.tab || 'bank';
@@ -175,7 +203,7 @@
         ${cf.more}
         <div class="grid g3"><label class="mf"><span>Source</span>${sel('source', 'Any source', s.lead_sources)}</label><label class="mf"><span>Profile last updated</span>${sel('updated', 'Any time', [['7', 'Last 7 days'], ['30', 'Last 30 days'], ['90', 'Last 90 days']])}</label><label class="mf"><span>Notice period up to (days)</span><input type="number" min="0" placeholder="Days" data-f="notice" value="${esc(q.notice || '')}"></label></div>
         <label class="row small mf-check"><input type="checkbox" data-f="stale" ${q.stale ? 'checked' : ''}> Only profiles not updated in 90+ days</label></div></details>
-      ${saved.length ? sel('saved', 'Saved searches…', saved.map((x) => [x.id, x.name])) : ''}${anyCandFilter(q) || q.q ? '<button class="btn sm ghost" data-clear>Clear filters</button>' : ''}<button class="btn sm ghost" data-save>Save this search</button></div>
+      ${saved.length ? sel('saved', 'Segments…', saved.map((x) => [x.id, x.name])) : ''}${anyCandFilter(q) || q.q ? '<button class="btn sm ghost" data-clear>Clear filters</button>' : ''}<button class="btn sm ghost" data-save>Save as segment</button></div>
       <div class="small muted" style="margin:-4px 0 8px">${r.total ?? r.rows.length} candidate${(r.total ?? r.rows.length) === 1 ? '' : 's'} match${(r.total ?? r.rows.length) === 1 ? 'es' : ''}${superAdmin ? ' · Download gives exactly this list' : ''}</div>
       <div class="row small" data-bulkbar style="margin-bottom:8px"><span class="muted">Select rows to:</span><button class="btn sm" data-bulk="add_to_job">Add to a job</button>${me.level !== 'sub' ? '<button class="btn sm gold" data-bulk="alert">Send job alert</button>' : ''}${superAdmin ? '<button class="btn sm" data-bulk="download">Download selected</button>' : ''}</div>
       <div class="card">${BB.table([{ t: 'ID', f: (c) => `<span class="mono">${c.id}</span>${c.is_new ? ' <span class="dot new"></span>' : ''}` }, { t: 'Name', f: (c) => `<b>${esc(c.name)}</b>${c.opted_out ? ' <span class="badge b-red tiny">STOP</span>' : ''}` }, { t: 'Phone', f: (c) => `<span class="mono small ${c.phone_hidden ? 'faint' : ''}">${esc(c.whatsapp)}</span>` }, { t: 'Job wanted', f: (c) => esc(c.job_wanted) }, { t: 'City', f: (c) => esc(c.city) }, { t: 'Exp', num: 1, f: (c) => c.exp_total ?? '—' }, { t: 'Jewellery', f: (c) => jewYrs(c.exp_jewellery), hideSm: 1 }, { t: 'Expects /mo', num: 1, f: (c) => (c.exp_salary ? inr(c.exp_salary / 12) : '—'), hideSm: 1 }, { t: 'Source', f: (c) => esc(c.source), hideSm: 1 }, { t: 'Applied', f: (c) => fmtD(c.created_at), hideSm: 1 }, { t: 'Status', f: (c) => `<span class="badge ${c.status === 'Hired' ? 'b-green' : c.status.startsWith('In process') ? 'b-primary' : 'b-outline'}">${esc(c.status)}</span>` }], r.rows, { open: (c) => `candidate:${c.id}`, select: true })}${BB.pager(r)}</div>`;
@@ -185,7 +213,7 @@
     wireDl(actions); BB.wirePager(el); BB.wireSelect(el);
     let t; $('[data-q]', el).oninput = (e) => { clearTimeout(t); t = setTimeout(() => BB.setQ({ q: e.target.value, page: 1 }), 350); };
     $$('[data-f]', el).forEach((i) => (i.onchange = () => { if (i.dataset.f === 'saved') { const sv = saved.find((x) => String(x.id) === i.value); if (sv) { const sq = JSON.parse(sv.query); BB.setQ(Object.fromEntries(Object.keys({ ...q, ...sq }).map((k) => [k, sq[k] || '']))); } return; } BB.setQ({ [i.dataset.f]: i.type === 'checkbox' ? (i.checked ? '1' : '') : i.value, ...(i.dataset.f === 'industry' ? { job: '' } : {}), page: 1 }); }));
-    $('[data-save]', el).onclick = () => BB.ask({ title: 'Save this search', fields: [{ name: 'name', label: 'Name', value: 'My search' }], submit: (v) => BB.post('/api/saved-searches', { name: v.name, query: { ...q, page: undefined } }) }).then((x) => x && BB.refreshPage());
+    $('[data-save]', el).onclick = () => BB.ask({ title: 'Save as segment', note: `${r.total ?? r.rows.length} candidates match these filters now. The segment keeps the filters, so it stays up to date.`, fields: [{ name: 'name', label: 'Segment name', placeholder: 'e.g. Jaipur sales, 3+ yrs jewellery' }, { name: 'shared', label: 'Share with the whole team', type: 'check' }], submit: (v) => BB.post('/api/saved-searches', { name: v.name, shared: v.shared, query: { ...q, page: undefined, tab: undefined } }) }).then((x) => { if (x) { BB.toast('Segment saved — see it under Segments'); BB.refreshPage(); } });
     $('[data-up]', actions).onclick = () => BB.setQ({ tab: 'import' });
     $$('[data-bulk]', el).forEach((b) => (b.onclick = () => {
       const ids = BB.selected(el); if (!ids.length) return BB.toast('Tick some candidates first', true);
