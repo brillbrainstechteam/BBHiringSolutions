@@ -179,7 +179,8 @@
   // ---------- Candidates: resume bank, gap view, tie-ups, Excel import ----------
   P.candidates = async (ctx) => {
     const { el, actions, q } = ctx; const tab = q.tab || 'bank';
-    el.innerHTML = `<div class="tabs">${[['bank', 'Resume bank'], ['gap', 'Gap view'], ['tieups', 'Tie-ups'], ['import', 'Upload Excel']].map(([k, l]) => `<button data-tab="${k}" class="${tab === k ? 'on' : ''}">${l}</button>`).join('')}</div><div data-tabbody></div>`;
+    // Gap view is hidden for now (its page still works at ?tab=gap); put ['gap', 'Gap view'] back in this list to show it.
+    el.innerHTML = `<div class="tabs">${[['bank', 'Resume bank'], ['tieups', 'Tie-ups'], ['import', 'Upload Excel']].map(([k, l]) => `<button data-tab="${k}" class="${tab === k ? 'on' : ''}">${l}</button>`).join('')}</div><div data-tabbody></div>`;
     $$('[data-tab]', el).forEach((b) => (b.onclick = () => BB.setQ({ tab: b.dataset.tab === 'bank' ? '' : b.dataset.tab, page: '' })));
     const body = $('[data-tabbody]', el); actions.innerHTML = '';
     if (tab === 'gap') return gapView(body);
