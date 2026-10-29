@@ -4,7 +4,10 @@ const D = require('./db');
 const { all, get, run, insert, update, nextId, settings, history, now, httpError } = D;
 
 // Closing reasons the software uses itself (not in the team's pick list).
-const SYSTEM_CLOSE = ['Position filled', 'Joined elsewhere'];
+const SYSTEM_CLOSE = ['Position filled', 'Joined elsewhere', 'Requirement not met', 'Rejected at screening'];
+// The screening decision on an application. Not met / Rejected close it; Under consideration / Accepted keep it open
+// (reopening one closed by an earlier screening decision), and move it on: Applied -> Screening, Accepted -> Our interview.
+const SCREEN = ['Under consideration', 'Requirement not met', 'Rejected', 'Accepted'];
 const STEPS = ['Applied', 'Screening', 'Our interview', 'Sent to client', 'Client interview', 'Offer made', 'Offer accepted', 'Joined'];
 // Routine messages go by email only (WhatsApp costs per message); everything someone must act on or know at once keeps WhatsApp too.
 const EMAIL_ONLY_RULES = ['log_reminder', 'day_summary', 'monthly_summary', 'still_looking'];
@@ -535,6 +538,18 @@ function closeApplication(appId, reason, by, note) {
   const st = recalcJob(app.job_id, actorName(by), reason === 'Did not join' ? `${appId} did not join, seat opens again` : `${appId} closed: ${reason}`);
   return { app: get('SELECT * FROM applications WHERE id=?', appId), jobBefore: before, jobAfter: st };
 }
+function screenApplication(appId, verdict, by, note) {
+  if (!SCREEN.includes(verdict)) throw httpError(400, 'Pick a screening decision');
+  let app = get('SELECT * FROM applications WHERE id=?', appId); if (!app) throw httpError(404, 'Application not found');
+  const closeAs = { 'Requirement not met': 'Requirement not met', Rejected: 'Rejected at screening' }[verdict];
+  update('applications', appId, { screen: verdict, screen_note: note || null, screen_at: now(), screen_by: actorName(by) });
+  appHist(appId, app.step, by, `Screening: ${verdict}${note ? ` — ${note}` : ''}`, 'screen');
+  if (closeAs) { if (app.result === 'open') closeApplication(appId, closeAs, by, note); return get('SELECT * FROM applications WHERE id=?', appId); }
+  if (app.result !== 'open') { if (!['Requirement not met', 'Rejected at screening'].includes(app.result)) throw httpError(400, `This application is closed (${app.result}). Reopen it first.`); reopenApplication(appId, by); app = get('SELECT * FROM applications WHERE id=?', appId); }
+  const target = verdict === 'Accepted' ? 'Our interview' : 'Screening';
+  if (stepIdx(app.step) < stepIdx(target)) moveStep(appId, target, by, `Screening: ${verdict}`);
+  return get('SELECT * FROM applications WHERE id=?', appId);
+}
 function reopenApplication(appId, by) {
   const app = get('SELECT * FROM applications WHERE id=?', appId);
   if (app.result === 'open') return app;
@@ -907,6 +922,6 @@ module.exports = { adLabel,
   waHeld, IV_MODES, clientSeesIv, addIvNote, CALL_OUTCOMES, logCall, jobList, deptOf, stateOf, person, fillFormat, windowOpenUntil, sendWA, setDispatcher, alertUser, link, agencyAdmin, superAdmins,
   computeJobStatus, jobStatusReason, recalcJob, filledCount, appsOfJob, matchScore, jobsFor, cleanBusiness, BUSINESS_TYPES, EXP_YEARS, JEW_YEARS, LOOKING, NOT_LOOKING, ratingOf, bestMatches, isPlaced, salaryText, autoJobAlert,
   feeFor, gstFor, fyOf, billView, refreshBill, createBillForApp, issueBill, upiLink,
-  appHist, createApplication, moveStep, closeApplication, reopenApplication, scheduleInterview, recordInterview, interviewView, ivVars, recordOffer, leftJob, jobAction,
+  appHist, createApplication, moveStep, closeApplication, reopenApplication, screenApplication, SCREEN, scheduleInterview, recordInterview, interviewView, ivVars, recordOffer, leftJob, jobAction,
   CONSENT_WORDING, saveConsent, intakeClient, intakeCandidate, assignLead, mergeRecords, resolveId, receiveReply, actorName,
 };

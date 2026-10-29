@@ -508,9 +508,9 @@ route('POST', '/api/jobs/import', T, (ctx) => {
   const mrows = /\.xlsx$/i.test(b.name) ? F.readSpreadsheet(b.name, b.base64, 'Client Master') : null;
   if (mrows) {
     const mi = mrows.findIndex((r) => r.map(normH).includes('client name')); const mh = mi >= 0 ? mrows[mi] : [];
-    const mc = { client: findCol(mh, ['client name']), city: findCol(mh, ['city']), state: findCol(mh, ['state']), type: findCol(mh, ['business type']), owner: findCol(mh, ['owner management', 'owner']), mobile: findCol(mh, ['mobile no', 'mobile']), hr: findCol(mh, ['hr name']), email: findCol(mh, ['hr email', 'email']), hrMobile: findCol(mh, ['mobile no', 'mobile'], 1), remarks: findCol(mh, ['remarks']) };
+    const mc = { client: findCol(mh, ['client name']), city: findCol(mh, ['city']), state: findCol(mh, ['state']), type: findCol(mh, ['business type']), owner: findCol(mh, ['owner management', 'owner']), mobile: findCol(mh, ['mobile no', 'mobile']), hr: findCol(mh, ['hr name']), email: findCol(mh, ['hr email', 'email']), hrMobile: findCol(mh, ['mobile no', 'mobile'], 1), remarks: findCol(mh, ['remarks']), status: findCol(mh, ['status']) };
     const mcell = (r, k) => (mc[k] >= 0 ? String(r[mc[k]] ?? '').trim() : '');
-    if (mi >= 0) for (const r of mrows.slice(mi + 1)) { const n = mcell(r, 'client'); if (n) master.set(nameKey(n), { city: mcell(r, 'city'), state: mcell(r, 'state'), type: mcell(r, 'type'), contact: [mcell(r, 'owner'), mcell(r, 'hr')].find((x) => x && !/^n\/?a$/i.test(x)) || '', phone: phone10(mcell(r, 'mobile')) || phone10(mcell(r, 'hrMobile')), email: /@/.test(mcell(r, 'email')) ? mcell(r, 'email') : '', remarks: mcell(r, 'remarks') }); }
+    if (mi >= 0) for (const [ri, r] of mrows.slice(mi + 1).entries()) { const n = mcell(r, 'client'); if (n && !master.has(nameKey(n))) master.set(nameKey(n), { name: n, row: mi + ri + 2, status: mcell(r, 'status'), city: mcell(r, 'city'), state: mcell(r, 'state'), type: mcell(r, 'type'), contact: [mcell(r, 'owner'), mcell(r, 'hr')].find((x) => x && !/^n\/?a$/i.test(x)) || '', phone: phone10(mcell(r, 'mobile')) || phone10(mcell(r, 'hrMobile')), email: /@/.test(mcell(r, 'email')) ? mcell(r, 'email') : '', remarks: mcell(r, 'remarks') }); }
   }
   const users = all("SELECT id, name, level, agency_id FROM users WHERE status='On'").filter((x) => isSuper(u) || x.agency_id === u.agency_id);
   const clientsSeen = new Map(); const plan = [];
@@ -528,16 +528,23 @@ route('POST', '/api/jobs/import', T, (ctx) => {
     if (!c) { c = { key, company: client, new: true, ...(master.get(key) || {}), city: (master.get(key) || {}).city || line.city }; clientsSeen.set(key, c); }
     plan.push({ ...line, client_new: !!c.new, client_ref: c, job, result: 'create' });
   }
-  const out = (p) => ({ row: p.row, client: p.client, client_new: !!p.client_new, client_phone: p.client_ref ? p.client_ref.phone || p.client_ref.whatsapp || '' : '', title: p.title, city: p.city, code: p.code, result: p.result, why: p.why || '', openings: p.job && p.job.openings, salary: p.job && (p.job.sal_from ? L.salaryText(p.job) : ''), notice_days: p.job && p.job.notice_days, status: p.job && p.job.status, recruiter: p.job && p.job.recruiter_name });
-  const summary = { jobs: plan.filter((p) => p.result === 'create').length, skipped: plan.filter((p) => p.result === 'skip').length, new_clients: [...clientsSeen.values()].filter((c) => c.new).length, existing_clients: new Set(plan.filter((p) => p.result === 'create' && !p.client_new).map((p) => p.client_ref.id)).size };
+  // Clients only in the Client Master sheet: added too (unless unticked), at the stage their status says.
+  const stageOf = (t) => { const x = String(t || '').toLowerCase(); return /requirement active|job/.test(x) ? 'Job opening active' : /hold/.test(x) ? 'On hold' : /no current|no active/.test(x) ? 'No current opening' : /not interested/.test(x) ? 'Not interested' : /understanding|input/.test(x) ? 'Understanding needs' : /agreement|contract/.test(x) ? 'Agreement shared' : /proposal/.test(x) ? 'Proposal and pitch deck' : 'Call initiated'; };
+  if (b.all_clients !== false) for (const [key, m] of master) {
+    if (clientsSeen.has(key) || existingClients.some((x) => nameKey(x.company) === key)) continue;
+    const c = { key, company: m.name, new: true, ...m, stage: stageOf(m.status) }; clientsSeen.set(key, c);
+    plan.push({ row: m.row, client: m.name, client_new: true, client_ref: c, title: '', city: m.city, result: 'client', status: c.stage });
+  }
+  const out = (p) => ({ row: p.row, client: p.client, client_new: !!p.client_new, client_phone: p.client_ref ? p.client_ref.phone || p.client_ref.whatsapp || '' : '', title: p.title, city: p.city, code: p.code, result: p.result, why: p.why || '', openings: p.job && p.job.openings, salary: p.job && (p.job.sal_from ? L.salaryText(p.job) : ''), notice_days: p.job && p.job.notice_days, status: p.job ? p.job.status : p.status, recruiter: p.job && p.job.recruiter_name });
+  const summary = { jobs: plan.filter((p) => p.result === 'create').length, skipped: plan.filter((p) => p.result === 'skip').length, new_clients: [...clientsSeen.values()].filter((c) => c.new).length, clients_only: plan.filter((p) => p.result === 'client').length, existing_clients: new Set(plan.filter((p) => p.result === 'create' && !p.client_new).map((p) => p.client_ref.id)).size };
   if (b.dry) return { summary, rows: plan.map(out) };
   // Create: clients first (straight into the list, no welcome message), then the jobs.
   const made = [];
   for (const c of clientsSeen.values()) {
     if (!c.new) continue;
     const id = D.nextId('CL');
-    insert('clients', { id, company: c.company, contact: c.contact || '', whatsapp: c.phone || '', email: c.email || '', city: c.city || '', state: c.state || L.stateOf(c.city), business_type: c.type || '', source: 'Excel upload', stage: 'Job opening active', agency_id: u.agency_id || null, owner_id: u.id, is_new: 0, kyc: {}, onboarding: {}, extra: {}, created_by: ctx.actor.label, created_at: now(), updated_at: now() });
-    if (c.remarks) insert('notes', { record_id: id, text: c.remarks, author: 'Excel upload', at: now() });
+    insert('clients', { id, company: c.company, contact: c.contact || '', whatsapp: c.phone || '', email: c.email || '', city: c.city || '', state: c.state || L.stateOf(c.city), business_type: c.type || '', source: 'Excel upload', stage: c.stage || 'Job opening active', agency_id: u.agency_id || null, owner_id: u.id, is_new: 0, kyc: {}, onboarding: {}, extra: {}, created_by: ctx.actor.label, created_at: now(), updated_at: now() });
+    if (c.remarks) insert('notes', { record_id: id, text: `From Client Master${c.status ? ` (${c.status})` : ''}: ${c.remarks}`, author: 'Excel upload', at: now() });
     D.history(ctx.actor.label, 'create', id, null, null, `Client ${c.company} from Excel upload`);
     c.id = id;
   }
@@ -848,8 +855,8 @@ route('POST', '/api/import/run', T, (ctx) => {
 route('GET', '/api/applications', T, (ctx) => {
   const q = ctx.query;
   const rows = visibleApps(ctx.user).map(V.appView)
-    .filter((a) => (!q.job || a.job_id === q.job) && (q.closed ? true : a.result === 'open') && (!q.step || a.step === q.step) && (!q.ad || [a.ad_campaign, a.ad_set, a.ad_name].includes(q.ad)) && like(q.q, a.id, a.candidate_name, a.job_title, a.client_name, a.ad));
-  return { ...page(ctx, rows, 'applications', ['id', 'candidate_name', 'job_id', 'job_title', 'client_name', 'step', 'result', 'days_in_step', 'owner_name', 'source', 'ad']), ads: adOptions('applications') };
+    .filter((a) => (!q.job || a.job_id === q.job) && (q.closed || q.screen ? true : a.result === 'open') && (!q.step || a.step === q.step) && (!q.screen || (q.screen === 'none' ? !a.screen : a.screen === q.screen)) && (!q.ad || [a.ad_campaign, a.ad_set, a.ad_name].includes(q.ad)) && like(q.q, a.id, a.candidate_name, a.job_title, a.client_name, a.ad));
+  return { ...page(ctx, rows, 'applications', ['id', 'candidate_name', 'job_id', 'job_title', 'client_name', 'step', 'result', 'days_in_step', 'owner_name', 'source', 'ad', 'screen', 'screen_note']), ads: adOptions('applications'), screens: L.SCREEN };
 });
 route('GET', '/api/board', T, (ctx) => {
   const q = ctx.query;
@@ -900,6 +907,7 @@ route('POST', '/api/applications/:id/step', T, (ctx) => {
   return L.moveStep(a.id, step, ctx.actor, ctx.body.note || (ctx.body.next ? 'Move to next step' : 'Step set by hand'));
 });
 route('POST', '/api/applications/:id/close', T, (ctx) => { const a = loadApp(ctx); return L.closeApplication(a.id, ctx.body.reason, ctx.actor, ctx.body.note); });
+route('POST', '/api/applications/:id/screen', T, (ctx) => { const a = loadApp(ctx); return L.screenApplication(a.id, ctx.body.verdict, ctx.actor, ctx.body.note); });
 route('POST', '/api/applications/:id/reopen', T, (ctx) => { const a = loadApp(ctx); return L.reopenApplication(a.id, ctx.actor); });
 route('POST', '/api/applications/:id/hold', T, (ctx) => {
   const a = loadApp(ctx); const on = !!ctx.body.on;
@@ -945,6 +953,7 @@ route('POST', '/api/applications/bulk', T, (ctx) => {
     try {
       const a = get('SELECT * FROM applications WHERE id=?', id); mustSee(a && seeApp(ctx.user, a), 'application');
       if (action === 'step') L.moveStep(id, step, ctx.actor, 'Bulk move'); else if (action === 'close') L.closeApplication(id, reason, ctx.actor, 'Bulk close');
+      else if (action === 'screen') L.screenApplication(id, ctx.body.verdict, ctx.actor, ctx.body.note || 'Bulk');
       else if (action === 'wa') {
         const ptype = ctx.body.to === 'client' ? 'client' : 'candidate'; const job = get('SELECT * FROM jobs WHERE id=?', a.job_id);
         const pid = ptype === 'client' ? job.client_id : a.candidate_id; const p = L.person(ptype, pid);

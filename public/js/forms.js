@@ -28,6 +28,7 @@
     return `${single ? `<div class="card-title">Fill in the below details</div><p class="muted small" style="margin:0 0 14px">For voice input, tap and allow the mic to speak</p>` : `<div class="seg mode-seg" role="tablist" aria-label="What do you want to do?">${Object.entries(MODES).map(([k, m]) => `<button type="button" role="tab" data-mode="${k}" class="${k === mode ? 'on' : ''}" aria-selected="${k === mode}">${m.label}</button>`).join('')}</div>`}
       <form class="stack" novalidate${single ? '' : ' style="margin-top:18px"'}>
         ${BB.voiceSwitch()}
+        ${!q.job && (q.adjobs || []).length ? `<div class="notice gold small" data-only="job"><span>You are applying for</span> <b data-no-i18n>${esc([...new Set(q.adjobs.map((j) => j.title))].join(' / '))} · ${esc([...new Set(q.adjobs.map((j) => j.city).filter(Boolean))].join(' / '))}</b>. <span>We will also show you other matching jobs.</span></div>` : ''}
         ${q.job ? `<div class="notice gold small" data-only="job"><span>You are applying for</span> <b data-no-i18n>${q.want ? `${esc(q.want)}${q.city ? ` · ${esc(q.city)}` : ''} (${esc(String(q.job).toUpperCase())})` : esc(String(q.job).toUpperCase())}</b>. <span>We will also show you other matching jobs.</span></div>` : ''}
         ${q.ref ? `<div class="notice small" data-only="job">Referred by a friend (${esc(String(q.ref).toUpperCase())}).</div>` : ''}
         <div class="cv-first" data-only="job" data-f="cv"><div class="cv-ic" aria-hidden="true">CV</div><div class="grow"><b>Start with your CV</b> <span class="opt">(optional)</span><div class="muted small" data-cv-name>PDF or Word, max 10 MB</div><div class="small" data-cv-msg></div></div><button type="button" class="btn" data-cv>Attach CV</button></div>
@@ -248,7 +249,7 @@
       const ad = BB.adParams(); const hit = !q.job && [ad.ad_set, ad.ad_name, ad.ad_campaign].map((v) => /(?:^|[^A-Za-z0-9])JB[-\s_]?(\d{3,})(?!\d)/i.exec(v || '')).find(Boolean);
       if (hit) q = { ...q, job: `JB-${hit[1]}` };
       // Otherwise the job whose saved ad names match this link (set on the job page under "Ads for this job").
-      if (!q.job && (ad.ad_set || ad.ad_name || ad.ad_campaign)) { try { const res = await fetch(`/api/public/ad-job?${new URLSearchParams({ src: BB.adSource(), ...ad })}`); if (res.ok) { const j = await res.json(); q = { ...q, job: j.id, want: j.title, city: q.city || j.city }; } } catch { /* no match: the plain form */ } }
+      if (!q.job && (ad.ad_set || ad.ad_name || ad.ad_campaign)) { try { const res = await fetch(`/api/public/ad-job?${new URLSearchParams({ src: BB.adSource(), ...ad })}`); if (res.ok) { const j = await res.json(); q = { ...q, want: j.title, city: q.city || j.city, adjobs: j.jobs }; } } catch { /* no match: the plain form */ } }
       if (q.job && !q.want) { try { const res = await fetch(`/api/public/job/${encodeURIComponent(q.job)}`); if (res.ok) { const j = await res.json(); q = { ...q, want: j.title, city: q.city || j.city }; } } catch { /* the form still works without the job line */ } }
     }
     $('#app').innerHTML = BB.split({ top: BB.publicTop(m.top), eyebrow: m.eyebrow, title: m.title, centered: true, card: '<div data-leadcard></div>' });

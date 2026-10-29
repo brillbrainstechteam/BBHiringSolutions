@@ -32,9 +32,9 @@ route('GET', '/api/public/job/:id', { rate: { key: 'pubjobs', max: 240, minutes:
 });
 // The open job whose saved ad names match these (src, ad_campaign, ad_set, ad_name), for the same line on the form.
 route('GET', '/api/public/ad-job', { rate: { key: 'pubjobs', max: 240, minutes: 60 } }, (ctx) => {
-  const id = jobByAdNames(ctx.query, srcFrom(ctx.query)); const j = id && get('SELECT * FROM jobs WHERE id=?', id);
-  if (!j) throw httpError(404, 'No job for this ad');
-  return { id: j.id, title: j.title, city: j.city };
+  const jobs = jobsByAdNames(ctx.query, srcFrom(ctx.query)).map((id) => get('SELECT id, title, city FROM jobs WHERE id=?', id));
+  if (!jobs.length) throw httpError(404, 'No job for this ad');
+  return { id: jobs[0].id, title: jobs[0].title, city: jobs[0].city, jobs };
 });
 route('GET', '/api/public/jobs', { rate: { key: 'pubjobs', max: 240, minutes: 60 } }, (ctx) => {
   const q = ctx.query || {};
@@ -327,22 +327,24 @@ function jobInAd(b) {
 }
 // The job whose saved ad names (Meta / LinkedIn campaign, ad set, ad) match this applicant's link. Every name filled
 // in on the job must match (letter case and extra spaces ignored); the job with the most matching names wins.
-function jobByAdNames(b, source) {
+function jobByAdNames(b, source) { return jobsByAdNames(b, source)[0] || null; }
+// Every open job whose saved names match (one ad can serve several jobs with the same need), best match first.
+function jobsByAdNames(b, source) {
   const n = (v) => String(v || '').replace(/\s+/g, ' ').trim().toLowerCase();
   const got = { campaign: n(b.ad_campaign), adset: n(b.ad_set), ad: n(b.ad_name) };
   if (!got.campaign && !got.adset && !got.ad) return null;
   const platform = /linkedin/i.test(source) ? 'LinkedIn' : /facebook|instagram|meta/i.test(source) ? 'Meta' : null;
-  let best = null;
+  const hits = new Map();
   for (const j of all("SELECT * FROM jobs WHERE archived=0 AND is_sample=0 AND ad_match IS NOT NULL AND ad_match != '[]'")) {
     if (!['Open', 'Sourcing', 'Interviewing', 'Offer stage'].includes(V.jobView(j).status)) continue;
     for (const m of j.ad_match || []) {
       if (platform && m.platform && m.platform !== platform) continue;
       const keys = ['campaign', 'adset', 'ad'].filter((k) => m[k]);
       if (!keys.length || !keys.every((k) => n(m[k]) === got[k])) continue;
-      if (!best || keys.length > best.score || (keys.length === best.score && j.created_at > best.j.created_at)) best = { j, score: keys.length };
+      if (!hits.has(j.id) || hits.get(j.id).score < keys.length) hits.set(j.id, { j, score: keys.length });
     }
   }
-  return best ? best.j.id : null;
+  return [...hits.values()].sort((a, b) => b.score - a.score || (b.j.created_at > a.j.created_at ? 1 : -1)).map((h) => h.j.id);
 }
 function adFrom(b) {
   const t = (v) => String(v || '').replace(/\s+/g, ' ').trim().slice(0, 120);
@@ -398,9 +400,12 @@ route('POST', '/api/public/apply', { rate: { key: 'form', max: 60, minutes: 60 }
   const expMap = L.EXP_YEARS; const jewMap = L.JEW_YEARS;
   let refBy = null;
   if (b.ref) { const rc = get('SELECT id FROM candidates WHERE id=?', L.resolveId(String(b.ref).toUpperCase())); refBy = rc ? rc.id : null; }
-  const jobId = b.job ? String(b.job).toUpperCase() : jobInAd(b) || jobByAdNames(b, srcFrom(b));
+  const adJobs = !b.job && !jobInAd(b) ? jobsByAdNames(b, srcFrom(b)) : [];
+  const jobId = b.job ? String(b.job).toUpperCase() : jobInAd(b) || adJobs[0] || null;
   const jobOk = jobId ? get('SELECT * FROM jobs WHERE id=?', jobId) : null;
   const r = L.intakeCandidate({ exp_business: business, exp_jewellery: b.exp_jewellery in jewMap ? jewMap[b.exp_jewellery] : null, language: b.lang, name: b.name, whatsapp: b.whatsapp, email: b.email || '', city: b.city, state: b.state, work_cities: [b.city], job_wanted: b.job_wanted === 'Other' ? b.job_other : b.job_wanted, exp_total: b.experience ? expMap[b.experience] : null, ref_by: refBy, apply_job: jobOk && ['Open', 'Sourcing', 'Interviewing', 'Offer stage'].includes(V.jobView(jobOk).status) ? jobOk.id : null }, { source: srcFrom(b), ad: adFrom(b) });
+  // The same ad on several jobs: an application on each of the others too.
+  for (const extra of adJobs.slice(1)) { try { L.createApplication(r.candidate.id, extra, { label: 'Candidate' }, srcFrom(b), 'Applied from an ad', adFrom(b)); } catch { /* already on it */ } }
   { const mailer = require('./mailer'); const rec = get('SELECT * FROM candidates WHERE id=?', r.candidate.id); if (r.isNew) mailer.newLead('candidate', rec); mailer.confirmToPerson('candidate', rec); }
   if (refBy && r.isNew) insert('notes', { record_id: r.candidate.id, text: `Referred by ${refBy}`, author: 'Form', at: now() });
   if (b.cv && b.cv.base64) { try { const f = await F.saveFile({ recordId: r.candidate.id, type: 'cv', name: b.cv.name, base64: b.cv.base64, by: 'Candidate form' }); update('candidates', r.candidate.id, { cv_file: String(f.id) }); CV.fillCandidate(r.candidate.id, b.cv.name, b.cv.base64, 'Candidate form'); } catch (e) { insert('notes', { record_id: r.candidate.id, text: `CV not saved: ${e.message}`, author: 'Form', at: now() }); } }

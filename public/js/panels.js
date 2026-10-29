@@ -89,7 +89,7 @@
     const j = await BB.api(`/api/jobs/${id}`); const s = BB.boot; const canAdmin = me().level !== 'sub';
     const open = j.apps.filter((a) => a.result === 'open'); const closed = j.apps.filter((a) => a.result !== 'open');
     const jd = j.jd || {};
-    const appRow = (a) => `<tr class="click" data-open="application:${a.id}"><td class="mono">${a.id}</td><td>${esc(a.candidate_name)}</td><td><span class="badge b-primary">${esc(a.step)}</span>${a.on_hold ? ' <span class="badge b-outline">on hold</span>' : ''}</td><td>${resultBadge(a.result)}</td><td>${scoreBadge(a.score)}</td><td><span class="days ${a.days_in_step >= 7 && a.result === 'open' ? 'late' : ''}">${a.days_in_step}d</span></td></tr>`;
+    const appRow = (a) => `<tr class="click" data-open="application:${a.id}"><td class="mono">${a.id}</td><td>${esc(a.candidate_name)}</td><td><span class="badge b-primary">${esc(a.step)}</span>${a.on_hold ? ' <span class="badge b-outline">on hold</span>' : ''}${a.screen ? ` <span class="badge b-outline">${esc(a.screen)}</span>` : ''}</td><td>${resultBadge(a.result)}</td><td>${scoreBadge(a.score)}</td><td><span class="days ${a.days_in_step >= 7 && a.result === 'open' ? 'late' : ''}">${a.days_in_step}d</span></td></tr>`;
     // Links to paste into a Meta ad and a LinkedIn job or ad: each applicant becomes a candidate and an application
     // on this job, with the source and ad names. Applications open only once the job description is approved.
     // The ads this job runs under, and the links to paste: anyone applying from one of these ads becomes an application here.
@@ -220,6 +220,28 @@
       ${ivNotes(i.notes)}<div><button class="btn sm ghost" data-ivnote="${i.id}">+ Interview note</button>${i.mode === 'phone' ? ` <button class="btn sm ghost" data-logcall="${a.candidate_id}" data-app="${a.id}">+ Log a call</button>` : ''}</div>
       ${i.result ? `<div class="small"><b>${esc(i.result)}</b>${i.rating ? ` · ${'★'.repeat(i.rating)}` : ''} — ${esc(i.remark || '')}</div>` : ''}${(i.qa || []).map((q) => `<div class="small faint">Q: ${esc(q.q)} — A: ${esc(q.a)}</div>`).join('')}
       ${['Scheduled', 'Rescheduled'].includes(i.status) ? `<div class="row"><button class="btn sm primary" data-result="${i.id}">Record result</button>${i.confirmed ? '' : `<button class="btn sm" data-confirm="${i.id}">Mark confirmed</button>`}${waBtn({ ptype: 'candidate', pid: a.candidate_id, ap: a.id, iv: i.id, format: 'bbhs_interview_reminder' }, 'Remind candidate')}${i.round === 'client' ? waBtn({ ptype: 'client', pid: a.client_id, ap: a.id, iv: i.id, format: i.view_status === 'Result pending' ? 'bbhs_feedback_request' : 'bbhs_interview_reminder' }, i.view_status === 'Result pending' ? 'Ask client for feedback' : 'Remind client') : ''}</div>` : ''}</div>`;
+    // Screening: the decision on this application, and the candidate set against what the job needs.
+    const SCREEN_BADGE = { 'Under consideration': 'b-primary', 'Requirement not met': 'b-amber', Rejected: 'b-red', Accepted: 'b-green' };
+    const screenBlock = (a) => {
+      const c = a.candidate || {}; const j = a.job || {}; const sc = a.score || {};
+      const yrs = (v) => (v === null || v === undefined ? '—' : `${v} yrs`); const pm = (y) => (y ? inr(y / 12) : '—');
+      const range = (x, y, fmt) => (x || y ? `${fmt(x || y)}${y && y !== x ? `–${fmt(y)}` : ''}` : '—');
+      const line = (label, cand, job) => `<tr><td class="small muted">${label}</td><td>${cand}</td><td class="muted">${job}</td></tr>`;
+      return `<div class="sec card pad stack-sm"><div class="row between"><h3 style="margin:0">Screening</h3>${a.screen ? `<span class="badge ${SCREEN_BADGE[a.screen] || 'b-outline'}">${esc(a.screen)}</span>` : '<span class="badge b-outline">Not screened yet</span>'}</div>
+        ${a.screen_note ? `<div class="small muted">${esc(a.screen_note)} · ${esc(a.screen_by || '')} ${a.screen_at ? fmtDT(a.screen_at) : ''}</div>` : ''}
+        <div class="row">${['Under consideration', 'Requirement not met', 'Rejected', 'Accepted'].map((v) => `<button class="btn sm ${a.screen === v ? 'primary' : ''}" data-screen="${v}">${v}</button>`).join('')}</div>
+        <div class="tbl-wrap"><table class="tbl"><thead><tr><th></th><th>Candidate</th><th>Job needs</th></tr></thead><tbody>
+          ${line('Role', esc(c.job_wanted || '—'), esc(j.title || '—'))}
+          ${line('City', esc([c.city, ...(c.work_cities || []).filter((x) => x !== c.city)].filter(Boolean).join(', ') || '—'), esc(j.city || '—'))}
+          ${line('Experience', yrs(c.exp_total), j.exp_from !== null && j.exp_from !== undefined ? `${j.exp_from}–${j.exp_to ?? '+'} yrs` : '—')}
+          ${line('In jewellery', c.exp_jewellery === 0 ? 'None' : yrs(c.exp_jewellery), '—')}
+          ${line('Salary / month', `now ${pm(c.cur_salary)} · expects ${pm(c.exp_salary)}`, range(j.sal_from, j.sal_to, pm))}
+          ${line('Notice', c.notice_days !== null && c.notice_days !== undefined ? `${c.notice_days} days` : '—', j.notice_days ? `within ${j.notice_days} days` : '—')}
+          ${line('Worked with', esc((c.exp_business || []).join(', ') || '—'), '—')}
+          ${line('Skills', esc((c.skills || []).join(', ') || '—'), esc((j.skills || []).join(', ') || '—'))}
+        </tbody></table></div>
+        <div class="row small">${sc.score !== undefined ? scoreBadge(sc.score) : ''}${(sc.reasons || []).map((r) => `<span class="badge b-green">✓ ${esc(r)}</span>`).join('')}${(sc.gaps || []).map((g) => `<span class="badge b-outline">✗ ${esc(g)}</span>`).join('')}${c.cv_file ? `<button class="btn sm" data-file="${esc(c.cv_file)}">Open CV</button>` : '<span class="faint">No CV uploaded</span>'}</div></div>`;
+    };
     const items = a.checklist_items;
     return {
       head: `<div class="row"><h2>${esc(a.candidate_name)}</h2><span class="mono faint">${esc(a.id)}</span>${resultBadge(a.result)}${a.on_hold ? `<span class="badge b-outline">On hold: ${esc(a.hold_reason)}</span>` : ''}${a.at_risk ? '<span class="badge b-red">At risk</span>' : ''}${a.left_date ? `<span class="badge b-red">Left on ${fmtD(a.left_date)}</span>` : ''}</div><div class="small muted">on <a href="#" data-open="job:${a.job_id}">${esc(a.job_id)} ${esc(a.job_title)}</a> · ${esc(a.client_name)} · owner ${esc(a.owner_name || '—')} · from ${esc(a.source || '—')}${a.ad ? ` · ad <b>${esc(a.ad)}</b>` : ''} · ${a.days_in_step} days in this step ${scoreBadge(a.score.score)}</div>`,
@@ -227,6 +249,7 @@
         <div class="row" style="margin-bottom:6px">${waBtn({ ptype: 'candidate', pid: a.candidate_id, ap: a.id }, 'Candidate', 'btn sm')}${waBtn({ ptype: 'client', pid: a.client_id, ap: a.id, jb: a.job_id }, 'Client', 'btn sm')}<button class="btn sm ghost" data-open="candidate:${a.candidate_id}">Candidate profile</button></div>
         ${BB.tracker(a.step, a.result)}
         <div class="row" style="margin:10px 0 14px">${btns.join('')}${open ? `<select data-setstep style="width:auto;margin-left:auto" title="Set any step (corrections)"><option value="">Set step…</option>${s.steps.map((x) => `<option>${x}</option>`).join('')}</select>` : ''}</div>
+        ${screenBlock(a)}
         ${a.offer_ctc ? `<div class="sec card pad"><h3 style="margin-bottom:6px">Offer</h3><dl class="kv"><dt>Yearly CTC</dt><dd><b>${inr(a.offer_ctc)}</b></dd><dt>Joining date</dt><dd>${fmtD(a.joining_date)}</dd><dt>Reporting to</dt><dd>${esc(a.reporting_to || '—')}</dd><dt>Offer letter</dt><dd>${a.offer_letter ? `<button class="btn sm" data-file="${a.offer_letter}">Open PDF</button> ${a.offer_sent ? '<span class="badge b-green">sent</span>' : '<span class="badge b-outline">client to check</span>'}` : '—'}</dd>${a.bill ? `<dt>Bill</dt><dd><a href="#" data-open="bill:${a.bill.id}">${esc(a.bill.bill_no || a.bill.id)}</a> · ${inr(a.bill.total)} · ${esc(a.bill.view_status)}</dd>` : ''}</dl></div>` : ''}
         ${a.step === 'Offer accepted' || a.result === 'Hired' ? `<div class="sec"><h3>Joining checklist</h3><div class="card pad">${items.map((it) => `<label class="row small"><input type="checkbox" data-ck="${esc(it)}" ${a.checklist && a.checklist[it] ? 'checked' : ''}> ${esc(it)} <span class="faint tiny">${a.checklist && a.checklist[it] ? esc(a.checklist[it].by) : ''}</span></label>`).join('')}${(a.joining_docs || []).length ? `<div class="row" style="margin-top:6px">${a.joining_docs.map((d) => `<button class="btn sm" data-file="${d.file}">${esc(d.label)}</button>`).join('')}</div>` : '<div class="faint small">No joining documents uploaded yet.</div>'}</div></div>` : ''}
         <div class="sec"><h3>Interviews</h3><div class="stack-sm">${a.interviews.map(iv).join('') || '<div class="faint small">No interviews yet. Usual order: telephonic → virtual → final in person with the client.</div>'}</div></div>
@@ -240,6 +263,11 @@
         wireCommon(el);
         const on = (sel, fn) => { const b = $(sel, el); if (b) b.onclick = fn; };
         on('[data-next]', () => run(() => BB.post(`/api/applications/${a.id}/step`, { next: true }), 'Moved'));
+        $$('[data-screen]', el).forEach((b) => (b.onclick = async () => {
+          const v = b.dataset.screen; const closes = v === 'Requirement not met' || v === 'Rejected';
+          const x = await BB.ask({ title: `Screening: ${v}`, fields: [{ name: 'note', label: closes ? 'Why (kept on the application)' : 'Note', type: 'textarea', opt: !closes }], ok: v, note: closes ? 'This closes the application. You can change the decision later.' : v === 'Accepted' ? 'The application moves to Our interview.' : '' });
+          if (x) run(() => BB.post(`/api/applications/${a.id}/screen`, { verdict: v, note: x.note }), `Marked ${v}`);
+        }));
         $$('[data-sched]', el).forEach((b) => (b.onclick = () => BB.schedule(a, b.dataset.sched)));
         BB.callOutcomes = a.call_outcomes;
         on('[data-offer]', () => BB.recordOffer(a));
