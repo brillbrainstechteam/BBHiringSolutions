@@ -432,6 +432,10 @@ route('GET', '/api/jobs', T, (ctx) => {
 });
 // One "Client to be confirmed" per agency (the super admin's has no agency), made the first time it is needed. No
 // messages go to it; the job's client is changed to the real one later.
+const cleanAdMatch = (list) => (Array.isArray(list) ? list : []).slice(0, 30).map((x) => {
+  const t = (v) => String(v || '').replace(/\s+/g, ' ').trim().slice(0, 120);
+  return { platform: x.platform === 'LinkedIn' ? 'LinkedIn' : 'Meta', campaign: t(x.campaign), adset: t(x.adset), ad: t(x.ad) };
+}).filter((x) => x.campaign || x.adset || x.ad);
 const TBC = 'Client to be confirmed';
 function placeholderClient(agencyId) {
   const c = get('SELECT * FROM clients WHERE placeholder=1 AND removed=0 AND agency_id IS ?', agencyId || null); if (c) return c;
@@ -482,6 +486,8 @@ route('PATCH', '/api/jobs/:id', T, (ctx) => {
   const allowed = ['title', 'city', 'openings', 'sal_from', 'sal_to', 'exp_from', 'exp_to', 'notice_days', 'skills', 'priority', 'rounds', 'screening_qs', 'notes', 'archived'];
   if (ctx.user.level !== 'sub') allowed.push('recruiter_id');
   const patch = {}; for (const k of allowed) if (ctx.body[k] !== undefined) patch[k] = ctx.body[k];
+  // The ads this job runs under (Meta / LinkedIn campaign, ad set, ad names); applicants from those ads land on it.
+  if (ctx.body.ad_match !== undefined) patch.ad_match = cleanAdMatch(ctx.body.ad_match);
   // Every level can set the real client (for a job first posted as "Client to be confirmed"), within their own agency.
   if (ctx.body.client_id && ctx.body.client_id !== j.client_id) {
     const nc = get('SELECT * FROM clients WHERE id=? AND removed=0 AND merged_into IS NULL', ctx.body.client_id); mustSee(seeClient(ctx.user, nc), 'client');

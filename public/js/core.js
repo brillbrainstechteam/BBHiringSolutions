@@ -423,7 +423,9 @@ const fromHash = () => { const h = location.hash.replace(/^#/, ''); if (h) { BB.
 // Where a WhatsApp chat started: the first message names the page and button (and the ad or link source, ?src=),
 // and the click is counted for the WhatsApp clicks report. Links that already carry a message (sharing) are left alone.
 const WA_PAGE = { landing: 'Home page', hire: 'Employer form', apply: 'Job seeker form', partners: 'Partners page', client: 'Client account', candidate: 'Candidate account' };
-BB.adSource = () => { let s = ''; try { const p = new URLSearchParams(location.search); s = p.get('src') || p.get('utm_source') || sessionStorage.getItem('bb_src') || ''; if (s) sessionStorage.setItem('bb_src', s); } catch { /* private mode */ } return s.slice(0, 40); };
+// No ?src= on the link (a LinkedIn job's apply link, a post): the site the visitor came from still names the platform.
+const refSource = () => { const h = (() => { try { return new URL(document.referrer).hostname; } catch { return ''; } })(); return /(^|\.)linkedin\.com$|(^|\.)lnkd\.in$/.test(h) ? 'linkedin' : /(^|\.)instagram\.com$/.test(h) ? 'ig' : /(^|\.)facebook\.com$|(^|\.)fb\.com$|(^|\.)fb\.me$/.test(h) ? 'fb' : ''; };
+BB.adSource = () => { let s = ''; try { const p = new URLSearchParams(location.search); s = p.get('src') || p.get('utm_source') || sessionStorage.getItem('bb_src') || refSource() || ''; if (s) sessionStorage.setItem('bb_src', s); } catch { /* private mode */ } return s.slice(0, 40); };
 // The ad a visitor came from: ?campaign= ?adset= ?ad= (or utm_campaign, utm_term, utm_content), kept for the visit.
 BB.adParams = () => {
   try {

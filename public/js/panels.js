@@ -92,13 +92,20 @@
     const appRow = (a) => `<tr class="click" data-open="application:${a.id}"><td class="mono">${a.id}</td><td>${esc(a.candidate_name)}</td><td><span class="badge b-primary">${esc(a.step)}</span>${a.on_hold ? ' <span class="badge b-outline">on hold</span>' : ''}</td><td>${resultBadge(a.result)}</td><td>${scoreBadge(a.score)}</td><td><span class="days ${a.days_in_step >= 7 && a.result === 'open' ? 'late' : ''}">${a.days_in_step}d</span></td></tr>`;
     // Links to paste into a Meta ad and a LinkedIn job or ad: each applicant becomes a candidate and an application
     // on this job, with the source and ad names. Applications open only once the job description is approved.
+    // The ads this job runs under, and the links to paste: anyone applying from one of these ads becomes an application here.
     const adLinks = (j) => {
-      const base = `${location.origin}/apply?${new URLSearchParams({ job: j.id, want: j.title, city: j.city || '' }).toString().replace(/\+/g, '%20')}`;
+      const maps = j.ad_match || [];
+      const liLink = (m) => `${location.origin}/apply?${['src=linkedin', ...[['campaign', m.campaign], ['adset', m.adset], ['ad', m.ad]].filter(([, v]) => v).map(([k, v]) => `${k}=${encodeURIComponent(v)}`)].join('&')}`;
+      const mapTable = `<div class="card tbl-wrap"><table class="tbl"><thead><tr><th>Platform</th><th>Campaign</th><th>Ad set</th><th>Ad</th><th></th></tr></thead><tbody>${maps.map((m, i) => `<tr><td>${esc(m.platform)}</td><td>${esc(m.campaign || 'any')}</td><td>${esc(m.adset || 'any')}</td><td>${esc(m.ad || 'any')}</td><td class="nowrap">${m.platform === 'LinkedIn' ? `<button class="btn sm" data-copy="${esc(liLink(m))}">Copy apply link</button> ` : ''}<button class="btn sm ghost" data-admap-del="${i}" title="Remove">✕</button></td></tr>`).join('') || '<tr><td colspan="5" class="empty">No ads added yet. Add the Meta or LinkedIn names this job is advertised under.</td></tr>'}</tbody></table></div>
+        <div class="row" style="margin-top:8px"><button class="btn sm" data-admap-add="Meta">+ Meta ad</button><button class="btn sm" data-admap-add="LinkedIn">+ LinkedIn job or ad</button></div>`;
+      return `<div class="sec"><h3>Ads for this job</h3>${mapTable}</div>${adLinksOld(j)}`;
+    };
+    const adLinksOld = (j) => {
+      const base = `${location.origin}/apply`;
       const meta = 'src={{site_source_name}}&campaign={{campaign.name}}&adset={{adset.name}}&ad={{ad.name}}';
-      const li = `${base}&src=linkedin&campaign=LinkedIn&adset=${encodeURIComponent(`${j.title}${j.city ? ` ${j.city}` : ''}`)}`;
       const row = (label, v, note) => `<div class="ad-link"><div class="small"><b>${label}</b>${note ? ` <span class="faint">· ${note}</span>` : ''}</div><div class="row"><code class="mono tiny grow">${esc(v)}</code><button class="btn sm" data-copy="${esc(v)}">Copy</button></div></div>`;
-      return `<div class="sec"><h3>Ad links</h3><div class="card pad stack-sm">${j.jd_approved ? '' : '<div class="notice small">Approve the job description first. Until then applicants are saved as candidates but no application opens on this job.</div>'}
-        ${row('Meta ad · Website URL', base)}${row('Meta ad · URL parameters', meta, 'paste in the ad\'s URL parameters box; Meta fills in the names')}${row('LinkedIn job or ad · Destination / external apply URL', li, 'add &ad= with the LinkedIn job ID if you like')}</div></div>`;
+      return `<div class="sec"><h3>Links to paste</h3><div class="card pad stack-sm">${j.jd_approved ? '' : '<div class="notice small">Approve the job description first. Until then applicants are saved as candidates but no application opens on this job.</div>'}
+        ${row('Meta · Website URL', base, 'the same for every ad')}${row('Meta · URL parameters', meta, 'the same for every ad')}<div class="small"><b>LinkedIn</b> <span class="faint">· add the LinkedIn job or ad above, then use its <b>Copy apply link</b> as the apply URL on LinkedIn</span></div></div></div>`;
     };
     return {
       head: `<div class="row"><h2>${esc(j.title)}</h2><span class="mono faint">${esc(j.id)}</span>${statusBadge(j.status)}${j.reopened ? `<span class="badge b-gold">${esc(j.reopened)}</span>` : ''}<span class="badge b-outline">${esc(j.priority)}</span></div><div class="small muted">${j.client_tbc ? '<span class="badge b-amber">Client to be confirmed</span>' : `<a href="#" data-open="client:${j.client_id}">${esc(j.client_name)}</a>`} · ${esc(j.city)} · ${esc(j.reason)}</div>`,
@@ -137,6 +144,18 @@
         $('[data-jd]', el).onclick = () => writeJD(j);
         $('[data-jdpdf]', el).onclick = () => BB.download(`/api/jobs/${j.id}/jd.pdf`, true);
         $('[data-editjob]', el).onclick = () => editJob(j);
+        // Ads for this job: add or remove the Meta / LinkedIn names applicants arrive with.
+        const saveMaps = (list) => run(() => BB.patch(`/api/jobs/${j.id}`, { ad_match: list }), 'Saved');
+        $$('[data-admap-del]', el).forEach((b) => (b.onclick = () => saveMaps((j.ad_match || []).filter((_, i) => i !== Number(b.dataset.admapDel)))));
+        $$('[data-admap-add]', el).forEach((b) => (b.onclick = async () => {
+          const li = b.dataset.admapAdd === 'LinkedIn';
+          const v = await BB.ask({ title: li ? 'LinkedIn job or ad for this job' : 'Meta ad for this job', fields: [
+            `<p class="small muted" style="margin-top:0">${li ? 'For a LinkedIn job post, put its job ID (the number in linkedin.com/jobs/view/<b>4484922477</b>) in Ad. For a LinkedIn ad, use the campaign / ad names. Then use this row\'s Copy apply link as the apply URL on LinkedIn.' : 'Type the names exactly as in Ads Manager. Fill only what identifies this job: an ad set name alone is enough. Empty means any.'}</p>`,
+            { name: 'campaign', label: 'Campaign name', opt: true }, { name: 'adset', label: li ? 'Ad set / campaign group (optional)' : 'Ad set name', opt: true }, { name: 'ad', label: li ? 'Ad name or LinkedIn job ID' : 'Ad name', opt: true },
+          ], ok: 'Add' });
+          if (!v) return; if (!v.campaign && !v.adset && !v.ad) return BB.toast('Fill at least one name', true);
+          saveMaps([...(j.ad_match || []), { platform: li ? 'LinkedIn' : 'Meta', campaign: v.campaign, adset: v.adset, ad: v.ad }]);
+        }));
         $('[data-setclient]', el).onclick = async (e) => {
           e.preventDefault(); const r = await BB.api('/api/clients?all=1'); const list = r.rows.filter((c) => !c.placeholder);
           const x = await BB.ask({ title: j.client_tbc ? 'Set the client' : 'Change client', fields: [{ name: 'client_id', label: 'Client', type: 'select', options: list.map((c) => [c.id, `${c.company} (${c.id})`]), value: j.client_tbc ? '' : j.client_id }], ok: 'Save', submit: (v) => BB.patch(`/api/jobs/${j.id}`, { client_id: v.client_id }) });

@@ -241,8 +241,16 @@
   }
 
   // /hire (clients) and /apply (candidates): two separate forms, each on its own link, no menus and no toggle.
-  function page(mode, r) {
-    const q = r.q; const m = MODES[mode];
+  // A job ID in the ad's names (JB-2001 in the ad set, ad or campaign) counts like ?job=; the form then shows the job.
+  async function page(mode, r) {
+    let q = r.q; const m = MODES[mode];
+    if (mode === 'job') {
+      const ad = BB.adParams(); const hit = !q.job && [ad.ad_set, ad.ad_name, ad.ad_campaign].map((v) => /(?:^|[^A-Za-z0-9])JB[-\s_]?(\d{3,})(?!\d)/i.exec(v || '')).find(Boolean);
+      if (hit) q = { ...q, job: `JB-${hit[1]}` };
+      // Otherwise the job whose saved ad names match this link (set on the job page under "Ads for this job").
+      if (!q.job && (ad.ad_set || ad.ad_name || ad.ad_campaign)) { try { const res = await fetch(`/api/public/ad-job?${new URLSearchParams({ src: BB.adSource(), ...ad })}`); if (res.ok) { const j = await res.json(); q = { ...q, job: j.id, want: j.title, city: q.city || j.city }; } } catch { /* no match: the plain form */ } }
+      if (q.job && !q.want) { try { const res = await fetch(`/api/public/job/${encodeURIComponent(q.job)}`); if (res.ok) { const j = await res.json(); q = { ...q, want: j.title, city: q.city || j.city }; } } catch { /* the form still works without the job line */ } }
+    }
     $('#app').innerHTML = BB.split({ top: BB.publicTop(m.top), eyebrow: m.eyebrow, title: m.title, centered: true, card: '<div data-leadcard></div>' });
     const card = $('[data-leadcard]'); card.innerHTML = formHtml(mode, q, true);
     mountForm(card, mode, q, null, true);
