@@ -246,7 +246,7 @@
         <div class="row cand-seg">${filtered ? '<button class="btn sm ghost" data-clear>Clear filters</button>' : ''}${saved.length ? sel('saved', 'Open a segment…', saved.map((x) => [x.id, x.name])) : ''}${editing ? `<button class="btn sm primary" data-updseg>Update “${esc(editing.name)}”</button>` : ''}<button class="btn sm" data-save>${editing ? 'Save as new segment' : 'Save as segment'}</button></div></div>
     </section>`;
     el.innerHTML = `${head}
-    <div class="row small bulkbar cand-bulk" data-bulkbar><span class="sel-count" data-selcount>Tick candidates to act on them</span>
+    <div class="row small bulkbar cand-bulk" data-bulkbar><span class="sel-count" data-selcount>Select the checkboxes to take actions</span>
       ${bulkBtn('add_to_job', 'Add to a job')}${me.level !== 'sub' ? bulkBtn('alert', 'Send job alert', 'gold') : ''}${bulkBtn('set_looking', 'Set status')}${bulkBtn('note', 'Add note')}${bulkBtn('followup', 'Follow-up')}${me.level !== 'sub' ? `${bulkBtn('assign', 'Assign recruiter')}${bulkBtn(q.archived ? 'unarchive' : 'archive', q.archived ? 'Unarchive' : 'Archive')}` : ''}${superAdmin ? bulkBtn('download', 'Download selected') : ''}<button class="btn sm ghost" data-unsel hidden>Clear selection</button></div>
     <div class="card cand-table">${BB.table([
       { t: 'ID', cls: 'stick stick-1', f: (c) => `<span class="mono">${c.id}</span>${c.is_new ? ' <span class="dot new" title="New"></span>' : ''}` },
@@ -268,7 +268,7 @@
     wireDl(actions); BB.wirePager(el);
     // Selection bar: says how many are ticked; the actions switch on only when something is ticked.
     const bar = $('[data-bulkbar]', el);
-    const onSel = () => { const n = BB.selected(el).length; $('[data-selcount]', bar).textContent = n ? `${n} selected` : 'Tick candidates to act on them'; bar.classList.toggle('has-sel', n > 0); $$('[data-bulk]', bar).forEach((b) => { b.disabled = !n; }); $('[data-unsel]', bar).hidden = !n; };
+    const onSel = () => { const n = BB.selected(el).length; $('[data-selcount]', bar).textContent = n ? `${n} selected` : 'Select the checkboxes to take actions'; bar.classList.toggle('has-sel', n > 0); $$('[data-bulk]', bar).forEach((b) => { b.disabled = !n; }); $('[data-unsel]', bar).hidden = !n; };
     BB.wireSelect(el, onSel);
     $('[data-unsel]', bar).onclick = () => { $$('[data-sel], [data-all]', el).forEach((x) => { x.checked = false; }); onSel(); };
     // A shadow on the fixed columns once the table is scrolled sideways, so it is clear more columns sit to the right.
