@@ -230,7 +230,7 @@
     const mf = $('.more-f', el); if (mf) mf.ontoggle = () => { BB.moreFiltersOpen = mf.open; };
     { const cl = $('[data-clear]', el); if (cl) cl.onclick = clearCandFilters; }
     wireDl(actions); BB.wirePager(el); BB.wireSelect(el);
-    $('[data-pdl]', el).forEach((b) => b.addEventListener('click', () => BB.download(`/api/candidates/${b.dataset.pdl}/profile.pdf`)));
+    $$('[data-pdl]', el).forEach((b) => b.addEventListener('click', () => BB.download(`/api/candidates/${b.dataset.pdl}/profile.pdf`)));
     let t; $('[data-q]', el).oninput = (e) => { clearTimeout(t); t = setTimeout(() => BB.setQ({ q: e.target.value, page: 1 }), 350); };
     $$('[data-f]', el).forEach((i) => (i.onchange = () => { if (i.dataset.f === 'saved') { const sv = saved.find((x) => String(x.id) === i.value); if (sv) { const sq = JSON.parse(sv.query); BB.setQ(Object.fromEntries(Object.keys({ ...q, ...sq }).map((k) => [k, sq[k] || '']))); } return; } BB.setQ({ [i.dataset.f]: i.type === 'checkbox' ? (i.checked ? '1' : '') : i.value, ...(i.dataset.f === 'industry' ? { job: '' } : {}), page: 1 }); }));
     $('[data-save]', el).onclick = () => BB.ask({ title: 'Save as segment', note: `${r.total ?? r.rows.length} candidates match these filters now. The segment keeps the filters, so it stays up to date.`, fields: [{ name: 'name', label: 'Segment name', placeholder: 'e.g. Jaipur sales, 3+ yrs jewellery' }, { name: 'shared', label: 'Share with the whole team', type: 'check' }], submit: (v) => BB.post('/api/saved-searches', { name: v.name, shared: v.shared, query: { ...q, page: undefined, tab: undefined } }) }).then((x) => { if (x) { BB.toast('Segment saved — see it under Segments'); BB.refreshPage(); } });
