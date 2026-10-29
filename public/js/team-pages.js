@@ -480,6 +480,9 @@
     actions.innerHTML = `<div class="seg">${[7, 30].map((n) => `<button data-days="${n}" class="${String(days) === String(n) && !q.from ? 'on' : ''}">${n} days</button>`).join('')}</div><input type="date" data-from value="${esc(q.from || '')}" style="width:auto"><input type="date" data-to value="${esc(q.to || '')}" style="width:auto">`;
     $$('[data-days]', actions).forEach((b) => (b.onclick = () => BB.setQ({ days: b.dataset.days, from: '', to: '' })));
     $('[data-from]', actions).onchange = (e) => BB.setQ({ from: e.target.value }); $('[data-to]', actions).onchange = (e) => BB.setQ({ to: e.target.value });
+    // Person filter: "Whole team" or one person (admins: themselves and their sub admins; super admin: anyone, after the agency).
+    const personFilter = (people) => `<div class="filters"><select data-person aria-label="Show performance for"><option value="">${d.level === 'admin' ? 'Whole team' : 'Everyone'}</option>${people.map((p) => `<option value="${p.id}" ${q.person === p.id ? 'selected' : ''}>${esc(p.name)}${p.id === me.id ? ' (me)' : ''} · ${BB.levelName(p.level)}</option>`).join('')}</select></div>`;
+    const wirePersonFilter = () => { const s = $('[data-person]', el); if (s) s.onchange = () => BB.setQ({ person: s.value }); };
     const dots = (l) => `<span class="dots7">${l.map((x) => `<i class="${x.status === 'Approved' ? 'ok' : x.status ? 'sub' : ''}" title="${x.day}: ${x.status || 'missing'}"></i>`).join('')}</span>`;
     const stBadge = (s) => `<span class="badge ${s === 'Active' ? 'b-green' : s.startsWith('Inactive') || s === 'Login off' || s === 'Paused' ? 'b-red' : 'b-amber'}">${esc(s)}</span>`;
     const peopleTable = (rows) => BB.table([{ t: 'Person', f: (p) => `<b>${esc(p.name)}</b><div class="tiny muted">${BB.levelName(p.level)} · ${esc(p.agency_name || '')}</div>` }, { t: 'Status', f: (p) => stBadge(p.status) }, { t: 'Last login', f: (p) => BB.daysAgo(p.last_login), hideSm: 1 }, { t: 'Added', num: 1, f: (p) => p.added }, { t: 'Screened', num: 1, f: (p) => p.screened }, { t: 'Interviews', num: 1, f: (p) => p.interviews }, { t: 'Sent', num: 1, f: (p) => p.sent }, { t: 'Offers', num: 1, f: (p) => p.offers }, { t: 'Joined', num: 1, f: (p) => p.joined }, { t: 'Logs 7d', f: (p) => dots(p.logs) }, { t: 'Target', num: 1, f: (p) => (p.level === 'sub' ? `${p.target}%` : '—') }], rows, { open: (p) => `person:${p.id}` });
@@ -489,13 +492,16 @@
         <div class="card pad" style="margin-top:14px"><h3 style="margin-bottom:24px">My activity, last 7 days</h3><div class="bars7">${d.activity.map((x) => `<div style="height:${(x.n / max) * 100}%" title="${x.n}"><span>${new Date(x.day).toLocaleDateString('en-IN', { weekday: 'short' })}</span></div>`).join('')}</div><div style="height:16px"></div></div>
         <p class="small muted">Target = average of screened vs ${BB.boot.match ? '' : ''}20, sent vs 6, joined vs 1 per 30 days (scaled for the period), each capped at 100%.</p>`;
     } else if (d.level === 'admin') {
-      const t = d.team;
-      el.innerHTML = `<div class="grid g3" style="grid-template-columns:repeat(auto-fit,minmax(140px,1fr))">${[['Members', t.members], ['Active today', t.active], ['Screened', t.screened], ['Sent to client', t.sent], ['Offers', t.offers], ['Joined', t.joined]].map(([l, v]) => `<div class="card stat"><div class="l">${l}</div><div class="v">${v}</div></div>`).join('')}</div><div class="card" style="margin-top:14px">${peopleTable(d.people)}</div>`;
+      const t = d.team; const one = q.person ? d.people.find((p) => p.id === q.person) : null;
+      const cards = one ? [['Added', one.added], ['Screened', one.screened], ['Interviews', one.interviews], ['Sent to client', one.sent], ['Offers', one.offers], ['Joined', one.joined], ...(one.level === 'sub' ? [['Target', one.target + '%']] : [])] : [['Members', t.members], ['Active today', t.active], ['Screened', t.screened], ['Sent to client', t.sent], ['Offers', t.offers], ['Joined', t.joined]];
+      el.innerHTML = `${personFilter(d.people)}<div class="grid g3" style="grid-template-columns:repeat(auto-fit,minmax(140px,1fr))">${cards.map(([l, v]) => `<div class="card stat"><div class="l">${l}</div><div class="v">${v}</div></div>`).join('')}</div><div class="card" style="margin-top:14px">${peopleTable(one ? [one] : d.people)}</div>`;
+      wirePersonFilter();
     } else {
       el.innerHTML = `<div class="card"><div class="card-h"><h3>Agencies</h3>${q.agency ? '<button class="btn sm right" data-allag>Show all</button>' : ''}</div>${BB.table([{ t: 'Agency', f: (a) => `<b>${esc(a.name)}</b><div class="tiny mono muted">${a.id}</div>` }, { t: 'Status', f: (a) => `<span class="badge ${a.view_status === 'On track' ? 'b-green' : a.view_status === 'Needs attention' ? 'b-amber' : 'b-red'}">${esc(a.view_status)}</span>` }, { t: 'Active today', num: 1, f: (a) => `${a.active_today}/${a.people}` }, { t: 'Open jobs', num: 1, f: (a) => a.open_jobs }, { t: 'Active apps', num: 1, f: (a) => a.active_apps }, { t: 'Sent', num: 1, f: (a) => a.sent }, { t: 'Joined', num: 1, f: (a) => a.joined }, { t: 'Fee billed', num: 1, f: (a) => inr(a.fee) }, { t: 'Agency share', num: 1, f: (a) => inr(a.share) }, { t: 'Log %', num: 1, f: (a) => `${a.log_pct}%` }], d.agencies)}</div>
-        <div class="card" style="margin-top:14px"><div class="card-h"><h3>All admins and sub admins</h3></div>${peopleTable(d.people.filter((p) => !q.agency || p.agency_id === q.agency))}</div>`;
-      $$('.tbl', el)[0].querySelectorAll('tbody tr').forEach((tr, i) => { tr.classList.add('click'); tr.onclick = () => BB.setQ({ agency: d.agencies[i].id }); });
-      const sa = $('[data-allag]', el); if (sa) sa.onclick = () => BB.setQ({ agency: '' });
+        <div class="card" style="margin-top:14px"><div class="card-h"><h3>Admins and sub admins</h3>${personFilter(d.people.filter((p) => !q.agency || p.agency_id === q.agency))}</div>${peopleTable(d.people.filter((p) => (!q.agency || p.agency_id === q.agency) && (!q.person || p.id === q.person)))}</div>`;
+      wirePersonFilter();
+      $$('.tbl', el)[0].querySelectorAll('tbody tr').forEach((tr, i) => { tr.classList.add('click'); tr.onclick = () => BB.setQ({ agency: d.agencies[i].id, person: '' }); });
+      const sa = $('[data-allag]', el); if (sa) sa.onclick = () => BB.setQ({ agency: '', person: '' });
     }
   };
 
@@ -555,16 +561,20 @@
 
   // ---------- Reports (17) ----------
   const REPORTS = [['funnel', 'Hiring funnel'], ['clients', 'Per client'], ['jobs', 'Per job'], ['sources', 'Source report'], ['performance', 'Recruiter / agency performance'], ['money', 'Money'], ['replacements', 'Replacements'], ['bank', 'Resume bank'], ['logs', 'Daily logs']];
+  // Sub admins see only their own performance and daily logs; admins their agency; the super admin everything.
   P.reports = async ({ el, actions, q, me }) => {
-    const name = q.r || 'funnel';
+    const sub = me.level === 'sub'; const list = sub ? [['performance', 'My performance'], ['logs', 'My daily logs']] : REPORTS;
+    const name = list.some(([k]) => k === q.r) ? q.r : list[0][0];
     const from = q.from || new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10); const to = q.to || BB.istDay();
-    const qs = BB.qs({ from, to, agency: q.agency, client: q.client, job: q.job, city: q.city, dept: q.dept });
-    const d = await BB.api(`/api/reports/${name}?${qs}`);
-    const ags = isSuper(me) ? (await BB.api('/api/users')).agencies : [];
+    const byPerson = !sub && ['performance', 'logs'].includes(name);
+    const qs = BB.qs({ from, to, agency: q.agency, client: q.client, job: q.job, city: q.city, dept: q.dept, person: byPerson ? q.person : undefined });
+    const [d, users] = await Promise.all([BB.api(`/api/reports/${name}?${qs}`), sub ? null : BB.api('/api/users')]);
+    const ags = isSuper(me) ? users.agencies : [];
+    const people = byPerson ? users.users.filter((x) => x.level !== 'super' && (!q.agency || x.agency_id === q.agency)) : [];
     actions.innerHTML = dl(`/api/reports/${name}?${qs}&format=xlsx`); wireDl(actions);
     const cols = Object.keys(d.rows[0] || {});
-    el.innerHTML = `<div class="filters">${REPORTS.map(([k, l]) => `<span class="chip ${name === k ? 'on' : ''}" data-r="${k}">${l}</span>`).join('')}</div>
-      <div class="filters"><label class="small">From <input type="date" data-f="from" value="${from}"></label><label class="small">To <input type="date" data-f="to" value="${to}"></label>${ags.length ? `<select data-f="agency"><option value="">All agencies</option>${ags.map((a) => `<option value="${a.id}" ${q.agency === a.id ? 'selected' : ''}>${esc(a.name)}</option>`).join('')}</select>` : ''}${name === 'bank' ? `<select data-f="city"><option value="">All cities</option>${BB.boot.cities.map((c) => `<option ${q.city === c ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select>` : ''}</div>
+    el.innerHTML = `<div class="filters">${list.map(([k, l]) => `<span class="chip ${name === k ? 'on' : ''}" data-r="${k}">${l}</span>`).join('')}</div>
+      <div class="filters"><label class="small">From <input type="date" data-f="from" value="${from}"></label><label class="small">To <input type="date" data-f="to" value="${to}"></label>${ags.length ? `<select data-f="agency"><option value="">All agencies</option>${ags.map((a) => `<option value="${a.id}" ${q.agency === a.id ? 'selected' : ''}>${esc(a.name)}</option>`).join('')}</select>` : ''}${people.length ? `<select data-f="person"><option value="">${isSuper(me) ? 'Everyone' : 'Me and my team'}</option>${people.map((x) => `<option value="${x.id}" ${q.person === x.id ? 'selected' : ''}>${esc(x.name)}${x.id === me.id ? ' (me)' : ''} · ${BB.levelName(x.level)}</option>`).join('')}</select>` : ''}${name === 'bank' ? `<select data-f="city"><option value="">All cities</option>${BB.boot.cities.map((c) => `<option ${q.city === c ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select>` : ''}</div>
       ${name === 'funnel' ? `<div class="card pad">${d.rows.map((r) => { const max = Math.max(1, ...d.rows.map((x) => x.count)); return `<div class="hbar"><span class="l" style="width:150px">${esc(r.step)}</span><div class="b bar gold"><i style="width:${(r.count / max) * 100}%"></i></div><span class="v">${r.count}</span><span class="small muted" style="width:70px">${r.drop ? '−' + r.drop : ''}</span></div>`; }).join('')}</div>`
         : `<div class="card">${BB.table(cols.map((c) => ({ t: c.replace(/_/g, ' '), num: typeof d.rows[0][c] === 'number', f: (r) => (typeof r[c] === 'number' && /fee|billed|paid|total|gst|balance|received|share|tds/.test(c) ? inr(r[c]) : esc(r[c])) })), d.rows, { empty: 'No data for these filters.' })}</div>`}`;
     $$('[data-r]', el).forEach((c) => (c.onclick = () => BB.setQ({ r: c.dataset.r })));

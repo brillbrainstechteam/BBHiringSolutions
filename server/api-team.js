@@ -1406,8 +1406,13 @@ route('GET', '/api/candidates/:id/profile.pdf', T, (ctx) => {
 });
 
 // ---------- reports (17) ----------
-route('GET', '/api/reports/:name', ADMINS, (ctx) => {
+// Reports by level: the super admin sees everything; an admin sees their agency; a sub admin only their own
+// performance and daily logs.
+const SUB_REPORTS = ['performance', 'logs'];
+const seePerson = (u, x) => isSuper(u) || x.id === u.id || (u.level === 'admin' && x.agency_id === u.agency_id);
+route('GET', '/api/reports/:name', T, (ctx) => {
   const u = ctx.user; const q = ctx.query; const name = ctx.params.name;
+  if (u.level === 'sub' && !SUB_REPORTS.includes(name)) throw httpError(403, 'Sub admins see their own performance and daily logs only.');
   const from = q.from ? new Date(q.from).toISOString() : new Date(Date.now() - 30 * 86400000).toISOString();
   const to = q.to ? new Date(new Date(q.to).getTime() + 86399000).toISOString() : now();
   const inR = (t) => t && t >= from && t <= to;
@@ -1442,12 +1447,13 @@ route('GET', '/api/reports/:name', ADMINS, (ctx) => {
   } else if (name === 'sources') {
     const m = {};
     const add = (src, k) => { m[src || 'Other'] = m[src || 'Other'] || { source: src || 'Other', client_leads: 0, candidate_leads: 0, applications: 0, hires: 0 }; m[src || 'Other'][k]++; };
-    for (const c of all('SELECT source, created_at FROM clients')) if (inR(c.created_at)) add(c.source, 'client_leads');
-    for (const c of all('SELECT source, created_at FROM candidates')) if (inR(c.created_at)) add(c.source, 'candidate_leads');
+    const mine = (r) => isSuper(u) || r.agency_id === u.agency_id; // admins count only their own agency's leads
+    for (const c of all('SELECT source, created_at, agency_id FROM clients')) if (inR(c.created_at) && mine(c)) add(c.source, 'client_leads');
+    for (const c of all('SELECT source, created_at, agency_id FROM candidates')) if (inR(c.created_at) && mine(c)) add(c.source, 'candidate_leads');
     for (const a of apps) { if (inR(a.created_at)) add(a.source, 'applications'); if (a.result === 'Hired' && inR(a.joined_at)) add(a.source, 'hires'); }
     rows = Object.values(m).sort((a, b) => b.candidate_leads + b.client_leads - (a.candidate_leads + a.client_leads));
   } else if (name === 'performance') {
-    rows = all("SELECT * FROM users WHERE level!='super'").filter((x) => (isSuper(u) || x.agency_id === u.agency_id) && (!q.agency || x.agency_id === q.agency) && (!q.person || x.id === q.person)).map((x) => ({ person: `${x.id} ${x.name}`, agency: V.agencyName(x.agency_id), level: x.level, ...perfOf(x.id, from, to) }));
+    rows = all("SELECT * FROM users WHERE level!='super'").filter((x) => seePerson(u, x) && (!q.agency || x.agency_id === q.agency) && (!q.person || x.id === q.person)).map((x) => ({ person: `${x.id} ${x.name}`, agency: V.agencyName(x.agency_id), level: x.level, ...perfOf(x.id, from, to) }));
   } else if (name === 'money') {
     rows = all("SELECT * FROM bills WHERE status NOT IN ('Draft')").filter((b) => seeBill(u, b) && inR(b.issued_at || b.created_at) && (!q.agency || b.agency_id === q.agency) && (!q.client || b.client_id === q.client)).map(L.billView).map((b) => ({ bill: b.bill_no || b.id, client: get('SELECT company FROM clients WHERE id=?', b.client_id).company, agency: V.agencyName(b.agency_id), fee: b.fee, gst: b.gst, total: b.total, received: b.paid, tds: b.tds, balance: b.balance, status: b.view_status, agency_share: b.agency_share, payout: b.payout_status }));
   } else if (name === 'replacements') {
@@ -1458,7 +1464,7 @@ route('GET', '/api/reports/:name', ADMINS, (ctx) => {
     for (const c of cands) { const k = `${c.city || '—'}|${c.department || '—'}`; m[k] = m[k] || { city: c.city || '—', department: c.department || '—', active: 0, new_in_range: 0, fresh_90: 0, stale_90: 0 }; if (['Actively looking', 'Open to offers'].includes(c.looking)) m[k].active++; if (inR(c.created_at)) m[k].new_in_range++; if (L.daysBetween(c.last_updated || c.created_at) <= 90) m[k].fresh_90++; else m[k].stale_90++; }
     rows = Object.values(m).sort((a, b) => b.active - a.active);
   } else if (name === 'logs') {
-    const people = all("SELECT * FROM users WHERE level!='super' AND status='On'").filter((x) => (isSuper(u) || x.agency_id === u.agency_id) && (!q.person || x.id === q.person));
+    const people = all("SELECT * FROM users WHERE level!='super' AND status='On'").filter((x) => seePerson(u, x) && (!q.person || x.id === q.person));
     const days = Math.min(92, Math.max(1, Math.round((new Date(to) - new Date(from)) / 86400000)));
     rows = people.map((x) => { const logs = all('SELECT day, status FROM logs WHERE user_id=?', x.id).filter((l) => l.day >= from.slice(0, 10) && l.day <= to.slice(0, 10)); return { person: `${x.id} ${x.name}`, agency: V.agencyName(x.agency_id), days, submitted: logs.length, approved: logs.filter((l) => l.status === 'Approved').length, missing: Math.max(0, days - logs.length) }; });
   } else throw httpError(404, 'Unknown report');

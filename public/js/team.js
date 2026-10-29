@@ -29,7 +29,7 @@
     ['clients', 'Clients', 'building'], ['jobs', 'Job openings', 'brief'], ['candidates', 'Candidates', 'users'], ['applications', 'Applications', 'flow'],
     ['interviews', 'Interviews', 'cal', null, 'pending'], ['whatsapp', 'WhatsApp', 'chat', null, 'unread'],
     ['performance', 'Performance', 'chart'], ['logs', 'Daily logs', 'note'], ['bills', 'Bills', 'rupee', ['super', 'admin']], ['money', 'Money', 'money', ['super']],
-    ['reports', 'Reports', 'report', ['super', 'admin']], ['logins', 'Logins & team', 'key'], ['settings', 'Settings', 'cog'],
+    ['reports', 'Reports', 'report'], ['logins', 'Logins & team', 'key'], ['settings', 'Settings', 'cog'],
   ];
   const GROUP = { myday: 'Overview', dashboard: 'Overview', leads: 'Hiring', clients: 'Hiring', jobs: 'Hiring', candidates: 'Hiring', applications: 'Hiring', interviews: 'Hiring', whatsapp: 'Messages', performance: 'Team', logs: 'Team', bills: 'Money', money: 'Money', reports: 'Money', logins: 'Admin', settings: 'Admin' };
   const HELP = {
@@ -46,7 +46,7 @@
     logs: 'One log a day: tasks done, problems, plan for tomorrow. Admins approve their sub admins\' logs.',
     bills: 'A bill is made when a candidate is marked Joined. Fee = % of yearly CTC; the agency share is a % of the fee.',
     money: 'Billed, received, overdue and agency shares due, by week and month.',
-    reports: 'Every report downloads to Excel with your filters on, only within what you are allowed to see.',
+    reports: 'Super admin: every report, downloadable. Admins: their agency, including each sub admin. Sub admins: their own performance and daily logs.',
     logins: 'Agencies, admins and sub admins. New or reset passwords are shown once and sent once on WhatsApp.',
     settings: 'Lists, fees, WhatsApp rules and limits (super admin), and departments & roles (everyone). A change applies to new records only.',
   };
