@@ -1068,8 +1068,10 @@ route('POST', '/api/users', ADMINS, (ctx) => {
   const u = ctx.user; const b = ctx.body;
   if (!b.name) throw httpError(400, 'Enter the name', 'name');
   const level = isSuper(u) ? (b.level || 'sub') : 'sub';
+  if (!['super', 'admin', 'sub'].includes(level)) throw httpError(400, 'Pick the level: sub admin, admin or super admin', 'level');
   const agency = isSuper(u) ? b.agency_id : u.agency_id;
   if (level !== 'super' && !agency) throw httpError(400, 'Pick the agency', 'agency_id');
+  if (level !== 'super' && !get('SELECT 1 FROM agencies WHERE id=?', agency)) throw httpError(400, 'That agency does not exist', 'agency_id');
   const username = (b.username || usernameFrom(b.name)).toLowerCase().trim();
   if (!/^[a-z0-9._-]{3,}$/.test(username)) throw httpError(400, 'Username: at least 3 letters, numbers or dots', 'username');
   if (get('SELECT 1 FROM users WHERE username=?', username)) throw httpError(400, 'This username is already used', 'username');
@@ -1108,16 +1110,23 @@ route('PATCH', '/api/users/:id', ADMINS, (ctx) => {
   return D.edit('users', t.id, patch, ctx.actor.label, ctx.ip);
 });
 route('POST', '/api/agencies', SUPER, (ctx) => {
-  const b = ctx.body; if (!b.name) throw httpError(400, 'Enter the agency name', 'name');
+  const b = ctx.body; const name = String(b.name || '').trim(); if (!name) throw httpError(400, 'Enter the agency name', 'name');
+  if (get('SELECT 1 FROM agencies WHERE lower(name)=lower(?)', name)) throw httpError(400, 'An agency with this name already exists', 'name');
+  // Check the admin's details before anything is saved, so a wrong number never leaves an agency behind.
+  const adminName = String(b.admin_name || '').trim(); let phone = null; let email = null;
+  if (adminName || b.admin_whatsapp) {
+    if (!adminName) throw httpError(400, 'Enter the admin\'s name', 'admin_name');
+    phone = L.digits10(b.admin_whatsapp); if (!L.validPhone(phone)) throw httpError(400, 'Enter the admin\'s 10-digit WhatsApp number', 'admin_whatsapp');
+    email = String(b.admin_email || '').trim() || null; if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) throw httpError(400, 'Enter a valid email, or leave it empty', 'admin_email');
+  }
   const id = D.nextId('AG');
-  insert('agencies', { id, name: b.name, city: b.city || '', since: L.istDay(), status: 'Active', share_pct: b.share_pct === '' || b.share_pct === undefined ? null : Number(b.share_pct), created_at: now() });
-  D.history(ctx.actor.label, 'create', id, null, null, b.name);
+  insert('agencies', { id, name, city: b.city || '', since: L.istDay(), status: 'Active', share_pct: b.share_pct === '' || b.share_pct === undefined ? null : Number(b.share_pct), created_at: now() });
+  D.history(ctx.actor.label, 'create', id, null, null, name);
   let admin = null;
-  if (b.admin_name) {
-    const phone = L.digits10(b.admin_whatsapp); if (!L.validPhone(phone)) throw httpError(400, 'Enter the admin\'s 10-digit WhatsApp number', 'admin_whatsapp');
-    let username = usernameFrom(b.admin_name); let i = 2; const base = username; while (get('SELECT 1 FROM users WHERE username=?', username)) username = `${base}${i++}`;
+  if (adminName) {
+    let username = usernameFrom(adminName); let i = 2; const base = username; while (get('SELECT 1 FROM users WHERE username=?', username)) username = `${base}${i++}`;
     const pw = L.newPassword(); const uid = D.nextId('U');
-    insert('users', { id: uid, name: b.admin_name, whatsapp: phone, level: 'admin', agency_id: id, role: 'Agency owner', username, pass_hash: L.hashPassword(pw), status: 'On', must_change: 1, created_by: ctx.user.id, created_at: now() });
+    insert('users', { id: uid, name: adminName, whatsapp: phone, email, level: 'admin', agency_id: id, role: 'Agency owner', username, pass_hash: L.hashPassword(pw), status: 'On', must_change: 1, failed: 0, created_by: ctx.user.id, created_at: now() });
     L.sendWA({ ptype: 'user', pid: uid, format: 'bbhs_team_login', vars: { username, password: pw, link: L.link('team') }, by: ctx.actor, rule: 'team_login', secret: pw, auto: true }); // quietly skipped while Meta has not approved it: the admin sees the password on screen
     admin = { id: uid, username, password: pw };
   }
@@ -1268,6 +1277,32 @@ route('POST', '/api/candidates/:id/short-cv', T, (ctx) => {
     `Current company: ${c.current_company || '—'}`, `Expected salary: ${c.exp_salary ? L.inr(c.exp_salary / 12) + ' a month' : '—'}  ·  Notice: ${c.notice_days ?? '—'} days`, '', { text: 'Skills', bold: true }, (c.skills || []).join(', ') || '—', '', 'Phone and email are shared once you choose to interview.'];
   const f = F.storeBuffer({ recordId: c.id, type: 'short_cv', name: `ShortCV-${c.id}.pdf`, buf: F.makePdf(`Profile · ${c.name.split(' ')[0]}`, lines, D.settings().business), mime: 'application/pdf', by: ctx.actor.label });
   update('candidates', c.id, { short_cv_file: String(f.id) }); return f;
+});
+// One candidate's full profile as a PDF, made fresh each time, for every team level (super, admin, sub admin).
+// Phone and email are in it only for the candidate's own agency (and the super admin), as on screen.
+route('GET', '/api/candidates/:id/profile.pdf', T, (ctx) => {
+  const c = get('SELECT * FROM candidates WHERE id=? AND removed=0', L.resolveId(ctx.params.id)); if (!c) throw httpError(404, 'Candidate not found');
+  const u = ctx.user; const show = R.phoneVisible(u, c);
+  const money = (y) => (y ? `${L.inr(y / 12)} a month` : '—'); const yrs = (n) => (n === null || n === undefined ? '—' : `${n} years`);
+  const apps = all('SELECT * FROM applications WHERE candidate_id=? ORDER BY created_at DESC', c.id).map(V.appView);
+  const lines = [
+    { text: `${c.id} · ${c.job_wanted || 'Job not given'}`, bold: true, size: 12 },
+    ...(show ? [`WhatsApp: ${c.whatsapp || '—'}  ·  Email: ${c.email || '—'}`] : ['Phone and email: held by the candidate\'s own agency']),
+    `City: ${[c.city, c.state].filter(Boolean).join(', ') || '—'}  ·  Will work in: ${(c.work_cities || []).join(', ') || c.city || '—'}`,
+    `Industry: ${c.industry || '—'}  ·  Department: ${c.department || '—'}`,
+    '', { text: 'Experience', bold: true },
+    `Total: ${yrs(c.exp_total)}  ·  In jewellery: ${c.exp_jewellery === 0 ? 'none' : yrs(c.exp_jewellery)}`,
+    `Worked with: ${(c.exp_business || []).join(', ') || '—'}  ·  Current company: ${c.current_company || '—'}`,
+    `Current salary: ${money(c.cur_salary)}  ·  Expected: ${money(c.exp_salary)}  ·  Notice: ${c.notice_days ?? '—'} days`,
+    `Looking: ${c.looking || '—'}  ·  Status: ${V.candStatus(c.id)}`,
+    '', { text: 'Skills', bold: true }, (c.skills || []).join(', ') || '—',
+    '', { text: `Applications (${apps.length})`, bold: true },
+    ...(apps.length ? apps.map((a) => `${a.id}  ${a.job_title || ''}${a.client_name ? ` (${a.client_name})` : ''}  ·  ${a.step}${a.result && a.result !== 'open' ? ` · ${a.result}` : ''}`) : ['None yet']),
+    '', `Source: ${c.source || '—'}  ·  Joined: ${L.istDay(c.created_at)}  ·  Last updated: ${L.istDay(c.last_updated || c.created_at)}`,
+  ];
+  D.history(ctx.actor.label, 'download', c.id, 'profile pdf', null, null, null, ctx.ip);
+  const safe = String(c.name || '').replace(/[^A-Za-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 30);
+  return { __file: { name: `Profile-${c.id}${safe ? `-${safe}` : ''}.pdf`, mime: 'application/pdf', buf: F.makePdf(`Candidate profile · ${c.name}`, lines, D.settings().business) } };
 });
 
 // ---------- reports (17) ----------
