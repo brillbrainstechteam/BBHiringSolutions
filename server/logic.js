@@ -277,6 +277,9 @@ function skillHit(js, cs) {
 // Where a candidate has worked (asked on the job form when they have experience), and how it lines up with clients.
 const BUSINESS_TYPES = ['Wholesaler', 'Manufacturer', 'Retailer'];
 const cleanBusiness = (v) => (Array.isArray(v) ? v : String(v || '').split(',')).map((x) => String(x).trim()).filter((x) => BUSINESS_TYPES.includes(x));
+// The job-seeker form's experience choices as years (the public form and the team's Create candidate form).
+const EXP_YEARS = { Fresher: 0, '1–3 years': 2, '3–5 years': 4, '5–10 years': 7, '10+ years': 12 };
+const JEW_YEARS = { 'No experience': 0, 'Less than 1 year': 0.5, '1–3 years': 2, '3–5 years': 4, '5–10 years': 7, '10+ years': 12 };
 const BUSINESS_OF = { 'Showroom B2C': ['Retailer'], 'Manufacturer B2B': ['Manufacturer', 'Wholesaler'], Both: ['Retailer', 'Manufacturer', 'Wholesaler'] };
 function matchScore(c, j, rating) {
   const w = settings().match.weights; let score = 0; const reasons = []; const gaps = [];
@@ -895,7 +898,7 @@ function sendSystemText(ptype, pid, text) {
 module.exports = {
   STEPS, stepIdx, digits10, validPhone, inr, istDay, istFmt, istTime, istHour, inQuiet, next9am, daysBetween, addDays, hashPassword, checkPassword, newPassword, sha,
   waHeld, IV_MODES, clientSeesIv, addIvNote, CALL_OUTCOMES, logCall, jobList, deptOf, stateOf, person, fillFormat, windowOpenUntil, sendWA, setDispatcher, alertUser, link, agencyAdmin, superAdmins,
-  computeJobStatus, jobStatusReason, recalcJob, filledCount, appsOfJob, matchScore, jobsFor, cleanBusiness, BUSINESS_TYPES, ratingOf, bestMatches, isPlaced, salaryText, autoJobAlert,
+  computeJobStatus, jobStatusReason, recalcJob, filledCount, appsOfJob, matchScore, jobsFor, cleanBusiness, BUSINESS_TYPES, EXP_YEARS, JEW_YEARS, ratingOf, bestMatches, isPlaced, salaryText, autoJobAlert,
   feeFor, gstFor, fyOf, billView, refreshBill, createBillForApp, issueBill, upiLink,
   appHist, createApplication, moveStep, closeApplication, reopenApplication, scheduleInterview, recordInterview, interviewView, ivVars, recordOffer, leftJob, jobAction,
   CONSENT_WORDING, saveConsent, intakeClient, intakeCandidate, assignLead, mergeRecords, resolveId, receiveReply, actorName,

@@ -551,10 +551,33 @@ route('GET', '/api/candidates', T, (ctx) => {
   if (['csv', 'xlsx'].includes(ctx.query.format) && !isSuper(u)) throw httpError(403, 'Only the super admin can download candidates.');
   return { ...page(ctx, rows, 'candidates', [...CAND_EXPORT, 'status']), designations: ctx.designations };
 });
-route('POST', '/api/candidates', T, (ctx) => {
+route('POST', '/api/candidates', T, async (ctx) => {
+  // Same questions and checks as the public job-seeker form (api-public /apply), plus salary, notice, industry and source.
   const b = ctx.body;
-  const r = L.intakeCandidate({ ...b, exp_salary: b.exp_salary_month ? Number(b.exp_salary_month) * 12 : b.exp_salary, cur_salary: b.cur_salary_month ? Number(b.cur_salary_month) * 12 : b.cur_salary }, { source: b.source || `Created by ${ctx.actor.label}`, by: ctx.actor });
+  if (b.email && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(String(b.email).trim())) throw httpError(400, 'Enter a valid email, or leave it empty', 'email');
+  if (!b.job_wanted) throw httpError(400, 'Pick the job they want', 'job_wanted');
+  if (b.job_wanted === 'Other' && !b.job_other) throw httpError(400, 'Type the job they want', 'job_other');
+  if (!b.city) throw httpError(400, 'Enter the city they want to work in', 'city');
+  const business = L.cleanBusiness(b.exp_business);
+  if (b.experience && b.experience !== 'Fresher' && !business.length) throw httpError(400, 'Tick where they have worked: wholesaler, manufacturer or retailer', 'exp_business');
+  const month = (v) => (v === '' || v === undefined || v === null ? null : Number(v) * 12);
+  const d = {
+    name: b.name, whatsapp: b.whatsapp, email: String(b.email || '').trim(), city: b.city, state: b.state, work_cities: [b.city],
+    job_wanted: b.job_wanted === 'Other' ? b.job_other : b.job_wanted, industry: b.industry,
+    exp_total: b.experience in L.EXP_YEARS ? L.EXP_YEARS[b.experience] : b.exp_total ?? null,
+    exp_jewellery: b.exp_jewellery in L.JEW_YEARS ? L.JEW_YEARS[b.exp_jewellery] : null, exp_business: business,
+    cur_salary: b.cur_salary_month !== undefined ? month(b.cur_salary_month) : b.cur_salary, exp_salary: b.exp_salary_month !== undefined ? month(b.exp_salary_month) : b.exp_salary,
+    notice_days: b.notice_days ?? null,
+  };
+  // Unticked consent: the candidate gets a consent request and no job alerts until they agree.
+  const r = L.intakeCandidate(d, { source: b.source || `Created by ${ctx.actor.label}`, by: ctx.actor, ...(b.consent !== undefined ? { consent: !!b.consent } : {}) });
   if (r.isNew && !r.candidate.agency_id) update('candidates', r.candidate.id, { agency_id: ctx.user.agency_id, recruiter_id: ctx.user.id, is_new: 0 });
+  if (b.cv && b.cv.base64) {
+    try {
+      const f = await F.saveFile({ recordId: r.candidate.id, type: 'cv', name: b.cv.name, base64: b.cv.base64, by: ctx.actor.label });
+      update('candidates', r.candidate.id, { cv_file: String(f.id) }); require('./cvparse').fillCandidate(r.candidate.id, b.cv.name, b.cv.base64, ctx.actor.label);
+    } catch (e) { insert('notes', { record_id: r.candidate.id, text: `CV not saved: ${e.message}`, author: ctx.actor.label, at: now() }); }
+  }
   return { id: r.candidate.id, isNew: r.isNew };
 });
 route('GET', '/api/candidates/:id', T, (ctx) => {

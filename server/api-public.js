@@ -345,8 +345,7 @@ route('POST', '/api/public/apply', { rate: { key: 'form', max: 60, minutes: 60 }
   // Required on the current form (which always sends the field); a page opened before this question existed still goes through.
   if (b.exp_business !== undefined && b.experience && b.experience !== 'Fresher' && !business.length) throw httpError(400, 'Tick where you have worked: wholesaler, manufacturer or retailer', 'exp_business');
   if (b.job_wanted === 'Other' && !b.job_other) throw httpError(400, 'Type the job you want', 'job_other');
-  const expMap = { Fresher: 0, '1–3 years': 2, '3–5 years': 4, '5–10 years': 7, '10+ years': 12 };
-  const jewMap = { 'No experience': 0, 'Less than 1 year': 0.5, '1–3 years': 2, '3–5 years': 4, '5–10 years': 7, '10+ years': 12 };
+  const expMap = L.EXP_YEARS; const jewMap = L.JEW_YEARS;
   let refBy = null;
   if (b.ref) { const rc = get('SELECT id FROM candidates WHERE id=?', L.resolveId(String(b.ref).toUpperCase())); refBy = rc ? rc.id : null; }
   const jobOk = b.job ? get('SELECT * FROM jobs WHERE id=?', String(b.job).toUpperCase()) : null;

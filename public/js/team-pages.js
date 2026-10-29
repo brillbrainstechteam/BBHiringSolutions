@@ -205,7 +205,7 @@
         <div class="grid g3"><label class="mf"><span>Source</span>${sel('source', 'Any source', s.lead_sources)}</label><label class="mf"><span>Profile last updated</span>${sel('updated', 'Any time', [['7', 'Last 7 days'], ['30', 'Last 30 days'], ['90', 'Last 90 days']])}</label><label class="mf"><span>Notice period up to (days)</span><input type="number" min="0" placeholder="Days" data-f="notice" value="${esc(q.notice || '')}"></label></div>
         <label class="row small mf-check"><input type="checkbox" data-f="stale" ${q.stale ? 'checked' : ''}> Only profiles not updated in 90+ days</label></div></details>
       ${saved.length ? sel('saved', 'Segments…', saved.map((x) => [x.id, x.name])) : ''}${anyCandFilter(q) || q.q ? '<button class="btn sm ghost" data-clear>Clear filters</button>' : ''}<button class="btn sm ghost" data-save>Save as segment</button></div>
-      <div class="small muted" style="margin:-4px 0 8px">${r.total ?? r.rows.length} candidate${(r.total ?? r.rows.length) === 1 ? '' : 's'} match${(r.total ?? r.rows.length) === 1 ? 'es' : ''}${superAdmin ? ' · Download gives exactly this list' : ''}</div>
+      <div class="small muted" style="margin:-4px 0 8px">${r.total ?? r.rows.length} candidate${(r.total ?? r.rows.length) === 1 ? '' : 's'}</div>
       <div class="row small" data-bulkbar style="margin-bottom:8px"><span class="muted">Select rows to:</span><button class="btn sm" data-bulk="add_to_job">Add to a job</button>${me.level !== 'sub' ? '<button class="btn sm gold" data-bulk="alert">Send job alert</button>' : ''}${superAdmin ? '<button class="btn sm" data-bulk="download">Download selected</button>' : ''}</div>
       <div class="card">${BB.table([{ t: 'ID', f: (c) => `<span class="mono">${c.id}</span>${c.is_new ? ' <span class="dot new"></span>' : ''}` }, { t: 'Name', f: (c) => `<b>${esc(c.name)}</b>${c.opted_out ? ' <span class="badge b-red tiny">STOP</span>' : ''}` }, { t: 'Phone', f: (c) => `<span class="mono small ${c.phone_hidden ? 'faint' : ''}">${esc(c.whatsapp)}</span>` }, { t: 'Job wanted', f: (c) => esc(c.job_wanted) }, { t: 'City', f: (c) => esc(c.city) }, { t: 'Exp', num: 1, f: (c) => c.exp_total ?? '—' }, { t: 'Jewellery', f: (c) => jewYrs(c.exp_jewellery), hideSm: 1 }, { t: 'Expects /mo', num: 1, f: (c) => (c.exp_salary ? inr(c.exp_salary / 12) : '—'), hideSm: 1 }, { t: 'Source', f: (c) => esc(c.source), hideSm: 1 }, { t: 'Applied', f: (c) => fmtD(c.created_at), hideSm: 1 }, { t: 'Status', f: (c) => `<span class="badge ${c.status === 'Hired' ? 'b-green' : c.status.startsWith('In process') ? 'b-primary' : 'b-outline'}">${esc(c.status)}</span>` }, { t: '', f: (c) => `<button class="btn sm" data-pdl="${c.id}" title="Download this profile as PDF" onclick="event.stopPropagation()">Profile PDF</button>` }], r.rows, { open: (c) => `candidate:${c.id}`, select: true })}${BB.pager(r)}</div>`;
     // More filters stays open while filters in it are changed (each change redraws the list).
@@ -222,12 +222,37 @@
       if (b.dataset.bulk === 'download') { const rows = r.rows.filter((c) => ids.includes(c.id)); const csv = '﻿' + [['id', 'name', 'phone', 'job_wanted', 'city', 'experience', 'status'], ...rows.map((c) => [c.id, c.name, c.whatsapp, c.job_wanted, c.city, c.exp_total, c.status])].map((x) => x.map((v) => `"${String(v ?? '').replace(/"/g, '""')}"`).join(',')).join('\r\n'); const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' })); a.download = 'candidates-selected.csv'; a.click(); return; }
       BB.pickJob(async (jid) => { const res = await BB.post('/api/candidates/bulk', { ids, action: b.dataset.bulk, job_id: jid }).catch(BB.fail); if (res) { BB.toast(`${res.done} done${res.errors.length ? `, ${res.errors.length} skipped` : ''}`); if (res.errors.length) console.info(res.errors); BB.refreshPage(); } });
     }));
-    $('[data-new]', actions).onclick = () => BB.ask({ title: 'Create candidate account', note: 'Goes to your agency. They get a welcome message with their profile link.', wide: true, fields: [
-      `<div class="grid g2">${field({ name: 'name', label: 'Name' })}${field({ name: 'whatsapp', label: 'WhatsApp number', type: 'tel', phone: true })}</div>`,
-      `<div class="grid g2">${field({ name: 'city', label: 'City', list: 'cities' })}<label class="field"><span class="lab">Job wanted</span><select name="job_wanted">${BB.jobOptions('')}</select></label></div>`,
-      `<div class="grid g4">${field({ name: 'exp_total', label: 'Experience (yrs)', type: 'number' })}${field({ name: 'cur_salary_month', label: 'Current ₹/month', type: 'number' })}${field({ name: 'exp_salary_month', label: 'Expected ₹/month', type: 'number' })}${field({ name: 'notice_days', label: 'Notice (days)', type: 'number' })}</div>`,
-      `<div class="grid g2">${field({ name: 'industry', label: 'Industry', type: 'select', options: s.industry_list || ['Jewellery'], value: s.default_industry || 'Jewellery' })}${field({ name: 'source', label: 'Source', type: 'select', options: s.lead_sources })}</div>`,
-    ], ok: 'Create', submit: (v) => BB.post('/api/candidates', { ...v, whatsapp: BB.spokenToDigits(v.whatsapp) || v.whatsapp, exp_total: v.exp_total === '' ? null : Number(v.exp_total), notice_days: v.notice_days === '' ? null : Number(v.notice_days) }) }).then((x) => { if (x) { BB.toast(x.isNew ? `${x.id} created` : `Already in the bank as ${x.id} — details added`); BB.refreshPage(); BB.open('candidate', x.id); } });
+    // Same questions and choices as the public "I want a job" form, plus the team-only salary, notice, industry and source.
+    $('[data-new]', actions).onclick = () => {
+      const o = BB.seekerOptions; let cv = null;
+      BB.ask({ title: 'Create candidate account', note: 'Goes to your agency. They get a welcome message with their profile link.', wide: true, fields: [
+        `<div class="cv-first" data-cc-cv><div class="cv-ic" aria-hidden="true">CV</div><div class="grow"><b>CV</b> <span class="opt">(optional)</span><div class="muted small" data-cc-cvname>PDF or Word, max 10 MB</div></div><button type="button" class="btn sm" data-cc-pick>Attach CV</button></div>`,
+        `<div class="grid g2">${field({ name: 'name', label: 'Name' })}${field({ name: 'email', label: 'Email', type: 'email', opt: true })}</div>`,
+        `<div class="grid g2">${field({ name: 'whatsapp', label: 'WhatsApp number', type: 'tel', phone: true, placeholder: '10 digits' })}<label class="field" data-f="job_wanted"><span class="lab">Job wanted</span><select name="job_wanted" data-cc-job>${BB.jobOptions('')}</select></label></div>`,
+        `<div class="hidden" data-cc-other>${field({ name: 'job_other', label: 'Type the job they want' })}</div>`,
+        `<div class="grid g2">${field({ name: 'city', label: 'City they want to work in', list: 'cities' })}${field({ name: 'state', label: 'State', opt: true, placeholder: 'Fills in from the city' })}</div>`,
+        field({ name: 'experience', label: 'Experience', type: 'choice', options: o.EXPERIENCE }),
+        field({ name: 'exp_jewellery', label: 'Experience in the jewellery industry', type: 'select', opt: true, options: o.JEWEL_EXP, placeholder: 'Select years' }),
+        `<div class="field hidden" data-f="exp_business" data-cc-biz><span class="lab">Where have they worked?</span><div class="row">${o.BUSINESS.map((x) => `<label class="row small"><input type="checkbox" name="biz_${x}"> ${x}</label>`).join('')}</div><span class="hint">Tick all that apply.</span></div>`,
+        `<div class="grid g3">${field({ name: 'cur_salary_month', label: 'Current ₹/month', type: 'number', opt: true })}${field({ name: 'exp_salary_month', label: 'Expected ₹/month', type: 'number', opt: true })}${field({ name: 'notice_days', label: 'Notice (days)', type: 'number', opt: true })}</div>`,
+        `<div class="grid g2">${field({ name: 'industry', label: 'Industry', type: 'select', options: s.industry_list || ['Jewellery'], value: s.default_industry || 'Jewellery' })}${field({ name: 'source', label: 'Source', type: 'select', options: s.lead_sources })}</div>`,
+        { name: 'consent', label: 'The candidate agreed to be contacted on WhatsApp, phone and email, and to share their profile with employers', type: 'check' },
+      ], ok: 'Create', submit: (v) => BB.post('/api/candidates', {
+        name: v.name, email: v.email, whatsapp: BB.spokenToDigits(v.whatsapp) || v.whatsapp, job_wanted: v.job_wanted, job_other: v.job_other, city: v.city, state: v.state,
+        experience: v.experience, exp_jewellery: v.exp_jewellery, exp_business: o.BUSINESS.filter((x) => v[`biz_${x}`]),
+        cur_salary_month: v.cur_salary_month, exp_salary_month: v.exp_salary_month, notice_days: v.notice_days === '' ? null : Number(v.notice_days),
+        industry: v.industry, source: v.source, consent: !!v.consent, cv,
+      }) }).then((x) => { if (x) { BB.toast(x.isNew ? `${x.id} created` : `Already in the bank as ${x.id} — details added`); BB.refreshPage(); BB.open('candidate', x.id); } });
+      // Wire the extra behaviour once the form is on screen: CV picker, "Other" job, and the work-history box for experienced people.
+      setTimeout(() => {
+        const pick = $('[data-cc-pick]'); if (!pick) return;
+        pick.onclick = async () => { cv = await BB.pickFile(); $('[data-cc-cvname]').textContent = cv ? cv.name : 'PDF or Word, max 10 MB'; };
+        const job = $('[data-cc-job]'); const other = () => $('[data-cc-other]').classList.toggle('hidden', job.value !== 'Other'); job.addEventListener('change', other); other();
+        const biz = $('[data-cc-biz]');
+        const showBiz = () => { const e = $('[name=experience]:checked'); const on = !!e && e.value !== 'Fresher'; biz.classList.toggle('hidden', !on); if (!on) $$('input', biz).forEach((x) => { x.checked = false; }); const jw = $('[name=exp_jewellery]'); if (e && e.value === 'Fresher' && !jw.value) jw.value = 'No experience'; };
+        $$('[name=experience]').forEach((r) => r.addEventListener('change', showBiz));
+      }, 60);
+    };
   }
   async function gapView(el) {
     const d = await BB.api('/api/gap');

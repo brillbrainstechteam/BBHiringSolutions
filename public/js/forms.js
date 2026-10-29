@@ -10,6 +10,10 @@
   };
   // Years in the jewellery industry; the server turns the choice into a number (exp_jewellery).
   const JEWEL_EXP = ['No experience', 'Less than 1 year', '1–3 years', '3–5 years', '5–10 years', '10+ years'];
+  const EXPERIENCE = ['Fresher', '1–3 years', '3–5 years', '5–10 years', '10+ years'];
+  const BUSINESS = ['Wholesaler', 'Manufacturer', 'Retailer'];
+  // The team portal's Create candidate form asks the same questions with the same choices.
+  BB.seekerOptions = { EXPERIENCE, JEWEL_EXP, BUSINESS };
   const emailOk = (v) => !v || /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(v);
   const phoneOk = (v) => /^[6-9]\d{9}$/.test(v);
   const digits = (v) => BB.spokenToDigits(v) || String(v || '').replace(/\D/g, '');
@@ -37,9 +41,9 @@
           ${field({ name: 'roles', label: 'Which roles?', opt: true, placeholder: 'e.g. 2 sales executives, 1 cashier' })}
         </div>
         <div data-only="job" class="stack">
-          <label class="field" data-f="experience"><span class="lab">Experience <span class="opt">(optional)</span></span><div class="choice">${['Fresher', '1–3 years', '3–5 years', '5–10 years', '10+ years'].map((x) => `<label style="min-width:96px"><input type="radio" name="experience" value="${x}"> ${x}</label>`).join('')}</div></label>
+          <label class="field" data-f="experience"><span class="lab">Experience <span class="opt">(optional)</span></span><div class="choice">${EXPERIENCE.map((x) => `<label style="min-width:96px"><input type="radio" name="experience" value="${x}"> ${x}</label>`).join('')}</div></label>
           ${field({ name: 'exp_jewellery', label: 'Experience in the jewellery industry', type: 'select', opt: true, options: JEWEL_EXP, placeholder: 'Select years' })}
-          <div class="field hidden" data-f="exp_business" data-expbiz><span class="lab">Where have you worked?</span><div class="choice biz-choice">${['Wholesaler', 'Manufacturer', 'Retailer'].map((x) => `<label><input type="checkbox" name="exp_business" value="${x}"> ${x}</label>`).join('')}</div><span class="hint">Tick all that apply.</span></div>
+          <div class="field hidden" data-f="exp_business" data-expbiz><span class="lab">Where have you worked?</span><div class="choice biz-choice">${BUSINESS.map((x) => `<label><input type="checkbox" name="exp_business" value="${x}"> ${x}</label>`).join('')}</div><span class="hint">Tick all that apply.</span></div>
         </div>
         <label class="hp" aria-hidden="true">Leave this empty <input name="website" tabindex="-1" autocomplete="off"></label>
         <label class="consent-tick" data-f="consent"><input type="checkbox" name="consent"><span>${esc(BB.boot.consent)}</span></label>
