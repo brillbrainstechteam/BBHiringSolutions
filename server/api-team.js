@@ -1444,6 +1444,11 @@ route('GET', '/api/reports/:name', T, (ctx) => {
       for (const st of L.STEPS) r[st] = as.filter((a) => a.step === st).length;
       return r;
     });
+  } else if (name === 'whatsapp') {
+    if (!isSuper(u)) throw httpError(403, 'Only the super admin sees website WhatsApp clicks.');
+    const m = {};
+    for (const c of all('SELECT * FROM wa_clicks WHERE at>=? AND at<=?', from, to)) { const k = [c.page, c.button, c.src || 'Direct'].join('|'); m[k] = m[k] || { page: c.page, button: c.button, source: c.src || 'Direct', clicks: 0, last_click: c.at }; m[k].clicks++; if (c.at > m[k].last_click) m[k].last_click = c.at; }
+    rows = Object.values(m).sort((a, b) => b.clicks - a.clicks);
   } else if (name === 'sources') {
     const m = {};
     const add = (src, k) => { m[src || 'Other'] = m[src || 'Other'] || { source: src || 'Other', client_leads: 0, candidate_leads: 0, applications: 0, hires: 0 }; m[src || 'Other'][k]++; };

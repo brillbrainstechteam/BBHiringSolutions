@@ -563,7 +563,7 @@
   const REPORTS = [['funnel', 'Hiring funnel'], ['clients', 'Per client'], ['jobs', 'Per job'], ['sources', 'Source report'], ['performance', 'Recruiter / agency performance'], ['money', 'Money'], ['replacements', 'Replacements'], ['bank', 'Resume bank'], ['logs', 'Daily logs']];
   // Sub admins see only their own performance and daily logs; admins their agency; the super admin everything.
   P.reports = async ({ el, actions, q, me }) => {
-    const sub = me.level === 'sub'; const list = sub ? [['performance', 'My performance'], ['logs', 'My daily logs']] : REPORTS;
+    const sub = me.level === 'sub'; const list = sub ? [['performance', 'My performance'], ['logs', 'My daily logs']] : isSuper(me) ? [...REPORTS, ['whatsapp', 'WhatsApp clicks']] : REPORTS;
     const name = list.some(([k]) => k === q.r) ? q.r : list[0][0];
     const from = q.from || new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10); const to = q.to || BB.istDay();
     const byPerson = !sub && ['performance', 'logs'].includes(name);

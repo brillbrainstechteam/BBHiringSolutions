@@ -55,7 +55,7 @@
   BB.views.team = async (r) => {
     if (!BB.token('team')) return loginView();
     try { BB.me = await BB.api('/api/me'); } catch (e) { return loginView(e.message); }
-    BB.guard(BB.me.user); // watermark, no printing / copying / screenshot keys for admins and sub admins
+    BB.guard(BB.me.user); // no printing / copying / screenshot keys for admins and sub admins
     if (BB.me.user.must_change || BB.mustChange) return changePassword(true);
     // Pages that moved: Segments is a Candidates tab, Departments & roles a Settings tab.
     const MOVED = { segments: 'team/candidates?tab=segments', roles: 'team/settings?tab=roles' };

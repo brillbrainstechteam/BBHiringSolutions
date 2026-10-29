@@ -829,10 +829,9 @@ label.field > span.lab:has(.pw-show) { display: flex; justify-content: space-bet
 .bulkbar .mini { width: auto; }
 
 /* Screen protection for admin and sub admin logins (guard.js). */
-#bb-wm { position: fixed; inset: 0; z-index: 9998; pointer-events: none; background-repeat: repeat; }
 body.guarded, body.guarded * { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
 body.guarded input, body.guarded textarea, body.guarded select, body.guarded [contenteditable="true"] { -webkit-user-select: text; user-select: text; }
-body.guarded.guard-veil > *:not(#bb-wm):not(#toast-root) { filter: blur(18px); }
+body.guarded.guard-veil > *:not(#toast-root) { filter: blur(18px); }
 body.guarded.guard-veil::after { content: 'Hidden while the portal is not in front'; position: fixed; inset: 0; z-index: 9999; display: grid; place-items: center; font: 600 16px var(--font); color: var(--ink); background: color-mix(in srgb, var(--bg) 55%, transparent); }
 @media print {
   body.guarded > * { display: none !important; }

@@ -420,8 +420,20 @@ BB.parseHash = () => {
 BB.go = (to) => { const url = '/' + String(to || '').replace(/^[#/]+/, ''); if (location.pathname + location.search !== url) history.pushState(null, '', url); BB.route(); };
 BB.setUrl = (to) => history.replaceState(null, '', '/' + String(to || '').replace(/^[#/]+/, ''));
 const fromHash = () => { const h = location.hash.replace(/^#/, ''); if (h) { BB.setUrl(h); return true; } return false; };
+// Where a WhatsApp chat started: the first message names the page and button (and the ad or link source, ?src=),
+// and the click is counted for the WhatsApp clicks report. Links that already carry a message (sharing) are left alone.
+const WA_PAGE = { landing: 'Home page', hire: 'Employer form', apply: 'Job seeker form', partners: 'Partners page', client: 'Client account', candidate: 'Candidate account' };
+BB.adSource = () => { let s = ''; try { s = new URLSearchParams(location.search).get('src') || sessionStorage.getItem('bb_src') || ''; if (s) sessionStorage.setItem('bb_src', s); } catch { /* private mode */ } return s.slice(0, 40); };
+const waClick = (a) => {
+  const view = document.body.dataset.view; if (view === 'team') return false;
+  let u; try { u = new URL(a.href); } catch { return false; } if (u.searchParams.get('text')) return false;
+  const page = WA_PAGE[view] || 'Website'; const button = (a.dataset.wa || a.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 40) || 'WhatsApp'; const src = BB.adSource();
+  const text = `Hi BrillBrains Hiring, I'm writing from your ${page} ("${button}" button)${src ? ` · via ${src}` : ''}.`;
+  try { navigator.sendBeacon('/api/public/wa-click', new Blob([JSON.stringify({ page, button, src })], { type: 'application/json' })); } catch { /* counting never blocks the chat */ }
+  window.open(`${u.origin}${u.pathname}?text=${encodeURIComponent(text)}`, '_blank', 'noopener'); return true;
+};
 document.addEventListener('click', (e) => {
-  if (e.target.closest && e.target.closest('a[href^="https://wa.me/"]')) BB.track('Contact', { content_name: 'WhatsApp help' });
+  const wa = e.target.closest && e.target.closest('a[href^="https://wa.me/"]'); if (wa) { BB.track('Contact', { content_name: 'WhatsApp help' }); if (waClick(wa)) e.preventDefault(); }
   const a = e.target.closest && e.target.closest('a[href]'); if (!a || e.defaultPrevented || a.target || e.ctrlKey || e.metaKey || e.shiftKey) return;
   const href = a.getAttribute('href');
   if (href === '#' || href.startsWith('//')) return;
@@ -444,7 +456,7 @@ BB.greeting = () => { const h = Number(new Date().toLocaleString('en-IN', { hour
 BB.track = (event, params) => { try { if (window.fbq && document.body.dataset.view !== 'team') window.fbq('track', event, params || {}); } catch { /* ads tracking never breaks the page */ } };
 let lastTracked = location.pathname;
 BB.route = () => {
-  const r = BB.parseHash();
+  const r = BB.parseHash(); BB.adSource(); // remember ?src= for the rest of the visit
   const map = { hire: 'hire', apply: 'apply', partners: 'partners', 'my-account': 'client', 'my-profile': 'candidate', team: 'team' };
   const view = map[r.name] || 'landing';
   BB.portal = { client: 'client', candidate: 'candidate', team: 'team' }[view] || null;

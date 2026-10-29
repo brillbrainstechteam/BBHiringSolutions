@@ -1,26 +1,15 @@
 /* Screen protection for admin and sub admin logins in the team portal (the super admin is not limited).
-   A web page cannot fully stop screenshots or a phone camera; this makes copying hard and every copy traceable:
-   - a faint watermark with the person's name, username, date and time over every screen
+   A web page cannot fully stop screenshots or a phone camera; this makes copying hard and every attempt traceable:
    - printing shows a blank page; Ctrl/⌘+P and Ctrl/⌘+S do nothing
    - the Print Screen key clears what it copied; the Windows key (Snipping Tool) and ⌘⇧3/4/5 blur the screen first
    - the portal blurs while another window or app is in front
    - no selecting, copying or right-click menu outside the boxes people type in
    - each blocked attempt is written to the history (who, when, what). */
 (() => {
-  const { esc } = BB;
-  let on = false; let user = null; let wmTimer = null; let veilTimer = null;
+  let on = false; let veilTimer = null;
   const log = (what) => { try { BB.post('/api/security-event', { what }).catch(() => {}); } catch { /* never in the way */ } };
   const typing = (t) => t && t.closest && t.closest('input, textarea, select, [contenteditable="true"]');
 
-  const stamp = () => {
-    const now = new Date();
-    const when = now.toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true });
-    const text = `${user.name} · ${user.username} · ${when}`;
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="420" height="220"><text x="20" y="130" transform="rotate(-24 210 110)" font-family="Arial, sans-serif" font-size="15" fill="#64708f" fill-opacity="0.16">${esc(text)}</text></svg>`;
-    let wm = document.getElementById('bb-wm');
-    if (!wm) { wm = document.createElement('div'); wm.id = 'bb-wm'; wm.setAttribute('aria-hidden', 'true'); document.body.appendChild(wm); }
-    wm.style.backgroundImage = `url("data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}")`;
-  };
   const veil = (ms) => {
     document.body.classList.add('guard-veil');
     clearTimeout(veilTimer); if (ms) veilTimer = setTimeout(() => { if (document.hasFocus()) document.body.classList.remove('guard-veil'); }, ms);
@@ -50,16 +39,15 @@
 
   BB.guard = (u) => {
     if (!u || u.level === 'super') return BB.unguard();
-    user = u; if (on) { stamp(); return; }
-    on = true; document.body.classList.add('guarded'); stamp(); wmTimer = setInterval(stamp, 60000);
+    if (on) return;
+    on = true; document.body.classList.add('guarded');
     window.addEventListener('keydown', onKeyDown, true); window.addEventListener('keyup', onKeyUp, true);
     document.addEventListener('copy', onCopy, true); document.addEventListener('cut', onCopy, true); document.addEventListener('contextmenu', onMenu, true);
     window.addEventListener('blur', onBlur); window.addEventListener('focus', onFocus); document.addEventListener('visibilitychange', onVis);
     window.addEventListener('beforeprint', onPrint);
   };
   BB.unguard = () => {
-    if (!on) return; on = false; clearInterval(wmTimer); unveil(); document.body.classList.remove('guarded');
-    const wm = document.getElementById('bb-wm'); if (wm) wm.remove();
+    if (!on) return; on = false; unveil(); document.body.classList.remove('guarded');
     window.removeEventListener('keydown', onKeyDown, true); window.removeEventListener('keyup', onKeyUp, true);
     document.removeEventListener('copy', onCopy, true); document.removeEventListener('cut', onCopy, true); document.removeEventListener('contextmenu', onMenu, true);
     window.removeEventListener('blur', onBlur); window.removeEventListener('focus', onFocus); document.removeEventListener('visibilitychange', onVis);

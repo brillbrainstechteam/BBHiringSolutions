@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS iv_notes (id INTEGER PRIMARY KEY AUTOINCREMENT, iv_id
 CREATE INDEX IF NOT EXISTS ix_ivn_app ON iv_notes(app_id);
 CREATE TABLE IF NOT EXISTS calls (id INTEGER PRIMARY KEY AUTOINCREMENT, candidate_id TEXT, app_id TEXT, iv_id TEXT, user_id TEXT, by TEXT, at TEXT, outcome TEXT, minutes REAL, note TEXT);
 CREATE INDEX IF NOT EXISTS ix_calls_cand ON calls(candidate_id);
+CREATE TABLE IF NOT EXISTS wa_clicks (id INTEGER PRIMARY KEY AUTOINCREMENT, page TEXT, button TEXT, src TEXT, at TEXT);
 CREATE TABLE IF NOT EXISTS partner_requests (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, organisation TEXT, kind TEXT, whatsapp TEXT, email TEXT, city TEXT, message TEXT, source TEXT, status TEXT DEFAULT 'New', created_at TEXT);
 CREATE TABLE IF NOT EXISTS account_passwords (kind TEXT, subject_id TEXT, pass_hash TEXT, updated_at TEXT, PRIMARY KEY (kind, subject_id));
 CREATE TABLE IF NOT EXISTS otps (id INTEGER PRIMARY KEY AUTOINCREMENT, phone TEXT, purpose TEXT, code_hash TEXT, expires TEXT, tries INTEGER DEFAULT 0, used INTEGER DEFAULT 0, created_at TEXT);

@@ -43,6 +43,12 @@ route('GET', '/api/public/jobs', { rate: { key: 'pubjobs', max: 240, minutes: 60
   return { ...out, search: { title: q.title || '', city: q.city || '', group }, jobs: hits.slice(0, 30).map(card), similar: similar.map(card) };
 });
 // "Become a partner" (partners page): saved, and the super admins get a task.
+// A WhatsApp button on the public site was clicked: which page, which button, and the ad or link source (?src=).
+route('POST', '/api/public/wa-click', { rate: { key: 'waclick', max: 120, minutes: 60 } }, (ctx) => {
+  const b = ctx.body || {}; const t = (v) => String(v || '').replace(/\s+/g, ' ').trim().slice(0, 40);
+  insert('wa_clicks', { page: t(b.page) || 'Website', button: t(b.button) || 'WhatsApp', src: t(b.src), at: now() });
+  return { ok: true };
+});
 route('POST', '/api/public/partner', { rate: { key: 'form', max: 60, minutes: 60 } }, (ctx) => {
   const b = ctx.body || {};
   if (b.website) throw httpError(400, 'Please try again.');
