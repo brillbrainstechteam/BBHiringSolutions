@@ -253,6 +253,7 @@ function candMatch(q) {
     if (q.job && c.job_wanted !== q.job) return false;
     if (q.city && c.city !== q.city && !(c.work_cities || []).includes(q.city)) return false;
     if (q.state && (c.state || L.stateOf(c.city)) !== q.state) return false;
+    if (q.ad && ![c.ad_campaign, c.ad_set, c.ad_name].includes(q.ad)) return false;
     if (from || to) { const day = L.istDay(c.created_at); if ((from && day < from) || (to && day > to)) return false; }
     if (q.jewellery === '0' && c.exp_jewellery !== 0) return false;
     if (JEW_RANGE[q.jewellery]) { const y = c.exp_jewellery; const [lo, hi] = JEW_RANGE[q.jewellery]; if (!(y > 0 && y >= lo && y < hi)) return false; }
@@ -266,6 +267,8 @@ function candMatch(q) {
     return true;
   };
 }
+// Campaigns, ad sets and ad names seen so far, for the "Any ad" filter.
+const adOptions = (table) => [...new Set(all(`SELECT ad_campaign, ad_set, ad_name FROM ${table} WHERE ad_campaign IS NOT NULL OR ad_set IS NOT NULL OR ad_name IS NOT NULL`).flatMap((r) => [r.ad_campaign, r.ad_set, r.ad_name]).filter(Boolean))].sort();
 const CAND_EXPORT = ['id', 'name', 'whatsapp', 'email', 'industry', 'job_wanted', 'department', 'city', 'state', 'exp_total', 'exp_jewellery', [(r) => (r.exp_business || []).join(', '), 'worked_in'], [(r) => (r.cur_salary ? Math.round(r.cur_salary / 12) : ''), 'current_per_month'], [(r) => (r.exp_salary ? Math.round(r.exp_salary / 12) : ''), 'expected_per_month'], 'notice_days', 'current_company', 'looking', 'source', [(r) => L.istDay(r.created_at), 'applied_on']];
 route('GET', '/api/leads', SUPER, (ctx) => {
   const q = ctx.query; const days = Number(q.days) || 30; const since = new Date(Date.now() - days * 86400000).toISOString();
@@ -549,7 +552,7 @@ route('GET', '/api/candidates', T, (ctx) => {
   ctx.designations = [...new Set(all('SELECT industry, job_wanted FROM candidates WHERE merged_into IS NULL AND removed=0 AND junk=0').filter(inInd).map((c) => c.job_wanted).filter(Boolean))].sort();
   // Only the super admin downloads candidates (as filtered on screen); agencies and recruiters work in the portal.
   if (['csv', 'xlsx'].includes(ctx.query.format) && !isSuper(u)) throw httpError(403, 'Only the super admin can download candidates.');
-  return { ...page(ctx, rows, 'candidates', [...CAND_EXPORT, 'status']), designations: ctx.designations };
+  return { ...page(ctx, rows, 'candidates', [...CAND_EXPORT, [(r) => L.adLabel(r), 'ad'], 'status']), designations: ctx.designations, ads: adOptions('candidates') };
 });
 route('POST', '/api/candidates', T, async (ctx) => {
   // Same questions and checks as the public job-seeker form (api-public /apply), plus salary, notice, industry and source.
@@ -678,7 +681,7 @@ route('POST', '/api/tieups', T, (ctx) => {
 // ---------- segments (saved candidate searches) ----------
 // A segment is a named set of resume-bank filters. Its owner sees it; shared ones are seen by the whole team.
 // The list of people is worked out again each time, so counts and downloads are always current.
-const SEG_KEYS = ['q', 'industry', 'dept', 'job', 'city', 'state', 'jewellery', 'from', 'to', 'exp_min', 'exp_max', 'sal_min', 'sal_max', 'looking', 'status', 'source', 'updated', 'notice', 'stale', 'archived'];
+const SEG_KEYS = ['q', 'industry', 'dept', 'job', 'city', 'state', 'ad', 'jewellery', 'from', 'to', 'exp_min', 'exp_max', 'sal_min', 'sal_max', 'looking', 'status', 'source', 'updated', 'notice', 'stale', 'archived'];
 const segQuery = (raw) => { const q = typeof raw === 'string' ? JSON.parse(raw || '{}') : raw || {}; return Object.fromEntries(SEG_KEYS.filter((k) => q[k] !== undefined && q[k] !== null && q[k] !== '').map((k) => [k, String(q[k])])); };
 const segVisible = (u) => all('SELECT s.*, us.name AS owner_name FROM saved_searches s LEFT JOIN users us ON us.id=s.user_id WHERE s.user_id=? OR s.shared=1 ORDER BY s.name COLLATE NOCASE', u.id);
 function segOwn(ctx) {
@@ -739,8 +742,8 @@ route('POST', '/api/import/run', T, (ctx) => {
 route('GET', '/api/applications', T, (ctx) => {
   const q = ctx.query;
   const rows = visibleApps(ctx.user).map(V.appView)
-    .filter((a) => (!q.job || a.job_id === q.job) && (q.closed ? true : a.result === 'open') && (!q.step || a.step === q.step) && like(q.q, a.id, a.candidate_name, a.job_title, a.client_name));
-  return page(ctx, rows, 'applications', ['id', 'candidate_name', 'job_id', 'job_title', 'client_name', 'step', 'result', 'days_in_step', 'owner_name', 'source']);
+    .filter((a) => (!q.job || a.job_id === q.job) && (q.closed ? true : a.result === 'open') && (!q.step || a.step === q.step) && (!q.ad || [a.ad_campaign, a.ad_set, a.ad_name].includes(q.ad)) && like(q.q, a.id, a.candidate_name, a.job_title, a.client_name, a.ad));
+  return { ...page(ctx, rows, 'applications', ['id', 'candidate_name', 'job_id', 'job_title', 'client_name', 'step', 'result', 'days_in_step', 'owner_name', 'source', 'ad']), ads: adOptions('applications') };
 });
 route('GET', '/api/board', T, (ctx) => {
   const q = ctx.query;

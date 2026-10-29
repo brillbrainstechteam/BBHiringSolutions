@@ -307,10 +307,18 @@ route('POST', '/api/client/password', { auth: 'client', rate: { key: 'pwset', ma
 route('POST', '/api/account/logout', {}, (ctx) => { D.run('DELETE FROM sessions WHERE token=?', ctx.req.headers['x-session'] || ''); return { ok: true }; });
 
 // ---------- public forms ----------
+// Which ad: campaign, ad set and ad name, sent by the form from the link the ad opened.
+function adFrom(b) {
+  const t = (v) => String(v || '').replace(/\s+/g, ' ').trim().slice(0, 120);
+  const ad = { campaign: t(b.ad_campaign), adset: t(b.ad_set), ad: t(b.ad_name) };
+  return ad.campaign || ad.adset || ad.ad ? ad : null;
+}
 function srcFrom(b) {
   const tags = D.settings().src_tags;
   if (b.ref) return 'Referral';
-  if (b.src) return tags[b.src] || D.settings().lead_sources.find((x) => x.toLowerCase() === String(b.src).toLowerCase()) || b.src;
+  // ?src= or, from an ad's tracking, ?utm_source= (Meta's {{site_source_name}} gives fb, ig, an or msg).
+  const raw = String(b.src || b.utm_source || '').trim().slice(0, 40);
+  if (raw) { const k = { facebook: 'fb', an: 'fb', msg: 'fb', instagram: 'ig' }[raw.toLowerCase()] || raw; return tags[k] || tags[k.toLowerCase()] || D.settings().lead_sources.find((x) => x.toLowerCase() === raw.toLowerCase()) || raw; }
   return 'Website';
 }
 route('POST', '/api/public/hire', { rate: { key: 'form', max: 60, minutes: 60 } }, (ctx) => {
@@ -355,7 +363,7 @@ route('POST', '/api/public/apply', { rate: { key: 'form', max: 60, minutes: 60 }
   let refBy = null;
   if (b.ref) { const rc = get('SELECT id FROM candidates WHERE id=?', L.resolveId(String(b.ref).toUpperCase())); refBy = rc ? rc.id : null; }
   const jobOk = b.job ? get('SELECT * FROM jobs WHERE id=?', String(b.job).toUpperCase()) : null;
-  const r = L.intakeCandidate({ exp_business: business, exp_jewellery: b.exp_jewellery in jewMap ? jewMap[b.exp_jewellery] : null, language: b.lang, name: b.name, whatsapp: b.whatsapp, email: b.email || '', city: b.city, state: b.state, work_cities: [b.city], job_wanted: b.job_wanted === 'Other' ? b.job_other : b.job_wanted, exp_total: b.experience ? expMap[b.experience] : null, ref_by: refBy, apply_job: jobOk && ['Open', 'Sourcing', 'Interviewing', 'Offer stage'].includes(V.jobView(jobOk).status) ? jobOk.id : null }, { source: srcFrom(b) });
+  const r = L.intakeCandidate({ exp_business: business, exp_jewellery: b.exp_jewellery in jewMap ? jewMap[b.exp_jewellery] : null, language: b.lang, name: b.name, whatsapp: b.whatsapp, email: b.email || '', city: b.city, state: b.state, work_cities: [b.city], job_wanted: b.job_wanted === 'Other' ? b.job_other : b.job_wanted, exp_total: b.experience ? expMap[b.experience] : null, ref_by: refBy, apply_job: jobOk && ['Open', 'Sourcing', 'Interviewing', 'Offer stage'].includes(V.jobView(jobOk).status) ? jobOk.id : null }, { source: srcFrom(b), ad: adFrom(b) });
   { const mailer = require('./mailer'); const rec = get('SELECT * FROM candidates WHERE id=?', r.candidate.id); if (r.isNew) mailer.newLead('candidate', rec); mailer.confirmToPerson('candidate', rec); }
   if (refBy && r.isNew) insert('notes', { record_id: r.candidate.id, text: `Referred by ${refBy}`, author: 'Form', at: now() });
   if (b.cv && b.cv.base64) { try { const f = await F.saveFile({ recordId: r.candidate.id, type: 'cv', name: b.cv.name, base64: b.cv.base64, by: 'Candidate form' }); update('candidates', r.candidate.id, { cv_file: String(f.id) }); CV.fillCandidate(r.candidate.id, b.cv.name, b.cv.base64, 'Candidate form'); } catch (e) { insert('notes', { record_id: r.candidate.id, text: `CV not saved: ${e.message}`, author: 'Form', at: now() }); } }

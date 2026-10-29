@@ -423,7 +423,16 @@ const fromHash = () => { const h = location.hash.replace(/^#/, ''); if (h) { BB.
 // Where a WhatsApp chat started: the first message names the page and button (and the ad or link source, ?src=),
 // and the click is counted for the WhatsApp clicks report. Links that already carry a message (sharing) are left alone.
 const WA_PAGE = { landing: 'Home page', hire: 'Employer form', apply: 'Job seeker form', partners: 'Partners page', client: 'Client account', candidate: 'Candidate account' };
-BB.adSource = () => { let s = ''; try { s = new URLSearchParams(location.search).get('src') || sessionStorage.getItem('bb_src') || ''; if (s) sessionStorage.setItem('bb_src', s); } catch { /* private mode */ } return s.slice(0, 40); };
+BB.adSource = () => { let s = ''; try { const p = new URLSearchParams(location.search); s = p.get('src') || p.get('utm_source') || sessionStorage.getItem('bb_src') || ''; if (s) sessionStorage.setItem('bb_src', s); } catch { /* private mode */ } return s.slice(0, 40); };
+// The ad a visitor came from: ?campaign= ?adset= ?ad= (or utm_campaign, utm_term, utm_content), kept for the visit.
+BB.adParams = () => {
+  try {
+    const p = new URLSearchParams(location.search); const pick = (...k) => (k.map((x) => p.get(x)).find(Boolean) || '').slice(0, 120);
+    const now = { ad_campaign: pick('campaign', 'utm_campaign'), ad_set: pick('adset', 'ad_set', 'utm_term'), ad_name: pick('ad', 'ad_name', 'utm_content') };
+    if (now.ad_campaign || now.ad_set || now.ad_name) { sessionStorage.setItem('bb_ad', JSON.stringify(now)); return now; }
+    return JSON.parse(sessionStorage.getItem('bb_ad') || '{}');
+  } catch { return {}; }
+};
 const waClick = (a) => {
   const view = document.body.dataset.view; if (view === 'team') return false;
   let u; try { u = new URL(a.href); } catch { return false; } if (u.searchParams.get('text')) return false;
@@ -456,7 +465,7 @@ BB.greeting = () => { const h = Number(new Date().toLocaleString('en-IN', { hour
 BB.track = (event, params) => { try { if (window.fbq && document.body.dataset.view !== 'team') window.fbq('track', event, params || {}); } catch { /* ads tracking never breaks the page */ } };
 let lastTracked = location.pathname;
 BB.route = () => {
-  const r = BB.parseHash(); BB.adSource(); // remember ?src= for the rest of the visit
+  const r = BB.parseHash(); BB.adSource(); BB.adParams(); // remember ?src= and the ad for the rest of the visit
   const map = { hire: 'hire', apply: 'apply', partners: 'partners', 'my-account': 'client', 'my-profile': 'candidate', team: 'team' };
   const view = map[r.name] || 'landing';
   BB.portal = { client: 'client', candidate: 'candidate', team: 'team' }[view] || null;

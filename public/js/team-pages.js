@@ -57,8 +57,8 @@
   }
   const jewYrs = (y) => (y === null || y === undefined ? '—' : y === 0 ? 'None' : `${y} yrs`);
   const moreBtn = (n) => `More filters${n ? ` <span class="badge b-primary tiny">${n}</span>` : ''}`;
-  const anyCandFilter = (q) => ['dept', 'job', 'city', 'state', 'jewellery', ...CAND_MORE].some((k) => q[k]);
-  const clearCandFilters = () => BB.setQ(Object.fromEntries(['dept', 'job', 'city', 'state', 'jewellery', ...CAND_MORE, 'q', 'source', 'looking', 'status', 'notice', 'updated', 'stale'].map((k) => [k, ''])));
+  const anyCandFilter = (q) => ['dept', 'job', 'city', 'state', 'jewellery', 'ad', ...CAND_MORE].some((k) => q[k]);
+  const clearCandFilters = () => BB.setQ(Object.fromEntries(['dept', 'job', 'city', 'state', 'jewellery', 'ad', ...CAND_MORE, 'q', 'source', 'looking', 'status', 'notice', 'updated', 'stale'].map((k) => [k, ''])));
 
   // ---------- Leads ----------
   P.leads = async ({ el, actions, q }) => {
@@ -152,7 +152,7 @@
   const JEW_LABEL = { 0: 'no experience', lt1: 'under 1 year', '1-3': '1–3 years', '3-5': '3–5 years', '5-10': '5–10 years', '10+': '10+ years' };
   const SEG_LABEL = [['q', 'Search'], ['industry', 'Industry', (v) => (v === 'all' ? 'All industries' : v)], ['dept', 'Department'], ['job', 'Designation'], ['city', 'City'], ['state', 'State'], ['jewellery', 'Jewellery', (v) => JEW_LABEL[v] || v],
     ['from', 'Applied from'], ['to', 'Applied up to'], ['exp_min', 'Experience from', (v) => `${v} yrs`], ['exp_max', 'Experience up to', (v) => `${v} yrs`], ['sal_min', 'Expected salary from', (v) => `${inr(v)}/mo`], ['sal_max', 'Expected salary up to', (v) => `${inr(v)}/mo`],
-    ['looking', 'Looking'], ['status', 'Status'], ['source', 'Source'], ['updated', 'Updated in last', (v) => `${v} days`], ['notice', 'Notice up to', (v) => `${v} days`], ['stale', 'Not updated in 90+ days', () => 'yes'], ['archived', 'Archived', () => 'yes']];
+    ['looking', 'Looking'], ['status', 'Status'], ['source', 'Source'], ['ad', 'Ad'], ['updated', 'Updated in last', (v) => `${v} days`], ['notice', 'Notice up to', (v) => `${v} days`], ['stale', 'Not updated in 90+ days', () => 'yes'], ['archived', 'Archived', () => 'yes']];
   const segChips = (q) => SEG_LABEL.filter(([k]) => q[k]).map(([k, l, f]) => `<span class="chip">${esc(l)}: <b>${esc(f ? f(q[k]) : q[k])}</b></span>`).join('') || '<span class="faint">All candidates</span>';
 
   // Share / rename / delete / copy link / download buttons, the same in the segment list and on an open segment.
@@ -237,7 +237,7 @@
       <div class="row cand-seg">${segButtons(seg, seg.can_download, false)}</div></div></section>` : '';
     // Filters and saved segments in one card; the selection bar; then the table in its own scroll box.
     const head = seg ? segHead : `<section class="card cand-panel">
-      <div class="filters cand-filters"><input placeholder="Search name, ID, phone, job…" value="${esc(q.q || '')}" data-q aria-label="Search candidates">${indSel}${cf.main}${sel('looking', 'Any looking status', BB.boot.looking)}${sel('status', 'Any status', ['Available', 'In process', 'Hired'])}
+      <div class="filters cand-filters"><input placeholder="Search name, ID, phone, job…" value="${esc(q.q || '')}" data-q aria-label="Search candidates">${indSel}${cf.main}${sel('looking', 'Any looking status', BB.boot.looking)}${sel('status', 'Any status', ['Available', 'In process', 'Hired'])}${(r.ads || []).length || q.ad ? sel('ad', 'Any ad', r.ads || [q.ad]) : ''}
       <details class="more-f" ${BB.moreFiltersOpen ? 'open' : ''}><summary class="btn sm">${moreBtn(cf.count(['source', 'notice', 'updated', 'stale']))}</summary><div class="card more-pop">
         ${cf.more}
         <div class="grid g3"><label class="mf"><span>Source</span>${sel('source', 'Any source', s.lead_sources)}</label><label class="mf"><span>Profile last updated</span>${sel('updated', 'Any time', [['7', 'Last 7 days'], ['30', 'Last 30 days'], ['90', 'Last 90 days']])}</label><label class="mf"><span>Notice period up to (days)</span><input type="number" min="0" placeholder="Days" data-f="notice" value="${esc(q.notice || '')}"></label></div>
@@ -258,7 +258,7 @@
       { t: 'Expects /mo', num: 1, f: (c) => (c.exp_salary ? inr(c.exp_salary / 12) : '—'), hideSm: 1 },
       { t: 'Looking', f: (c) => (c.looking ? `<span class="badge ${LOOK_BADGE[c.looking] || 'b-outline'}">${esc(c.looking)}</span>` : '—') },
       { t: 'Status', f: (c) => `<span class="badge ${c.status === 'Hired' ? 'b-green' : c.status.startsWith('In process') ? 'b-primary' : 'b-outline'}">${esc(c.status)}</span>` },
-      { t: 'Source', f: (c) => esc(c.source), hideSm: 1 },
+      { t: 'Source', cls: 'wrap', f: (c) => `${esc(c.source)}${c.ad_set || c.ad_name || c.ad_campaign ? `<div class="tiny muted">${esc(c.ad_name || c.ad_set || c.ad_campaign)}</div>` : ''}`, hideSm: 1 },
       { t: 'Applied', f: (c) => fmtD(c.created_at), hideSm: 1 },
       { t: '<span class="sr-only">Profile</span>', cls: 'act-col', f: (c) => `<button class="btn sm" data-pdl="${c.id}" title="Download ${esc(c.name)}'s profile as PDF" onclick="event.stopPropagation()">PDF</button>` },
     ], r.rows, { open: (c) => `candidate:${c.id}`, select: true, scroll: true, empty: filtered ? 'No candidates match these filters.' : 'No candidates yet.' })}${BB.pager(r)}</div>`;
@@ -392,12 +392,13 @@
     const r = await BB.api(`/api/applications?${BB.qs(q, { view: undefined })}`);
     const owners = me.level !== 'sub' ? (await BB.api('/api/users')).users.filter((u) => u.status === 'On') : [];
     const waFormats = [['candidate:bbhs_details_request', 'Candidate · ask salary and notice'], ['candidate:bbhs_interview_reminder', 'Candidate · interview reminder'], ['candidate:bbhs_joining_reminder', 'Candidate · joining reminder'], ['candidate:bbhs_post_join_checkin', 'Candidate · check-in'], ['client:bbhs_shortlist_ready', 'Client · profiles ready'], ['client:bbhs_feedback_request', 'Client · ask for feedback']];
-    el.innerHTML = `<div class="filters"><input placeholder="Search candidate, job, ID…" value="${esc(q.q || '')}" data-q><select data-step><option value="">All steps</option>${BB.boot.steps.map((s) => `<option ${q.step === s ? 'selected' : ''}>${s}</option>`).join('')}</select><label class="row small"><input type="checkbox" data-closed ${q.closed ? 'checked' : ''}> Include closed</label>
+    el.innerHTML = `<div class="filters"><input placeholder="Search candidate, job, ID…" value="${esc(q.q || '')}" data-q><select data-step><option value="">All steps</option>${BB.boot.steps.map((s) => `<option ${q.step === s ? 'selected' : ''}>${s}</option>`).join('')}</select>${(r.ads || []).length || q.ad ? `<select data-ad><option value="">Any ad</option>${(r.ads || [q.ad]).map((x) => `<option value="${esc(x)}" ${q.ad === x ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select>` : ''}<label class="row small"><input type="checkbox" data-closed ${q.closed ? 'checked' : ''}> Include closed</label>
       <span class="right row small">Selected: <select data-bstep style="width:auto"><option value="">Move to step…</option>${BB.boot.steps.slice(0, 5).map((s) => `<option>${s}</option>`).join('')}</select><select data-bclose style="width:auto"><option value="">Close with reason…</option>${BB.boot.closing_reasons.map((s) => `<option>${s}</option>`).join('')}</select>${owners.length ? `<select data-bowner style="width:auto"><option value="">Assign owner…</option>${owners.map((u) => `<option value="${u.id}">${esc(u.name)}</option>`).join('')}</select>` : ''}<select data-bwa style="width:auto"><option value="">Send a format…</option>${waFormats.map(([v, l]) => `<option value="${v}">${esc(l)}</option>`).join('')}</select></span></div>
-      <div class="card">${BB.table([{ t: 'ID', f: (a) => `<span class="mono">${a.id}</span>` }, { t: 'Candidate', f: (a) => `<b>${esc(a.candidate_name)}</b>` }, { t: 'Job', f: (a) => `${esc(a.job_title)}<div class="tiny muted">${esc(a.client_name)}</div>` }, { t: 'Step', f: (a) => `<span class="badge b-primary">${esc(a.step)}</span>${a.on_hold ? ' <span class="badge b-outline">hold</span>' : ''}` }, { t: 'Result', f: (a) => resultBadge(a.result) }, { t: 'Days in step', num: 1, f: (a) => `<span class="days ${a.days_in_step >= 7 && a.result === 'open' ? 'late' : ''}">${a.days_in_step}</span>` }, { t: 'Owner', f: (a) => esc(a.owner_name), hideSm: 1 }, { t: '', f: (a) => `<span onclick="event.stopPropagation()">${BB.waBtn({ ptype: 'candidate', pid: a.candidate_id, ap: a.id }, '', 'btn sm icon wa')}</span>` }], r.rows, { open: (a) => `application:${a.id}`, select: true })}${BB.pager(r)}</div>`;
+      <div class="card">${BB.table([{ t: 'ID', f: (a) => `<span class="mono">${a.id}</span>` }, { t: 'Candidate', f: (a) => `<b>${esc(a.candidate_name)}</b>` }, { t: 'Job', f: (a) => `${esc(a.job_title)}<div class="tiny muted">${esc(a.client_name)}</div>` }, { t: 'Step', f: (a) => `<span class="badge b-primary">${esc(a.step)}</span>${a.on_hold ? ' <span class="badge b-outline">hold</span>' : ''}` }, { t: 'Result', f: (a) => resultBadge(a.result) }, { t: 'Days in step', num: 1, f: (a) => `<span class="days ${a.days_in_step >= 7 && a.result === 'open' ? 'late' : ''}">${a.days_in_step}</span>` }, { t: 'From', f: (a) => `${esc(a.source || '—')}${a.ad ? `<div class="tiny muted">${esc(a.ad)}</div>` : ''}`, hideSm: 1 }, { t: 'Owner', f: (a) => esc(a.owner_name), hideSm: 1 }, { t: '', f: (a) => `<span onclick="event.stopPropagation()">${BB.waBtn({ ptype: 'candidate', pid: a.candidate_id, ap: a.id }, '', 'btn sm icon wa')}</span>` }], r.rows, { open: (a) => `application:${a.id}`, select: true })}${BB.pager(r)}</div>`;
     BB.wirePager(el); BB.wireSelect(el);
     let t; $('[data-q]', el).oninput = (e) => { clearTimeout(t); t = setTimeout(() => BB.setQ({ q: e.target.value, page: 1 }), 350); };
     $('[data-step]', el).onchange = (e) => BB.setQ({ step: e.target.value, page: 1 });
+    const adSel = $('[data-ad]', el); if (adSel) adSel.onchange = (e) => BB.setQ({ ad: e.target.value, page: 1 });
     $('[data-closed]', el).onchange = (e) => BB.setQ({ closed: e.target.checked ? '1' : '' });
     const bulk = async (body) => { const ids = BB.selected(el); if (!ids.length) return BB.toast('Tick some rows first', true); const res = await BB.post('/api/applications/bulk', { ids, ...body }).catch(BB.fail); if (res) { BB.toast(`${res.done} done${res.errors.length ? `, ${res.errors.length} failed: ${res.errors[0]}` : ''}`); BB.refreshPage(); } };
     $('[data-bstep]', el).onchange = (e) => e.target.value && bulk({ action: 'step', step: e.target.value });

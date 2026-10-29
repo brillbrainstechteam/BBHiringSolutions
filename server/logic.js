@@ -462,12 +462,12 @@ const upiLink = (amt, ref) => `upi://pay?pa=${settings().business.upi_id}&pn=${e
 function appHist(appId, step, by, note, kind = 'step') {
   insert('app_history', { app_id: appId, at: now(), step, by: actorName(by), by_id: by && by.uid ? by.uid : null, note: note || '', kind });
 }
-function createApplication(candId, jobId, by, source, note) {
+function createApplication(candId, jobId, by, source, note, ad) {
   const cand = get('SELECT * FROM candidates WHERE id=?', candId); const job = get('SELECT * FROM jobs WHERE id=?', jobId);
   if (!cand || !job) throw httpError(404, 'Candidate or job opening not found');
   if (get("SELECT 1 FROM applications WHERE candidate_id=? AND job_id=? AND result='open'", candId, jobId)) throw httpError(400, `${cand.name} already has an open application on ${jobId}.`);
   const id = nextId('AP');
-  insert('applications', { id, candidate_id: candId, job_id: jobId, step: 'Applied', result: 'open', owner_id: by && by.uid ? by.uid : job.recruiter_id, source: source || cand.source, step_since: now(), created_by: by && by.uid ? by.uid : null, created_at: now(), checklist: {}, joining_docs: [] });
+  insert('applications', { id, candidate_id: candId, job_id: jobId, step: 'Applied', result: 'open', owner_id: by && by.uid ? by.uid : job.recruiter_id, source: source || cand.source, ...adCols(ad), step_since: now(), created_by: by && by.uid ? by.uid : null, created_at: now(), checklist: {}, joining_docs: [] });
   appHist(id, 'Applied', by, note || 'Added to job');
   history(actorName(by), 'create', id, null, null, `${cand.name} on ${jobId}`, [candId, jobId]);
   recalcJob(jobId, actorName(by), `${id} added`);
@@ -749,6 +749,9 @@ function intakeClient(d, o) {
   if (!agency && !o.silent) for (const s of superAdmins()) insert('alerts', { user_id: s.id, text: `New client lead ${id} (${d.company || d.contact})`, record_id: id, read: 0, at: now() });
   return { client: get('SELECT * FROM clients WHERE id=?', id), isNew: true };
 }
+// The ad a lead came from (campaign, ad set, ad name from the link), as columns; empty when there was no ad.
+const adCols = (ad) => (ad ? { ad_campaign: ad.campaign || null, ad_set: ad.adset || null, ad_name: ad.ad || null } : {});
+const adLabel = (r) => [r.ad_campaign, r.ad_set, r.ad_name].filter(Boolean).join(' › ');
 function intakeCandidate(d, o) {
   const phone = digits10(d.whatsapp);
   const source = o.source || 'Website';
@@ -765,10 +768,11 @@ function intakeCandidate(d, o) {
     if (d.exp_jewellery !== undefined && d.exp_jewellery !== null && d.exp_jewellery !== '') fill.exp_jewellery = d.exp_jewellery;
     if (d.city) { fill.city = d.city; fill.state = d.state || stateOf(d.city); }
     if (d.exp_total !== undefined && d.exp_total !== null && d.exp_total !== '') fill.exp_total = d.exp_total;
-    update('candidates', existing.id, { ...fill, is_new: 1, last_updated: now() });
-    insert('notes', { record_id: existing.id, text: `Came again from ${source} on ${istFmt(now(), false)}`, author: who, at: now() });
+    update('candidates', existing.id, { ...fill, ...adCols(o.ad), is_new: 1, last_updated: now() });
+    insert('notes', { record_id: existing.id, text: `Came again from ${source}${o.ad ? ` (ad: ${adLabel(adCols(o.ad))})` : ''} on ${istFmt(now(), false)}`, author: who, at: now() });
     history(who, 'repeat lead', existing.id, null, null, source);
     if (o.consent !== false) { saveConsent('candidate', existing.id, source, o.wording); update('candidates', existing.id, { consent_alerts: 1 }); }
+    if (d.apply_job) { try { createApplication(existing.id, d.apply_job, by || { label: 'Candidate' }, source, 'Applied again from a job link', o.ad); } catch { /* already on this job, or job closed */ } }
     return { candidate: get('SELECT * FROM candidates WHERE id=?', existing.id), isNew: false };
   }
   const id = nextId('CA');
@@ -778,7 +782,7 @@ function intakeCandidate(d, o) {
     id, name: d.name, whatsapp: phone, email: d.email || '', city: d.city || '', state: d.state || stateOf(d.city), work_cities: d.work_cities || (d.city ? [d.city] : []), language: d.language === 'hi' ? 'hi' : 'en', industry: d.industry || settings().default_industry || 'Jewellery', exp_business: cleanBusiness(d.exp_business),
     job_wanted: d.job_wanted || '', department: dept, exp_total: d.exp_total ?? null, exp_jewellery: d.exp_jewellery ?? null,
     cur_salary: d.cur_salary ?? null, exp_salary: d.exp_salary ?? null, notice_days: d.notice_days ?? null, skills: d.skills || [], current_company: d.current_company || '',
-    cv_file: d.cv_file || null, source, ref_by: d.ref_by || null, tieup_id: d.tieup_id || null, agency_id: agency, recruiter_id: by && by.uid ? by.uid : null,
+    cv_file: d.cv_file || null, source, ...adCols(o.ad), ref_by: d.ref_by || null, tieup_id: d.tieup_id || null, agency_id: agency, recruiter_id: by && by.uid ? by.uid : null,
     is_new: by && by.uid ? 0 : 1, consent_alerts: o.consent !== false ? 1 : 0, possible_repeat_of: repeat ? repeat.id : null,
     needs_check: o.needsCheck || (!phone ? 'No phone found' : null), last_updated: now(), old_code: d.old_code || null, created_by: who, created_at: d.created_at || now(),
   });
@@ -786,7 +790,7 @@ function intakeCandidate(d, o) {
   if (o.consent !== false) saveConsent('candidate', id, source, o.wording);
   if (o.consent !== false && !o.silent && phone) sendWA({ ptype: 'candidate', pid: id, format: 'bbhs_candidate_welcome', vars: { candidate_id: id, link: link('my-profile') }, auto: true, rule: 'candidate_welcome', dedupe: `welcome:${id}` });
   if (o.consent === false && !o.silent && phone) sendWA({ ptype: 'candidate', pid: id, format: 'bbhs_consent_request', auto: true, dedupe: `consent:${id}` });
-  if (d.apply_job) { try { createApplication(id, d.apply_job, by || { label: 'Candidate' }, source, 'Applied from a job link'); } catch { /* job closed or missing */ } }
+  if (d.apply_job) { try { createApplication(id, d.apply_job, by || { label: 'Candidate' }, source, 'Applied from a job link', o.ad); } catch { /* job closed or missing */ } }
   // Automatic matching: the open jobs this person fits best go on their record as a note for the team.
   try {
     const fits = jobsFor(get('SELECT * FROM candidates WHERE id=?', id), 3);
@@ -898,7 +902,7 @@ function sendSystemText(ptype, pid, text) {
   insert('messages', { id: nextId('WA'), person_type: ptype, person_id: pid, phone: p.phone, direction: 'out', text, buttons: [], sent_by: 'Auto', status: settings().crm.enabled ? 'sending' : 'would send', read_by_us: 1, auto: 1, at: now() });
 }
 
-module.exports = {
+module.exports = { adLabel,
   STEPS, stepIdx, digits10, validPhone, inr, istDay, istFmt, istTime, istHour, inQuiet, next9am, daysBetween, addDays, hashPassword, checkPassword, newPassword, sha,
   waHeld, IV_MODES, clientSeesIv, addIvNote, CALL_OUTCOMES, logCall, jobList, deptOf, stateOf, person, fillFormat, windowOpenUntil, sendWA, setDispatcher, alertUser, link, agencyAdmin, superAdmins,
   computeJobStatus, jobStatusReason, recalcJob, filledCount, appsOfJob, matchScore, jobsFor, cleanBusiness, BUSINESS_TYPES, EXP_YEARS, JEW_YEARS, LOOKING, NOT_LOOKING, ratingOf, bestMatches, isPlaced, salaryText, autoJobAlert,

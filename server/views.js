@@ -41,7 +41,7 @@ function appView(a) {
   const ivs = all('SELECT * FROM interviews WHERE app_id=? ORDER BY at', a.id).map(L.interviewView);
   return {
     ...a, candidate_name: c.name, candidate_city: c.city, job_title: j.title, job_city: j.city, client_id: cl.id, client_name: cl.company, owner_name: userName(a.owner_id),
-    days_in_step: L.daysBetween(a.step_since || a.created_at), interviews: ivs, step_no: L.stepIdx(a.step) + 1,
+    ad: L.adLabel(a), days_in_step: L.daysBetween(a.step_since || a.created_at), interviews: ivs, step_no: L.stepIdx(a.step) + 1,
   };
 }
 function clientView(c) {
