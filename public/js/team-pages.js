@@ -176,6 +176,24 @@
     $$('[data-del]', el).forEach((b) => (b.onclick = async () => { const s = seg(b.dataset.del); if (await BB.confirm('Delete segment', `"${s.name}" will be deleted${s.shared ? ' for the whole team' : ''}. The candidates are not touched.`, 'Delete')) { await BB.post(`/api/segments/${s.id}/delete`).catch(BB.fail); BB.refreshPage(); } }));
   };
 
+  // ---------- Departments & roles: every team level can add; hiding stays in Settings ----------
+  P.roles = async ({ el, actions, q, me }) => {
+    const d = await BB.api(`/api/roles${q.industry ? `?industry=${encodeURIComponent(q.industry)}` : ''}`);
+    const reboot = async () => { BB.boot = await (await fetch('/api/bootstrap')).json(); BB.refreshPage(); };
+    actions.innerHTML = '<button class="btn primary" data-adddept>+ Add department</button>';
+    $('[data-adddept]', actions).onclick = () => BB.ask({ title: 'Add department', fields: [{ name: 'name', label: 'Department name', placeholder: 'e.g. Visual Merchandising' }], ok: 'Add', submit: (v) => BB.post('/api/roles/department', v) }).then((x) => x && (BB.toast(`${x.name} added — now add its roles`), reboot()));
+    el.innerHTML = `<p class="muted small" style="margin:0 0 12px">Roles added here show up straight away in job openings, the job-seeker form and the candidate filters.${isSuper(me) ? ' To hide or rename a role, use Settings → Jobs.' : ''}</p>
+      ${d.industries.length > 1 ? `<div class="filters"><select data-ind>${d.industries.map((i) => `<option ${i === d.industry ? 'selected' : ''}>${esc(i)}</option>`).join('')}</select></div>` : ''}
+      <div class="grid g2">${d.departments.map((x) => `<div class="card pad stack-sm"><div class="row between"><h3 style="margin:0">${esc(x.name)}</h3><span class="faint small">${x.roles.length} role${x.roles.length === 1 ? '' : 's'}</span></div>
+        <div class="row" style="gap:6px">${x.roles.map((r) => `<span class="chip${r.hidden ? ' faint' : ''}" title="${r.candidates} candidate${r.candidates === 1 ? '' : 's'} want this${r.hidden ? ' · hidden in Settings' : ''}">${esc(r.title)}${r.candidates ? ` <span class="n">${r.candidates}</span>` : ''}</span>`).join('') || '<span class="faint small">No roles yet</span>'}</div>
+        <form class="row" data-addrole="${esc(x.name)}" style="gap:6px"><input name="title" placeholder="New role in ${esc(x.name)}" style="flex:1 1 180px;width:auto"><button class="btn sm">Add role</button></form></div>`).join('')}</div>`;
+    const ind = $('[data-ind]', el); if (ind) ind.onchange = () => BB.setQ({ industry: ind.value });
+    $$('[data-addrole]', el).forEach((f) => (f.onsubmit = async (e) => {
+      e.preventDefault(); const title = $('[name=title]', f).value.trim(); if (!title) return;
+      try { await BB.post('/api/roles/role', { department: f.dataset.addrole, title, industry: d.industry }); BB.toast(`${title} added to ${f.dataset.addrole}`); reboot(); } catch (er) { BB.showErr(f, er); }
+    }));
+  };
+
   // ---------- Candidates: resume bank, gap view, tie-ups, Excel import ----------
   P.candidates = async (ctx) => {
     const { el, actions, q } = ctx; const tab = q.tab || 'bank';
@@ -199,14 +217,14 @@
     const desigs = [...new Set([...(indNow === 'Jewellery' || indNow === 'all' ? s.jobs.map((j) => j.title) : []), ...(r.designations || [])])];
     const sel = (k, label, opts) => `<select data-f="${k}"><option value="">${label}</option>${opts.map((o) => { const [v, t] = Array.isArray(o) ? o : [o, o]; return `<option value="${esc(v)}" ${String(q[k] || '') === String(v) ? 'selected' : ''}>${esc(t)}</option>`; }).join('')}</select>`;
     const cf = candFilters(q, desigs);
-    el.innerHTML = `<div class="filters cand-filters"><input placeholder="Search name, ID, phone, job…" value="${esc(q.q || '')}" data-q>${indSel}${cf.main}${sel('looking', 'Any looking status', ['Actively looking', 'Open to offers', 'Not looking', 'Placed'])}${sel('status', 'Any status', ['Available', 'In process', 'Hired'])}
+    el.innerHTML = `<div class="filters cand-filters"><input placeholder="Search name, ID, phone, job…" value="${esc(q.q || '')}" data-q>${indSel}${cf.main}${sel('looking', 'Any looking status', BB.boot.looking)}${sel('status', 'Any status', ['Available', 'In process', 'Hired'])}
       <details class="more-f" ${BB.moreFiltersOpen ? 'open' : ''}><summary class="btn sm">${moreBtn(cf.count(['source', 'notice', 'updated', 'stale']))}</summary><div class="card more-pop">
         ${cf.more}
         <div class="grid g3"><label class="mf"><span>Source</span>${sel('source', 'Any source', s.lead_sources)}</label><label class="mf"><span>Profile last updated</span>${sel('updated', 'Any time', [['7', 'Last 7 days'], ['30', 'Last 30 days'], ['90', 'Last 90 days']])}</label><label class="mf"><span>Notice period up to (days)</span><input type="number" min="0" placeholder="Days" data-f="notice" value="${esc(q.notice || '')}"></label></div>
         <label class="row small mf-check"><input type="checkbox" data-f="stale" ${q.stale ? 'checked' : ''}> Only profiles not updated in 90+ days</label></div></details>
       ${saved.length ? sel('saved', 'Segments…', saved.map((x) => [x.id, x.name])) : ''}${anyCandFilter(q) || q.q ? '<button class="btn sm ghost" data-clear>Clear filters</button>' : ''}<button class="btn sm ghost" data-save>Save as segment</button></div>
       <div class="small muted" style="margin:-4px 0 8px">${r.total ?? r.rows.length} candidate${(r.total ?? r.rows.length) === 1 ? '' : 's'}</div>
-      <div class="row small" data-bulkbar style="margin-bottom:8px"><span class="muted">Select rows to:</span><button class="btn sm" data-bulk="add_to_job">Add to a job</button>${me.level !== 'sub' ? '<button class="btn sm gold" data-bulk="alert">Send job alert</button>' : ''}${superAdmin ? '<button class="btn sm" data-bulk="download">Download selected</button>' : ''}</div>
+      <div class="row small" data-bulkbar style="margin-bottom:8px"><span class="muted">Select rows to:</span><button class="btn sm" data-bulk="add_to_job">Add to a job</button>${me.level !== 'sub' ? '<button class="btn sm gold" data-bulk="alert">Send job alert</button>' : ''}<button class="btn sm" data-bulk="set_looking">Set status</button><button class="btn sm" data-bulk="note">Add note</button><button class="btn sm" data-bulk="followup">Follow-up</button>${me.level !== 'sub' ? `<button class="btn sm" data-bulk="assign">Assign recruiter</button><button class="btn sm" data-bulk="${q.archived ? 'unarchive' : 'archive'}">${q.archived ? 'Unarchive' : 'Archive'}</button>` : ''}${superAdmin ? '<button class="btn sm" data-bulk="download">Download selected</button>' : ''}</div>
       <div class="card">${BB.table([{ t: 'ID', f: (c) => `<span class="mono">${c.id}</span>${c.is_new ? ' <span class="dot new"></span>' : ''}` }, { t: 'Name', f: (c) => `<b>${esc(c.name)}</b>${c.opted_out ? ' <span class="badge b-red tiny">STOP</span>' : ''}` }, { t: 'Phone', f: (c) => `<span class="mono small ${c.phone_hidden ? 'faint' : ''}">${esc(c.whatsapp)}</span>` }, { t: 'Job wanted', f: (c) => esc(c.job_wanted) }, { t: 'City', f: (c) => esc(c.city) }, { t: 'Exp', num: 1, f: (c) => c.exp_total ?? '—' }, { t: 'Jewellery', f: (c) => jewYrs(c.exp_jewellery), hideSm: 1 }, { t: 'Expects /mo', num: 1, f: (c) => (c.exp_salary ? inr(c.exp_salary / 12) : '—'), hideSm: 1 }, { t: 'Source', f: (c) => esc(c.source), hideSm: 1 }, { t: 'Applied', f: (c) => fmtD(c.created_at), hideSm: 1 }, { t: 'Status', f: (c) => `<span class="badge ${c.status === 'Hired' ? 'b-green' : c.status.startsWith('In process') ? 'b-primary' : 'b-outline'}">${esc(c.status)}</span>` }, { t: '', f: (c) => `<button class="btn sm" data-pdl="${c.id}" title="Download this profile as PDF" onclick="event.stopPropagation()">Profile PDF</button>` }], r.rows, { open: (c) => `candidate:${c.id}`, select: true })}${BB.pager(r)}</div>`;
     // More filters stays open while filters in it are changed (each change redraws the list).
     const mf = $('.more-f', el); if (mf) mf.ontoggle = () => { BB.moreFiltersOpen = mf.open; };
@@ -220,7 +238,16 @@
     $$('[data-bulk]', el).forEach((b) => (b.onclick = () => {
       const ids = BB.selected(el); if (!ids.length) return BB.toast('Tick some candidates first', true);
       if (b.dataset.bulk === 'download') { const rows = r.rows.filter((c) => ids.includes(c.id)); const csv = '﻿' + [['id', 'name', 'phone', 'job_wanted', 'city', 'experience', 'status'], ...rows.map((c) => [c.id, c.name, c.whatsapp, c.job_wanted, c.city, c.exp_total, c.status])].map((x) => x.map((v) => `"${String(v ?? '').replace(/"/g, '""')}"`).join(',')).join('\r\n'); const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' })); a.download = 'candidates-selected.csv'; a.click(); return; }
-      BB.pickJob(async (jid) => { const res = await BB.post('/api/candidates/bulk', { ids, action: b.dataset.bulk, job_id: jid }).catch(BB.fail); if (res) { BB.toast(`${res.done} done${res.errors.length ? `, ${res.errors.length} skipped` : ''}`); if (res.errors.length) console.info(res.errors); BB.refreshPage(); } });
+      const act = b.dataset.bulk; const n = `${ids.length} candidate${ids.length === 1 ? '' : 's'}`;
+      // Shows what was done and, if some were skipped, why (e.g. another agency's candidate).
+      const report = (res) => { if (!res) return; BB.toast(`${res.done} done${res.errors.length ? `, ${res.errors.length} skipped` : ''}`); if (res.errors.length) BB.modal({ title: `${res.errors.length} skipped`, body: `<div class="stack-sm small">${res.errors.slice(0, 30).map((x) => `<div>${esc(x)}</div>`).join('')}${res.errors.length > 30 ? `<div class="faint">…and ${res.errors.length - 30} more</div>` : ''}</div>` }); BB.refreshPage(); };
+      const send = (extra) => BB.post('/api/candidates/bulk', { ids, action: act, ...extra });
+      if (act === 'set_looking') return BB.ask({ title: `Set status · ${n}`, fields: [{ name: 'looking', label: 'Looking status', type: 'select', options: BB.boot.looking, placeholder: false }], ok: 'Update', submit: send }).then(report);
+      if (act === 'note') return BB.ask({ title: `Add note · ${n}`, fields: [{ name: 'text', label: 'Note', type: 'textarea', placeholder: 'e.g. Called 29 Oct, no answer' }], ok: 'Add note', submit: send }).then(report);
+      if (act === 'followup') return BB.ask({ title: `Follow-up · ${n}`, note: 'You get a reminder on My day and the bell at this time.', fields: [{ name: 'at', label: 'When', type: 'datetime-local' }, { name: 'note', label: 'What to do', opt: true, placeholder: 'e.g. Call back about the Jaipur showroom job' }], ok: 'Set follow-up', submit: (v) => send({ ...v, at: v.at ? BB.fromLocalInput(v.at) : '' }) }).then(report);
+      if (act === 'archive' || act === 'unarchive') return BB.confirm(act === 'archive' ? 'Archive candidates' : 'Unarchive candidates', act === 'archive' ? `${n} will move to Archived. Nothing is deleted.` : `${n} will come back to the resume bank.`, act === 'archive' ? 'Archive' : 'Unarchive').then((ok) => ok && send({}).catch(BB.fail).then(report));
+      if (act === 'assign') return BB.api('/api/users').then((d) => BB.ask({ title: `Assign recruiter · ${n}`, note: 'They get an alert. Candidates from another agency are skipped.', fields: [{ name: 'recruiter_id', label: 'Recruiter', type: 'select', options: d.users.filter((x) => x.level !== 'super' && x.status === 'On').map((x) => [x.id, `${x.name}${isSuper(me) ? ` · ${x.agency_name}` : ''}`]) }], ok: 'Assign', submit: send })).then(report);
+      BB.pickJob(async (jid) => report(await send({ job_id: jid }).catch(BB.fail)));
     }));
     // Same questions and choices as the public "I want a job" form, plus the team-only salary, notice, industry and source.
     $('[data-new]', actions).onclick = () => {

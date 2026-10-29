@@ -90,7 +90,7 @@ function runTimer() {
   for (const f of all('SELECT * FROM followups WHERE done=0 AND alerted=0 AND at<=?', now())) { L.alertUser(f.for_user, `Follow-up: ${f.note || f.record_id}`, f.record_id); update('followups', f.id, { alerted: 1 }); count('followup'); }
   // Weekly freshness ping to candidates not updated in 90 days (Mondays).
   if (new Date(t + 330 * 60000).getUTCDay() === 1) {
-    for (const c of all("SELECT * FROM candidates WHERE merged_into IS NULL AND removed=0 AND archived=0 AND looking!='Placed' AND whatsapp!=''")) {
+    for (const c of all("SELECT * FROM candidates WHERE merged_into IS NULL AND removed=0 AND archived=0 AND looking NOT IN ('Placed','Joined elsewhere') AND whatsapp!=''")) {
       if (L.daysBetween(c.last_updated || c.created_at) > 90) L.sendWA({ ptype: 'candidate', pid: c.id, format: 'bbhs_still_looking', vars: { link: L.link('my-profile') }, auto: true, rule: 'still_looking', dedupe: `fresh:${c.id}:${L.istDay()}` });
     }
   }

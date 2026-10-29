@@ -278,6 +278,9 @@ function skillHit(js, cs) {
 const BUSINESS_TYPES = ['Wholesaler', 'Manufacturer', 'Retailer'];
 const cleanBusiness = (v) => (Array.isArray(v) ? v : String(v || '').split(',')).map((x) => String(x).trim()).filter((x) => BUSINESS_TYPES.includes(x));
 // The job-seeker form's experience choices as years (the public form and the team's Create candidate form).
+// A candidate's looking status. Not looking and Joined elsewhere count as off the market for matching and job alerts.
+const LOOKING = ['Actively looking', 'Open to offers', 'Not looking', 'Not reachable', 'Joined elsewhere', 'Placed'];
+const NOT_LOOKING = ['Not looking', 'Joined elsewhere'];
 const EXP_YEARS = { Fresher: 0, '1–3 years': 2, '3–5 years': 4, '5–10 years': 7, '10+ years': 12 };
 const JEW_YEARS = { 'No experience': 0, 'Less than 1 year': 0.5, '1–3 years': 2, '3–5 years': 4, '5–10 years': 7, '10+ years': 12 };
 const BUSINESS_OF = { 'Showroom B2C': ['Retailer'], 'Manufacturer B2B': ['Manufacturer', 'Wholesaler'], Both: ['Retailer', 'Manufacturer', 'Wholesaler'] };
@@ -327,7 +330,7 @@ function matchScore(c, j, rating) {
   if (same.length) reasons.push(`${same.join(' / ')} experience`);
   if (rating) part('rating', rating / 5, rating >= 4 ? `Rated ${rating.toFixed(1)}/5 in interviews` : null); else part('rating', 0.6);
   let pct = Math.round((score / total) * 100);
-  if (c.looking === 'Not looking') { pct = Math.round(pct * 0.8); gaps.push('Not looking now'); }
+  if (NOT_LOOKING.includes(c.looking)) { pct = Math.round(pct * 0.8); gaps.push('Not looking now'); }
   return { score: pct, reasons: reasons.slice(0, 4), gaps: gaps.slice(0, 3) };
 }
 // Open jobs a candidate fits best (for the candidate's page and the note when they come in).
@@ -348,7 +351,7 @@ function bestMatches(job, limit = 10, forAlert = false) {
   const cands = all('SELECT * FROM candidates WHERE archived=0 AND junk=0 AND merged_into IS NULL AND removed=0');
   const onJob = new Set(all("SELECT candidate_id FROM applications WHERE job_id=? AND result='open'", job.id).map((r) => r.candidate_id));
   return cands
-    .filter((c) => !onJob.has(c.id) && !isPlaced(c.id) && (!forAlert || (c.looking !== 'Not looking' && !c.opted_out)))
+    .filter((c) => !onJob.has(c.id) && !isPlaced(c.id) && (!forAlert || (!NOT_LOOKING.includes(c.looking) && !c.opted_out)))
     .map((c) => ({ c, ...matchScore(c, job, ratingOf(c.id)) }))
     .sort((a, b) => b.score - a.score).slice(0, limit);
 }
@@ -898,7 +901,7 @@ function sendSystemText(ptype, pid, text) {
 module.exports = {
   STEPS, stepIdx, digits10, validPhone, inr, istDay, istFmt, istTime, istHour, inQuiet, next9am, daysBetween, addDays, hashPassword, checkPassword, newPassword, sha,
   waHeld, IV_MODES, clientSeesIv, addIvNote, CALL_OUTCOMES, logCall, jobList, deptOf, stateOf, person, fillFormat, windowOpenUntil, sendWA, setDispatcher, alertUser, link, agencyAdmin, superAdmins,
-  computeJobStatus, jobStatusReason, recalcJob, filledCount, appsOfJob, matchScore, jobsFor, cleanBusiness, BUSINESS_TYPES, EXP_YEARS, JEW_YEARS, ratingOf, bestMatches, isPlaced, salaryText, autoJobAlert,
+  computeJobStatus, jobStatusReason, recalcJob, filledCount, appsOfJob, matchScore, jobsFor, cleanBusiness, BUSINESS_TYPES, EXP_YEARS, JEW_YEARS, LOOKING, NOT_LOOKING, ratingOf, bestMatches, isPlaced, salaryText, autoJobAlert,
   feeFor, gstFor, fyOf, billView, refreshBill, createBillForApp, issueBill, upiLink,
   appHist, createApplication, moveStep, closeApplication, reopenApplication, scheduleInterview, recordInterview, interviewView, ivVars, recordOffer, leftJob, jobAction,
   CONSENT_WORDING, saveConsent, intakeClient, intakeCandidate, assignLead, mergeRecords, resolveId, receiveReply, actorName,

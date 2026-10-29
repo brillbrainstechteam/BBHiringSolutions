@@ -26,12 +26,12 @@
 
   const MENU = [
     ['myday', 'My day', 'sun', ['sub']], ['dashboard', 'Dashboard', 'grid'], ['leads', 'Leads', 'inbox', ['super'], 'leads'],
-    ['clients', 'Clients', 'building'], ['jobs', 'Job openings', 'brief'], ['candidates', 'Candidates', 'users'], ['segments', 'Segments', 'search'], ['applications', 'Applications', 'flow'],
+    ['clients', 'Clients', 'building'], ['jobs', 'Job openings', 'brief'], ['candidates', 'Candidates', 'users'], ['segments', 'Segments', 'search'], ['roles', 'Departments & roles', 'brief'], ['applications', 'Applications', 'flow'],
     ['interviews', 'Interviews', 'cal', null, 'pending'], ['whatsapp', 'WhatsApp', 'chat', null, 'unread'],
     ['performance', 'Performance', 'chart'], ['logs', 'Daily logs', 'note'], ['bills', 'Bills', 'rupee', ['super', 'admin']], ['money', 'Money', 'money', ['super']],
     ['reports', 'Reports', 'report', ['super', 'admin']], ['logins', 'Logins & team', 'key'], ['settings', 'Settings', 'cog', ['super']],
   ];
-  const GROUP = { myday: 'Overview', dashboard: 'Overview', leads: 'Hiring', clients: 'Hiring', jobs: 'Hiring', candidates: 'Hiring', segments: 'Hiring', applications: 'Hiring', interviews: 'Hiring', whatsapp: 'Messages', performance: 'Team', logs: 'Team', bills: 'Money', money: 'Money', reports: 'Money', logins: 'Admin', settings: 'Admin' };
+  const GROUP = { myday: 'Overview', dashboard: 'Overview', leads: 'Hiring', clients: 'Hiring', jobs: 'Hiring', candidates: 'Hiring', segments: 'Hiring', roles: 'Hiring', applications: 'Hiring', interviews: 'Hiring', whatsapp: 'Messages', performance: 'Team', logs: 'Team', bills: 'Money', money: 'Money', reports: 'Money', logins: 'Admin', settings: 'Admin' };
   const HELP = {
     myday: 'Everything you need to do today: interviews, results to record, follow-ups and stuck applications.',
     dashboard: 'Counts and the Needs attention list. Every item has a WhatsApp button to nudge the right person.',
@@ -39,6 +39,7 @@
     clients: 'Jewellery businesses that hire through us. Open one to see onboarding, job openings and chats.',
     jobs: 'Each role a client wants to fill. The status is worked out from its applications — never typed by hand (except On hold and Closed).',
     candidates: 'The resume bank, shared by all agencies. Phone numbers show only for your own agency\'s candidates.',
+    roles: 'The departments and the roles (designations) in each. Anyone in the team can add a department or a role.',
     segments: 'Saved groups of candidates (city, job, experience, jewellery years, salary…). Each stays up to date, can be shared with the team and downloaded.',
     applications: 'One candidate on one job. Move cards step by step; days in this step turn red after 7.',
     interviews: 'Our rounds and client rounds. "Result pending" means the time has passed and no result is recorded.',

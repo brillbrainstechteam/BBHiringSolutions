@@ -600,6 +600,7 @@ route('PATCH', '/api/candidates/:id', T, (ctx) => {
   if (ctx.body.exp_business !== undefined) ctx.body.exp_business = L.cleanBusiness(ctx.body.exp_business);
   const allowed = ['exp_business', 'name', 'whatsapp', 'email', 'city', 'state', 'work_cities', 'industry', 'job_wanted', 'exp_total', 'exp_jewellery', 'cur_salary', 'exp_salary', 'notice_days', 'skills', 'current_company', 'looking', 'tieup_id', 'archived', 'recruiter_id'];
   const patch = {}; for (const k of allowed) if (ctx.body[k] !== undefined) patch[k] = ctx.body[k];
+  if (patch.looking && !L.LOOKING.includes(patch.looking)) throw httpError(400, 'Pick a looking status', 'looking');
   if (patch.whatsapp) { patch.whatsapp = L.digits10(patch.whatsapp); if (!L.validPhone(patch.whatsapp)) throw httpError(400, 'Enter a 10-digit WhatsApp number', 'whatsapp'); }
   if (patch.job_wanted) patch.department = L.deptOf(patch.job_wanted);
   patch.last_updated = now();
@@ -615,9 +616,43 @@ route('POST', '/api/candidates/bulk', T, (ctx) => {
     if (ctx.user.level === 'sub') throw httpError(403, 'Sub admins cannot send bulk job alerts.');
     const j = get('SELECT * FROM jobs WHERE id=?', job_id); if (!j) throw httpError(400, 'Pick a job');
     for (const id of ids.slice(0, D.settings().bulk_budget)) { const r = L.sendWA({ ptype: 'candidate', pid: id, format: 'bbhs_job_alert', vars: { job: j.title, city: j.city, salary: L.salaryText(j) }, jb: j.id, by: ctx.actor, bulk: true, dedupe: `alert:${j.id}:${id}` }); if (r.skipped) out.errors.push(`${id}: ${r.skipped}`); else out.done++; }
-  }
+  } else return bulkUpdate(ctx, out);
   return out;
 });
+// Bulk changes to the ticked candidates. Everyone in the team can set the looking status, add a note or a follow-up;
+// admins (and the super admin) can also assign a recruiter and archive. Only the candidate's own agency changes a
+// candidate (the super admin changes any); the rest are listed as skipped.
+function bulkUpdate(ctx, out) {
+  const u = ctx.user; const b = ctx.body; const ids = [...new Set((b.ids || []).map(String))].slice(0, 500);
+  if (!ids.length) throw httpError(400, 'Tick some candidates first');
+  const adminOnly = ['assign', 'archive', 'unarchive'];
+  if (!['set_looking', 'note', 'followup', ...adminOnly].includes(b.action)) throw httpError(400, 'Unknown action');
+  if (adminOnly.includes(b.action) && u.level === 'sub') throw httpError(403, 'Only admins can assign or archive candidates.');
+  if (b.action === 'set_looking' && !L.LOOKING.includes(b.looking)) throw httpError(400, 'Pick a looking status', 'looking');
+  if (b.action === 'note' && !String(b.text || '').trim()) throw httpError(400, 'Write the note', 'text');
+  let when = null; if (b.action === 'followup') { when = new Date(b.at); if (!b.at || Number.isNaN(when.getTime())) throw httpError(400, 'Pick the date and time', 'at'); }
+  let rec = null;
+  if (b.action === 'assign') {
+    rec = get("SELECT * FROM users WHERE id=? AND status='On' AND level!='super'", b.recruiter_id); if (!rec) throw httpError(400, 'Pick a recruiter', 'recruiter_id');
+    if (!isSuper(u) && rec.agency_id !== u.agency_id) throw httpError(403, 'Pick someone from your own agency', 'recruiter_id');
+  }
+  for (const id of ids) {
+    const c = get('SELECT * FROM candidates WHERE id=? AND removed=0', L.resolveId(id)); if (!c) { out.errors.push(`${id}: not found`); continue; }
+    const own = isSuper(u) || (c.agency_id && c.agency_id === u.agency_id);
+    if (b.action !== 'note' && b.action !== 'followup' && !own) { out.errors.push(`${c.id}: another agency's candidate`); continue; }
+    if (b.action === 'set_looking') { if (c.looking !== b.looking) D.edit('candidates', c.id, { looking: b.looking, last_updated: now() }, ctx.actor.label, ctx.ip); }
+    else if (b.action === 'note') { insert('notes', { record_id: c.id, text: String(b.text).trim(), author: ctx.actor.label, at: now() }); D.history(ctx.actor.label, 'note', c.id); }
+    else if (b.action === 'followup') insert('followups', { record_id: c.id, at: when.toISOString(), note: String(b.note || '').trim(), for_user: u.id, done: 0, created_by: u.id });
+    else if (b.action === 'assign') {
+      if (c.agency_id && c.agency_id !== rec.agency_id) { out.errors.push(`${c.id}: belongs to another agency`); continue; }
+      D.edit('candidates', c.id, { recruiter_id: rec.id, agency_id: rec.agency_id, is_new: 0 }, ctx.actor.label, ctx.ip);
+    } else D.edit('candidates', c.id, { archived: b.action === 'archive' ? 1 : 0 }, ctx.actor.label, ctx.ip);
+    out.done++;
+  }
+  if (b.action === 'assign' && out.done && rec.id !== u.id) L.alertUser(rec.id, `${out.done} candidate${out.done === 1 ? '' : 's'} assigned to you by ${u.name}`, null);
+  D.history(ctx.actor.label, `bulk ${b.action}`, null, 'candidates', null, `${out.done} done, ${out.errors.length} skipped`, null, ctx.ip);
+  return out;
+}
 route('GET', '/api/gap', T, (ctx) => {
   const s = D.settings(); const cities = s.cities.map((c) => c.name); const depts = s.departments;
   const grid = {};
@@ -1164,6 +1199,48 @@ route('POST', '/api/agencies/:id/toggle', SUPER, (ctx) => {
   const st = a.status === 'Active' ? 'Paused' : 'Active'; D.edit('agencies', a.id, { status: st }, ctx.actor.label, ctx.ip);
   if (st === 'Paused') D.run("DELETE FROM sessions WHERE kind='team' AND subject_id IN (SELECT id FROM users WHERE agency_id=?)", a.id);
   return { status: st };
+});
+
+// ---------- departments & roles (every team level) ----------
+// The same lists Settings edits (departments, and each industry's groups of jobs), so job openings, the job-seeker
+// form and the candidate filters pick up a new role at once. Anyone in the team can add; hiding or renaming stays in Settings.
+function roleCatalog(industry) {
+  const s = D.settings(); const name = industry && s.industries[industry] ? industry : s.default_industry && s.industries[s.default_industry] ? s.default_industry : Object.keys(s.industries)[0];
+  const groups = s.industries[name].groups; const hidden = new Set(s.hidden_jobs || []);
+  const wanted = Object.fromEntries(all('SELECT job_wanted, COUNT(*) n FROM candidates WHERE merged_into IS NULL AND removed=0 AND junk=0 GROUP BY job_wanted').map((r) => [r.job_wanted, r.n]));
+  const depts = [...new Set([...(s.departments || []), ...Object.values(groups).map((g) => g.dept)])];
+  return { industry: name, industries: Object.keys(s.industries), departments: depts.map((d) => ({ name: d, roles: Object.values(groups).filter((g) => g.dept === d).flatMap((g) => g.jobs).map((t) => ({ title: t, hidden: hidden.has(t), candidates: wanted[t] || 0 })) })) };
+}
+const sameText = (a, b) => String(a).trim().toLowerCase() === String(b).trim().toLowerCase();
+route('GET', '/api/roles', T, (ctx) => roleCatalog(ctx.query.industry));
+route('POST', '/api/roles/department', T, (ctx) => {
+  const name = String(ctx.body.name || '').trim().replace(/\s+/g, ' ');
+  if (!name) throw httpError(400, 'Type the department name', 'name');
+  if (name.length > 40) throw httpError(400, 'Keep the name under 40 letters', 'name');
+  const s = D.settings(); const known = [...(s.departments || []), ...Object.values(s.industries).flatMap((i) => Object.values(i.groups).map((g) => g.dept))];
+  if (known.some((d) => sameText(d, name))) throw httpError(400, 'This department already exists', 'name');
+  D.setSetting('departments', [...(s.departments || []), name]);
+  D.history(ctx.actor.label, 'add department', 'settings', 'departments', null, name);
+  return { ok: true, name };
+});
+route('POST', '/api/roles/role', T, (ctx) => {
+  const title = String(ctx.body.title || '').trim().replace(/\s+/g, ' '); const dept = String(ctx.body.department || '').trim();
+  if (!title) throw httpError(400, 'Type the role name', 'title');
+  if (title.length > 60) throw httpError(400, 'Keep the role under 60 letters', 'title');
+  const cat = roleCatalog(ctx.body.industry);
+  if (!cat.departments.some((d) => d.name === dept)) throw httpError(400, 'Pick a department', 'department');
+  const s = D.settings();
+  for (const [indName, ind] of Object.entries(s.industries)) for (const g of Object.values(ind.groups)) {
+    const hit = g.jobs.find((j) => sameText(j, title)); if (hit) throw httpError(400, `"${hit}" already exists under ${g.dept}${indName !== cat.industry ? ` (${indName})` : ''}`, 'title');
+  }
+  // Goes into the department's group (the one named after it if there are several); a new department gets its own group.
+  const inds = JSON.parse(JSON.stringify(s.industries)); const groups = inds[cat.industry].groups;
+  const mine = Object.entries(groups).filter(([, g]) => g.dept === dept);
+  const key = (mine.find(([k]) => sameText(k, dept)) || mine[0] || [dept])[0];
+  groups[key] = groups[key] || { dept, jobs: [] }; groups[key].jobs.push(title);
+  D.setSetting('industries', inds);
+  D.history(ctx.actor.label, 'add role', 'settings', 'industries', null, `${title} (${dept})`);
+  return { ok: true, title, department: dept };
 });
 
 // ---------- settings (super admin) ----------
