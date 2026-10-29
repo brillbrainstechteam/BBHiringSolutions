@@ -217,19 +217,46 @@
     const desigs = [...new Set([...(indNow === 'Jewellery' || indNow === 'all' ? s.jobs.map((j) => j.title) : []), ...(r.designations || [])])];
     const sel = (k, label, opts) => `<select data-f="${k}"><option value="">${label}</option>${opts.map((o) => { const [v, t] = Array.isArray(o) ? o : [o, o]; return `<option value="${esc(v)}" ${String(q[k] || '') === String(v) ? 'selected' : ''}>${esc(t)}</option>`; }).join('')}</select>`;
     const cf = candFilters(q, desigs);
-    el.innerHTML = `<div class="filters cand-filters"><input placeholder="Search name, ID, phone, job…" value="${esc(q.q || '')}" data-q>${indSel}${cf.main}${sel('looking', 'Any looking status', BB.boot.looking)}${sel('status', 'Any status', ['Available', 'In process', 'Hired'])}
+    const total = r.total ?? r.rows.length; const filtered = anyCandFilter(q) || q.q || q.looking || q.status || q.source || q.updated || q.notice || q.stale;
+    const LOOK_BADGE = { 'Actively looking': 'b-green', 'Open to offers': 'b-primary', 'Not reachable': 'b-amber', Placed: 'b-gold' };
+    const bulkBtn = (a, label, cls = '') => `<button class="btn sm ${cls}" data-bulk="${a}" disabled>${label}</button>`;
+    // Filters and saved segments in one card; the selection bar; then the table in its own scroll box.
+    el.innerHTML = `<section class="card cand-panel">
+      <div class="filters cand-filters"><input placeholder="Search name, ID, phone, job…" value="${esc(q.q || '')}" data-q aria-label="Search candidates">${indSel}${cf.main}${sel('looking', 'Any looking status', BB.boot.looking)}${sel('status', 'Any status', ['Available', 'In process', 'Hired'])}
       <details class="more-f" ${BB.moreFiltersOpen ? 'open' : ''}><summary class="btn sm">${moreBtn(cf.count(['source', 'notice', 'updated', 'stale']))}</summary><div class="card more-pop">
         ${cf.more}
         <div class="grid g3"><label class="mf"><span>Source</span>${sel('source', 'Any source', s.lead_sources)}</label><label class="mf"><span>Profile last updated</span>${sel('updated', 'Any time', [['7', 'Last 7 days'], ['30', 'Last 30 days'], ['90', 'Last 90 days']])}</label><label class="mf"><span>Notice period up to (days)</span><input type="number" min="0" placeholder="Days" data-f="notice" value="${esc(q.notice || '')}"></label></div>
-        <label class="row small mf-check"><input type="checkbox" data-f="stale" ${q.stale ? 'checked' : ''}> Only profiles not updated in 90+ days</label></div></details>
-      ${saved.length ? sel('saved', 'Segments…', saved.map((x) => [x.id, x.name])) : ''}${anyCandFilter(q) || q.q ? '<button class="btn sm ghost" data-clear>Clear filters</button>' : ''}<button class="btn sm ghost" data-save>Save as segment</button></div>
-      <div class="small muted" style="margin:-4px 0 8px">${r.total ?? r.rows.length} candidate${(r.total ?? r.rows.length) === 1 ? '' : 's'}</div>
-      <div class="row small" data-bulkbar style="margin-bottom:8px"><span class="muted">Select rows to:</span><button class="btn sm" data-bulk="add_to_job">Add to a job</button>${me.level !== 'sub' ? '<button class="btn sm gold" data-bulk="alert">Send job alert</button>' : ''}<button class="btn sm" data-bulk="set_looking">Set status</button><button class="btn sm" data-bulk="note">Add note</button><button class="btn sm" data-bulk="followup">Follow-up</button>${me.level !== 'sub' ? `<button class="btn sm" data-bulk="assign">Assign recruiter</button><button class="btn sm" data-bulk="${q.archived ? 'unarchive' : 'archive'}">${q.archived ? 'Unarchive' : 'Archive'}</button>` : ''}${superAdmin ? '<button class="btn sm" data-bulk="download">Download selected</button>' : ''}</div>
-      <div class="card">${BB.table([{ t: 'ID', f: (c) => `<span class="mono">${c.id}</span>${c.is_new ? ' <span class="dot new"></span>' : ''}` }, { t: 'Name', f: (c) => `<b>${esc(c.name)}</b>${c.opted_out ? ' <span class="badge b-red tiny">STOP</span>' : ''}` }, { t: 'Phone', f: (c) => `<span class="mono small ${c.phone_hidden ? 'faint' : ''}">${esc(c.whatsapp)}</span>` }, { t: 'Job wanted', f: (c) => esc(c.job_wanted) }, { t: 'City', f: (c) => esc(c.city) }, { t: 'Exp', num: 1, f: (c) => c.exp_total ?? '—' }, { t: 'Jewellery', f: (c) => jewYrs(c.exp_jewellery), hideSm: 1 }, { t: 'Expects /mo', num: 1, f: (c) => (c.exp_salary ? inr(c.exp_salary / 12) : '—'), hideSm: 1 }, { t: 'Source', f: (c) => esc(c.source), hideSm: 1 }, { t: 'Applied', f: (c) => fmtD(c.created_at), hideSm: 1 }, { t: 'Status', f: (c) => `<span class="badge ${c.status === 'Hired' ? 'b-green' : c.status.startsWith('In process') ? 'b-primary' : 'b-outline'}">${esc(c.status)}</span>` }, { t: '', f: (c) => `<button class="btn sm" data-pdl="${c.id}" title="Download this profile as PDF" onclick="event.stopPropagation()">Profile PDF</button>` }], r.rows, { open: (c) => `candidate:${c.id}`, select: true })}${BB.pager(r)}</div>`;
+        <label class="row small mf-check"><input type="checkbox" data-f="stale" ${q.stale ? 'checked' : ''}> Only profiles not updated in 90+ days</label></div></details></div>
+      <div class="cand-result"><div class="cand-count"><b>${total}</b> candidate${total === 1 ? '' : 's'}${filtered ? ' <span class="faint">match these filters</span>' : ''}</div>
+        <div class="row cand-seg">${filtered ? '<button class="btn sm ghost" data-clear>Clear filters</button>' : ''}${saved.length ? sel('saved', 'Open a segment…', saved.map((x) => [x.id, x.name])) : ''}<button class="btn sm" data-save>Save as segment</button></div></div>
+    </section>
+    <div class="row small bulkbar cand-bulk" data-bulkbar><span class="sel-count" data-selcount>Tick candidates to act on them</span>
+      ${bulkBtn('add_to_job', 'Add to a job')}${me.level !== 'sub' ? bulkBtn('alert', 'Send job alert', 'gold') : ''}${bulkBtn('set_looking', 'Set status')}${bulkBtn('note', 'Add note')}${bulkBtn('followup', 'Follow-up')}${me.level !== 'sub' ? `${bulkBtn('assign', 'Assign recruiter')}${bulkBtn(q.archived ? 'unarchive' : 'archive', q.archived ? 'Unarchive' : 'Archive')}` : ''}${superAdmin ? bulkBtn('download', 'Download selected') : ''}<button class="btn sm ghost" data-unsel hidden>Clear selection</button></div>
+    <div class="card cand-table">${BB.table([
+      { t: 'ID', cls: 'stick stick-1', f: (c) => `<span class="mono">${c.id}</span>${c.is_new ? ' <span class="dot new" title="New"></span>' : ''}` },
+      { t: 'Name', cls: 'stick stick-2', f: (c) => `<b>${esc(c.name)}</b>${c.opted_out ? ' <span class="badge b-red tiny">STOP</span>' : ''}<div class="mono tiny ${c.phone_hidden ? 'faint' : 'muted'}">${esc(c.whatsapp)}</div>` },
+      { t: 'Job wanted', cls: 'wrap', f: (c) => esc(c.job_wanted) || '<span class="faint">—</span>' },
+      { t: 'City', f: (c) => esc(c.city) },
+      { t: 'Exp', num: 1, f: (c) => (c.exp_total === null || c.exp_total === undefined ? '—' : `${c.exp_total} yrs`) },
+      { t: 'Jewellery', f: (c) => jewYrs(c.exp_jewellery) },
+      { t: 'Expects /mo', num: 1, f: (c) => (c.exp_salary ? inr(c.exp_salary / 12) : '—'), hideSm: 1 },
+      { t: 'Looking', f: (c) => (c.looking ? `<span class="badge ${LOOK_BADGE[c.looking] || 'b-outline'}">${esc(c.looking)}</span>` : '—') },
+      { t: 'Status', f: (c) => `<span class="badge ${c.status === 'Hired' ? 'b-green' : c.status.startsWith('In process') ? 'b-primary' : 'b-outline'}">${esc(c.status)}</span>` },
+      { t: 'Source', f: (c) => esc(c.source), hideSm: 1 },
+      { t: 'Applied', f: (c) => fmtD(c.created_at), hideSm: 1 },
+      { t: '<span class="sr-only">Profile</span>', cls: 'act-col', f: (c) => `<button class="btn sm" data-pdl="${c.id}" title="Download ${esc(c.name)}'s profile as PDF" onclick="event.stopPropagation()">PDF</button>` },
+    ], r.rows, { open: (c) => `candidate:${c.id}`, select: true, scroll: true, empty: filtered ? 'No candidates match these filters.' : 'No candidates yet.' })}${BB.pager(r)}</div>`;
     // More filters stays open while filters in it are changed (each change redraws the list).
     const mf = $('.more-f', el); if (mf) mf.ontoggle = () => { BB.moreFiltersOpen = mf.open; };
     { const cl = $('[data-clear]', el); if (cl) cl.onclick = clearCandFilters; }
-    wireDl(actions); BB.wirePager(el); BB.wireSelect(el);
+    wireDl(actions); BB.wirePager(el);
+    // Selection bar: says how many are ticked; the actions switch on only when something is ticked.
+    const bar = $('[data-bulkbar]', el);
+    const onSel = () => { const n = BB.selected(el).length; $('[data-selcount]', bar).textContent = n ? `${n} selected` : 'Tick candidates to act on them'; bar.classList.toggle('has-sel', n > 0); $$('[data-bulk]', bar).forEach((b) => { b.disabled = !n; }); $('[data-unsel]', bar).hidden = !n; };
+    BB.wireSelect(el, onSel);
+    $('[data-unsel]', bar).onclick = () => { $$('[data-sel], [data-all]', el).forEach((x) => { x.checked = false; }); onSel(); };
+    // A shadow on the fixed columns once the table is scrolled sideways, so it is clear more columns sit to the right.
+    const box = $('.tbl-scroll', el); if (box) { const edge = () => { box.classList.toggle('scrolled-x', box.scrollLeft > 2); box.classList.toggle('more-x', box.scrollLeft + box.clientWidth < box.scrollWidth - 2); }; box.addEventListener('scroll', edge, { passive: true }); edge(); }
     $$('[data-pdl]', el).forEach((b) => b.addEventListener('click', () => BB.download(`/api/candidates/${b.dataset.pdl}/profile.pdf`)));
     let t; $('[data-q]', el).oninput = (e) => { clearTimeout(t); t = setTimeout(() => BB.setQ({ q: e.target.value, page: 1 }), 350); };
     $$('[data-f]', el).forEach((i) => (i.onchange = () => { if (i.dataset.f === 'saved') { const sv = saved.find((x) => String(x.id) === i.value); if (sv) { const sq = JSON.parse(sv.query); BB.setQ(Object.fromEntries(Object.keys({ ...q, ...sq }).map((k) => [k, sq[k] || '']))); } return; } BB.setQ({ [i.dataset.f]: i.type === 'checkbox' ? (i.checked ? '1' : '') : i.value, ...(i.dataset.f === 'industry' ? { job: '' } : {}), page: 1 }); }));

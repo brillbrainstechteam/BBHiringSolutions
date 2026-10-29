@@ -1292,3 +1292,52 @@ html[lang="hi"] .ss-g { letter-spacing: 0; }
 .lp-search .ss-in { border: 0; background-color: transparent; padding: 2px 26px 2px 0; min-height: 30px; font-size: 15px; font-weight: 600; box-shadow: none; background-position: right 2px center; }
 .lp-search .ss.open .ss-in { box-shadow: none; }
 .lp-search .ss-list { top: calc(100% + 12px); left: -12px; right: auto; width: min(420px, 86vw); }
+
+/* ---------- Candidates: filter card, selection bar, scrolling table ---------- */
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.cand-panel { padding: 14px; margin-bottom: 12px; display: flex; flex-direction: column; gap: 12px; }
+.cand-panel .cand-filters { margin-bottom: 0; position: relative; }
+.cand-result { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; padding-top: 12px; border-top: 1px solid var(--border); }
+.cand-count { font-size: 14px; } .cand-count b { font-size: 17px; font-variant-numeric: tabular-nums; }
+.cand-seg { gap: 8px; } .cand-seg select { width: auto; max-width: 240px; height: 34px; padding: 0 38px 0 14px; font-size: 13px; border-radius: 999px; }
+.cand-bulk { margin-bottom: 12px; min-height: 46px; position: sticky; top: 8px; z-index: 6; }
+.cand-bulk .sel-count { font-weight: 600; color: var(--muted); margin-right: 4px; min-width: 150px; }
+.cand-bulk.has-sel .sel-count { color: var(--ink); }
+.cand-bulk .btn:disabled { opacity: .45; cursor: not-allowed; }
+.cand-bulk [hidden] { display: none; }
+.cand-table { overflow: hidden; }
+.cand-table .pager { padding: 10px 14px; border-top: 1px solid var(--border); }
+
+/* The table scrolls inside its own box, so the sideways scrollbar is always on screen. The header row stays at the
+   top; the tick box, ID and Name stay at the left while the rest scrolls. */
+.tbl-scroll { max-height: max(320px, calc(100vh - 260px)); overflow: auto; overscroll-behavior: contain; scrollbar-color: var(--border-strong) var(--surface-2); }
+.tbl-scroll::-webkit-scrollbar { width: 12px; height: 12px; }
+.tbl-scroll::-webkit-scrollbar-track { background: var(--surface-2); }
+.tbl-scroll::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 999px; border: 3px solid var(--surface-2); }
+.tbl-scroll::-webkit-scrollbar-thumb:hover { background: var(--faint); }
+.tbl-scroll .tbl { min-width: 1180px; border-collapse: separate; border-spacing: 0; }
+.tbl-scroll thead th { position: sticky; top: 0; z-index: 3; background: var(--surface-2); box-shadow: inset 0 -1px 0 var(--border); border-bottom: 0; }
+.tbl-scroll td { white-space: nowrap; padding: 10px 12px; background: var(--surface); }
+.tbl-scroll th { padding: 10px 12px; }
+.tbl-scroll td.wrap { white-space: normal; min-width: 170px; max-width: 230px; line-height: 1.35; }
+.tbl-scroll tbody tr:nth-child(even) td { background: var(--surface-2); }
+.tbl-scroll tr.click:hover td { background: var(--sky-50); }
+.tbl-scroll .stick { position: sticky; z-index: 2; }
+.tbl-scroll thead .stick { z-index: 4; }
+.tbl-scroll .stick-0 { left: 0; width: 44px; min-width: 44px; max-width: 44px; text-align: center; }
+.tbl-scroll .stick-1 { left: 44px; width: 104px; min-width: 104px; max-width: 104px; }
+.tbl-scroll .stick-2 { left: 148px; width: 210px; min-width: 210px; max-width: 210px; white-space: normal; line-height: 1.3; }
+.tbl-scroll.scrolled-x .stick-2 { box-shadow: 8px 0 10px -8px rgba(16, 26, 58, .28); }
+.tbl-scroll .sel-col input { width: 16px; height: 16px; cursor: pointer; }
+.tbl-scroll td.act-col, .tbl-scroll th.act-col { text-align: right; width: 64px; }
+.tbl-scroll .badge { white-space: nowrap; }
+/* A soft fade at the right edge while there are more columns to scroll to. */
+.cand-table { position: relative; }
+.cand-table:has(.tbl-scroll.more-x)::after { content: ""; position: absolute; top: 0; right: 12px; bottom: 52px; width: 28px; pointer-events: none; background: linear-gradient(to right, transparent, color-mix(in srgb, var(--ink) 8%, transparent)); }
+@media (max-width: 760px) {
+  .cand-panel { padding: 12px; }
+  .cand-result { flex-direction: column; align-items: stretch; } .cand-seg { justify-content: space-between; }
+  .cand-bulk { position: static; }
+  .tbl-scroll { max-height: none; }
+  .tbl-scroll .stick-2 { position: static; box-shadow: none; }
+}

@@ -278,9 +278,9 @@ function skillHit(js, cs) {
 const BUSINESS_TYPES = ['Wholesaler', 'Manufacturer', 'Retailer'];
 const cleanBusiness = (v) => (Array.isArray(v) ? v : String(v || '').split(',')).map((x) => String(x).trim()).filter((x) => BUSINESS_TYPES.includes(x));
 // The job-seeker form's experience choices as years (the public form and the team's Create candidate form).
-// A candidate's looking status. Not looking and Joined elsewhere count as off the market for matching and job alerts.
-const LOOKING = ['Actively looking', 'Open to offers', 'Not looking', 'Not reachable', 'Joined elsewhere', 'Placed'];
-const NOT_LOOKING = ['Not looking', 'Joined elsewhere'];
+// A candidate's looking status. Not looking, Not interested and Joined elsewhere count as off the market for matching and job alerts.
+const LOOKING = ['Actively looking', 'Open to offers', 'Not looking', 'Not interested', 'Not reachable', 'Joined elsewhere', 'Placed'];
+const NOT_LOOKING = ['Not looking', 'Not interested', 'Joined elsewhere'];
 const EXP_YEARS = { Fresher: 0, '1–3 years': 2, '3–5 years': 4, '5–10 years': 7, '10+ years': 12 };
 const JEW_YEARS = { 'No experience': 0, 'Less than 1 year': 0.5, '1–3 years': 2, '3–5 years': 4, '5–10 years': 7, '10+ years': 12 };
 const BUSINESS_OF = { 'Showroom B2C': ['Retailer'], 'Manufacturer B2B': ['Manufacturer', 'Wholesaler'], Both: ['Retailer', 'Manufacturer', 'Wholesaler'] };
