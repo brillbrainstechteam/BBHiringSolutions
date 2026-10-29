@@ -590,6 +590,28 @@ route('PATCH', '/api/jobs/:id', T, (ctx) => {
   L.recalcJob(j.id, ctx.actor.label, 'Edited');
   return get('SELECT * FROM jobs WHERE id=?', j.id);
 });
+// Bulk actions on ticked job openings: status (approve JD, hold, resume, close, reopen), priority, recruiter, client.
+route('POST', '/api/jobs/bulk', T, (ctx) => {
+  const b = ctx.body || {}; const out = { done: 0, errors: [] };
+  for (const id of (b.ids || []).slice(0, 500)) {
+    try {
+      const j = get('SELECT * FROM jobs WHERE id=?', id); mustSee(seeJob(ctx.user, j), 'job opening');
+      if (['hold', 'resume', 'close', 'reopen', 'approve_jd'].includes(b.action)) L.jobAction(id, b.action, { reason: b.reason }, ctx.actor);
+      else if (b.action === 'priority') { if (!['High', 'Medium', 'Low'].includes(b.priority)) throw httpError(400, 'Pick a priority'); D.edit('jobs', id, { priority: b.priority }, ctx.actor.label, ctx.ip); }
+      else if (b.action === 'recruiter') {
+        if (ctx.user.level === 'sub') throw httpError(403, 'Admins assign recruiters.');
+        D.edit('jobs', id, { recruiter_id: b.recruiter_id || null }, ctx.actor.label, ctx.ip);
+        if (b.recruiter_id && b.recruiter_id !== j.recruiter_id) L.alertUser(b.recruiter_id, `You are now the recruiter on ${j.id}`, j.id);
+      } else if (b.action === 'client') {
+        const nc = get('SELECT * FROM clients WHERE id=? AND removed=0 AND merged_into IS NULL', b.client_id); mustSee(seeClient(ctx.user, nc), 'client');
+        if (!isSuper(ctx.user) && nc.agency_id !== j.agency_id) throw httpError(403, 'Pick a client of your own agency.');
+        D.edit('jobs', id, { client_id: nc.id, ...(isSuper(ctx.user) ? { agency_id: nc.agency_id } : {}) }, ctx.actor.label, ctx.ip);
+      } else throw httpError(400, 'Unknown action');
+      out.done++;
+    } catch (e) { out.errors.push(`${id}: ${e.message}`); }
+  }
+  return out;
+});
 route('POST', '/api/jobs/:id/action', T, (ctx) => {
   const j = get('SELECT * FROM jobs WHERE id=?', ctx.params.id); mustSee(seeJob(ctx.user, j), 'job opening');
   return L.jobAction(j.id, ctx.body.action, ctx.body, ctx.actor);
@@ -1595,3 +1617,4 @@ route('GET', '/api/reports/:name', T, (ctx) => {
   return { rows };
 });
 module.exports.removePerson = removePerson;
+require('./trash'); // delete with a recycle bin (Settings -> Deleted items)
