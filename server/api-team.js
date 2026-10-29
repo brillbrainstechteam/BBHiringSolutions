@@ -469,6 +469,89 @@ function createJob(c, b, actor, byClient) {
   return get('SELECT * FROM jobs WHERE id=?', id);
 }
 module.exports.createJob = createJob;
+
+// ---------- Excel upload of job openings (and their clients) ----------
+// Reads the "Client Job Tracking Sheet" (or the first sheet): Date, Client Name, Area, Position Open, No. of Vacancy,
+// Job Code, Salary Range, Notice Period, Recruiter, Status, Remarks. A "Client Master" sheet, when present, fills in the
+// new clients' contact, phone, email, city and state. dry=true only shows what would happen. Nothing is sent to anyone.
+const normH = (h) => String(h || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+const findCol = (head, names, nth = 0) => { const hs = head.map(normH); const hits = hs.map((h, i) => (names.includes(h) ? i : -1)).filter((i) => i >= 0); return hits[nth] ?? -1; };
+const phone10 = (v) => { let t = String(v || '').trim(); if (/^\d+(\.\d+)?e\d+$/i.test(t)) t = String(Math.round(Number(t))); const d = t.replace(/\D/g, '').slice(-10); return /^[6-9]\d{9}$/.test(d) ? d : ''; };
+const nameKey = (v) => String(v || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+function sheetDate(v) {
+  const t = String(v || '').trim(); if (!t) return null;
+  if (/^\d{5}(\.\d+)?$/.test(t)) return new Date((Number(t) - 25569) * 86400000).toISOString();
+  const m = /(\d{1,2})\s*(?:st|nd|rd|th)?[\s-]*([a-z]{3})[a-z]*\.?(?:[\s-]*(\d{4}))?/i.exec(t); if (!m) return null;
+  const mon = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'].indexOf(m[2].toLowerCase()); if (mon < 0) return null;
+  let y = m[3] ? Number(m[3]) : new Date().getUTCFullYear(); let d = new Date(Date.UTC(y, mon, Number(m[1]), 6));
+  if (!m[3] && d > new Date()) d = new Date(Date.UTC(--y, mon, Number(m[1]), 6));
+  return d.toISOString();
+}
+// "6 to 7 LPA", "4.5 LPA", "15LPA", "25000 per month", "25k" -> yearly rupees.
+function sheetSalary(v) {
+  const t = String(v || '').toLowerCase(); const nums = (t.match(/\d+(?:\.\d+)?/g) || []).map(Number); if (!nums.length) return [null, null];
+  const mult = /lpa|lakh|lac|\bl\b/.test(t) ? 100000 : /k\b/.test(t) ? 1000 * (/(month|pm|p\.m)/.test(t) ? 12 : 12) : /(month|pm|p\.m)/.test(t) ? 12 : (nums[0] < 100 ? 100000 : 1);
+  const a = Math.round(nums[0] * mult); const b = Math.round((nums[1] ?? nums[0]) * mult); return [Math.min(a, b), Math.max(a, b)];
+}
+const sheetNotice = (v) => { const t = String(v || '').toLowerCase(); const n = (t.match(/\d+(?:\.\d+)?/) || [])[0]; if (!n) return null; return Math.round(Number(n) * (/month/.test(t) ? 30 : 1)); };
+route('POST', '/api/jobs/import', T, (ctx) => {
+  const u = ctx.user; const b = ctx.body || {};
+  if (!b.base64 || !b.name) throw httpError(400, 'Pick the Excel file');
+  const rows = F.readSpreadsheet(b.name, b.base64, b.sheet || 'Client Job Tracking Sheet') || F.readSpreadsheet(b.name, b.base64);
+  const hi = rows.findIndex((r) => r.map(normH).includes('client name') && r.map(normH).some((h) => ['position open', 'position', 'job title', 'job', 'role'].includes(h)));
+  if (hi < 0) throw httpError(400, 'No header row with "Client Name" and "Position Open" found. Use the Client Job Tracking Sheet layout.');
+  const head = rows[hi];
+  const col = { date: findCol(head, ['date']), client: findCol(head, ['client name', 'client']), city: findCol(head, ['area', 'city', 'location']), title: findCol(head, ['position open', 'position', 'job title', 'job', 'role']), openings: findCol(head, ['no of vacancy', 'vacancy', 'vacancies', 'openings']), code: findCol(head, ['job code', 'code']), salary: findCol(head, ['salary range', 'salary']), notice: findCol(head, ['notice period month', 'notice period', 'notice']), recruiter: findCol(head, ['recruiter']), status: findCol(head, ['status']), remarks: findCol(head, ['remarks', 'notes']) };
+  const cell = (r, k) => (col[k] >= 0 ? String(r[col[k]] ?? '').trim() : '');
+  // Client details from the "Client Master" sheet, when the file has one.
+  const master = new Map();
+  const mrows = /\.xlsx$/i.test(b.name) ? F.readSpreadsheet(b.name, b.base64, 'Client Master') : null;
+  if (mrows) {
+    const mi = mrows.findIndex((r) => r.map(normH).includes('client name')); const mh = mi >= 0 ? mrows[mi] : [];
+    const mc = { client: findCol(mh, ['client name']), city: findCol(mh, ['city']), state: findCol(mh, ['state']), type: findCol(mh, ['business type']), owner: findCol(mh, ['owner management', 'owner']), mobile: findCol(mh, ['mobile no', 'mobile']), hr: findCol(mh, ['hr name']), email: findCol(mh, ['hr email', 'email']), hrMobile: findCol(mh, ['mobile no', 'mobile'], 1), remarks: findCol(mh, ['remarks']) };
+    const mcell = (r, k) => (mc[k] >= 0 ? String(r[mc[k]] ?? '').trim() : '');
+    if (mi >= 0) for (const r of mrows.slice(mi + 1)) { const n = mcell(r, 'client'); if (n) master.set(nameKey(n), { city: mcell(r, 'city'), state: mcell(r, 'state'), type: mcell(r, 'type'), contact: [mcell(r, 'owner'), mcell(r, 'hr')].find((x) => x && !/^n\/?a$/i.test(x)) || '', phone: phone10(mcell(r, 'mobile')) || phone10(mcell(r, 'hrMobile')), email: /@/.test(mcell(r, 'email')) ? mcell(r, 'email') : '', remarks: mcell(r, 'remarks') }); }
+  }
+  const users = all("SELECT id, name, level, agency_id FROM users WHERE status='On'").filter((x) => isSuper(u) || x.agency_id === u.agency_id);
+  const clientsSeen = new Map(); const plan = [];
+  const existingClients = all('SELECT * FROM clients WHERE removed=0 AND merged_into IS NULL AND placeholder=0').filter((c) => seeClient(u, c));
+  for (const [i, r] of rows.slice(hi + 1).entries()) {
+    const client = cell(r, 'client'); const title = cell(r, 'title'); if (!client && !title) continue;
+    const line = { row: hi + i + 2, client, title, city: cell(r, 'city'), code: cell(r, 'code') };
+    if (!client || !title) { plan.push({ ...line, result: 'skip', why: !client ? 'No client name' : 'No position' }); continue; }
+    const key = nameKey(client);
+    let c = clientsSeen.get(key) || existingClients.find((x) => nameKey(x.company) === key) || null;
+    const [sf, st] = sheetSalary(cell(r, 'salary')); const statusText = cell(r, 'status');
+    const rec = users.find((x) => nameKey(x.name).split(' ')[0] === nameKey(cell(r, 'recruiter')).split(' ')[0] && nameKey(cell(r, 'recruiter')));
+    const job = { title, city: line.city, openings: Math.max(1, Math.round(Number(cell(r, 'openings')) || 1)), sal_from: sf, sal_to: st, notice_days: sheetNotice(cell(r, 'notice')), code: line.code, created_at: sheetDate(cell(r, 'date')), status: /hold/i.test(statusText) ? 'On hold' : /(close|cancel|fill)/i.test(statusText) ? 'Closed' : 'Open', recruiter: u.level === 'sub' ? u.id : rec ? rec.id : u.id, recruiter_name: u.level === 'sub' ? u.name : rec ? rec.name : `${u.name}${cell(r, 'recruiter') ? ` (no login for "${cell(r, 'recruiter')}")` : ''}`, remarks: cell(r, 'remarks'), sheet_status: statusText };
+    if (c && c.id && get('SELECT 1 FROM jobs WHERE client_id=? AND lower(title)=lower(?) AND IFNULL(old_code,\'\')=? AND archived=0', c.id, title, line.code)) { plan.push({ ...line, client_new: false, result: 'skip', why: 'Already in the portal' }); continue; }
+    if (!c) { c = { key, company: client, new: true, ...(master.get(key) || {}), city: (master.get(key) || {}).city || line.city }; clientsSeen.set(key, c); }
+    plan.push({ ...line, client_new: !!c.new, client_ref: c, job, result: 'create' });
+  }
+  const out = (p) => ({ row: p.row, client: p.client, client_new: !!p.client_new, client_phone: p.client_ref ? p.client_ref.phone || p.client_ref.whatsapp || '' : '', title: p.title, city: p.city, code: p.code, result: p.result, why: p.why || '', openings: p.job && p.job.openings, salary: p.job && (p.job.sal_from ? L.salaryText(p.job) : ''), notice_days: p.job && p.job.notice_days, status: p.job && p.job.status, recruiter: p.job && p.job.recruiter_name });
+  const summary = { jobs: plan.filter((p) => p.result === 'create').length, skipped: plan.filter((p) => p.result === 'skip').length, new_clients: [...clientsSeen.values()].filter((c) => c.new).length, existing_clients: new Set(plan.filter((p) => p.result === 'create' && !p.client_new).map((p) => p.client_ref.id)).size };
+  if (b.dry) return { summary, rows: plan.map(out) };
+  // Create: clients first (straight into the list, no welcome message), then the jobs.
+  const made = [];
+  for (const c of clientsSeen.values()) {
+    if (!c.new) continue;
+    const id = D.nextId('CL');
+    insert('clients', { id, company: c.company, contact: c.contact || '', whatsapp: c.phone || '', email: c.email || '', city: c.city || '', state: c.state || L.stateOf(c.city), business_type: c.type || '', source: 'Excel upload', stage: 'Job opening active', agency_id: u.agency_id || null, owner_id: u.id, is_new: 0, kyc: {}, onboarding: {}, extra: {}, created_by: ctx.actor.label, created_at: now(), updated_at: now() });
+    if (c.remarks) insert('notes', { record_id: id, text: c.remarks, author: 'Excel upload', at: now() });
+    D.history(ctx.actor.label, 'create', id, null, null, `Client ${c.company} from Excel upload`);
+    c.id = id;
+  }
+  for (const p of plan.filter((x) => x.result === 'create')) {
+    const c = get('SELECT * FROM clients WHERE id=?', p.client_ref.id); const jb = p.job;
+    const note = [jb.code ? `Job code ${jb.code}` : '', jb.sheet_status ? `Status in sheet: ${jb.sheet_status}` : '', jb.remarks].filter(Boolean).join(' · ');
+    const j = createJob(c, { title: jb.title, city: jb.city, openings: jb.openings, sal_from: jb.sal_from, sal_to: jb.sal_to, notice_days: jb.notice_days, notes: note, jd_approved: b.approve !== false, recruiter_id: jb.recruiter }, ctx.actor, false);
+    update('jobs', j.id, { old_code: jb.code || null, ...(jb.created_at ? { created_at: jb.created_at } : {}), ...(jb.status !== 'Open' ? { manual: jb.status, manual_reason: 'From the Excel upload' } : {}) });
+    L.recalcJob(j.id, ctx.actor.label, 'From the Excel upload');
+    made.push(j.id);
+  }
+  D.history(ctx.actor.label, 'import', null, 'jobs', null, `${made.length} job openings, ${summary.new_clients} new clients from ${b.name}`, null, ctx.ip);
+  return { summary, created: made, rows: plan.map(out) };
+});
 route('GET', '/api/jobs/:id', T, (ctx) => {
   const j = get('SELECT * FROM jobs WHERE id=?', ctx.params.id); mustSee(seeJob(ctx.user, j) || (ctx.user.level !== 'super' && j && j.agency_id === ctx.user.agency_id), 'job opening');
   const apps = L.appsOfJob(j.id);

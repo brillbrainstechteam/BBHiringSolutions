@@ -138,7 +138,7 @@
   // ---------- Job openings ----------
   P.jobs = async ({ el, actions, q, me }) => {
     const r = await BB.api(`/api/jobs?${BB.qs(q)}`); const st = q.status || 'All';
-    actions.innerHTML = `${dl(`/api/jobs?${BB.qs(q, { format: 'xlsx' })}`)}<button class="btn primary" data-new>+ New job opening</button>`;
+    actions.innerHTML = `${dl(`/api/jobs?${BB.qs(q, { format: 'xlsx' })}`)}<button class="btn" data-jobxl>Upload jobs (Excel)</button><button class="btn primary" data-new>+ New job opening</button>`;
     el.innerHTML = `<div class="filters"><input placeholder="Search job, client, ID, old code…" value="${esc(q.q || '')}" data-q>${['All', 'Active', ...STATUSES].map((s) => `<span class="chip ${st === s ? 'on' : ''}" data-st="${s}">${s} <span class="n">${r.counts[s] || 0}</span></span>`).join('')}</div>
       <div class="card">${BB.table([{ t: 'ID', f: (j) => `<span class="mono">${j.id}</span>` }, { t: 'Job', f: (j) => `<b>${esc(j.title)}</b><div class="tiny muted">${esc(j.city)}${j.priority === 'High' ? ' · <span style="color:var(--red)">High</span>' : ''}</div>` }, { t: 'Client', f: (j) => esc(j.client_name) }, { t: 'Filled', f: (j) => `${j.filled}/${j.openings} <div class="bar" style="width:60px;display:inline-block;vertical-align:middle"><i style="width:${Math.min(100, (j.filled / j.openings) * 100)}%"></i></div>` }, { t: 'Apps', num: 1, f: (j) => j.apps_total }, { t: 'Status', f: (j) => `${statusBadge(j.status)}${j.reopened ? ` <span class="badge b-gold tiny">${esc(j.reopened)}</span>` : ''}` }, { t: 'Recruiter', f: (j) => esc(j.recruiter_name || '—'), hideSm: 1 }, { t: 'Days open', num: 1, f: (j) => j.days_open, hideSm: 1 }], r.rows, { open: (j) => `job:${j.id}` })}${BB.pager(r)}</div>
       <details class="card pad" style="margin-top:12px"><summary class="small" style="cursor:pointer"><b>What the statuses mean</b> — checked in this order; the first that is true is the status</summary><div class="grid g2 small" style="margin-top:10px">${STATUSES.slice().sort((a, b) => ['Closed', 'On hold', 'Filled', 'Draft', 'Offer stage', 'Interviewing', 'Sourcing', 'Open'].indexOf(a) - ['Closed', 'On hold', 'Filled', 'Draft', 'Offer stage', 'Interviewing', 'Sourcing', 'Open'].indexOf(b)).map((s) => `<div class="row">${statusBadge(s)} <span class="muted">${STATUS_KEY[s]}</span></div>`).join('')}</div></details>`;
@@ -146,7 +146,27 @@
     let t; $('[data-q]', el).oninput = (e) => { clearTimeout(t); t = setTimeout(() => BB.setQ({ q: e.target.value, page: 1 }), 350); };
     $$('[data-st]', el).forEach((c) => (c.onclick = () => BB.setQ({ status: c.dataset.st === 'All' ? '' : c.dataset.st, page: 1 })));
     const n = $('[data-new]', actions); if (n) n.onclick = () => BB.newJob();
+    $('[data-jobxl]', actions).onclick = () => uploadJobs();
   };
+  // Many job openings at once from an Excel in the Client Job Tracking Sheet layout: first a preview, then create.
+  async function uploadJobs() {
+    const file = await BB.pickFile('.xlsx,.csv'); if (!file) return;
+    let d; try { d = await BB.post('/api/jobs/import', { ...file, dry: true }); } catch (e) { return BB.fail(e); }
+    const sm = d.summary;
+    const rows = d.rows.map((r) => `<tr class="${r.result === 'skip' ? 'faint' : ''}"><td class="mono tiny">${r.row}</td><td>${esc(r.client)}${r.client_new ? ' <span class="badge b-gold tiny">new</span>' : ''}</td><td><b>${esc(r.title)}</b>${r.code ? ` <span class="mono tiny faint">${esc(r.code)}</span>` : ''}</td><td>${esc(r.city)}</td><td class="num">${r.openings ?? ''}</td><td class="small">${esc(r.salary || '—')}</td><td>${r.result === 'skip' ? `<span class="badge b-outline">Skip: ${esc(r.why)}</span>` : `<span class="badge ${r.status === 'Open' ? 'b-green' : 'b-amber'}">${esc(r.status)}</span>`}</td><td class="small">${esc(r.recruiter || '')}</td></tr>`).join('');
+    BB.modal({ title: 'Upload job openings', wide: true,
+      body: `<p class="small" style="margin-top:0"><b>${sm.jobs}</b> job openings to create · <b>${sm.new_clients}</b> new clients${sm.existing_clients ? ` · ${sm.existing_clients} existing clients` : ''}${sm.skipped ? ` · ${sm.skipped} rows skipped` : ''}. New clients take their contact, phone and email from the Client Master sheet when it is in the file. Nothing is sent to clients or candidates.</p>
+        <div class="card tbl-wrap" style="max-height:52vh;overflow:auto"><table class="tbl"><thead><tr><th>Row</th><th>Client</th><th>Job</th><th>City</th><th class="num">Seats</th><th>Salary</th><th>Status</th><th>Recruiter</th></tr></thead><tbody>${rows}</tbody></table></div>
+        <label class="row small" style="margin-top:12px"><input type="checkbox" data-approve checked> Job descriptions approved: jobs go live now and take applications (otherwise they start as Draft)</label>`,
+      foot: `<button class="btn" data-x2>Cancel</button><button class="btn primary" data-go ${sm.jobs ? '' : 'disabled'}>Create ${sm.jobs} job openings</button>`,
+      onMount: (m, close) => {
+        $('[data-x2]', m.parentElement).onclick = close;
+        $('[data-go]', m.parentElement).onclick = async (e) => {
+          e.target.disabled = true; e.target.textContent = 'Creating…';
+          try { const r = await BB.post('/api/jobs/import', { ...file, approve: $('[data-approve]', m).checked }); close(); BB.toast(`${r.created.length} job openings and ${r.summary.new_clients} new clients made`); BB.refreshPage && BB.refreshPage(); } catch (er) { e.target.disabled = false; e.target.textContent = 'Try again'; BB.fail(er); }
+        };
+      } });
+  }
 
   // ---------- Segments: saved candidate filters, shared with the team, downloadable ----------
   const JEW_LABEL = { 0: 'no experience', lt1: 'under 1 year', '1-3': '1–3 years', '3-5': '3–5 years', '5-10': '5–10 years', '10+': '10+ years' };

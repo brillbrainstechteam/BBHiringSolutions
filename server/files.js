@@ -96,11 +96,22 @@ function unzip(buf) {
 // Some exporters write prefixed tags (<x:row>, <x:c>) instead of Excel's plain ones; drop the prefix.
 const unprefix = (xml) => xml.replace(/<(\/?)[A-Za-z][\w.-]*:/g, '<$1');
 const xmlText = (s) => s.replace(/<[^>]+>/g, '').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, '&');
-function parseXLSX(buf) {
+// The names of a workbook's sheets, each with the file it lives in.
+function xlsxSheets(z) {
+  if (!z['xl/workbook.xml'] || !z['xl/_rels/workbook.xml.rels']) return [];
+  const wb = unprefix(z['xl/workbook.xml'].toString()); const rels = unprefix(z['xl/_rels/workbook.xml.rels'].toString());
+  return [...wb.matchAll(/<sheet [^>]*?name="([^"]+)"[^>]*?r:id="([^"]+)"/g)].map((m) => {
+    const r = new RegExp(`<Relationship [^>]*?(?:Id="${m[2]}"[^>]*?Target="([^"]+)"|Target="([^"]+)"[^>]*?Id="${m[2]}")`).exec(rels);
+    return { name: xmlText(m[1]), file: r ? `xl/${(r[1] || r[2]).replace(/^\/?xl\//, '')}` : null };
+  }).filter((x) => x.file);
+}
+function parseXLSX(buf, sheet) {
   const z = unzip(buf);
   const shared = [];
   if (z['xl/sharedStrings.xml']) for (const m of unprefix(z['xl/sharedStrings.xml'].toString()).matchAll(/<si>([\s\S]*?)<\/si>/g)) shared.push(xmlText(m[1].replace(/<rPh[\s\S]*?<\/rPh>/g, '')));
-  const sheetName = Object.keys(z).filter((n) => /^xl\/worksheets\/sheet\d+\.xml$/.test(n)).sort()[0];
+  const named = sheet ? xlsxSheets(z).find((x) => x.name.trim().toLowerCase() === String(sheet).trim().toLowerCase() && z[x.file]) : null;
+  if (sheet && !named) return null;
+  const sheetName = named ? named.file : Object.keys(z).filter((n) => /^xl\/worksheets\/sheet\d+\.xml$/.test(n)).sort()[0];
   const xml = unprefix(z[sheetName].toString());
   const rows = [];
   for (const rm of xml.matchAll(/<row[^>]*>([\s\S]*?)<\/row>/g)) {
@@ -120,9 +131,11 @@ function parseXLSX(buf) {
   }
   return rows.filter((r) => r.some((c) => String(c).trim() !== ''));
 }
-function readSpreadsheet(name, base64) {
+// sheet: read that sheet by name (null when the file has no such sheet); without it, the first sheet.
+function readSpreadsheet(name, base64, sheet) {
   const buf = Buffer.from(String(base64).replace(/^data:[^,]*,/, ''), 'base64');
-  if (/\.xlsx$/i.test(name)) return parseXLSX(buf);
+  if (/\.xlsx$/i.test(name)) return parseXLSX(buf, sheet);
+  if (sheet) return null;
   if (/\.(csv|txt)$/i.test(name)) return parseCSV(buf.toString('utf8').replace(/^﻿/, ''));
   throw D.httpError(400, 'Upload an Excel (.xlsx) or CSV file.');
 }
