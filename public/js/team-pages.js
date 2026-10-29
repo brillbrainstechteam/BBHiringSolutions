@@ -249,17 +249,15 @@
     <div class="row small bulkbar cand-bulk" data-bulkbar><span class="sel-count" data-selcount>Select the checkboxes to take actions</span>
       ${bulkBtn('add_to_job', 'Add to a job')}${me.level !== 'sub' ? bulkBtn('alert', 'Send job alert', 'gold') : ''}${bulkBtn('set_looking', 'Set status')}${bulkBtn('note', 'Add note')}${bulkBtn('followup', 'Follow-up')}${me.level !== 'sub' ? `${bulkBtn('assign', 'Assign recruiter')}${bulkBtn(q.archived ? 'unarchive' : 'archive', q.archived ? 'Unarchive' : 'Archive')}` : ''}${superAdmin ? bulkBtn('download', 'Download selected') : ''}<button class="btn sm ghost" data-unsel hidden>Clear selection</button></div>
     <div class="card cand-table">${BB.table([
-      { t: 'ID', cls: 'stick stick-1', f: (c) => `<span class="mono">${c.id}</span>${c.is_new ? ' <span class="dot new" title="New"></span>' : ''}` },
-      { t: 'Name', cls: 'stick stick-2', f: (c) => `<b>${esc(c.name)}</b>${c.opted_out ? ' <span class="badge b-red tiny">STOP</span>' : ''}<div class="mono tiny ${c.phone_hidden ? 'faint' : 'muted'}">${esc(c.whatsapp)}</div>` },
+      { t: 'ID', f: (c) => `<span class="mono">${c.id}</span>${c.is_new ? ' <span class="dot new" title="New"></span>' : ''}<div class="tiny muted" title="Applied">${fmtD(c.created_at)}</div>` },
+      { t: 'Name', cls: 'name-col', f: (c) => `<b>${esc(c.name)}</b>${c.opted_out ? ' <span class="badge b-red tiny">STOP</span>' : ''}<div class="mono tiny ${c.phone_hidden ? 'faint' : 'muted'}">${esc(c.whatsapp)}</div>` },
       { t: 'Job wanted', cls: 'wrap', f: (c) => esc(c.job_wanted) || '<span class="faint">—</span>' },
       { t: 'City', f: (c) => esc(c.city) },
-      { t: 'Exp', num: 1, f: (c) => (c.exp_total === null || c.exp_total === undefined ? '—' : `${c.exp_total} yrs`) },
-      { t: 'Jewellery', f: (c) => jewYrs(c.exp_jewellery) },
+      { t: 'Exp', f: (c) => (c.exp_total === null || c.exp_total === undefined ? '—' : `${c.exp_total} yrs`) },
+      { t: 'Jewel Exp', f: (c) => jewYrs(c.exp_jewellery) },
       { t: 'Expects /mo', num: 1, f: (c) => (c.exp_salary ? inr(c.exp_salary / 12) : '—'), hideSm: 1 },
-      { t: 'Looking', f: (c) => (c.looking ? `<span class="badge ${LOOK_BADGE[c.looking] || 'b-outline'}">${esc(c.looking)}</span>` : '—') },
-      { t: 'Status', f: (c) => `<span class="badge ${c.status === 'Hired' ? 'b-green' : c.status.startsWith('In process') ? 'b-primary' : 'b-outline'}">${esc(c.status)}</span>` },
+      { t: 'Status', cls: 'stack-col', f: (c) => `${c.looking ? `<span class="badge ${LOOK_BADGE[c.looking] || 'b-outline'}">${esc(c.looking)}</span>` : ''}<span class="badge ${c.status === 'Hired' ? 'b-green' : c.status.startsWith('In process') ? 'b-primary' : 'b-outline'}">${esc(c.status)}</span>` },
       { t: 'Source', cls: 'wrap', f: (c) => `${esc(c.source)}${c.ad_set || c.ad_name || c.ad_campaign ? `<div class="tiny muted">${esc(c.ad_name || c.ad_set || c.ad_campaign)}</div>` : ''}`, hideSm: 1 },
-      { t: 'Applied', f: (c) => fmtD(c.created_at), hideSm: 1 },
       { t: '<span class="sr-only">Profile</span>', cls: 'act-col', f: (c) => `<button class="btn sm" data-pdl="${c.id}" title="Download ${esc(c.name)}'s profile as PDF" onclick="event.stopPropagation()">PDF</button>` },
     ], r.rows, { open: (c) => `candidate:${c.id}`, select: true, scroll: true, empty: filtered ? 'No candidates match these filters.' : 'No candidates yet.' })}${BB.pager(r)}</div>`;
     // More filters stays open while filters in it are changed (each change redraws the list).
