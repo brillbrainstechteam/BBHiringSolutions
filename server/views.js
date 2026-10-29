@@ -11,10 +11,10 @@ function jobView(j, apps) {
   apps = apps || L.appsOfJob(j.id);
   const status = L.computeJobStatus(j, apps);
   const open = apps.filter((a) => a.result === 'open');
-  const client = get('SELECT company, city FROM clients WHERE id=?', j.client_id) || {};
+  const client = get('SELECT company, city, placeholder FROM clients WHERE id=?', j.client_id) || {};
   const cnt = (steps) => open.filter((a) => steps.includes(a.step)).length;
   return {
-    ...j, status, reason: L.jobStatusReason(j, apps), filled: L.filledCount(apps), client_name: client.company, recruiter_name: userName(j.recruiter_id), agency_name: agencyName(j.agency_id),
+    ...j, status, reason: L.jobStatusReason(j, apps), filled: L.filledCount(apps), client_name: client.company, client_tbc: !!client.placeholder, recruiter_name: userName(j.recruiter_id), agency_name: agencyName(j.agency_id),
     apps_total: apps.length, apps_open: open.length, days_open: L.daysBetween(j.created_at),
     reopened: j.reopened_at && L.daysBetween(j.reopened_at) <= 30 ? (j.reopen_tag || 'Reopened') : null,
     counts: { screening: cnt(['Applied', 'Screening', 'Our interview']), waiting: cnt(['Sent to client']), interviews: cnt(['Client interview']), offers: cnt(['Offer made', 'Offer accepted']) },

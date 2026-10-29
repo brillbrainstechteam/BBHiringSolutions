@@ -1320,12 +1320,16 @@ html[lang="hi"] .ss-g { letter-spacing: 0; }
 .tbl-scroll thead th { background: var(--surface-2); box-shadow: inset 0 -1px 0 var(--border); border-bottom: 0; }
 .tbl-scroll td { white-space: nowrap; padding: 9px 10px; background: var(--surface); }
 .tbl-scroll th { padding: 9px 10px; }
-.tbl-scroll td.wrap { white-space: normal; min-width: 120px; max-width: 200px; line-height: 1.35; }
+.tbl-scroll td.wrap { white-space: normal; min-width: 120px; line-height: 1.35; }
 .tbl-scroll td.stack-col .badge { display: table; margin: 2px 0; }
 .tbl-scroll td.name-col { white-space: normal; min-width: 140px; line-height: 1.3; }
+/* Spare width goes to Name and Job wanted; the short columns keep to their content, and City wraps in a fixed width. */
+.tbl-scroll th, .tbl-scroll td { width: 1%; }
+.tbl-scroll .name-col, .tbl-scroll .wrap { width: auto; }
+.tbl-scroll td.city-col { white-space: normal; width: 86px; min-width: 86px; max-width: 86px; line-height: 1.3; }
 .tbl-scroll tbody tr:nth-child(even) td { background: var(--surface-2); }
 .tbl-scroll tr.click:hover td { background: var(--sky-50); }
-.tbl-scroll .sel-col { width: 44px; text-align: center; }
+.tbl-scroll .sel-col { width: 40px; text-align: center; }
 .tbl-scroll .sel-col input { width: 16px; height: 16px; cursor: pointer; }
 .tbl-scroll td.act-col, .tbl-scroll th.act-col { text-align: right; width: 64px; }
 .tbl-scroll .badge { white-space: nowrap; }
@@ -1337,3 +1341,7 @@ html[lang="hi"] .ss-g { letter-spacing: 0; }
   .cand-result { flex-direction: column; align-items: stretch; } .cand-seg { justify-content: space-between; }
   .cand-bulk { position: static; }
 }
+
+/* Ad links on a job: one row per link, the link wraps instead of widening the panel. */
+.ad-link code { display: block; padding: 6px 8px; border-radius: 6px; background: var(--surface-2); word-break: break-all; }
+.ad-link + .ad-link { margin-top: 8px; }

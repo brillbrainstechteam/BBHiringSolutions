@@ -138,7 +138,7 @@
   // ---------- Job openings ----------
   P.jobs = async ({ el, actions, q, me }) => {
     const r = await BB.api(`/api/jobs?${BB.qs(q)}`); const st = q.status || 'All';
-    actions.innerHTML = `${dl(`/api/jobs?${BB.qs(q, { format: 'xlsx' })}`)}${me.level !== 'sub' ? '<button class="btn primary" data-new>+ New job opening</button>' : ''}`;
+    actions.innerHTML = `${dl(`/api/jobs?${BB.qs(q, { format: 'xlsx' })}`)}<button class="btn primary" data-new>+ New job opening</button>`;
     el.innerHTML = `<div class="filters"><input placeholder="Search job, client, ID, old code…" value="${esc(q.q || '')}" data-q>${['All', 'Active', ...STATUSES].map((s) => `<span class="chip ${st === s ? 'on' : ''}" data-st="${s}">${s} <span class="n">${r.counts[s] || 0}</span></span>`).join('')}</div>
       <div class="card">${BB.table([{ t: 'ID', f: (j) => `<span class="mono">${j.id}</span>` }, { t: 'Job', f: (j) => `<b>${esc(j.title)}</b><div class="tiny muted">${esc(j.city)}${j.priority === 'High' ? ' · <span style="color:var(--red)">High</span>' : ''}</div>` }, { t: 'Client', f: (j) => esc(j.client_name) }, { t: 'Filled', f: (j) => `${j.filled}/${j.openings} <div class="bar" style="width:60px;display:inline-block;vertical-align:middle"><i style="width:${Math.min(100, (j.filled / j.openings) * 100)}%"></i></div>` }, { t: 'Apps', num: 1, f: (j) => j.apps_total }, { t: 'Status', f: (j) => `${statusBadge(j.status)}${j.reopened ? ` <span class="badge b-gold tiny">${esc(j.reopened)}</span>` : ''}` }, { t: 'Recruiter', f: (j) => esc(j.recruiter_name || '—'), hideSm: 1 }, { t: 'Days open', num: 1, f: (j) => j.days_open, hideSm: 1 }], r.rows, { open: (j) => `job:${j.id}` })}${BB.pager(r)}</div>
       <details class="card pad" style="margin-top:12px"><summary class="small" style="cursor:pointer"><b>What the statuses mean</b> — checked in this order; the first that is true is the status</summary><div class="grid g2 small" style="margin-top:10px">${STATUSES.slice().sort((a, b) => ['Closed', 'On hold', 'Filled', 'Draft', 'Offer stage', 'Interviewing', 'Sourcing', 'Open'].indexOf(a) - ['Closed', 'On hold', 'Filled', 'Draft', 'Offer stage', 'Interviewing', 'Sourcing', 'Open'].indexOf(b)).map((s) => `<div class="row">${statusBadge(s)} <span class="muted">${STATUS_KEY[s]}</span></div>`).join('')}</div></details>`;
@@ -252,7 +252,7 @@
       { t: 'ID', f: (c) => `<span class="mono">${c.id}</span>${c.is_new ? ' <span class="dot new" title="New"></span>' : ''}<div class="tiny muted" title="Applied">${fmtD(c.created_at)}</div>` },
       { t: 'Name', cls: 'name-col', f: (c) => `<b>${esc(c.name)}</b>${c.opted_out ? ' <span class="badge b-red tiny">STOP</span>' : ''}<div class="mono tiny ${c.phone_hidden ? 'faint' : 'muted'}">${esc(c.whatsapp)}</div>` },
       { t: 'Job wanted', cls: 'wrap', f: (c) => esc(c.job_wanted) || '<span class="faint">—</span>' },
-      { t: 'City', f: (c) => esc(c.city) },
+      { t: 'City', cls: 'city-col', f: (c) => esc(c.city) },
       { t: 'Exp', f: (c) => (c.exp_total === null || c.exp_total === undefined ? '—' : `${c.exp_total} yrs`) },
       { t: 'Jewel Exp', f: (c) => jewYrs(c.exp_jewellery) },
       { t: 'Expects /mo', num: 1, f: (c) => (c.exp_salary ? inr(c.exp_salary / 12) : '—'), hideSm: 1 },

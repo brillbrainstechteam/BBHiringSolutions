@@ -24,7 +24,7 @@ function page(ctx, rows, name, columns) {
     if (fmt === 'xlsx') return { __file: { name: `${name}-${L.istDay()}.xlsx`, mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', buf: F.toXLSX(table, name) } };
     return { __file: { name: `${name}-${L.istDay()}.csv`, mime: 'text/csv', buf: Buffer.from(F.toCSV(table), 'utf8') } };
   }
-  const size = 50; const p = Math.max(1, Number(ctx.query.page) || 1);
+  const size = ctx.query.all ? 2000 : 50; const p = Math.max(1, Number(ctx.query.page) || 1); // all=1: pickers that list everything
   return { rows: rows.slice((p - 1) * size, p * size), total: rows.length, page: p, pages: Math.max(1, Math.ceil(rows.length / size)) };
 }
 const like = (q, ...vals) => !q || vals.some((v) => v && String(v).toLowerCase().includes(String(q).toLowerCase()));
@@ -430,8 +430,19 @@ route('GET', '/api/jobs', T, (ctx) => {
   const p = page(ctx, rows, 'job-openings', ['id', 'title', 'client_name', 'city', 'openings', 'filled', 'apps_total', 'status', 'recruiter_name', 'days_open', 'old_code']);
   return p.__file ? p : { ...p, counts };
 });
-route('POST', '/api/jobs', ADMINS, (ctx) => {
-  const b = ctx.body; const c = get('SELECT * FROM clients WHERE id=?', b.client_id); mustSee(seeClient(ctx.user, c), 'client');
+// One "Client to be confirmed" per agency (the super admin's has no agency), made the first time it is needed. No
+// messages go to it; the job's client is changed to the real one later.
+const TBC = 'Client to be confirmed';
+function placeholderClient(agencyId) {
+  const c = get('SELECT * FROM clients WHERE placeholder=1 AND removed=0 AND agency_id IS ?', agencyId || null); if (c) return c;
+  const id = D.nextId('CL');
+  insert('clients', { id, company: TBC, contact: '', whatsapp: '', email: '', city: '', source: 'Job ad', stage: 'Job opening active', agency_id: agencyId || null, is_new: 0, kyc: {}, onboarding: {}, extra: {}, placeholder: 1, created_by: 'System', created_at: now(), updated_at: now() });
+  return get('SELECT * FROM clients WHERE id=?', id);
+}
+// Every level can open a job; a sub admin's job is always their own (they are its recruiter).
+route('POST', '/api/jobs', T, (ctx) => {
+  const b = ctx.body; const c = b.client_id === 'TBC' ? placeholderClient(ctx.user.agency_id) : get('SELECT * FROM clients WHERE id=?', b.client_id); mustSee(seeClient(ctx.user, c), 'client');
+  if (ctx.user.level === 'sub') b.recruiter_id = ctx.user.id;
   return createJob(c, b, ctx.actor, false);
 });
 function createJob(c, b, actor, byClient) {
@@ -471,6 +482,12 @@ route('PATCH', '/api/jobs/:id', T, (ctx) => {
   const allowed = ['title', 'city', 'openings', 'sal_from', 'sal_to', 'exp_from', 'exp_to', 'notice_days', 'skills', 'priority', 'rounds', 'screening_qs', 'notes', 'archived'];
   if (ctx.user.level !== 'sub') allowed.push('recruiter_id');
   const patch = {}; for (const k of allowed) if (ctx.body[k] !== undefined) patch[k] = ctx.body[k];
+  // Every level can set the real client (for a job first posted as "Client to be confirmed"), within their own agency.
+  if (ctx.body.client_id && ctx.body.client_id !== j.client_id) {
+    const nc = get('SELECT * FROM clients WHERE id=? AND removed=0 AND merged_into IS NULL', ctx.body.client_id); mustSee(seeClient(ctx.user, nc), 'client');
+    if (!isSuper(ctx.user) && nc.agency_id !== j.agency_id) throw httpError(403, 'Pick a client of your own agency.');
+    patch.client_id = nc.id; if (isSuper(ctx.user)) patch.agency_id = nc.agency_id;
+  }
   if (patch.title) patch.department = L.deptOf(patch.title);
   D.edit('jobs', j.id, patch, ctx.actor.label, ctx.ip);
   if (patch.recruiter_id && patch.recruiter_id !== j.recruiter_id) L.alertUser(patch.recruiter_id, `You are now the recruiter on ${j.id}`, j.id);
