@@ -588,7 +588,7 @@ route('GET', '/api/candidates/:id', T, (ctx) => {
   return {
     ...candidateOut(u, c), status: V.candStatus(c.id), apps, messages: msgs, rating: L.ratingOf(c.id), can_message: seeThread(u, 'candidate', c.id) || isSuper(u),
     job_matches: L.jobsFor(c, 20).filter((m) => seeJob(u, m.j)).slice(0, 6).map((m) => ({ id: m.j.id, title: m.j.title, city: m.j.city, client_name: (get('SELECT company FROM clients WHERE id=?', m.j.client_id) || {}).company, score: m.score, reasons: m.reasons, gaps: m.gaps })),
-    files: show ? all('SELECT * FROM files WHERE record_id=? AND replaced=0 ORDER BY at DESC', c.id) : all("SELECT * FROM files WHERE record_id=? AND replaced=0 AND type='short_cv'", c.id),
+    files: show ? all('SELECT * FROM files WHERE record_id=? AND replaced=0 ORDER BY at DESC', c.id) : all("SELECT * FROM files WHERE record_id=? AND replaced=0 AND type IN ('cv','short_cv') ORDER BY at DESC", c.id),
     notes: all('SELECT * FROM notes WHERE record_id=? ORDER BY at DESC', c.id), calls: all('SELECT * FROM calls WHERE candidate_id=? ORDER BY at DESC LIMIT 50', c.id), call_outcomes: L.CALL_OUTCOMES,
     iv_notes: all('SELECT n.*, i.name iv_name, i.mode, i.at iv_at FROM iv_notes n JOIN interviews i ON i.id=n.iv_id WHERE n.candidate_id=? ORDER BY n.at DESC', c.id), consents: all("SELECT * FROM consents WHERE person_type='candidate' AND person_id=? ORDER BY at DESC", c.id),
     tieup: c.tieup_id ? get('SELECT * FROM tieups WHERE id=?', c.tieup_id) : null, referral_link: L.link('apply', `?ref=${c.id}`), agency_name: V.agencyName(c.agency_id), recruiter_name: V.userName(c.recruiter_id),

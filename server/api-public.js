@@ -744,7 +744,7 @@ route('GET', '/api/files/:id', {}, (ctx) => {
   const rid = f.record_id; let ok = false;
   if (s.kind === 'team') {
     const u = get('SELECT * FROM users WHERE id=?', s.subject_id);
-    if (rid.startsWith('CA-')) { const c = get('SELECT * FROM candidates WHERE id=?', rid); ok = R.phoneVisible(u, c) || f.type === 'short_cv'; }
+    if (rid.startsWith('CA-')) { const c = get('SELECT * FROM candidates WHERE id=?', rid); ok = R.phoneVisible(u, c) || ['cv', 'short_cv'].includes(f.type); }
     else if (rid.startsWith('CL-')) ok = R.seeClient(u, get('SELECT * FROM clients WHERE id=?', rid));
     else if (rid.startsWith('AP-')) ok = R.seeApp(u, get('SELECT * FROM applications WHERE id=?', rid));
     else if (rid.startsWith('JB-')) { const j = get('SELECT * FROM jobs WHERE id=?', rid); ok = R.seeJob(u, j) || (j && j.agency_id === u.agency_id); }
