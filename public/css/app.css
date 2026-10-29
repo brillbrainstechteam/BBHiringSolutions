@@ -1305,6 +1305,8 @@ html[lang="hi"] .ss-g { letter-spacing: 0; }
 .cand-bulk.has-sel .sel-count { color: var(--ink); }
 .cand-bulk .btn:disabled { opacity: .45; cursor: not-allowed; }
 .cand-bulk [hidden] { display: none; }
+.seg-head .cand-result { border-top: 0; padding-top: 0; align-items: flex-start; }
+.seg-head .cand-seg { flex-wrap: wrap; justify-content: flex-end; }
 .cand-table { overflow: hidden; }
 .cand-table .pager { padding: 10px 14px; border-top: 1px solid var(--border); }
 
