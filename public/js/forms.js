@@ -28,8 +28,6 @@
     return `${single ? `<div class="card-title">Fill in the below details</div><p class="muted small" style="margin:0 0 14px">For voice input, tap and allow the mic to speak</p>` : `<div class="seg mode-seg" role="tablist" aria-label="What do you want to do?">${Object.entries(MODES).map(([k, m]) => `<button type="button" role="tab" data-mode="${k}" class="${k === mode ? 'on' : ''}" aria-selected="${k === mode}">${m.label}</button>`).join('')}</div>`}
       <form class="stack" novalidate${single ? '' : ' style="margin-top:18px"'}>
         ${BB.voiceSwitch()}
-        ${!q.job && (q.adjobs || []).length ? `<div class="notice gold small" data-only="job"><span>You are applying for</span> <b data-no-i18n>${esc([...new Set(q.adjobs.map((j) => j.title))].join(' / '))} · ${esc([...new Set(q.adjobs.map((j) => j.city).filter(Boolean))].join(' / '))}</b>. <span>We will also show you other matching jobs.</span></div>` : ''}
-        ${q.job ? `<div class="notice gold small" data-only="job"><span>You are applying for</span> <b data-no-i18n>${q.want ? `${esc(q.want)}${q.city ? ` · ${esc(q.city)}` : ''} (${esc(String(q.job).toUpperCase())})` : esc(String(q.job).toUpperCase())}</b>. <span>We will also show you other matching jobs.</span></div>` : ''}
         ${q.ref ? `<div class="notice small" data-only="job">Referred by a friend (${esc(String(q.ref).toUpperCase())}).</div>` : ''}
         <div class="cv-first" data-only="job" data-f="cv"><div class="cv-ic" aria-hidden="true">CV</div><div class="grow"><b>Start with your CV</b> <span class="opt">(optional)</span><div class="muted small" data-cv-name>PDF or Word, max 10 MB</div><div class="small" data-cv-msg></div></div><button type="button" class="btn" data-cv>Attach CV</button></div>
         <div class="grid g2">${field({ name: 'name', label: 'Your name' })}<div data-only="hire">${field({ name: 'company', label: 'Company name' })}</div><div data-only="job">${field({ name: 'email', label: 'Email', type: 'email', opt: true, placeholder: 'For a confirmation email', attrs: 'autocomplete="email"' })}</div></div>
@@ -256,6 +254,10 @@
     $('#app').innerHTML = BB.split({ top: BB.publicTop(m.top), eyebrow: m.eyebrow, title: m.title, centered: true, card: '<div data-leadcard></div>' });
     const card = $('[data-leadcard]'); card.innerHTML = formHtml(mode, q, true);
     mountForm(card, mode, q, null, true);
+    // The job is known from the link (job ID or the ad's names): it is filled in as the job they want. A title not
+    // in the list goes in as "Other" with the title typed.
+    const sel = mode === 'job' && q.want ? $('[name=job_wanted]', card) : null;
+    if (sel && !sel.value) { sel.value = q.want; if (sel.value !== q.want) { sel.value = 'Other'; const o = $('[name=job_other]', card); if (o) o.value = q.want; } sel.dispatchEvent(new Event('change')); }
   }
   BB.views.hire = (r) => page('hire', r);
   BB.views.apply = (r) => page('job', r);
