@@ -21,7 +21,8 @@
   const run = async (fn, msg) => { try { const r = await fn(); after(msg); return r; } catch (e) { BB.fail(e); } };
   const waBtn = (o, label = 'WhatsApp', cls = 'btn sm wa') => `<button class="${cls}" data-wa='${esc(JSON.stringify(o))}'>${waIcon} ${esc(label)}</button>`;
   BB.waBtn = waBtn;
-  document.addEventListener('click', (e) => { const b = e.target.closest('[data-wa]'); if (!b || BB.portal !== 'team') return; e.preventDefault(); e.stopPropagation(); const o = JSON.parse(b.dataset.wa); BB.wa({ ...o, after: () => { BB.refreshPanel(); BB.refreshPage && BB.refreshPage(); } }); });
+  // Captured on the way down, so a button inside a clickable table row or card opens WhatsApp, not the row.
+  document.addEventListener('click', (e) => { const b = e.target.closest('[data-wa]'); if (!b || BB.portal !== 'team') return; e.preventDefault(); e.stopPropagation(); const o = JSON.parse(b.dataset.wa); BB.wa({ ...o, after: () => { BB.refreshPanel(); BB.refreshPage && BB.refreshPage(); } }); }, true);
   const FMT_WORDS = (k) => (k ? String(k).replace(/^bbhs_/, '').replace(/_/g, ' ').replace(/^./, (x) => x.toUpperCase()) : 'Message');
   const WA_STATUS = { scheduled: ['Scheduled', 'b-amber'], queued: ['Queued', 'b-amber'], 'would send': ['Not sent (test)', 'b-outline'], sent: ['Sent', 'b-primary'], delivered: ['Delivered', 'b-primary'], read: ['Read', 'b-green'], seen: ['Read', 'b-green'], failed: ['Failed', 'b-red'], received: ['Received', 'b-blue'] };
   const waBubble = (m) => { const st = WA_STATUS[m.status] || [m.status || '', 'b-outline']; const inn = m.direction === 'in';

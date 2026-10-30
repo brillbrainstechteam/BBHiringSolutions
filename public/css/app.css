@@ -1395,3 +1395,7 @@ html[lang="hi"] .ss-g { letter-spacing: 0; }
 .jdp-role:hover { background: var(--surface-2); } .jdp-role.on { background: var(--sky-50, #eef5ff); font-weight: 600; }
 .jd-jewel { padding: 10px 12px; border: 1px solid #f0c96a; background: #fffaf0; border-radius: 10px; }
 @media (max-width: 760px) { .jdp { grid-template-columns: 1fr; } }
+
+/* A date filter inline with its label. */
+.mf-inline { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); } .mf-inline input { width: auto; }
+.cand-bulk select.mini:disabled { opacity: .45; }
