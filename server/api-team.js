@@ -468,7 +468,7 @@ function createJob(c, b, actor, byClient) {
     rounds: b.rounds || ['Telephonic round', 'Virtual round', 'Final round (in person)'], screening_qs: b.screening_qs || [], notes: b.notes || '', created_by: L.actorName(actor), created_at: now(), status: null,
   });
   D.history(L.actorName(actor), 'create', id, null, null, `${b.title} for ${c.company}`);
-  for (const ch of D.settings().posting_channels) insert('postings', { job_id: id, channel: ch.channel, owner: ch.owner, tag: ch.tag });
+  syncPostings(id);
   L.recalcJob(id, L.actorName(actor), byClient ? 'Raised by client' : 'Job opening made');
   if (recruiter && byClient) L.alertUser(recruiter, `${c.company} raised a new job opening ${id}: write the job description`, id, 'jobs');
   const stages = D.settings().client_stages;
@@ -476,6 +476,35 @@ function createJob(c, b, actor, byClient) {
   return get('SELECT * FROM jobs WHERE id=?', id);
 }
 module.exports.createJob = createJob;
+// ---------- hiring channels: a checklist row per channel on every job, and the tracker across jobs ----------
+const channels = () => D.settings().hiring_channels || [];
+const POST_STATUS = ['', 'Pending', 'Done', 'Not needed'];
+function syncPostings(jobId) {
+  const have = new Set(all('SELECT ckey FROM postings WHERE job_id=? AND ckey IS NOT NULL', jobId).map((p) => p.ckey));
+  for (const ch of channels()) if (!have.has(ch.key)) insert('postings', { job_id: jobId, channel: ch.channel, owner: ch.owner, tag: ch.tag, ckey: ch.key, status: '' });
+}
+function setPosting(p, status, link, actor) {
+  if (!POST_STATUS.includes(status || '')) throw httpError(400, 'Pick Pending, Done or Not needed');
+  update('postings', p.id, { status: status || '', done_date: status === 'Done' ? (p.done_date || now()) : null, done_by: status === 'Done' ? actor.label : null, post_link: link !== undefined ? link : p.post_link });
+  D.history(actor.label, 'posting', p.job_id, p.channel, p.status || 'not started', status || 'not started');
+}
+function postingRows(j, apps) {
+  syncPostings(j.id); const tags = D.settings().src_tags || {}; const byKey = new Map(channels().map((c) => [c.key, c]));
+  return all('SELECT * FROM postings WHERE job_id=? AND ckey IS NOT NULL', j.id).filter((p) => byKey.has(p.ckey)).map((p) => { const ch = byKey.get(p.ckey); return { ...p, group: ch.group, section: ch.section, how: ch.how, owner: ch.owner, status: p.status || (p.done_date ? 'Done' : ''), apply_link: L.link('apply', `?job=${j.id}&src=${p.tag}`), apps: apps.filter((a) => a.source === (tags[p.tag] || p.tag)).length }; })
+    .sort((a, b) => channels().findIndex((c) => c.key === a.ckey) - channels().findIndex((c) => c.key === b.ckey));
+}
+// The tracker: active jobs as columns, channels as rows, each cell a status.
+route('GET', '/api/postings/tracker', T, (ctx) => {
+  const jobs = visibleJobs(ctx.user).map((j) => V.jobView(j)).filter((j) => ctx.query.all || !['Closed', 'Filled'].includes(j.status));
+  const cells = {};
+  for (const j of jobs) { syncPostings(j.id); cells[j.id] = {}; for (const p of all('SELECT ckey, status, done_date, post_link, done_by FROM postings WHERE job_id=? AND ckey IS NOT NULL', j.id)) cells[j.id][p.ckey] = { status: p.status || (p.done_date ? 'Done' : ''), done_date: p.done_date, post_link: p.post_link, done_by: p.done_by }; }
+  return { channels: channels(), jobs: jobs.map((j) => ({ id: j.id, code: j.old_code || j.id, title: j.title, city: j.city, client: j.client_name, status: j.status })), cells };
+});
+route('POST', '/api/postings/tracker', T, (ctx) => {
+  const j = get('SELECT * FROM jobs WHERE id=?', ctx.body.job_id); mustSee(seeJob(ctx.user, j), 'job opening');
+  syncPostings(j.id); const p = get('SELECT * FROM postings WHERE job_id=? AND ckey=?', j.id, ctx.body.ckey); if (!p) throw httpError(404, 'Channel not found');
+  setPosting(p, ctx.body.status, ctx.body.post_link, ctx.actor); return { ok: true };
+});
 
 // ---------- Excel upload of job openings (and their clients) ----------
 // Reads the "Client Job Tracking Sheet" (or the first sheet): Date, Client Name, Area, Position Open, No. of Vacancy,
@@ -574,7 +603,7 @@ route('GET', '/api/jobs/:id', T, (ctx) => {
   return {
     ...V.jobView(j, apps), client, apps: apps.map(V.appView).map((a) => ({ ...a, score: L.matchScore(get('SELECT * FROM candidates WHERE id=?', a.candidate_id), j, L.ratingOf(a.candidate_id)).score })),
     matches: L.bestMatches(j, 10).map((m) => ({ ...candidateOut(ctx.user, m.c), score: m.score, reasons: m.reasons, gaps: m.gaps, status: V.candStatus(m.c.id) })),
-    history: all('SELECT * FROM job_history WHERE job_id=? ORDER BY at DESC, id DESC', j.id), postings: all('SELECT * FROM postings WHERE job_id=?', j.id).map((p) => ({ ...p, apply_link: L.link('apply', `?src=${p.tag}&job=${j.id}`), apps: apps.filter((a) => a.source === (D.settings().src_tags[p.tag] || p.tag)).length })),
+    history: all('SELECT * FROM job_history WHERE job_id=? ORDER BY at DESC, id DESC', j.id), postings: postingRows(j, apps),
     recruiters: all("SELECT id, name FROM users WHERE agency_id=? AND status='On'", j.agency_id), files: all('SELECT * FROM files WHERE record_id=? AND replaced=0', j.id),
     notes: all('SELECT * FROM notes WHERE record_id=? ORDER BY at DESC', j.id), jd_template: (D.settings().jd_templates || {})[j.title] || D.settings().jd_template, salary_text: L.salaryText(j),
   };
@@ -635,6 +664,26 @@ route('POST', '/api/jobs/:id/jd', T, (ctx) => {
   }
   return get('SELECT * FROM jobs WHERE id=?', j.id);
 });
+// ---------- JD pool: one JD per role, and AI writing ----------
+const JD_KEYS = ['summary', 'duties', 'must', 'good', 'education', 'languages', 'timings', 'benefits', 'incentives', 'location', 'jewel_need', 'jewel_years', 'jewel_note'];
+const cleanJd = (v) => Object.fromEntries(JD_KEYS.map((k) => [k, String((v || {})[k] ?? '').slice(0, 4000)]));
+route('GET', '/api/jd-pool', T, () => ({ pool: D.settings().jd_templates || {}, standard: D.settings().jd_template, ai: require('./jdwriter').available() }));
+route('POST', '/api/jd-pool', ADMINS, (ctx) => {
+  const title = String(ctx.body.title || '').trim(); if (!title) throw httpError(400, 'Pick the role');
+  const pool = { ...(D.settings().jd_templates || {}) };
+  if (ctx.body.remove) delete pool[title]; else pool[title] = cleanJd(ctx.body.jd);
+  D.setSetting('jd_templates', pool); D.history(ctx.actor.label, ctx.body.remove ? 'remove JD' : 'save JD', null, 'jd_pool', null, title);
+  return { ok: true };
+});
+// AI: a JD from the role's facts. A few a minute per login is plenty (each one costs a little).
+route('POST', '/api/jd/write', { auth: 'team', rate: { key: 'jdwrite', max: 30, minutes: 60 } }, async (ctx) => {
+  const b = ctx.body || {}; if (!b.title) throw httpError(400, 'Pick the role');
+  const facts = { title: b.title, city: b.city || '', experience: b.experience || '', salary: b.salary || '', jewellery_industry_experience: { need: b.jewel_need || 'Preferred', years: b.jewel_years || '', detail: b.jewel_note || '' }, extra_notes: String(b.notes || '').slice(0, 1500) };
+  return { jd: cleanJd(await require('./jdwriter').write(facts)) };
+});
+// The jewellery line of a JD ("Required · 2+ years · diamond retail"), for the PDF and the client.
+const jewelLine = (jd) => (jd && jd.jewel_need ? [jd.jewel_need, jd.jewel_years ? `${jd.jewel_years}+ years` : '', jd.jewel_note].filter(Boolean).join(' · ') : '');
+module.exports.jewelLine = jewelLine;
 route('GET', '/api/jobs/:id/jd.pdf', T, (ctx) => {
   const j = get('SELECT * FROM jobs WHERE id=?', ctx.params.id); mustSee(seeJob(ctx.user, j), 'job opening');
   return { __file: { name: `${j.id}-JD.pdf`, mime: 'application/pdf', buf: jdPdf(j) } };
@@ -642,7 +691,8 @@ route('GET', '/api/jobs/:id/jd.pdf', T, (ctx) => {
 function jdPdf(j) {
   const jd = j.jd || {}; const c = get('SELECT * FROM clients WHERE id=?', j.client_id);
   const L2 = [{ text: `${j.title} — ${j.city}`, size: 13, bold: true }, ''];
-  for (const [k, lab] of [['summary', 'Role summary'], ['duties', 'Duties'], ['must', 'Must-have skills'], ['good', 'Good to have'], ['salary', 'Salary'], ['timings', 'Timings'], ['benefits', 'Benefits'], ['incentives', 'Incentives'], ['location', 'Location']]) {
+  if (jewelLine(jd)) jd.jewel_text = jewelLine(jd);
+  for (const [k, lab] of [['summary', 'Role summary'], ['duties', 'Duties'], ['jewel_text', 'Jewellery industry experience'], ['must', 'Must-have skills'], ['good', 'Good to have'], ['education', 'Education'], ['languages', 'Languages'], ['salary', 'Salary'], ['timings', 'Timings'], ['benefits', 'Benefits'], ['incentives', 'Incentives'], ['location', 'Location']]) {
     const v = k === 'salary' ? (jd.salary || L.salaryText(j)) : jd[k]; if (v) { L2.push({ text: lab, bold: true }); for (const line of String(v).split('\n')) L2.push(line); L2.push(''); }
   }
   L2.push(`Apply: ${L.link('apply', `?job=${j.id}`)}`);
@@ -652,8 +702,7 @@ module.exports.jdPdf = jdPdf;
 route('POST', '/api/jobs/:id/posting', T, (ctx) => {
   const j = get('SELECT * FROM jobs WHERE id=?', ctx.params.id); mustSee(seeJob(ctx.user, j), 'job opening');
   const p = get('SELECT * FROM postings WHERE id=? AND job_id=?', ctx.body.id, j.id); if (!p) throw httpError(404, 'Posting not found');
-  update('postings', p.id, { done_date: ctx.body.done ? (p.done_date || now()) : null, post_link: ctx.body.post_link ?? p.post_link, owner: ctx.body.owner ?? p.owner });
-  D.history(ctx.actor.label, 'posting', j.id, p.channel, p.done_date ? 'done' : 'not done', ctx.body.done ? 'done' : 'not done');
+  setPosting(p, ctx.body.status !== undefined ? ctx.body.status : ctx.body.done ? 'Done' : '', ctx.body.post_link, ctx.actor);
   return { ok: true };
 });
 route('POST', '/api/jobs/:id/alert', ADMINS, (ctx) => {
@@ -772,6 +821,10 @@ route('GET', '/api/candidates/:id', T, (ctx) => {
     ...candidateOut(u, c), status: V.candStatus(c.id), apps, messages: msgs, rating: L.ratingOf(c.id), can_message: seeThread(u, 'candidate', c.id) || isSuper(u),
     job_matches: L.jobsFor(c, 20).filter((m) => seeJob(u, m.j)).slice(0, 6).map((m) => ({ id: m.j.id, title: m.j.title, city: m.j.city, client_name: (get('SELECT company FROM clients WHERE id=?', m.j.client_id) || {}).company, score: m.score, reasons: m.reasons, gaps: m.gaps })),
     files: show ? all('SELECT * FROM files WHERE record_id=? AND replaced=0 ORDER BY at DESC', c.id) : all("SELECT * FROM files WHERE record_id=? AND replaced=0 AND type IN ('cv','short_cv') ORDER BY at DESC", c.id),
+    // History tab: every application, open or closed, with its screening, interviews (results and notes), calls and steps.
+    track: apps.map((a) => ({ id: a.id, job_id: a.job_id, job_title: a.job_title, client_name: a.client_name, step: a.step, result: a.result, created_at: a.created_at, screen: a.screen, screen_note: a.screen_note, screen_by: a.screen_by, screen_at: a.screen_at, offer_ctc: a.offer_ctc, joining_date: a.joining_date,
+      interviews: (a.interviews || []).map((i) => ({ id: i.id, name: i.name, round: i.round, mode: i.mode, mode_label: i.mode_label, at: i.at, status: i.status, result: i.result, rating: i.rating, remark: i.remark, interviewer: i.interviewer, notes: all('SELECT author, author_kind, text, at FROM iv_notes WHERE iv_id=? ORDER BY at', i.id) })),
+      calls: all('SELECT * FROM calls WHERE app_id=? ORDER BY at', a.id), steps: all("SELECT at, step, by, note, kind FROM app_history WHERE app_id=? ORDER BY at, id", a.id) })),
     notes: all('SELECT * FROM notes WHERE record_id=? ORDER BY at DESC', c.id), calls: all('SELECT * FROM calls WHERE candidate_id=? ORDER BY at DESC LIMIT 50', c.id), call_outcomes: L.CALL_OUTCOMES,
     iv_notes: all('SELECT n.*, i.name iv_name, i.mode, i.at iv_at FROM iv_notes n JOIN interviews i ON i.id=n.iv_id WHERE n.candidate_id=? ORDER BY n.at DESC', c.id), consents: all("SELECT * FROM consents WHERE person_type='candidate' AND person_id=? ORDER BY at DESC", c.id),
     tieup: c.tieup_id ? get('SELECT * FROM tieups WHERE id=?', c.tieup_id) : null, referral_link: L.link('apply', `?ref=${c.id}`), agency_name: V.agencyName(c.agency_id), recruiter_name: V.userName(c.recruiter_id),
@@ -1453,7 +1506,7 @@ route('POST', '/api/roles/role', T, (ctx) => {
 });
 
 // ---------- settings (super admin) ----------
-const EDITABLE = ['landing_roles', 'wa_pause', 'business', 'industries', 'default_industry', 'hidden_jobs', 'departments', 'cities', 'skills', 'client_stages', 'closing_reasons', 'job_close_reasons', 'reopen_reasons', 'lead_sources', 'src_tags', 'fee', 'agency_share_pct', 'gst', 'replacement_days', 'payment_days', 'targets', 'log_deadline', 'quiet', 'daily_limit', 'bulk_budget', 'match', 'languages', 'id_start', 'bill_prefix', 'retention_years', 'team_idle_hours', 'formats', 'auto_rules', 'crm', 'posting_channels', 'gap_targets', 'templates', 'jd_template', 'jd_templates'];
+const EDITABLE = ['hiring_channels', 'landing_roles', 'wa_pause', 'business', 'industries', 'default_industry', 'hidden_jobs', 'departments', 'cities', 'skills', 'client_stages', 'closing_reasons', 'job_close_reasons', 'reopen_reasons', 'lead_sources', 'src_tags', 'fee', 'agency_share_pct', 'gst', 'replacement_days', 'payment_days', 'targets', 'log_deadline', 'quiet', 'daily_limit', 'bulk_budget', 'match', 'languages', 'id_start', 'bill_prefix', 'retention_years', 'team_idle_hours', 'formats', 'auto_rules', 'crm', 'posting_channels', 'gap_targets', 'templates', 'jd_template', 'jd_templates'];
 route('GET', '/api/settings', SUPER, () => { const s = { ...D.settings() }; s.crm = { ...s.crm, token: s.crm.token ? '••••••••' : '', webhook_secret: s.crm.from_env && s.crm.from_env.webhook_secret ? '••••••••' : s.crm.webhook_secret }; return s; });
 route('POST', '/api/health/mail', SUPER, async () => require('./mailbox').check());
 route('POST', '/api/health/email', SUPER, (ctx) => {

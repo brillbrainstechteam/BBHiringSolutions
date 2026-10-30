@@ -686,7 +686,9 @@ function logCall(o, by) {
   const cand = get('SELECT id FROM candidates WHERE id=?', o.candidate_id); if (!cand) throw httpError(404, 'Candidate not found');
   if (!CALL_OUTCOMES.includes(o.outcome)) throw httpError(400, 'Pick what happened on the call', 'outcome');
   const minutes = o.minutes === '' || o.minutes == null ? null : Math.max(0, Math.min(600, Number(o.minutes) || 0));
-  insert('calls', { candidate_id: cand.id, app_id: o.app_id || null, iv_id: o.iv_id || null, user_id: by && by.uid, by: actorName(by), at: now(), outcome: o.outcome, minutes, note: String(o.note || '').slice(0, 2000) });
+  // When the call happened (a call logged later keeps its real date); never in the future.
+  const when = o.at && !Number.isNaN(Date.parse(o.at)) && Date.parse(o.at) <= Date.now() + 300000 ? new Date(o.at).toISOString() : now();
+  insert('calls', { candidate_id: cand.id, app_id: o.app_id || null, iv_id: o.iv_id || null, user_id: by && by.uid, by: actorName(by), at: when, outcome: o.outcome, minutes, note: String(o.note || '').slice(0, 2000) });
   if (o.app_id) appHist(o.app_id, (get('SELECT step FROM applications WHERE id=?', o.app_id) || {}).step, by, `Call: ${o.outcome}${minutes ? ` (${minutes} min)` : ''}${o.note ? ` — ${String(o.note).slice(0, 120)}` : ''}`, 'call');
   return { ok: true };
 }

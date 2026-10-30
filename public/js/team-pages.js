@@ -136,9 +136,35 @@
   };
 
   // ---------- Job openings ----------
+  // The hiring channels tracker: every channel down the side, every active job across, a status in each cell.
+  // A click moves the cell along: — -> Pending -> Done -> Not needed -> —.
+  async function postingTracker(el, actions, q) {
+    const d = await BB.api(`/api/postings/tracker?${BB.qs({ all: q.all })}`);
+    actions.innerHTML = '<div class="seg"><button data-jv="">Openings</button><button data-jv="tracker" class="on">Hiring channels</button></div>';
+    $$('[data-jv]', actions).forEach((b) => (b.onclick = () => BB.setQ({ view: b.dataset.jv })));
+    const owners = [...new Set(d.channels.map((c) => c.owner))]; const own = q.owner || '';
+    const chs = d.channels.filter((c) => !own || c.owner === own);
+    const CLS = { Done: 'done', Pending: 'pending', 'Not needed': 'na' };
+    let rows = ''; let g = null;
+    for (const c of chs) {
+      if (c.group !== g) { g = c.group; rows += `<tr class="trk-group"><td colspan="${2 + d.jobs.length}">${esc(g)}</td></tr>`; }
+      rows += `<tr><td class="trk-ch"><b>${esc(c.channel)}</b><div class="tiny muted">${esc(c.section !== c.group ? c.section : '')}</div></td><td class="small nowrap">${esc(c.owner)}</td>${d.jobs.map((j) => { const cell = (d.cells[j.id] || {})[c.key] || {}; const st = cell.status || ''; return `<td class="trk-cell"><button class="trk ${CLS[st] || ''}" data-trk="${j.id}|${c.key}" data-st="${esc(st)}" title="${esc(c.channel)} · ${esc(j.code)}${cell.done_date ? ` · done ${fmtD(cell.done_date)}${cell.done_by ? ` by ${esc(cell.done_by)}` : ''}` : ''}">${st === 'Not needed' ? 'N/A' : st || '—'}</button></td>`; }).join('')}</tr>`;
+    }
+    const doneOf = (j) => chs.filter((c) => ((d.cells[j.id] || {})[c.key] || {}).status === 'Done').length;
+    el.innerHTML = `<div class="filters"><select data-own><option value="">All owners</option>${owners.map((o) => `<option ${own === o ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select><label class="row small"><input type="checkbox" data-all ${q.all ? 'checked' : ''}> Include closed and filled jobs</label><span class="small muted">Click a cell: — → Pending → Done → Not needed.</span></div>
+      <div class="card tbl-wrap trk-wrap"><table class="tbl trk-tbl"><thead><tr><th>Channel</th><th>Owner</th>${d.jobs.map((j) => `<th class="trk-job"><a href="#" data-open="job:${j.id}">${esc(j.code)}</a><div class="tiny muted">${esc(j.title)}</div><div class="tiny faint">${esc(j.client || '')}</div><div class="tiny"><b>${doneOf(j)}</b>/${chs.length} done</div></th>`).join('')}</tr></thead><tbody>${rows}</tbody></table></div>`;
+    $('[data-own]', el).onchange = (e) => BB.setQ({ owner: e.target.value });
+    $('[data-all]', el).onchange = (e) => BB.setQ({ all: e.target.checked ? '1' : '' });
+    const NEXT = { '': 'Pending', Pending: 'Done', Done: 'Not needed', 'Not needed': '' };
+    $$('[data-trk]', el).forEach((b) => (b.onclick = async () => {
+      const [job_id, ckey] = b.dataset.trk.split('|'); const status = NEXT[b.dataset.st || ''];
+      try { await BB.post('/api/postings/tracker', { job_id, ckey, status }); b.dataset.st = status; b.className = `trk ${CLS[status] || ''}`; b.textContent = status === 'Not needed' ? 'N/A' : status || '—'; } catch (e) { BB.fail(e); }
+    }));
+  }
   P.jobs = async ({ el, actions, q, me }) => {
+    if (q.view === 'tracker') return postingTracker(el, actions, q);
     const r = await BB.api(`/api/jobs?${BB.qs(q)}`); const st = q.status || 'All';
-    actions.innerHTML = `${dl(`/api/jobs?${BB.qs(q, { format: 'xlsx' })}`)}<button class="btn" data-jobxl>Upload jobs (Excel)</button><button class="btn primary" data-new>+ New job opening</button>`;
+    actions.innerHTML = `${dl(`/api/jobs?${BB.qs(q, { format: 'xlsx' })}`)}<div class="seg"><button data-jv="" class="on">Openings</button><button data-jv="tracker">Hiring channels</button></div><button class="btn" data-jobxl>Upload jobs (Excel)</button><button class="btn primary" data-new>+ New job opening</button>`;
     el.innerHTML = `<div class="filters"><input placeholder="Search job, client, ID, old code…" value="${esc(q.q || '')}" data-q>${['All', 'Active', ...STATUSES].map((s) => `<span class="chip ${st === s ? 'on' : ''}" data-st="${s}">${s} <span class="n">${r.counts[s] || 0}</span></span>`).join('')}</div>
       <div class="row small bulkbar cand-bulk" data-jbar><span class="sel-count" data-jcount>Select the checkboxes to take actions</span>${[['approve_jd', 'Approve JD'], ['hold', 'Put on hold'], ['resume', 'Resume'], ['close', 'Close'], ['reopen', 'Reopen'], ['priority', 'Priority'], ...(me.level !== 'sub' ? [['recruiter', 'Assign recruiter']] : []), ['client', 'Set client'], ...(me.level !== 'sub' ? [['delete', 'Delete']] : [])].map(([a, l]) => `<button class="btn sm ${a === 'delete' ? 'danger' : ''}" data-jb="${a}" disabled>${l}</button>`).join('')}</div>
       <div class="card">${BB.table([{ t: 'ID', f: (j) => `<span class="mono">${j.id}</span>` }, { t: 'Job', f: (j) => `<b>${esc(j.title)}</b><div class="tiny muted">${esc(j.city)}${j.priority === 'High' ? ' · <span style="color:var(--red)">High</span>' : ''}</div>` }, { t: 'Client', f: (j) => (j.internal ? '<span class="badge b-violet tiny">Internal</span>' : j.client_tbc ? '<span class="badge b-amber tiny">Client to be confirmed</span>' : esc(j.client_name)) }, { t: 'Filled', f: (j) => `${j.filled}/${j.openings} <div class="bar" style="width:60px;display:inline-block;vertical-align:middle"><i style="width:${Math.min(100, (j.filled / j.openings) * 100)}%"></i></div>` }, { t: 'Apps', num: 1, f: (j) => j.apps_total }, { t: 'Status', f: (j) => `${statusBadge(j.status)}${j.reopened ? ` <span class="badge b-gold tiny">${esc(j.reopened)}</span>` : ''}` }, { t: 'Recruiter', f: (j) => esc(j.recruiter_name || '—'), hideSm: 1 }, { t: 'Days open', num: 1, f: (j) => j.days_open, hideSm: 1 }], r.rows, { open: (j) => `job:${j.id}`, select: true })}${BB.pager(r)}</div>
@@ -148,6 +174,7 @@
     $$('[data-st]', el).forEach((c) => (c.onclick = () => BB.setQ({ status: c.dataset.st === 'All' ? '' : c.dataset.st, page: 1 })));
     const n = $('[data-new]', actions); if (n) n.onclick = () => BB.newJob();
     $('[data-jobxl]', actions).onclick = () => uploadJobs();
+    $$('[data-jv]', actions).forEach((b) => (b.onclick = () => BB.setQ({ view: b.dataset.jv })));
     // Selection bar: what is ticked, and bulk actions on those job openings.
     const jbar = $('[data-jbar]', el);
     const onJSel = () => { const k = BB.selected(el).length; $('[data-jcount]', jbar).textContent = k ? `${k} selected` : 'Select the checkboxes to take actions'; jbar.classList.toggle('has-sel', k > 0); $$('[data-jb]', jbar).forEach((b) => { b.disabled = !k; }); };
@@ -716,6 +743,21 @@
   // ---------- Settings (super admin, section 10) ----------
   // Settings: every tab for the super admin; admins and sub admins see only Departments & roles.
   // Deleted items: what was deleted (with everything that went with it), to restore or delete for good.
+  // JD pool: a ready job description per role. Pick a role, edit its sections (with the jewellery-experience
+  // section), write a first draft with AI, save. Writing a job's JD can start from here.
+  async function jdPoolView(body, q, me) {
+    const d = await BB.api('/api/jd-pool'); const roles = [...new Set([...BB.boot.jobs.map((x) => x.title), ...Object.keys(d.pool)])].sort();
+    const role = q.role || ''; const jd = (role && d.pool[role]) || {};
+    body.innerHTML = `<div class="jdp"><div class="card pad jdp-list"><input placeholder="Find a role…" data-jdfind><div class="stack-sm" style="margin-top:8px;max-height:60vh;overflow:auto">${roles.map((r) => `<a href="#" class="jdp-role ${r === role ? 'on' : ''}" data-role="${esc(r)}">${esc(r)}${d.pool[r] ? ' <span class="badge b-green tiny">JD</span>' : ''}</a>`).join('')}</div></div>
+      <div class="card pad">${role ? `<div class="row between"><h3 style="margin:0">${esc(role)}</h3><div class="row">${d.ai ? '<button class="btn sm primary" data-ai>✦ Write with AI</button>' : '<span class="small muted">AI writing: add ANTHROPIC_API_KEY to the server .env</span>'}${d.pool[role] && me.level !== 'sub' ? '<button class="btn sm danger" data-rm>Remove</button>' : ''}</div></div>
+        <form class="stack" data-jdform style="margin-top:12px">${BB.jdFields(jd).map((x) => (typeof x === 'string' ? x : BB.field(x))).join('')}${me.level !== 'sub' ? '<button class="btn primary">Save JD for this role</button>' : '<p class="small muted">Only admins can change the pool.</p>'}</form>` : '<p class="muted">Pick a role on the left to write or edit its job description. Roles with a <span class="badge b-green tiny">JD</span> have one already.</p>'}</div></div>`;
+    $$('[data-role]', body).forEach((a) => (a.onclick = (e) => { e.preventDefault(); BB.setQ({ role: a.dataset.role }); }));
+    $('[data-jdfind]', body).oninput = (e) => { const t = e.target.value.toLowerCase(); $$('[data-role]', body).forEach((a) => { a.hidden = !a.dataset.role.toLowerCase().includes(t); }); };
+    const form = $('[data-jdform]', body); if (!form) return;
+    form.onsubmit = async (e) => { e.preventDefault(); try { await BB.post('/api/jd-pool', { title: role, jd: BB.formValues(form) }); BB.toast(`JD for ${role} saved`); BB.refreshPage(); } catch (er) { BB.fail(er); } };
+    const rm = $('[data-rm]', body); if (rm) rm.onclick = async () => { if (await BB.confirm('Remove JD', `Remove the pooled JD for ${role}?`, 'Remove')) { await BB.post('/api/jd-pool', { title: role, remove: true }); BB.refreshPage(); } };
+    const ai = $('[data-ai]', body); if (ai) ai.onclick = async () => { ai.disabled = true; ai.textContent = 'Writing…'; const v = BB.formValues(form); try { const r = await BB.post('/api/jd/write', { title: role, jewel_need: v.jewel_need, jewel_years: v.jewel_years, jewel_note: v.jewel_note, notes: [v.summary, v.must].filter(Boolean).join('\n') }); BB.fillJd(form, { ...r.jd, jewel_need: v.jewel_need, jewel_years: v.jewel_years, jewel_note: v.jewel_note }); BB.toast('Written. Check and edit, then save.'); } catch (er) { BB.fail(er); } ai.disabled = false; ai.textContent = '✦ Write with AI'; };
+  }
   async function trashView(body) {
     const r = await BB.api('/api/trash'); const KIND = { client: 'Client', job: 'Job opening', candidate: 'Candidate', application: 'Application' };
     const what = (c) => Object.entries(c || {}).filter(([k]) => ['clients', 'jobs', 'candidates', 'applications'].includes(k)).map(([k, n]) => `${n} ${k}`).join(', ');
@@ -725,12 +767,13 @@
     $$('[data-purge]', body).forEach((b) => (b.onclick = async () => { if (await BB.confirm('Delete for good', 'This cannot be undone.', 'Delete for good')) { try { await BB.post(`/api/trash/${b.dataset.purge}/purge`); BB.toast('Deleted for good'); trashView(body); } catch (e) { BB.fail(e); } } }));
   }
   P.settings = async ({ el, q, me }) => {
-    const sup = isSuper(me); const tab = sup ? q.tab || 'whatsapp' : 'roles';
-    const tabs = sup ? [['whatsapp', 'WhatsApp'], ['rules', 'Automatic messages'], ['formats', 'Message formats'], ['match', 'Matching'], ['money', 'Fees & limits'], ['lists', 'Lists'], ['roles', 'Departments & roles'], ['trash', 'Deleted items'], ['jobs', 'Job list'], ['papers', 'Paper templates'], ['business', 'Business'], ['privacy', 'Data requests'], ['health', 'Health']] : [['roles', 'Departments & roles']];
+    const sup = isSuper(me); const tab = sup ? q.tab || 'whatsapp' : q.tab === 'jdpool' && me.level === 'admin' ? 'jdpool' : 'roles';
+    const tabs = sup ? [['whatsapp', 'WhatsApp'], ['rules', 'Automatic messages'], ['formats', 'Message formats'], ['match', 'Matching'], ['money', 'Fees & limits'], ['lists', 'Lists'], ['roles', 'Departments & roles'], ['jdpool', 'JD pool'], ['trash', 'Deleted items'], ['jobs', 'Job list'], ['papers', 'Paper templates'], ['business', 'Business'], ['privacy', 'Data requests'], ['health', 'Health']] : [['roles', 'Departments & roles'], ...(me.level === 'admin' ? [['jdpool', 'JD pool']] : [])];
     el.innerHTML = `<div class="tabs">${tabs.map(([k, l]) => `<button data-tab="${k}" class="${tab === k ? 'on' : ''}">${l}</button>`).join('')}</div><div data-tb></div>${sup ? '<p class="small muted" style="margin-top:12px">A change in Settings applies to new records only. Old bills, offers and fees never change by themselves.</p>' : ''}`;
     $$('[data-tab]', el).forEach((b) => (b.onclick = () => BB.setQ({ tab: b.dataset.tab })));
     if (tab === 'roles') return rolesView($('[data-tb]', el), q, me);
     if (tab === 'trash') return trashView($('[data-tb]', el));
+    if (tab === 'jdpool') return jdPoolView($('[data-tb]', el), q, me);
     const s = await BB.api('/api/settings');
     const body = $('[data-tb]', el);
     const save = async (key, value, msg = 'Saved') => { try { await BB.put(`/api/settings/${key}`, { value }); BB.toast(msg); BB.boot = await (await fetch('/api/bootstrap')).json(); BB.refreshPage(); } catch (e) { BB.fail(e); } };

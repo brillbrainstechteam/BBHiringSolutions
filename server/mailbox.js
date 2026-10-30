@@ -167,8 +167,16 @@ async function intakeEmail({ fromName, fromEmail, subject, text, attachments }) 
       first = false;
     } catch (e) { D.insert('notes', { record_id: id, text: `Attachment ${a.name} not saved: ${e.message}`, author: 'Email inbox', at: D.now() }); }
   }
+  // An application too, but only when the email clearly names the job: a portal job ID (JB-2031) anywhere in the
+  // subject or text, or else a role in the subject ("Application for CAD Designer") that matches open jobs.
+  const applied = [];
+  const idHit = /(?:^|[^A-Za-z0-9])JB[-\s_]?(\d{3,})(?!\d)/i.exec(`${subject || ''}\n${text || ''}`);
+  const role = String(subject || '').replace(/\b(application|applying|apply|resume|cv|for|the|post|of|job|re|fw|fwd)\b/gi, ' ');
+  let targets = idHit ? [D.get('SELECT * FROM jobs WHERE id=?', `JB-${idHit[1]}`)].filter(Boolean) : L.jobsForRole(role);
+  if (!idHit && L.roleTokens(role).length < 2 && targets.length > 1) targets = []; // one vague word ("Sales") is not clear enough
+  for (const j of targets) { try { applied.push(L.createApplication(id, j.id, { label: 'Email inbox' }, 'Email', `From the email "${String(subject || '').slice(0, 80)}"`).id); } catch { /* closed job, or already on it */ } }
   if (r.isNew) require('./mailer').newLead('candidate', D.get('SELECT * FROM candidates WHERE id=?', id));
-  return { id, isNew: r.isNew, found: { name: !!name, phone: !!phone, email: !!email, city, job } };
+  return { id, isNew: r.isNew, applications: applied, found: { name: !!name, phone: !!phone, email: !!email, city, job } };
 }
 
 // Reads unread emails (up to 25 a run), makes leads, marks them read.

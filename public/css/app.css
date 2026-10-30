@@ -1348,3 +1348,50 @@ html[lang="hi"] .ss-g { letter-spacing: 0; }
 
 /* Candidate login switched off (Settings -> Automatic messages): hide every link to it. */
 .no-cand-login a[href="/my-profile"] { display: none !important; }
+
+/* Application header: labelled facts in a grid, the ad as a path of chips. */
+.app-meta { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px 18px; margin-top: 10px; font-size: 13px; }
+.app-meta > div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.app-meta > div > span:first-child { font-size: 10.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--faint); }
+.app-meta .wide { grid-column: 1 / -1; }
+.ad-path { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.ad-path i { font-style: normal; padding: 3px 9px; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--border); font-size: 12px; overflow-wrap: anywhere; }
+.ad-path b { color: var(--faint); font-weight: 400; }
+/* WhatsApp messages: bubbles, ours on the right. Long texts open on click. */
+.wa-list { display: flex; flex-direction: column; gap: 8px; }
+.wa-msg { max-width: 88%; padding: 9px 12px; border-radius: 12px; border: 1px solid var(--border); background: var(--surface); }
+.wa-msg.out { align-self: flex-end; background: color-mix(in srgb, var(--sky-50, #eef5ff) 85%, var(--surface)); border-bottom-right-radius: 4px; }
+.wa-msg.in { align-self: flex-start; border-bottom-left-radius: 4px; }
+.wa-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 12px; margin-bottom: 4px; }
+.wa-text { font-size: 13px; line-height: 1.45; white-space: pre-line; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; cursor: pointer; }
+.wa-text.open { display: block; -webkit-line-clamp: unset; }
+/* Calls: the date first, then what happened. */
+.call-card { display: flex; gap: 12px; padding: 9px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); }
+.call-when { display: flex; flex-direction: column; min-width: 92px; font-size: 12px; } .call-when b { font-size: 13px; } .call-when span { color: var(--muted); }
+.call-note { margin-top: 4px; white-space: pre-line; }
+/* Candidate Profile / History tabs and the history cards. */
+.panel-tabs { margin-bottom: 14px; }
+.hist-app .hist-sub { margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--border); }
+.hist-app h4 { margin: 0 0 6px; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.hist-iv + .hist-iv { margin-top: 8px; }
+.stars { color: #d19b12; letter-spacing: 1px; } .stars i { font-style: normal; color: var(--border-strong, #ccd); }
+
+/* Hiring channels: grouped checklist on a job, and the tracker across jobs. */
+.post-group { margin-bottom: 12px; } .post-gh { font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin: 6px 0; }
+.post-tbl tr.post-sec td { background: var(--surface-2); font-size: 12px; font-weight: 600; padding: 6px 10px; }
+.trk-wrap { overflow: auto; max-height: calc(100vh - 230px); }
+.trk-tbl th, .trk-tbl td { white-space: nowrap; }
+.trk-tbl thead th { position: sticky; top: 0; background: var(--surface-2); z-index: 2; vertical-align: bottom; }
+.trk-tbl .trk-ch { white-space: normal; min-width: 220px; }
+.trk-tbl tr.trk-group td { background: var(--surface-2); font-weight: 700; font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.trk-job { min-width: 96px; text-align: center; }
+.trk-cell { text-align: center; padding: 4px !important; }
+.trk { min-width: 78px; padding: 4px 8px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface); font-size: 12px; cursor: pointer; color: var(--faint); }
+.trk.pending { background: #fff4d6; border-color: #f0c96a; color: #8a5a00; } .trk.done { background: #e3f6ea; border-color: #8fd3a8; color: #146c35; } .trk.na { background: var(--surface-2); color: var(--faint); text-decoration: line-through; }
+
+/* JD pool: roles on the left, the JD on the right; the jewellery section stands out. */
+.jdp { display: grid; grid-template-columns: 260px 1fr; gap: 14px; align-items: start; }
+.jdp-role { display: block; padding: 6px 10px; border-radius: 8px; color: var(--ink); text-decoration: none; font-size: 13px; }
+.jdp-role:hover { background: var(--surface-2); } .jdp-role.on { background: var(--sky-50, #eef5ff); font-weight: 600; }
+.jd-jewel { padding: 10px 12px; border: 1px solid #f0c96a; background: #fffaf0; border-radius: 10px; }
+@media (max-width: 760px) { .jdp { grid-template-columns: 1fr; } }
