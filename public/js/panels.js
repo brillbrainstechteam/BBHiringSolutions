@@ -104,7 +104,7 @@
     const j = await BB.api(`/api/jobs/${id}`); const s = BB.boot; const canAdmin = me().level !== 'sub';
     const open = j.apps.filter((a) => a.result === 'open'); const closed = j.apps.filter((a) => a.result !== 'open');
     const jd = j.jd || {};
-    const appRow = (a) => `<tr class="click" data-open="application:${a.id}"><td class="mono">${a.id}</td><td>${esc(a.candidate_name)}</td><td><span class="badge b-primary">${esc(a.step)}</span>${a.on_hold ? ' <span class="badge b-outline">on hold</span>' : ''}${a.screen ? ` <span class="badge b-outline">${esc(a.screen)}</span>` : ''}</td><td>${resultBadge(a.result)}</td><td>${scoreBadge(a.score)}</td><td><span class="days ${a.days_in_step >= 7 && a.result === 'open' ? 'late' : ''}">${a.days_in_step}d</span></td></tr>`;
+    const appRow = (a) => `<tr class="click" data-open="application:${a.id}"><td class="mono">${a.id}</td><td>${esc(a.candidate_name)}</td><td><span class="badge b-primary">${esc(a.step)}</span>${a.on_hold ? ' <span class="badge b-outline">on hold</span>' : ''}</td><td>${resultBadge(a.result)}</td><td>${scoreBadge(a.score)}</td><td>${BB.quickScreen(a)}</td><td><span class="days ${a.days_in_step >= 7 && a.result === 'open' ? 'late' : ''}">${a.days_in_step}d</span></td></tr>`;
     // Links to paste into a Meta ad and a LinkedIn job or ad: each applicant becomes a candidate and an application
     // on this job, with the source and ad names. Applications open only once the job description is approved.
     // The ads this job runs under, and the links to paste: anyone applying from one of these ads becomes an application here.
@@ -148,7 +148,7 @@
         ${notesBlock(j.id, j.notes)}
         <div class="sec"><h3>Status history</h3><div class="hist">${j.history.map((h) => `<div class="h"><span class="t">${fmtDT(h.at)}</span><span class="grow"><b>${esc(h.status)}</b> · ${esc(h.by)}${h.note ? ` — ${esc(h.note)}` : ''}</span></div>`).join('')}</div></div>`,
       mount: (el) => {
-        wireCommon(el);
+        wireCommon(el); BB.wireQuickScreen(el, () => BB.refreshPanel());
         $$('[data-act]', el).forEach((b) => (b.onclick = () => jobAct(j, b.dataset.act)));
         $$('[data-add]', el).forEach((b) => (b.onclick = () => run(() => BB.post('/api/applications', { candidate_id: b.dataset.add, job_id: j.id }), 'Added — new application at Applied')));
         $('[data-addmatch]', el).onclick = () => BB.pickCandidate((cid) => run(() => BB.post('/api/applications', { candidate_id: cid, job_id: j.id }), 'Added — a new application'), open.map((a) => a.candidate_id));

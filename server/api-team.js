@@ -463,7 +463,7 @@ function createJob(c, b, actor, byClient) {
   D.history(L.actorName(actor), 'create', id, null, null, `${b.title} for ${c.company}`);
   for (const ch of D.settings().posting_channels) insert('postings', { job_id: id, channel: ch.channel, owner: ch.owner, tag: ch.tag });
   L.recalcJob(id, L.actorName(actor), byClient ? 'Raised by client' : 'Job opening made');
-  if (recruiter && byClient) L.alertUser(recruiter, `${c.company} raised a new job opening ${id}: write the job description`, id);
+  if (recruiter && byClient) L.alertUser(recruiter, `${c.company} raised a new job opening ${id}: write the job description`, id, 'jobs');
   const stages = D.settings().client_stages;
   if (stages.indexOf('Job opening active') > stages.indexOf(c.stage)) update('clients', c.id, { stage: 'Job opening active' });
   return get('SELECT * FROM jobs WHERE id=?', id);
@@ -586,7 +586,7 @@ route('PATCH', '/api/jobs/:id', T, (ctx) => {
   }
   if (patch.title) patch.department = L.deptOf(patch.title);
   D.edit('jobs', j.id, patch, ctx.actor.label, ctx.ip);
-  if (patch.recruiter_id && patch.recruiter_id !== j.recruiter_id) L.alertUser(patch.recruiter_id, `You are now the recruiter on ${j.id}`, j.id);
+  if (patch.recruiter_id && patch.recruiter_id !== j.recruiter_id) L.alertUser(patch.recruiter_id, `You are now the recruiter on ${j.id}`, j.id, 'jobs');
   L.recalcJob(j.id, ctx.actor.label, 'Edited');
   return get('SELECT * FROM jobs WHERE id=?', j.id);
 });
@@ -601,7 +601,7 @@ route('POST', '/api/jobs/bulk', T, (ctx) => {
       else if (b.action === 'recruiter') {
         if (ctx.user.level === 'sub') throw httpError(403, 'Admins assign recruiters.');
         D.edit('jobs', id, { recruiter_id: b.recruiter_id || null }, ctx.actor.label, ctx.ip);
-        if (b.recruiter_id && b.recruiter_id !== j.recruiter_id) L.alertUser(b.recruiter_id, `You are now the recruiter on ${j.id}`, j.id);
+        if (b.recruiter_id && b.recruiter_id !== j.recruiter_id) L.alertUser(b.recruiter_id, `You are now the recruiter on ${j.id}`, j.id, 'jobs');
       } else if (b.action === 'client') {
         const nc = get('SELECT * FROM clients WHERE id=? AND removed=0 AND merged_into IS NULL', b.client_id); mustSee(seeClient(ctx.user, nc), 'client');
         if (!isSuper(ctx.user) && nc.agency_id !== j.agency_id) throw httpError(403, 'Pick a client of your own agency.');
@@ -824,7 +824,7 @@ function bulkUpdate(ctx, out) {
     } else D.edit('candidates', c.id, { archived: b.action === 'archive' ? 1 : 0 }, ctx.actor.label, ctx.ip);
     out.done++;
   }
-  if (b.action === 'assign' && out.done && rec.id !== u.id) L.alertUser(rec.id, `${out.done} candidate${out.done === 1 ? '' : 's'} assigned to you by ${u.name}`, null);
+  if (b.action === 'assign' && out.done && rec.id !== u.id) L.alertUser(rec.id, `${out.done} candidate${out.done === 1 ? '' : 's'} assigned to you by ${u.name}`, null, 'leads');
   D.history(ctx.actor.label, `bulk ${b.action}`, null, 'candidates', null, `${out.done} done, ${out.errors.length} skipped`, null, ctx.ip);
   return out;
 }

@@ -202,9 +202,11 @@ function sendWA(o) {
 }
 
 // ---------- alerts (bell) ----------
+// The bell alert always; a WhatsApp too when sendTask is set and that kind is switched on in Settings (task_<kind>).
 function alertUser(userId, text, recordId, sendTask = true) {
   if (!userId) return;
   insert('alerts', { user_id: userId, text, record_id: recordId || null, read: 0, at: now() });
+  if (typeof sendTask === 'string') { const r = settings().auto_rules.find((x) => x.key === `task_${sendTask}`); if (r && !r.on) return; }
   if (sendTask) sendWA({ ptype: 'user', pid: userId, format: 'bbhs_team_task_alert', vars: { task: text, record_id: recordId || '', link: link('team') }, auto: true, rule: 'team_task_alert', dedupe: `task:${userId}:${text}:${recordId}:${istDay()}` });
 }
 const link = (part, q = '') => `${settings().business.base_url}/${part}${q}`;
@@ -725,7 +727,7 @@ function leftJob(appId, o, by) {
     recalcJob(job.id, actorName(by), `Reopened for replacement of ${appId}`);
     outcome = `Free replacement: ${job.id} reopened with +1 opening, no new fee.`;
   }
-  alertUser(job.recruiter_id, `${appId} left the job (${o.reason})`, appId);
+  alertUser(job.recruiter_id, `${appId} left the job (${o.reason})`, appId, 'candidate');
   return { outcome };
 }
 
@@ -854,7 +856,7 @@ function assignLead(type, id, agencyId, by) {
   const patch = { agency_id: agencyId, is_new: 0 };
   if (type === 'client') patch.owner_id = admin ? admin.id : null; else patch.recruiter_id = rec.recruiter_id || (admin ? admin.id : null);
   D.edit(table, id, patch, actorName(by));
-  if (admin) alertUser(admin.id, `New ${type} lead assigned: ${rec.company || rec.name || id}`, id);
+  if (admin) alertUser(admin.id, `New ${type} lead assigned: ${rec.company || rec.name || id}`, id, 'leads');
   return get(`SELECT * FROM ${table} WHERE id=?`, id);
 }
 
@@ -925,18 +927,18 @@ function receiveReply(phone, text, button, opts = {}) {
   else if (table && t === 'start') { update(table, pid, { opted_out: 0 }); insert('consents', { person_type: ptype, person_id: pid, what: 'Back in (START)', wording: text, source: 'WhatsApp', at: now(), opted_out: 0 }); effect = 'Opted back in'; sendSystemText(ptype, pid, 'Messages are turned back on. Reply STOP any time to stop them.'); }
   else if (ptype === 'candidate' && t === 'i agree') { update('candidates', pid, { consent_alerts: 1 }); saveConsent('candidate', pid, 'WhatsApp', text); effect = 'Consent saved'; }
   else if (ref && ref.iv && t === 'confirm') { update('interviews', ref.iv, { confirmed: 1 }); history(by.label, 'confirm', ref.iv, 'confirmed', 0, 1); effect = `${ref.iv} confirmed`; }
-  else if (ref && ref.iv && t === 'reschedule') { const ap = get('SELECT * FROM applications WHERE id=?', ref.ap); if (ap) alertUser(ap.owner_id, `Reschedule asked for ${ref.iv}`, ref.iv); effect = 'Task alert to recruiter'; }
+  else if (ref && ref.iv && t === 'reschedule') { const ap = get('SELECT * FROM applications WHERE id=?', ref.ap); if (ap) alertUser(ap.owner_id, `Reschedule asked for ${ref.iv}`, ref.iv, 'candidate'); effect = 'Task alert to recruiter'; }
   else if (ref && ref.ap && t === 'accept offer') { moveStep(ref.ap, 'Offer accepted', by, 'Accepted on WhatsApp'); effect = `${ref.ap} → Offer accepted`; }
   else if (ref && ref.ap && t === 'decline') { closeApplication(ref.ap, 'Offer declined', by, 'Declined on WhatsApp'); effect = `${ref.ap} closed (Offer declined)`; }
   else if (ref && ['selected', 'another round', 'not selected'].includes(t)) {
     const iv = ref.iv ? get('SELECT * FROM interviews WHERE id=?', ref.iv) : get("SELECT * FROM interviews WHERE app_id=? AND round='client' ORDER BY at DESC LIMIT 1", ref.ap);
-    if (iv) { const r = recordInterview(iv.id, { status: 'Completed', result: t === 'selected' ? 'Selected' : t === 'another round' ? 'Another round' : 'Not selected', remark: 'Feedback on WhatsApp' }, by); effect = `${iv.id} result saved`; if (r.next === 'OPEN_OFFER') { const ap = get('SELECT * FROM applications WHERE id=?', iv.app_id); alertUser(ap.owner_id, `Client selected on ${ap.id}: record the offer`, ap.id); } }
+    if (iv) { const r = recordInterview(iv.id, { status: 'Completed', result: t === 'selected' ? 'Selected' : t === 'another round' ? 'Another round' : 'Not selected', remark: 'Feedback on WhatsApp' }, by); effect = `${iv.id} result saved`; if (r.next === 'OPEN_OFFER') { const ap = get('SELECT * FROM applications WHERE id=?', iv.app_id); alertUser(ap.owner_id, `Client selected on ${ap.id}: record the offer`, ap.id, 'client'); } }
   }
-  else if (ref && ref.ap && t === "i've joined") { const ap = get('SELECT * FROM applications WHERE id=?', ref.ap); alertUser(ap.owner_id, `${ap.id}: candidate says they have joined. Mark Joined.`, ap.id); effect = 'Task alert to recruiter'; }
+  else if (ref && ref.ap && t === "i've joined") { const ap = get('SELECT * FROM applications WHERE id=?', ref.ap); alertUser(ap.owner_id, `${ap.id}: candidate says they have joined. Mark Joined.`, ap.id, 'candidate'); effect = 'Task alert to recruiter'; }
   else if (ref && ref.jb && t === 'interested' && ptype === 'candidate') { try { const a = createApplication(pid, ref.jb, by, 'WhatsApp bot', 'Interested from job alert'); effect = `${a.id} created`; } catch (e) { effect = e.message; } }
-  else if (t === 'need help' && ref && ref.ap) { update('applications', ref.ap, { at_risk: 1 }); const ap = get('SELECT * FROM applications WHERE id=?', ref.ap); alertUser(ap.owner_id, `${ap.id} at risk: candidate needs help`, ap.id); effect = 'Marked at risk'; }
+  else if (t === 'need help' && ref && ref.ap) { update('applications', ref.ap, { at_risk: 1 }); const ap = get('SELECT * FROM applications WHERE id=?', ref.ap); alertUser(ap.owner_id, `${ap.id} at risk: candidate needs help`, ap.id, 'candidate'); effect = 'Marked at risk'; }
   else if (ref && ref.jb && t === 'not interested' && ptype === 'candidate') { insert('notes', { record_id: pid, text: `Not interested in ${ref.jb} (reply to the job alert)`, author: by.label, at: now() }); effect = `Noted: not interested in ${ref.jb}`; }
-  else if (t === 'share details' && ptype === 'candidate') { const c = get('SELECT recruiter_id FROM candidates WHERE id=?', pid) || {}; const ap = ref && ref.ap ? get('SELECT owner_id FROM applications WHERE id=?', ref.ap) : null; const owner = (ap && ap.owner_id) || c.recruiter_id; if (owner) alertUser(owner, `${pid} wants to share their salary and notice details: call or message them`, pid); sendSystemText('candidate', pid, 'Thank you. Please type your current salary, expected salary and notice period here, and we will update your profile.'); effect = 'Asked for details; recruiter alerted'; }
+  else if (t === 'share details' && ptype === 'candidate') { const c = get('SELECT recruiter_id FROM candidates WHERE id=?', pid) || {}; const ap = ref && ref.ap ? get('SELECT owner_id FROM applications WHERE id=?', ref.ap) : null; const owner = (ap && ap.owner_id) || c.recruiter_id; if (owner) alertUser(owner, `${pid} wants to share their salary and notice details: call or message them`, pid, 'candidate'); sendSystemText('candidate', pid, 'Thank you. Please type your current salary, expected salary and notice period here, and we will update your profile.'); effect = 'Asked for details; recruiter alerted'; }
   else if (t === 'not looking' && ptype === 'candidate') { update('candidates', pid, { looking: 'Not looking', last_updated: now() }); effect = 'Marked Not looking'; }
   else if (t === 'still looking' && ptype === 'candidate') { update('candidates', pid, { looking: 'Actively looking', last_updated: now() }); effect = 'Marked Actively looking'; }
   // Unread alert to the owner of this person.

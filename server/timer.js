@@ -29,7 +29,7 @@ function runTimer() {
   for (const iv of all("SELECT * FROM interviews WHERE status IN ('Scheduled','Rescheduled') AND at<?", now())) {
     const a = get('SELECT * FROM applications WHERE id=?', iv.app_id); if (!a) continue;
     const who = get('SELECT id FROM users WHERE lower(name)=lower(?)', iv.interviewer || '') || { id: a.owner_id };
-    if (iv.round === 'ours' && !get('SELECT 1 FROM alerts WHERE record_id=? AND text LIKE ?', iv.id, 'Result pending%')) { L.alertUser(who.id, `Result pending for ${iv.id}`, iv.id); count('result_pending'); }
+    if (iv.round === 'ours' && !get('SELECT 1 FROM alerts WHERE record_id=? AND text LIKE ?', iv.id, 'Result pending%')) { L.alertUser(who.id, `Result pending for ${iv.id}`, iv.id, 'interviews'); count('result_pending'); }
     // Client rounds: feedback request 48 hours after.
     if (iv.round === 'client' && (t - new Date(iv.at)) / 3600000 >= 48) {
       const job = get('SELECT * FROM jobs WHERE id=?', a.job_id); const cand = get('SELECT name FROM candidates WHERE id=?', a.candidate_id);
@@ -39,7 +39,7 @@ function runTimer() {
   }
   // Applications stuck 7 days → task alert to the owner (once per step).
   for (const a of all("SELECT * FROM applications WHERE result='open' AND on_hold=0")) {
-    if (L.daysBetween(a.step_since || a.created_at) >= 7 && a.owner_id && !get('SELECT 1 FROM alerts WHERE record_id=? AND text=?', a.id, `${a.id} stuck at ${a.step} for 7 days`)) { L.alertUser(a.owner_id, `${a.id} stuck at ${a.step} for 7 days`, a.id); count('stuck'); }
+    if (L.daysBetween(a.step_since || a.created_at) >= 7 && a.owner_id && !get('SELECT 1 FROM alerts WHERE record_id=? AND text=?', a.id, `${a.id} stuck at ${a.step} for 7 days`)) { L.alertUser(a.owner_id, `${a.id} stuck at ${a.step} for 7 days`, a.id, 'stuck'); count('stuck'); }
   }
   // Holds with an end date come off on that day.
   for (const a of all("SELECT * FROM applications WHERE result='open' AND on_hold=1 AND hold_until IS NOT NULL AND hold_until<=?", L.istDay())) { update('applications', a.id, { on_hold: 0 }); L.appHist(a.id, a.step, null, 'Hold ended', 'hold'); count('hold_ended'); }
@@ -87,7 +87,7 @@ function runTimer() {
     }
   }
   // Follow-ups due → bell + WhatsApp task alert.
-  for (const f of all('SELECT * FROM followups WHERE done=0 AND alerted=0 AND at<=?', now())) { L.alertUser(f.for_user, `Follow-up: ${f.note || f.record_id}`, f.record_id); update('followups', f.id, { alerted: 1 }); count('followup'); }
+  for (const f of all('SELECT * FROM followups WHERE done=0 AND alerted=0 AND at<=?', now())) { L.alertUser(f.for_user, `Follow-up: ${f.note || f.record_id}`, f.record_id, 'followups'); update('followups', f.id, { alerted: 1 }); count('followup'); }
   // Weekly freshness ping to candidates not updated in 90 days (Mondays).
   if (new Date(t + 330 * 60000).getUTCDay() === 1) {
     for (const c of all("SELECT * FROM candidates WHERE merged_into IS NULL AND removed=0 AND archived=0 AND looking NOT IN ('Placed','Joined elsewhere','Not interested') AND whatsapp!=''")) {

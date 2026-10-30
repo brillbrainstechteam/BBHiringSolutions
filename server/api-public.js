@@ -74,7 +74,7 @@ route('POST', '/api/public/partner', { rate: { key: 'form', max: 60, minutes: 60
   const kinds = ['Placement agency', 'Training institute', 'Industry body / association', 'Independent recruiter', 'Other'];
   insert('partner_requests', { name: String(b.name).trim(), organisation: String(b.organisation).trim(), kind: kinds.includes(b.kind) ? b.kind : 'Other', whatsapp: phone, email: String(b.email || '').trim(), city: String(b.city || '').trim(), message: String(b.message || '').slice(0, 1000), source: String(b.src || 'Website').slice(0, 40), created_at: now() });
   const text = `New partner request: ${String(b.organisation).trim()} (${kinds.includes(b.kind) ? b.kind : 'Other'}), ${String(b.city || '').trim() || 'city not given'}`;
-  for (const u of L.superAdmins()) L.alertUser(u.id, text, null, true);
+  for (const u of L.superAdmins()) L.alertUser(u.id, text, null, 'team');
   D.history('Partner form', 'partner request', null, 'partner_requests', null, String(b.organisation).trim(), null, ctx.ip);
   return { ok: true };
 });
@@ -91,7 +91,7 @@ route('POST', '/api/team/login', { rate: { key: 'login', max: 30, minutes: 15 } 
     if (n >= 5) {
       update('users', u.id, { failed: 0, locked_until: new Date(Date.now() + 15 * 60000).toISOString() });
       const boss = u.agency_id && u.level === 'sub' ? L.agencyAdmin(u.agency_id) : L.superAdmins().find((x) => x.id !== u.id);
-      if (boss) L.alertUser(boss.id, `${u.name}'s login is locked after 5 wrong passwords`, u.id);
+      if (boss) L.alertUser(boss.id, `${u.name}'s login is locked after 5 wrong passwords`, u.id, 'team');
       fail('5 wrong tries. This login is locked for 15 minutes.');
     }
     update('users', u.id, { failed: n });
@@ -487,20 +487,20 @@ route('POST', '/api/client/jobs/:id/:action', C, (ctx) => {
   const j = clientJob(ctx); const a = ctx.params.action;
   if (a === 'hold') return L.jobAction(j.id, 'hold', { reason: ctx.body.reason || 'Paused by client' }, ctx.actor);
   if (a === 'resume') return L.jobAction(j.id, 'resume', {}, ctx.actor);
-  if (a === 'add-seat') { const r = L.jobAction(j.id, 'add_seat', { add: ctx.body.add || 1, reason: ctx.body.reason || 'Client needs more people' }, ctx.actor); L.alertUser(j.recruiter_id, `${ctx.client.company} added ${Number(ctx.body.add) || 1} seat(s) to ${j.id}`, j.id); return r; }
+  if (a === 'add-seat') { const r = L.jobAction(j.id, 'add_seat', { add: ctx.body.add || 1, reason: ctx.body.reason || 'Client needs more people' }, ctx.actor); L.alertUser(j.recruiter_id, `${ctx.client.company} added ${Number(ctx.body.add) || 1} seat(s) to ${j.id}`, j.id, 'client'); return r; }
   if (a === 'reopen') return L.jobAction(j.id, 'reopen', { add: ctx.body.add || 1, reason: ctx.body.reason || 'Client needs more people' }, ctx.actor);
   if (a === 'close') return L.jobAction(j.id, 'close', { reason: ctx.body.reason || 'Client stopped hiring' }, ctx.actor);
   if (a === 'approve-jd') {
     if (ctx.member && !(ctx.member.perms || {}).approve) throw httpError(403, 'Your login cannot approve job descriptions.');
     const r = L.jobAction(j.id, 'approve_jd', { note: `Approved by ${ctx.actor.label}` }, ctx.actor);
     try { const f = F.storeBuffer({ recordId: j.id, type: 'jd', name: `${j.id}-JD-approved.pdf`, buf: TEAM.jdPdf(get('SELECT * FROM jobs WHERE id=?', j.id)), mime: 'application/pdf', by: ctx.actor.label }); update('jobs', j.id, { jd: { ...(j.jd || {}), file: f.id } }); } catch { /* the job is open either way */ }
-    L.alertUser(j.recruiter_id, `${ctx.client.company} approved the JD for ${j.id}`, j.id);
+    L.alertUser(j.recruiter_id, `${ctx.client.company} approved the JD for ${j.id}`, j.id, 'client');
     return r;
   }
   if (a === 'jd-changes') {
     D.edit('jobs', j.id, { jd_status: 'Changes asked', jd_note: ctx.body.note || '' }, ctx.actor.label);
     insert('job_history', { job_id: j.id, at: now(), status: 'JD changes asked', by: ctx.actor.label, note: ctx.body.note || '' });
-    L.alertUser(j.recruiter_id, `${ctx.client.company} asked for JD changes on ${j.id}: ${ctx.body.note || ''}`, j.id);
+    L.alertUser(j.recruiter_id, `${ctx.client.company} asked for JD changes on ${j.id}: ${ctx.body.note || ''}`, j.id, 'client');
     return { ok: true };
   }
   throw httpError(400, 'Unknown action');
@@ -514,7 +514,7 @@ route('POST', '/api/client/apps/:id/interested', { auth: 'client', perm: 'candid
   update('applications', a.id, { client_choice: 'Interested' });
   if (L.stepIdx(a.step) < L.stepIdx('Client interview')) L.moveStep(a.id, 'Client interview', ctx.actor, `Interested — by ${ctx.actor.label}`);
   if (ctx.body.at) L.scheduleInterview(a.id, { round: 'client', at: ctx.body.at, place: ctx.body.place || ctx.client.city, interviewer: ctx.body.interviewer || ctx.client.contact, name: 'Client round' }, ctx.actor);
-  const job = get('SELECT * FROM jobs WHERE id=?', a.job_id); L.alertUser(a.owner_id || job.recruiter_id, `${ctx.client.company} wants to interview on ${a.id}`, a.id);
+  const job = get('SELECT * FROM jobs WHERE id=?', a.job_id); L.alertUser(a.owner_id || job.recruiter_id, `${ctx.client.company} wants to interview on ${a.id}`, a.id, 'client');
   return { ok: true };
 });
 // The client shares when they can meet the candidate; our recruiter fixes the interview from these times.
@@ -536,7 +536,7 @@ route('POST', '/api/client/apps/:id/availability', { auth: 'client', perm: 'cand
   L.appHist(a.id, get('SELECT step FROM applications WHERE id=?', a.id).step, ctx.actor, text, 'availability');
   insert('notes', { record_id: a.id, text, author: ctx.actor.label, at: now() });
   const job = get('SELECT * FROM jobs WHERE id=?', a.job_id);
-  L.alertUser(a.owner_id || job.recruiter_id, `${ctx.client.company} shared interview times for ${a.id}: fix the interview`, a.id);
+  L.alertUser(a.owner_id || job.recruiter_id, `${ctx.client.company} shared interview times for ${a.id}: fix the interview`, a.id, 'client');
   return { ok: true };
 });
 route('POST', '/api/client/apps/:id/not-suitable', { auth: 'client', perm: 'candidates' }, (ctx) => {
@@ -552,7 +552,7 @@ route('POST', '/api/client/interviews/:id/feedback', { auth: 'client', perm: 'fe
   const result = iv.round === 'ours' ? ({ Selected: 'Move ahead', 'Not selected': 'Not selected', 'Another round': 'On hold' }[ctx.body.result]) : ctx.body.result;
   const r = L.recordInterview(iv.id, { status: 'Completed', result, remark: ctx.body.remark || `Feedback by ${ctx.actor.label}`, rating: ctx.body.rating }, ctx.actor);
   const job = get('SELECT * FROM jobs WHERE id=?', a.job_id);
-  L.alertUser(a.owner_id || job.recruiter_id, `${ctx.client.company}: ${ctx.body.result} on ${a.id}${ctx.body.result === 'Selected' ? ' — record the offer' : ''}`, a.id);
+  L.alertUser(a.owner_id || job.recruiter_id, `${ctx.client.company}: ${ctx.body.result} on ${a.id}${ctx.body.result === 'Selected' ? ' — record the offer' : ''}`, a.id, 'client');
   return r;
 });
 // Offers are recorded by our team (team portal); clients no longer add offer details or letters themselves.
@@ -588,7 +588,7 @@ route('POST', '/api/client/bills/:id/replacement', { auth: 'client', perm: 'bill
   update('bills', b.id, { replacement_requested: 1 });
   const a = get('SELECT * FROM applications WHERE id=?', b.app_id); const job = get('SELECT * FROM jobs WHERE id=?', a.job_id);
   insert('notes', { record_id: a.id, text: `Client asked for a free replacement: ${ctx.body.reason}${ctx.body.date ? ` (last day ${ctx.body.date})` : ''}`, author: ctx.actor.label, at: now() });
-  L.alertUser(job.recruiter_id || a.owner_id, `${ctx.client.company} asked for a free replacement on ${a.id}. Check the reason and mark "Left the job".`, a.id);
+  L.alertUser(job.recruiter_id || a.owner_id, `${ctx.client.company} asked for a free replacement on ${a.id}. Check the reason and mark "Left the job".`, a.id, 'client');
   return { ok: true };
 });
 route('POST', '/api/client/files', C, async (ctx) => {
@@ -768,7 +768,7 @@ route('POST', '/api/cand/interviews/:iv/:action', K, (ctx) => {
   const iv = get('SELECT * FROM interviews WHERE id=?', ctx.params.iv); if (!iv) throw httpError(404, 'Interview not found');
   ctx.params.id = iv.app_id; const a = candApp(ctx);
   if (ctx.params.action === 'confirm') { update('interviews', iv.id, { confirmed: 1 }); D.history(ctx.actor.label, 'confirm', iv.id, 'confirmed', 0, 1); L.appHist(a.id, a.step, ctx.actor, `${iv.id} confirmed by candidate`, 'interview'); return { ok: true }; }
-  if (ctx.params.action === 'reschedule') { insert('notes', { record_id: a.id, text: `Candidate asked to reschedule ${iv.id}: ${ctx.body.note || ''}`, author: ctx.actor.label, at: now() }); L.alertUser(a.owner_id, `${ctx.candidate.name} asked to reschedule ${iv.id}`, a.id); return { ok: true }; }
+  if (ctx.params.action === 'reschedule') { insert('notes', { record_id: a.id, text: `Candidate asked to reschedule ${iv.id}: ${ctx.body.note || ''}`, author: ctx.actor.label, at: now() }); L.alertUser(a.owner_id, `${ctx.candidate.name} asked to reschedule ${iv.id}`, a.id, 'candidate'); return { ok: true }; }
   throw httpError(400, 'Unknown action');
 });
 route('POST', '/api/cand/apps/:id/accept', K, (ctx) => { const a = candApp(ctx); if (a.step !== 'Offer made' || a.result !== 'open') throw httpError(400, 'There is no offer waiting.'); return L.moveStep(a.id, 'Offer accepted', ctx.actor, 'Accepted in candidate account'); });
