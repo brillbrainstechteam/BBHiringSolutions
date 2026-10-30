@@ -133,6 +133,9 @@ function retryQueued() {
 // ---------- notifications ----------
 function newLead(type, rec) {
   const to = D.ENV.notifyEmails; if (!to.length) return;
+  // Switched in Settings -> Automatic messages ("New candidate" / "New client hiring request" to the team).
+  const rule = (D.settings().auto_rules || []).find((r) => r.key === (type === 'client' ? 'team_new_client' : 'team_new_candidate'));
+  if (rule && !rule.on) return;
   const base = D.settings().business.base_url;
   const isClient = type === 'client';
   const pairs = isClient
