@@ -1740,3 +1740,4 @@ route('GET', '/api/reports/:name', T, (ctx) => {
 });
 module.exports.removePerson = removePerson;
 require('./trash'); // delete with a recycle bin (Settings -> Deleted items)
+require('./adspend'); // ad spend reports from Meta and LinkedIn (Job openings -> Ad spend)

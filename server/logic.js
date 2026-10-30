@@ -555,8 +555,10 @@ function jobsForRole(text, opt = {}) {
   const cityWords = new Map(); for (const c of settings().cities || []) cityWords.set(String(c.name || c).toLowerCase(), String(c.name || c));
   const said = [...cityWords.keys()].filter((c) => (' ' + words.join(' ') + ' ').includes(` ${c} `));
   const cityToks = new Set(said.flatMap((c) => c.split(' ')));
-  const role = words.filter((w) => !cityToks.has(w)); if (!role.length) return [];
   const jobs = all('SELECT * FROM jobs WHERE archived=0 AND is_sample=0').filter((j) => OPEN_STATUSES.includes(computeJobStatus(j, appsOfJob(j.id))));
+  // Words no job title uses ("BBHS", "PD", a date code) say nothing about the role and are left out.
+  const known = new Set([...jobs.map((j) => j.title), ...jobList().map((x) => x.title)].flatMap((t) => roleTokens(t)));
+  const role = words.filter((w) => !cityToks.has(w) && known.has(w)); if (!role.length) return [];
   return jobs.filter((j) => {
     const jt = roleTokens(j.title); if (!jt.length) return false;
     const fits = role.every((w) => jt.includes(w)) || (jt.length >= 2 && jt.every((w) => role.includes(w)));
