@@ -165,6 +165,23 @@
       if (await BB.confirm(b.textContent, `${label} ${n}?${a === 'approve_jd' ? ' Draft jobs go live, and their strong matches get a job alert.' : ''}`, b.textContent)) jobBulk({ action: a });
     }));
   };
+  // Match candidates to jobs: preview which candidates go onto which open jobs (by their ad names or the job they
+  // asked for), then make the applications. Running it again only adds what is new.
+  async function autoMap(sameCity = false) {
+    let d; try { d = await BB.post('/api/applications/auto-map', { dry: true, same_city: sameCity }); } catch (e) { return BB.fail(e); }
+    const sm = d.summary;
+    const list = d.jobs.map((j) => `<details class="card pad" style="margin-bottom:6px"><summary class="row between" style="cursor:pointer"><span><b>${esc(j.title)}</b> · ${esc(j.city || '')} <span class="faint">· ${esc(j.client || '')} · ${esc(j.job_id)}</span></span><span class="badge b-primary">${j.candidates.length}</span></summary><div class="small" style="margin-top:6px">${j.candidates.map((c) => `<div>${esc(c.id)} <b>${esc(c.name)}</b> <span class="faint">· ${esc(c.city || '')} · ${esc(c.by)}</span></div>`).join('')}</div></details>`).join('') || '<div class="faint small">Nothing new to match.</div>';
+    BB.modal({ title: 'Match candidates to jobs', wide: true,
+      body: `<p class="small" style="margin-top:0"><b>${sm.applications}</b> applications for <b>${sm.candidates}</b> candidates on <b>${sm.jobs}</b> open jobs. Each candidate goes onto every open job their ad set / ad name points to, or else the job they asked for. Candidates already on a job are skipped. ${sm.unmatched ? `${sm.unmatched} candidates match no open job.` : ''} Nothing is sent to anyone.</p>
+        <label class="row small" style="margin-bottom:10px"><input type="checkbox" data-samecity ${sameCity ? 'checked' : ''}> Only jobs in the candidate's city</label>
+        <div style="max-height:52vh;overflow:auto">${list}</div>`,
+      foot: `<button class="btn" data-amx>Cancel</button><button class="btn primary" data-amgo ${sm.applications ? '' : 'disabled'}>Make ${sm.applications} applications</button>`,
+      onMount: (m, close) => {
+        $('[data-amx]', m).onclick = close;
+        $('[data-samecity]', m).onchange = (e) => { close(); autoMap(e.target.checked); };
+        $('[data-amgo]', m).onclick = async (e) => { e.target.disabled = true; e.target.textContent = 'Making…'; try { const r = await BB.post('/api/applications/auto-map', { same_city: sameCity }); close(); BB.toast(`${r.made} applications made${r.errors.length ? `, ${r.errors.length} not: ${r.errors[0]}` : ''}`, !!r.errors.length); BB.refreshPage(); } catch (er) { e.target.disabled = false; BB.fail(er); } };
+      } });
+  }
   // Candidates from resumes: pick CVs, the portal reads each one, you check and correct the details, then create.
   async function addFromResumes() {
     const files = await new Promise((resolve) => { const i = document.createElement('input'); i.type = 'file'; i.multiple = true; i.accept = '.pdf,.docx,.txt'; i.onchange = () => resolve([...i.files]); i.click(); });
@@ -456,8 +473,9 @@
   // ---------- Applications: board / list ----------
   P.applications = async ({ el, actions, q, me }) => {
     const view = q.view || 'board';
-    actions.innerHTML = `<div class="seg"><button data-v="board" class="${view === 'board' ? 'on' : ''}">Board</button><button data-v="list" class="${view === 'list' ? 'on' : ''}">List</button></div>${view === 'list' ? dl(`/api/applications?${BB.qs(q, { format: 'xlsx', view: undefined })}`) : ''}`;
+    actions.innerHTML = `<button class="btn" data-automap>Match candidates to jobs</button><div class="seg"><button data-v="board" class="${view === 'board' ? 'on' : ''}">Board</button><button data-v="list" class="${view === 'list' ? 'on' : ''}">List</button></div>${view === 'list' ? dl(`/api/applications?${BB.qs(q, { format: 'xlsx', view: undefined })}`) : ''}`;
     $$('[data-v]', actions).forEach((b) => (b.onclick = () => BB.setQ({ view: b.dataset.v === 'board' ? '' : b.dataset.v })));
+    $('[data-automap]', actions).onclick = () => autoMap();
     wireDl(actions);
     if (view === 'board') {
       const d = await BB.api(`/api/board?${BB.qs({ job: q.job })}`);

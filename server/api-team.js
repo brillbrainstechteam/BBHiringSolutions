@@ -966,6 +966,30 @@ route('POST', '/api/applications/:id/step', T, (ctx) => {
   return L.moveStep(a.id, step, ctx.actor, ctx.body.note || (ctx.body.next ? 'Move to next step' : 'Step set by hand'));
 });
 route('POST', '/api/applications/:id/close', T, (ctx) => { const a = loadApp(ctx); return L.closeApplication(a.id, ctx.body.reason, ctx.actor, ctx.body.note); });
+// Match candidates to jobs: every candidate (that this login can see) gets an application on each open job their ad
+// names or "Job you want" point to, unless they already have one there (open or closed). dry=true only shows it.
+route('POST', '/api/applications/auto-map', T, (ctx) => {
+  const u = ctx.user; const b = ctx.body || {}; const plan = [];
+  const cands = all('SELECT * FROM candidates WHERE merged_into IS NULL AND removed=0 AND junk=0 AND archived=0').filter((c) => isSuper(u) || c.agency_id === u.agency_id || !c.agency_id);
+  for (const c of cands) {
+    if (b.ids && !b.ids.includes(c.id)) continue;
+    const m = L.jobsForPerson(c, b.same_city ? { cities: [c.city, ...(c.work_cities || [])].filter(Boolean) } : {});
+    for (const j of m.jobs) {
+      if (!seeJob(u, j) && !(u.level !== 'sub' && j.agency_id === u.agency_id)) continue;
+      if (get('SELECT 1 FROM applications WHERE candidate_id=? AND job_id=?', c.id, j.id)) continue;
+      plan.push({ cand: c, job: j, by: m.by });
+    }
+  }
+  const byJob = {}; for (const p of plan) { const k = p.job.id; byJob[k] = byJob[k] || { job_id: k, title: p.job.title, city: p.job.city, client: (get('SELECT company FROM clients WHERE id=?', p.job.client_id) || {}).company, candidates: [] }; byJob[k].candidates.push({ id: p.cand.id, name: p.cand.name, job_wanted: p.cand.job_wanted, city: p.cand.city, by: p.by }); }
+  const summary = { applications: plan.length, candidates: new Set(plan.map((p) => p.cand.id)).size, jobs: Object.keys(byJob).length, unmatched: cands.filter((c) => !L.jobsForPerson(c).jobs.length).length };
+  if (b.dry) return { summary, jobs: Object.values(byJob).sort((a, z) => z.candidates.length - a.candidates.length) };
+  let made = 0; const errors = [];
+  for (const p of plan) {
+    try { L.createApplication(p.cand.id, p.job.id, ctx.actor, p.cand.source, `Matched automatically (${p.by})`, p.cand.ad_set || p.cand.ad_name || p.cand.ad_campaign ? { campaign: p.cand.ad_campaign, adset: p.cand.ad_set, ad: p.cand.ad_name } : null); made++; } catch (e) { errors.push(`${p.cand.id} on ${p.job.id}: ${e.message}`); }
+  }
+  D.history(ctx.actor.label, 'match candidates to jobs', null, 'applications', null, `${made} applications made`, null, ctx.ip);
+  return { summary, made, errors };
+});
 route('POST', '/api/applications/:id/screen', T, (ctx) => { const a = loadApp(ctx); return L.screenApplication(a.id, ctx.body.verdict, ctx.actor, ctx.body.note); });
 route('POST', '/api/applications/:id/reopen', T, (ctx) => { const a = loadApp(ctx); return L.reopenApplication(a.id, ctx.actor); });
 route('POST', '/api/applications/:id/hold', T, (ctx) => {

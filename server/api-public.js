@@ -14,6 +14,7 @@ const { get, all, insert, update, now, httpError } = D;
 route('GET', '/api/bootstrap', {}, () => {
   const s = D.settings();
   return {
+    candidate_login: candidateLogin(),
     business: { name: s.business.name, short: s.business.short, support_phone: s.business.support_phone, primary: s.business.primary, accent: s.business.accent },
     jobs: L.jobList().filter((j) => !j.hidden), places: (() => { const seen = new Set(); const out = []; for (const p of [...s.cities, ...require('./places').PLACES]) { const k = p.name.toLowerCase(); if (!seen.has(k)) { seen.add(k); out.push({ name: p.name, state: p.state || L.stateOf(p.name) }); } } return out; })(), industries: Object.fromEntries(Object.keys(s.industries).map((k) => [k, L.jobList(k).filter((j) => !j.hidden)])), default_industry: s.default_industry, departments: s.departments, cities: s.cities.map((c) => c.name), skills: s.skills, stages: s.client_stages,
     closing_reasons: s.closing_reasons, job_close_reasons: s.job_close_reasons, reopen_reasons: s.reopen_reasons, lead_sources: s.lead_sources, src_tags: s.src_tags, industry_list: s.industry_list || ['Jewellery'], default_industry: s.default_industry || 'Jewellery',
@@ -32,7 +33,9 @@ route('GET', '/api/public/job/:id', { rate: { key: 'pubjobs', max: 240, minutes:
 });
 // The open job whose saved ad names match these (src, ad_campaign, ad_set, ad_name), for the same line on the form.
 route('GET', '/api/public/ad-job', { rate: { key: 'pubjobs', max: 240, minutes: 60 } }, (ctx) => {
-  const jobs = jobsByAdNames(ctx.query, srcFrom(ctx.query)).map((id) => get('SELECT id, title, city FROM jobs WHERE id=?', id));
+  let ids = jobsByAdNames(ctx.query, srcFrom(ctx.query));
+  if (!ids.length) ids = L.jobsForPerson({ ad_set: ctx.query.ad_set, ad_name: ctx.query.ad_name, ad_campaign: ctx.query.ad_campaign }).jobs.map((j) => j.id);
+  const jobs = ids.map((id) => get('SELECT id, title, city FROM jobs WHERE id=?', id));
   if (!jobs.length) throw httpError(404, 'No job for this ad');
   return { id: jobs[0].id, title: jobs[0].title, city: jobs[0].city, jobs };
 });
@@ -131,7 +134,9 @@ route('POST', '/api/team/password', { auth: 'team' }, (ctx) => {
 const showCode = () => !D.settings().crm.enabled && D.ENV.name !== 'live';
 // Codes can reach the person: WhatsApp is connected, or this is the test copy (code on screen).
 const canSendCodes = () => D.settings().crm.enabled || showCode();
+const candidateLogin = () => { const r = D.settings().auto_rules.find((x) => x.key === 'candidate_login'); return !r || r.on; };
 function issueCode(phone, purpose) {
+  if (/candidate/.test(purpose) && !candidateLogin()) throw httpError(400, 'Candidate login is switched off for now. For help, message us on WhatsApp.', 'phone');
   const hourAgo = new Date(Date.now() - 3600000).toISOString();
   if (get('SELECT COUNT(*) c FROM otps WHERE phone=? AND created_at>?', phone, hourAgo).c >= 5) throw httpError(429, 'Too many codes asked for this number. Try again in an hour.');
   const code = String(crypto.randomInt(0, 1000000)).padStart(6, '0');
@@ -400,7 +405,9 @@ route('POST', '/api/public/apply', { rate: { key: 'form', max: 60, minutes: 60 }
   const expMap = L.EXP_YEARS; const jewMap = L.JEW_YEARS;
   let refBy = null;
   if (b.ref) { const rc = get('SELECT id FROM candidates WHERE id=?', L.resolveId(String(b.ref).toUpperCase())); refBy = rc ? rc.id : null; }
-  const adJobs = !b.job && !jobInAd(b) ? jobsByAdNames(b, srcFrom(b)) : [];
+  // Saved ad names on jobs first; otherwise the role read from the ad names, or from the job they picked.
+  let adJobs = !b.job && !jobInAd(b) ? jobsByAdNames(b, srcFrom(b)) : [];
+  if (!b.job && !jobInAd(b) && !adJobs.length) adJobs = L.jobsForPerson({ ad_set: b.ad_set, ad_name: b.ad_name, ad_campaign: b.ad_campaign, job_wanted: b.job_wanted === 'Other' ? b.job_other : b.job_wanted }).jobs.map((j) => j.id);
   const jobId = b.job ? String(b.job).toUpperCase() : jobInAd(b) || adJobs[0] || null;
   const jobOk = jobId ? get('SELECT * FROM jobs WHERE id=?', jobId) : null;
   const r = L.intakeCandidate({ exp_business: business, exp_jewellery: b.exp_jewellery in jewMap ? jewMap[b.exp_jewellery] : null, language: b.lang, name: b.name, whatsapp: b.whatsapp, email: b.email || '', city: b.city, state: b.state, work_cities: [b.city], job_wanted: b.job_wanted === 'Other' ? b.job_other : b.job_wanted, exp_total: b.experience ? expMap[b.experience] : null, ref_by: refBy, apply_job: jobOk && ['Open', 'Sourcing', 'Interviewing', 'Offer stage'].includes(V.jobView(jobOk).status) ? jobOk.id : null }, { source: srcFrom(b), ad: adFrom(b) });

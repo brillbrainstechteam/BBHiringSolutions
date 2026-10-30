@@ -1345,3 +1345,6 @@ html[lang="hi"] .ss-g { letter-spacing: 0; }
 /* Ad links on a job: one row per link, the link wraps instead of widening the panel. */
 .ad-link code { display: block; padding: 6px 8px; border-radius: 6px; background: var(--surface-2); word-break: break-all; }
 .ad-link + .ad-link { margin-top: 8px; }
+
+/* Candidate login switched off (Settings -> Automatic messages): hide every link to it. */
+.no-cand-login a[href="/my-profile"] { display: none !important; }

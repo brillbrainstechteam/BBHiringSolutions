@@ -100,7 +100,7 @@ const AUTO_RULES = [
   { key: 'interview_reminder', when: 'Interview tomorrow and 2 hours before', to: 'Candidate (and client for client rounds)', format: 'bbhs_interview_reminder', on: true },
   { key: 'offer', when: 'Offer recorded', to: 'Candidate', format: 'bbhs_offer', on: true },
   { key: 'joining_reminder', when: '3 days and 1 day before joining', to: 'Candidate', format: 'bbhs_joining_reminder', on: true },
-  { key: 'post_join_checkin', when: '30, 60, 90 days after joining', to: 'Candidate', format: 'bbhs_post_join_checkin', on: true },
+  { key: 'post_join_checkin', when: '30, 60, 90 days after joining', to: 'Candidate', format: 'bbhs_post_join_checkin', on: false },
   { key: 'client_welcome', when: 'Fills the form / added by team', to: 'Client', format: 'bbhs_client_welcome', on: true },
   { key: 'jd_approval', when: 'Job description sent for approval', to: 'Client', format: 'bbhs_jd_approval', on: true },
   { key: 'shortlist_ready', when: 'Application reaches Sent to client', to: 'Client', format: 'bbhs_shortlist_ready', on: true },
@@ -112,7 +112,9 @@ const AUTO_RULES = [
   { key: 'log_reminder', when: '30 minutes before log deadline', to: 'Anyone without a log', format: 'bbhs_log_reminder', on: true },
   { key: 'day_summary', when: 'Every evening', to: 'Each admin and super admin', format: 'bbhs_day_summary', on: true },
   { key: 'monthly_summary', when: '1st of every month', to: 'Client', format: 'bbhs_monthly_summary', on: true },
-  { key: 'still_looking', when: 'Weekly, candidates not updated in 90 days', to: 'Candidate', format: 'bbhs_still_looking', on: true },
+  { key: 'still_looking', when: 'Weekly, candidates not updated in 90 days', to: 'Candidate', format: 'bbhs_still_looking', on: false },
+  // Off: candidates cannot log in to their profile (no login code is sent, the login links are hidden).
+  { key: 'candidate_login', when: 'Candidate asks to log in to their profile (login code)', to: 'Candidate', format: 'bbhs_login_code', on: false },
 ];
 
 module.exports.defaultSettings = () => ({

@@ -506,7 +506,7 @@ BB.views.landing = (r) => {
   BB.leadFormCard($('[data-leadcard]'), 'job', (r && r.q) || {});
 };
 BB.start = async () => {
-  try { BB.boot = await (await fetch('/api/bootstrap')).json(); } catch { $('#app').innerHTML = '<div class="boot">Cannot reach the server.</div>'; return; }
+  try { BB.boot = await (await fetch('/api/bootstrap')).json(); document.documentElement.classList.toggle('no-cand-login', BB.boot.candidate_login === false); } catch { $('#app').innerHTML = '<div class="boot">Cannot reach the server.</div>'; return; }
   document.documentElement.style.setProperty('--brand', BB.boot.business.primary);
   if (!document.title) document.title = BB.boot.business.name;
   const dl = document.createElement('datalist'); dl.id = 'cities'; dl.innerHTML = BB.boot.cities.map((c) => `<option value="${esc(c)}">`).join(''); document.body.appendChild(dl);

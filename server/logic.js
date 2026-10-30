@@ -538,6 +538,39 @@ function closeApplication(appId, reason, by, note) {
   const st = recalcJob(app.job_id, actorName(by), reason === 'Did not join' ? `${appId} did not join, seat opens again` : `${appId} closed: ${reason}`);
   return { app: get('SELECT * FROM applications WHERE id=?', appId), jobBefore: before, jobAfter: st };
 }
+// ---------- role matching (ad names and "Job you want" -> open jobs) ----------
+// Words that say nothing about the role ("Hiring_Leads_..._Adset_2510 - Copy"), and short forms people write.
+const ROLE_STOP = new Set(['hiring', 'hire', 'leads', 'lead', 'adset', 'ad', 'ads', 'set', 'copy', 'campaign', 'new', 'job', 'jobs', 'vacancy', 'vacancies', 'opening', 'openings', 'recruitment', 'the', 'for', 'and', 'of', 'in', 'at', 'to', 'a', 'an', 'we', 'are', 'urgent', 'required', 'wanted', 'india', 'meta', 'fb', 'ig', 'insta', 'instagram', 'facebook', 'linkedin', 'post', 'creative', 'video', 'image', 'reel', 'carousel', 'static', 'female', 'male', 'role', 'position']);
+const ROLE_SYN = { exec: 'executive', exe: 'executive', ex: 'executive', exective: 'executive', excutive: 'executive', sr: 'senior', jr: 'junior', mgr: 'manager', merchandizer: 'merchandiser', merchandier: 'merchandiser', telecalling: 'telecaller', telesales: 'telecaller', tele: 'telecaller', caller: 'telecaller', designers: 'designer', mis: 'mis' };
+const roleTokens = (t) => String(t || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').split(' ').filter((w) => w && !/^\d+$/.test(w) && !/^v\d+$/.test(w)).map((w) => ROLE_SYN[w] || w).filter((w) => !ROLE_STOP.has(w));
+const OPEN_STATUSES = ['Open', 'Sourcing', 'Interviewing', 'Offer stage'];
+// The open jobs a role name points to. Every role word of the name is in the job title ("Sales Executive" ->
+// "Senior Sales Executive"), or a job title of two words or more is wholly in the name. A city named in the text
+// keeps only the jobs in that city. sameCity: only jobs in these cities (the candidate's).
+function jobsForRole(text, opt = {}) {
+  const words = roleTokens(text); if (!words.length) return [];
+  const cityWords = new Map(); for (const c of settings().cities || []) cityWords.set(String(c.name || c).toLowerCase(), String(c.name || c));
+  const said = [...cityWords.keys()].filter((c) => (' ' + words.join(' ') + ' ').includes(` ${c} `));
+  const cityToks = new Set(said.flatMap((c) => c.split(' ')));
+  const role = words.filter((w) => !cityToks.has(w)); if (!role.length) return [];
+  const jobs = all('SELECT * FROM jobs WHERE archived=0 AND is_sample=0').filter((j) => OPEN_STATUSES.includes(computeJobStatus(j, appsOfJob(j.id))));
+  return jobs.filter((j) => {
+    const jt = roleTokens(j.title); if (!jt.length) return false;
+    const fits = role.every((w) => jt.includes(w)) || (jt.length >= 2 && jt.every((w) => role.includes(w)));
+    if (!fits) return false;
+    const city = String(j.city || '').toLowerCase();
+    if (said.length && !said.includes(city)) return false;
+    if (opt.cities && opt.cities.length && !opt.cities.map((x) => String(x).toLowerCase()).includes(city)) return false;
+    return true;
+  });
+}
+// The open jobs for a person or a form: the ad set, then the ad, then the campaign name (the first that names a role
+// with open jobs), and otherwise the job they asked for.
+function jobsForPerson(p, opt = {}) {
+  for (const t of [p.ad_set, p.ad_name, p.ad_campaign]) { if (!t) continue; const hit = jobsForRole(t, opt); if (hit.length) return { jobs: hit, by: `ad "${t}"` }; }
+  if (p.job_wanted) { const hit = jobsForRole(p.job_wanted, opt); if (hit.length) return { jobs: hit, by: `job wanted "${p.job_wanted}"` }; }
+  return { jobs: [], by: '' };
+}
 function screenApplication(appId, verdict, by, note) {
   if (!SCREEN.includes(verdict)) throw httpError(400, 'Pick a screening decision');
   let app = get('SELECT * FROM applications WHERE id=?', appId); if (!app) throw httpError(404, 'Application not found');
@@ -902,6 +935,8 @@ function receiveReply(phone, text, button, opts = {}) {
   else if (ref && ref.ap && t === "i've joined") { const ap = get('SELECT * FROM applications WHERE id=?', ref.ap); alertUser(ap.owner_id, `${ap.id}: candidate says they have joined. Mark Joined.`, ap.id); effect = 'Task alert to recruiter'; }
   else if (ref && ref.jb && t === 'interested' && ptype === 'candidate') { try { const a = createApplication(pid, ref.jb, by, 'WhatsApp bot', 'Interested from job alert'); effect = `${a.id} created`; } catch (e) { effect = e.message; } }
   else if (t === 'need help' && ref && ref.ap) { update('applications', ref.ap, { at_risk: 1 }); const ap = get('SELECT * FROM applications WHERE id=?', ref.ap); alertUser(ap.owner_id, `${ap.id} at risk: candidate needs help`, ap.id); effect = 'Marked at risk'; }
+  else if (ref && ref.jb && t === 'not interested' && ptype === 'candidate') { insert('notes', { record_id: pid, text: `Not interested in ${ref.jb} (reply to the job alert)`, author: by.label, at: now() }); effect = `Noted: not interested in ${ref.jb}`; }
+  else if (t === 'share details' && ptype === 'candidate') { const c = get('SELECT recruiter_id FROM candidates WHERE id=?', pid) || {}; const ap = ref && ref.ap ? get('SELECT owner_id FROM applications WHERE id=?', ref.ap) : null; const owner = (ap && ap.owner_id) || c.recruiter_id; if (owner) alertUser(owner, `${pid} wants to share their salary and notice details: call or message them`, pid); sendSystemText('candidate', pid, 'Thank you. Please type your current salary, expected salary and notice period here, and we will update your profile.'); effect = 'Asked for details; recruiter alerted'; }
   else if (t === 'not looking' && ptype === 'candidate') { update('candidates', pid, { looking: 'Not looking', last_updated: now() }); effect = 'Marked Not looking'; }
   else if (t === 'still looking' && ptype === 'candidate') { update('candidates', pid, { looking: 'Actively looking', last_updated: now() }); effect = 'Marked Actively looking'; }
   // Unread alert to the owner of this person.
@@ -922,6 +957,6 @@ module.exports = { adLabel,
   waHeld, IV_MODES, clientSeesIv, addIvNote, CALL_OUTCOMES, logCall, jobList, deptOf, stateOf, person, fillFormat, windowOpenUntil, sendWA, setDispatcher, alertUser, link, agencyAdmin, superAdmins,
   computeJobStatus, jobStatusReason, recalcJob, filledCount, appsOfJob, matchScore, jobsFor, cleanBusiness, BUSINESS_TYPES, EXP_YEARS, JEW_YEARS, LOOKING, NOT_LOOKING, ratingOf, bestMatches, isPlaced, salaryText, autoJobAlert,
   feeFor, gstFor, fyOf, billView, refreshBill, createBillForApp, issueBill, upiLink,
-  appHist, createApplication, moveStep, closeApplication, reopenApplication, screenApplication, SCREEN, scheduleInterview, recordInterview, interviewView, ivVars, recordOffer, leftJob, jobAction,
+  appHist, createApplication, moveStep, closeApplication, reopenApplication, screenApplication, SCREEN, jobsForRole, jobsForPerson, roleTokens, scheduleInterview, recordInterview, interviewView, ivVars, recordOffer, leftJob, jobAction,
   CONSENT_WORDING, saveConsent, intakeClient, intakeCandidate, assignLead, mergeRecords, resolveId, receiveReply, actorName,
 };
