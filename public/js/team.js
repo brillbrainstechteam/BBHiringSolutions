@@ -95,7 +95,19 @@
     const m = MENU.find((x) => x[0] === pageName);
     el.innerHTML = `<div class="page-h"><div class="grow"><span class="eyebrow">${GROUP[pageName]}</span><div class="row"><h1>${m[1]}</h1><button class="help-btn" data-help title="What is this page?">?</button></div><div class="help hidden" data-help-t>${HELP[pageName] || ''}</div></div><div class="row" data-actions></div></div><div data-content><div class="empty">Loading…</div></div>`;
     $('[data-help]').onclick = () => $('[data-help-t]').classList.toggle('hidden');
-    BB.refreshPage = async () => { try { await page({ el: $('[data-content]'), actions: $('[data-actions]'), q: pageQ, me: BB.me.user }); } catch (e) { $('[data-content]').innerHTML = `<div class="card empty">${esc(e.message)}</div>`; } BB.refreshCounts(); };
+    // A redraw while someone is typing in a list's search box keeps what they typed since (the old box still holds
+    // it), the cursor in the box, and searches again for the newer text.
+    BB.refreshPage = async () => {
+      const typing = document.activeElement && document.activeElement.matches && document.activeElement.matches('[data-q]') ? document.activeElement : null;
+      try { await page({ el: $('[data-content]'), actions: $('[data-actions]'), q: pageQ, me: BB.me.user }); } catch (e) { $('[data-content]').innerHTML = `<div class="card empty">${esc(e.message)}</div>`; }
+      const box = typing && $('[data-content] [data-q]');
+      if (box && box !== typing) {
+        const later = typing.value; box.focus();
+        if (box.value !== later) { box.value = later; box.dispatchEvent(new Event('input')); }
+        try { box.setSelectionRange(later.length, later.length); } catch { /* not a text box */ }
+      }
+      BB.refreshCounts();
+    };
     await BB.refreshPage();
     window.scrollTo(0, 0);
   }
