@@ -332,7 +332,7 @@ function jobByAdNames(b, source) { return jobsByAdNames(b, source)[0] || null; }
 function jobsByAdNames(b, source) {
   const n = (v) => String(v || '').replace(/\s+/g, ' ').trim().toLowerCase();
   const got = { campaign: n(b.ad_campaign), adset: n(b.ad_set), ad: n(b.ad_name) };
-  if (!got.campaign && !got.adset && !got.ad) return null;
+  if (!got.campaign && !got.adset && !got.ad) return [];
   const platform = /linkedin/i.test(source) ? 'LinkedIn' : /facebook|instagram|meta/i.test(source) ? 'Meta' : null;
   const hits = new Map();
   for (const j of all("SELECT * FROM jobs WHERE archived=0 AND is_sample=0 AND ad_match IS NOT NULL AND ad_match != '[]'")) {
