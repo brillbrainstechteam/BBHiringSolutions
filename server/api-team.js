@@ -718,6 +718,43 @@ route('POST', '/api/candidates', T, async (ctx) => {
   }
   return { id: r.candidate.id, isNew: r.isNew };
 });
+// ---------- candidates from resumes ----------
+// Read one CV: the details found, and whether this person is already in the portal (same WhatsApp or email).
+route('POST', '/api/candidates/cv-read', T, (ctx) => {
+  const b = ctx.body || {};
+  if (!b.base64 || !/\.(pdf|docx|txt)$/i.test(String(b.name || ''))) return { fields: {}, readable: false, why: 'Only PDF, Word (.docx) or text CVs can be read.' };
+  const buf = Buffer.from(String(b.base64).replace(/^data:[^,]*,/, ''), 'base64');
+  if (buf.length > 10 * 1024 * 1024) throw httpError(400, 'The file is bigger than 10 MB.');
+  let fields = {}; try { fields = require('./cvparse').read(b.name, buf); } catch { /* unreadable */ }
+  const readable = Object.keys(fields).length > 0;
+  const same = (fields.whatsapp && get('SELECT id, name FROM candidates WHERE whatsapp=? AND merged_into IS NULL AND removed=0', fields.whatsapp)) || (fields.email && get('SELECT id, name FROM candidates WHERE lower(email)=lower(?) AND merged_into IS NULL AND removed=0', fields.email)) || null;
+  return { fields, readable, why: readable ? '' : 'No text found: a scanned or photo CV. Type the details.', existing: same };
+});
+// Create (or update, when the WhatsApp number is already known) one candidate from a CV, keep the CV on them, and
+// optionally add them to a job. No message goes to the candidate.
+route('POST', '/api/candidates/from-cv', T, async (ctx) => {
+  const b = ctx.body || {}; const v = b.fields || {};
+  if (!String(v.name || '').trim()) throw httpError(400, 'Enter the name', 'name');
+  if (v.email && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(String(v.email).trim())) throw httpError(400, 'Enter a valid email, or leave it empty', 'email');
+  const num = (x) => (x === '' || x === null || x === undefined || Number.isNaN(Number(x)) ? null : Number(x));
+  const d = { name: String(v.name).trim(), whatsapp: v.whatsapp || '', email: String(v.email || '').trim(), city: v.city || '', state: v.state || '', work_cities: v.city ? [v.city] : [], job_wanted: v.job_wanted || '', exp_total: num(v.exp_total), current_company: v.current_company || '', skills: Array.isArray(v.skills) ? v.skills : [] };
+  const phone = String(d.whatsapp).replace(/\D/g, '').slice(-10);
+  const r = L.intakeCandidate(d, { source: b.source || 'Resume upload', by: ctx.actor, consent: false, silent: true, allowNoPhone: true, needsCheck: phone ? null : 'No phone found' });
+  if (r.isNew && !r.candidate.agency_id) update('candidates', r.candidate.id, { agency_id: ctx.user.agency_id, recruiter_id: ctx.user.id, is_new: 0 });
+  if (b.cv && b.cv.base64) {
+    try {
+      const fl = await F.saveFile({ recordId: r.candidate.id, type: 'cv', name: b.cv.name, base64: b.cv.base64, by: ctx.actor.label });
+      update('candidates', r.candidate.id, { cv_file: String(fl.id) }); require('./cvparse').fillCandidate(r.candidate.id, b.cv.name, b.cv.base64, ctx.actor.label);
+    } catch (e) { insert('notes', { record_id: r.candidate.id, text: `CV not saved: ${e.message}`, author: ctx.actor.label, at: now() }); }
+  }
+  let application = null; let appError = '';
+  if (b.job_id) {
+    const j = get('SELECT * FROM jobs WHERE id=?', b.job_id);
+    if (!j || !seeJob(ctx.user, j)) appError = 'You cannot add to that job';
+    else { try { application = L.createApplication(r.candidate.id, j.id, ctx.actor, b.source || 'Resume upload', 'Added from a resume').id; } catch (e) { appError = e.message; } }
+  }
+  return { id: r.candidate.id, isNew: r.isNew, name: d.name, application, appError };
+});
 route('GET', '/api/candidates/:id', T, (ctx) => {
   const c = get('SELECT * FROM candidates WHERE id=?', L.resolveId(ctx.params.id)); if (!c) throw httpError(404, 'Candidate not found');
   const u = ctx.user; const show = R.phoneVisible(u, c);

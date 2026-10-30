@@ -165,6 +165,46 @@
       if (await BB.confirm(b.textContent, `${label} ${n}?${a === 'approve_jd' ? ' Draft jobs go live, and their strong matches get a job alert.' : ''}`, b.textContent)) jobBulk({ action: a });
     }));
   };
+  // Candidates from resumes: pick CVs, the portal reads each one, you check and correct the details, then create.
+  async function addFromResumes() {
+    const files = await new Promise((resolve) => { const i = document.createElement('input'); i.type = 'file'; i.multiple = true; i.accept = '.pdf,.docx,.txt'; i.onchange = () => resolve([...i.files]); i.click(); });
+    if (!files.length) return;
+    const toB64 = (file) => new Promise((res, rej) => { const fr = new FileReader(); fr.onload = () => res(String(fr.result).replace(/^data:[^,]*,/, '')); fr.onerror = rej; fr.readAsDataURL(file); });
+    BB.toast(`Reading ${files.length} resume${files.length === 1 ? '' : 's'}…`);
+    const items = [];
+    for (const file of files.slice(0, 50)) {
+      if (file.size > 10 * 1024 * 1024) { items.push({ file, err: 'Bigger than 10 MB' }); continue; }
+      try { const base64 = await toB64(file); const r = await BB.post('/api/candidates/cv-read', { name: file.name, base64 }); items.push({ file, base64, ...r }); } catch (e) { items.push({ file, err: e.message }); }
+    }
+    const jobs = (await BB.api('/api/jobs?status=Active&all=1')).rows;
+    const s = BB.boot; const jobsList = s.jobs.map((j) => j.title);
+    const row = (it, i) => {
+      const v = it.fields || {}; const inp = (k, ph, w) => `<input data-f="${k}" data-i="${i}" value="${esc(v[k] ?? '')}" placeholder="${ph}" style="min-width:${w}px">`;
+      return `<tr data-row="${i}"><td><label class="row small nowrap"><input type="checkbox" data-take="${i}" ${it.err ? 'disabled' : 'checked'}> <span class="tiny">${esc(it.file.name)}</span></label>${it.err ? `<div class="tiny" style="color:var(--red)">${esc(it.err)}</div>` : !it.readable ? `<div class="tiny muted">${esc(it.why || '')}</div>` : ''}${it.existing ? `<div class="tiny"><span class="badge b-amber tiny">Already in portal: ${esc(it.existing.id)} ${esc(it.existing.name)}</span> updates it</div>` : ''}</td>
+        <td>${inp('name', 'Name', 140)}</td><td>${inp('whatsapp', 'WhatsApp', 110)}</td><td>${inp('email', 'Email', 160)}</td><td>${inp('city', 'City', 100)}</td>
+        <td><input data-f="job_wanted" data-i="${i}" list="cv-jobs" value="${esc(v.job_wanted || '')}" placeholder="Job wanted" style="min-width:130px"></td><td>${inp('exp_total', 'Yrs', 50)}</td><td>${inp('current_company', 'Company', 130)}</td></tr>`;
+    };
+    BB.modal({ title: 'Add candidates from resumes', wide: true,
+      body: `<p class="small" style="margin-top:0">Read from each resume. Check and correct, untick any you don't want, then add. The resume is kept on each candidate. Nothing is sent to them.</p>
+        <datalist id="cv-jobs">${jobsList.map((t) => `<option value="${esc(t)}">`).join('')}</datalist>
+        <div class="card tbl-wrap" style="max-height:52vh;overflow:auto"><table class="tbl"><thead><tr><th>Resume</th><th>Name</th><th>WhatsApp</th><th>Email</th><th>City</th><th>Job wanted</th><th>Exp</th><th>Current company</th></tr></thead><tbody>${items.map(row).join('')}</tbody></table></div>
+        <label class="field" style="margin-top:12px"><span class="lab">Also add them to a job opening (optional)</span><select data-cvjob><option value="">No, just add to the resume bank</option>${jobs.map((j) => `<option value="${j.id}">${esc(j.id)} · ${esc(j.title)} · ${esc(j.city || '')} · ${esc(j.client_name || '')}</option>`).join('')}</select></label>`,
+      foot: `<button class="btn" data-cvx>Cancel</button><button class="btn primary" data-cvgo>Add candidates</button>`,
+      onMount: (m, close) => {
+        $('[data-cvx]', m).onclick = close;
+        $('[data-cvgo]', m).onclick = async (e) => {
+          const take = items.map((it, i) => ({ it, i })).filter(({ i }) => $(`[data-take="${i}"]`, m) && $(`[data-take="${i}"]`, m).checked);
+          if (!take.length) return BB.toast('Tick at least one resume', true);
+          e.target.disabled = true; let ok = 0; const errs = []; let apps = 0; const job = $('[data-cvjob]', m).value;
+          for (const { it, i } of take) {
+            const fields = { ...(it.fields || {}) }; $$(`[data-i="${i}"]`, m).forEach((x) => { fields[x.dataset.f] = x.value.trim(); });
+            e.target.textContent = `Adding ${ok + errs.length + 1} of ${take.length}…`;
+            try { const r = await BB.post('/api/candidates/from-cv', { fields, cv: { name: it.file.name, base64: it.base64 }, job_id: job || undefined }); ok++; if (r.application) apps++; else if (r.appError) errs.push(`${fields.name}: ${r.appError}`); } catch (er) { errs.push(`${fields.name || it.file.name}: ${er.message}`); }
+          }
+          close(); BB.toast(`${ok} candidate${ok === 1 ? '' : 's'} added${job ? `, ${apps} added to ${job}` : ''}${errs.length ? `. Not done: ${errs.join('; ')}` : ''}`, !!errs.length); BB.refreshPage && BB.refreshPage();
+        };
+      } });
+  }
   // Many job openings at once from an Excel in the Client Job Tracking Sheet layout: first a preview, then create.
   async function uploadJobs() {
     const file = await BB.pickFile('.xlsx,.csv'); if (!file) return;
@@ -260,7 +300,7 @@
     const s = BB.boot;
     const superAdmin = me.level === 'super'; // candidate downloads are for the super admin only
     const editing = !seg && q.editseg ? saved.find((x) => String(x.id) === String(q.editseg)) : null;
-    actions.innerHTML = seg ? '<button class="btn" data-backseg>← All segments</button>' : `${superAdmin ? dl(`/api/candidates?${BB.qs(q, { format: 'xlsx', tab: undefined, editseg: undefined })}`) : ''}<button class="btn" data-up>Upload Excel</button><button class="btn primary" data-new>+ Create candidate account</button>`;
+    actions.innerHTML = seg ? '<button class="btn" data-backseg>← All segments</button>' : `${superAdmin ? dl(`/api/candidates?${BB.qs(q, { format: 'xlsx', tab: undefined, editseg: undefined })}`) : ''}<button class="btn" data-up>Upload Excel</button><button class="btn" data-fromcv>Add from resumes</button><button class="btn primary" data-new>+ Create candidate account</button>`;
     // Industry: Jewellery unless another (or "All industries") is picked; designations follow the industry.
     const indNow = q.industry || s.default_industry || 'Jewellery';
     const indSel = `<select data-f="industry" title="Industry">${[['all', 'All industries'], ...(s.industry_list || ['Jewellery'])].map((o) => { const [v, t] = Array.isArray(o) ? o : [o, o]; return `<option value="${esc(v)}" ${indNow === v ? 'selected' : ''}>${esc(t)}</option>`; }).join('')}</select>`;
@@ -338,6 +378,7 @@
       BB.pickJob(async (jid) => report(await send({ job_id: jid }).catch(BB.fail)));
     }));
     // Same questions and choices as the public "I want a job" form, plus the team-only salary, notice, industry and source.
+    const fromCv = $('[data-fromcv]', actions); if (fromCv) fromCv.onclick = () => addFromResumes();
     const newBtn = $('[data-new]', actions); if (newBtn) newBtn.onclick = () => {
       const o = BB.seekerOptions; let cv = null;
       BB.ask({ title: 'Create candidate account', note: 'Goes to your agency. They get a welcome message with their profile link.', wide: true, fields: [

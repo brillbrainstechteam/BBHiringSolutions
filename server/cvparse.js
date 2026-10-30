@@ -35,7 +35,7 @@ function readPdfObjects(buf) {
     if (sm) {
       dict = s.slice(start, start + sm.index);
       const ds = start + sm.index + sm[0].length;
-      const len = /\/Length\s+(\d+)(?!\s+\d+\s+R)/.exec(dict);
+      const len = /\/Length\s+(\d+)(?!\d)(?!\s+\d+\s+R)/.exec(dict); // "/Length 14 0 R" is a reference, not 1 byte
       let de = len ? ds + Number(len[1]) : s.indexOf('endstream', ds);
       if (de < ds || de > s.length) de = s.indexOf('endstream', ds);
       stream = buf.slice(ds, de);
@@ -193,8 +193,9 @@ const findEmail = (text) => (/[\w.+-]+@[\w-]+(\.[\w-]+)+/.exec(String(text)) || 
 function findName(text) {
   const lab = /(?:^|\n)\s*(?:full\s+)?name\s*[:\-–]\s*([A-Za-z][A-Za-z .]{2,40})/i.exec(text);
   if (lab) return titleCase(lab[1].trim());
-  for (const line of String(text).split('\n').map((l) => l.trim()).filter(Boolean).slice(0, 12)) {
-    if (/^(curriculum|resume|cv|bio[- ]?data|profile|summary|objective|contact)\b/i.test(line) || /@|\d{4}/.test(line)) continue;
+  // A label run into the name line ("Rahul Kumar Father Name -") is cut off; such label lines alone are skipped.
+  for (const line of String(text).split('\n').map((l) => l.replace(/\s*\b(father'?s?|mother'?s?|husband'?s?)\s+name\b.*$/i, '').trim()).filter(Boolean).slice(0, 12)) {
+    if (/^(my\s+)?(curriculum|resume|cv|bio[- ]?data|profile|summary|objective|contact)\b/i.test(line) || /@|\d{4}/.test(line)) continue;
     if (/^[A-Za-z][A-Za-z.']+(\s+[A-Za-z][A-Za-z.']+){1,3}$/.test(line) && line.length <= 40) return titleCase(line);
   }
   return '';
@@ -243,6 +244,8 @@ function findCompany(text) {
   const m = /(?:currently|presently)\s+(?:working|employed)\s+(?:with|at|in)\s+(?:m\/s\.?\s*)?([A-Z][\w&.,' -]{2,60}?)(?:\s+(?:as|since|from)\b|[.,\n(])/i.exec(text)
     || /(?:current\s+(?:company|employer|organi[sz]ation))\s*[:\-–]\s*([^\n]{3,60})/i.exec(text);
   if (m) return m[1].trim();
+  // A headline under the name, as job portals write it: "Diamond Polisher at Shivam Jewels Pvt. Ltd."
+  for (const l of String(text).split('\n').map((x) => x.trim()).filter(Boolean).slice(1, 4)) { const h = /^[A-Za-z][^@\n]{2,80}?\s+at\s+([A-Z][\w&.' -]{2,60}?)\s*$/.exec(l); if (h) return h[1].trim(); }
   // The current job's line ("… – Present"): "Role at Company", "COMPANY | Role", or the company on the next line.
   const lines = String(text).split('\n');
   const i = lines.findIndex((l) => /(?:–|-|—|to)\s*(?:present|till\s*date|current|now)\b/i.test(l));
