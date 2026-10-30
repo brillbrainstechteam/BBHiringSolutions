@@ -123,7 +123,7 @@
         ${row('Meta · Website URL', base, 'the same for every ad')}${row('Meta · URL parameters', meta, 'the same for every ad')}<div class="small"><b>LinkedIn</b> <span class="faint">· add the LinkedIn job or ad above, then use its <b>Copy apply link</b> as the apply URL on LinkedIn</span></div></div></div>`;
     };
     return {
-      head: `<div class="row"><h2>${esc(j.title)}</h2><span class="mono faint">${esc(j.id)}</span>${statusBadge(j.status)}${j.reopened ? `<span class="badge b-gold">${esc(j.reopened)}</span>` : ''}<span class="badge b-outline">${esc(j.priority)}</span></div><div class="small muted">${j.client_tbc ? '<span class="badge b-amber">Client to be confirmed</span>' : `<a href="#" data-open="client:${j.client_id}">${esc(j.client_name)}</a>`} · ${esc(j.city)} · ${esc(j.reason)}</div>`,
+      head: `<div class="row"><h2>${esc(j.title)}</h2><span class="mono faint">${esc(j.id)}</span>${statusBadge(j.status)}${j.reopened ? `<span class="badge b-gold">${esc(j.reopened)}</span>` : ''}<span class="badge b-outline">${esc(j.priority)}</span></div><div class="small muted">${j.internal ? '<span class="badge b-violet">Internal · BrillBrains hiring</span>' : j.client_tbc ? '<span class="badge b-amber">Client to be confirmed</span>' : `<a href="#" data-open="client:${j.client_id}">${esc(j.client_name)}</a>`} · ${esc(j.city)} · ${esc(j.reason)}</div>`,
       body: `<div class="row" style="margin-bottom:12px">
           ${['On hold'].includes(j.status) ? '<button class="btn sm" data-act="resume">Resume</button>' : !['Closed', 'Filled'].includes(j.status) ? '<button class="btn sm" data-act="hold">Put on hold</button>' : ''}
           ${!['Closed'].includes(j.status) ? '<button class="btn sm danger" data-act="close">Close</button>' : ''}
@@ -458,7 +458,7 @@
   ], ok: 'Create job opening', submit: (v) => BB.post('/api/jobs', { ...v, salary_per: 'month', skills: v.skills.split(',').map((x) => x.trim()).filter(Boolean) }),
   extra: '' }).then((x) => { if (x) { BB.toast(`${x.id} made`); BB.refreshPage && BB.refreshPage(); BB.open('job', x.id); } }) && setTimeout(async () => {
     const sel = $('[data-clients]'); if (!sel) return; const r = await BB.api('/api/clients?all=1'); const all = r.rows;
-    sel.innerHTML = `<option value="">Choose…</option><option value="TBC">Client not decided yet (fill in later)</option>${all.filter((c) => !c.placeholder).map((c) => `<option value="${c.id}" ${c.id === clientId ? 'selected' : ''}>${esc(c.company)} (${c.id})</option>`).join('')}`;
+    sel.innerHTML = `<option value="">Choose…</option><option value="INTERNAL">BrillBrains — internal hiring (our own team)</option><option value="TBC">Client not decided yet (fill in later)</option>${all.filter((c) => !c.placeholder).map((c) => `<option value="${c.id}" ${c.id === clientId ? 'selected' : ''}>${esc(c.company)} (${c.id})</option>`).join('')}`;
     const city = $('[name=city]'); const title = $('.modal [name=title]');
     sel.onchange = () => { const c = all.find((x) => x.id === sel.value); if (!c) return; if (city && !city.value) city.value = c.city; if (title) title.innerHTML = BB.jobOptions(title.value, true, c.industry); }; sel.onchange();
   }, 50);

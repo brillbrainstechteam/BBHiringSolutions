@@ -428,6 +428,7 @@ function refreshBill(billId, by) {
 function createBillForApp(app, by) {
   const job = get('SELECT * FROM jobs WHERE id=?', app.job_id);
   const client = get('SELECT * FROM clients WHERE id=?', job.client_id);
+  if (client && client.internal) return null; // BrillBrains' own hiring: nobody to bill
   const cand = get('SELECT * FROM candidates WHERE id=?', app.candidate_id);
   const replacementOf = job.replacement_for && !get("SELECT 1 FROM bills WHERE is_replacement=1 AND credit_of IS NULL AND app_id IN (SELECT id FROM applications WHERE job_id=? AND replacement_of=?)", job.id, job.replacement_for) ? job.replacement_for : null;
   const ctc = app.offer_ctc || 0;

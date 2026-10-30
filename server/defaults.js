@@ -174,7 +174,7 @@ module.exports.defaultSettings = () => ({
   closing_reasons: ['Not suitable', 'Client rejected', 'Candidate withdrew', 'Offer declined', 'Did not join', 'No response'],
   job_close_reasons: ['Client stopped hiring', 'Hired on their own', 'Budget not approved', 'Duplicate'],
   reopen_reasons: ['Client needs more people', 'Replacement (left within 3 months)', 'Client restarted hiring', 'Closed by mistake'],
-  lead_sources: ['LinkedIn', 'Naukri', 'Apna', 'Job post', 'WhatsApp bot', 'Referral', 'College tie-up', 'Walk-in', 'Exhibition', 'Client referral', 'Agency database', 'Facebook ad', 'Instagram', 'Email', 'Website', 'Excel import', 'Other'],
+  lead_sources: ['Internal', 'LinkedIn', 'Naukri', 'Apna', 'Job post', 'WhatsApp bot', 'Referral', 'College tie-up', 'Walk-in', 'Exhibition', 'Client referral', 'Agency database', 'Facebook ad', 'Instagram', 'Email', 'Website', 'Excel import', 'Other'],
   src_tags: { 'fb-ad': 'Facebook ad', fb: 'Facebook ad', ig: 'Instagram', linkedin: 'LinkedIn', naukri: 'Naukri', apna: 'Apna', wa: 'WhatsApp bot', college: 'College tie-up', walkin: 'Walk-in', expo: 'Exhibition', web: 'Website', post: 'Job post' },
   fee: { type: 'percent', value: 8.33 },
   agency_share_pct: 33.33,

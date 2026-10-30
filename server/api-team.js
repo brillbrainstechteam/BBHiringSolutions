@@ -443,9 +443,16 @@ function placeholderClient(agencyId) {
   insert('clients', { id, company: TBC, contact: '', whatsapp: '', email: '', city: '', source: 'Job ad', stage: 'Job opening active', agency_id: agencyId || null, is_new: 0, kyc: {}, onboarding: {}, extra: {}, placeholder: 1, created_by: 'System', created_at: now(), updated_at: now() });
   return get('SELECT * FROM clients WHERE id=?', id);
 }
+// BrillBrains' own hiring ("Internal"): one such client per agency, made the first time it is needed. Never billed.
+function internalClient(agencyId) {
+  const c = get('SELECT * FROM clients WHERE internal=1 AND removed=0 AND agency_id IS ?', agencyId || null); if (c) return c;
+  const biz = D.settings().business || {}; const id = D.nextId('CL');
+  insert('clients', { id, company: `${biz.name || 'BrillBrains Hiring Solutions'} (Internal)`, contact: '', whatsapp: '', email: '', city: biz.city || '', source: 'Internal', stage: 'Job opening active', agency_id: agencyId || null, is_new: 0, kyc: {}, onboarding: {}, extra: {}, internal: 1, created_by: 'System', created_at: now(), updated_at: now() });
+  return get('SELECT * FROM clients WHERE id=?', id);
+}
 // Every level can open a job; a sub admin's job is always their own (they are its recruiter).
 route('POST', '/api/jobs', T, (ctx) => {
-  const b = ctx.body; const c = b.client_id === 'TBC' ? placeholderClient(ctx.user.agency_id) : get('SELECT * FROM clients WHERE id=?', b.client_id); mustSee(seeClient(ctx.user, c), 'client');
+  const b = ctx.body; const c = b.client_id === 'TBC' ? placeholderClient(ctx.user.agency_id) : b.client_id === 'INTERNAL' ? internalClient(ctx.user.agency_id) : get('SELECT * FROM clients WHERE id=?', b.client_id); mustSee(seeClient(ctx.user, c), 'client');
   if (ctx.user.level === 'sub') b.recruiter_id = ctx.user.id;
   return createJob(c, b, ctx.actor, false);
 });
@@ -520,7 +527,8 @@ route('POST', '/api/jobs/import', T, (ctx) => {
     const line = { row: hi + i + 2, client, title, city: cell(r, 'city'), code: cell(r, 'code') };
     if (!client || !title) { plan.push({ ...line, result: 'skip', why: !client ? 'No client name' : 'No position' }); continue; }
     const key = nameKey(client);
-    let c = clientsSeen.get(key) || existingClients.find((x) => nameKey(x.company) === key) || null;
+    const own = /^(internal|brill ?brains\b.*)$/.test(key);
+    let c = own ? internalClient(u.agency_id) : clientsSeen.get(key) || existingClients.find((x) => nameKey(x.company) === key) || null;
     const [sf, st] = sheetSalary(cell(r, 'salary')); const statusText = cell(r, 'status');
     const rec = users.find((x) => nameKey(x.name).split(' ')[0] === nameKey(cell(r, 'recruiter')).split(' ')[0] && nameKey(cell(r, 'recruiter')));
     const job = { title, city: line.city, openings: Math.max(1, Math.round(Number(cell(r, 'openings')) || 1)), sal_from: sf, sal_to: st, notice_days: sheetNotice(cell(r, 'notice')), code: line.code, created_at: sheetDate(cell(r, 'date')), status: /hold/i.test(statusText) ? 'On hold' : /(close|cancel|fill)/i.test(statusText) ? 'Closed' : 'Open', recruiter: u.level === 'sub' ? u.id : rec ? rec.id : u.id, recruiter_name: u.level === 'sub' ? u.name : rec ? rec.name : `${u.name}${cell(r, 'recruiter') ? ` (no login for "${cell(r, 'recruiter')}")` : ''}`, remarks: cell(r, 'remarks'), sheet_status: statusText };
