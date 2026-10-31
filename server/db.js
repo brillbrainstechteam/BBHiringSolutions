@@ -189,6 +189,12 @@ function ensureSettings() {
     const ls = settings().lead_sources || []; if (!ls.includes('Internal')) setSetting('lead_sources', ['Internal', ...ls]);
     setSetting('done_once', [...(settings().done_once || []), 'source_internal']);
   }
+  if (!once.includes('formats_off_2026_10_31')) {
+    const fm = settings().formats || {};
+    for (const k of ['bbhs_candidate_welcome', 'bbhs_consent_request']) if (fm[k]) fm[k] = { ...fm[k], off: true };
+    setSetting('formats', fm);
+    setSetting('done_once', [...(settings().done_once || []), 'formats_off_2026_10_31']);
+  }
   if (!once.includes('rules_off_2026_10_30')) {
     setSetting('auto_rules', settings().auto_rules.map((r) => (['post_join_checkin', 'still_looking', 'candidate_login'].includes(r.key) ? { ...r, on: false } : r)));
     setSetting('done_once', [...(settings().done_once || []), 'rules_off_2026_10_30']);

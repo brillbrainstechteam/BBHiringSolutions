@@ -147,6 +147,8 @@ function sendWA(o) {
   if (o.format) {
     fmt = s.formats[o.format];
     if (!fmt) return { skipped: 'Unknown format' };
+    // Switched off in Settings → Message formats: not sent to anyone, by WhatsApp or email.
+    if (fmt.off) { if (o.auto || o.bulk) return { skipped: 'Message switched off in Settings' }; throw httpError(400, 'This message is switched off in Settings → Message formats. Switch it on there to send it.'); }
     if (!fmt.approved) { if (o.auto) waOnlyStop = 'Format waiting for Meta approval'; else throw httpError(400, 'This format is waiting for Meta approval and cannot be sent.'); }
   }
   if (o.toPhone) p.phone = o.toPhone; // a one-off number, e.g. the code that proves a new number is theirs
@@ -814,12 +816,15 @@ function intakeCandidate(d, o) {
   if (!d.name) throw httpError(400, 'Please enter your name', 'name');
   if (!validPhone(phone) && !o.allowNoPhone) throw httpError(400, 'Enter a 10-digit WhatsApp number starting with 6, 7, 8 or 9', 'whatsapp');
   const dept = d.department || (d.job_wanted ? deptOf(d.job_wanted) : null);
-  const existing = phone ? get('SELECT * FROM candidates WHERE whatsapp=? AND merged_into IS NULL AND removed=0', phone) : null;
+  // the same number first; else the record the caller already knows (o.existingId, e.g. the same email address)
+  const existing = (phone ? get('SELECT * FROM candidates WHERE whatsapp=? AND merged_into IS NULL AND removed=0', phone) : null)
+    || (o.existingId ? get('SELECT * FROM candidates WHERE id=? AND merged_into IS NULL AND removed=0', o.existingId) : null);
   const fields = ['name', 'email', 'city', 'job_wanted', 'exp_total', 'exp_jewellery', 'cur_salary', 'exp_salary', 'notice_days', 'current_company', 'cv_file'];
   if (existing) {
     const fill = {};
     for (const k of fields) if ((existing[k] === null || existing[k] === '' || existing[k] === undefined) && d[k] !== undefined && d[k] !== '' && d[k] !== null) fill[k] = d[k];
     if (d.job_wanted) { fill.job_wanted = d.job_wanted; fill.department = dept; }
+    if (validPhone(phone) && !existing.whatsapp) { fill.whatsapp = phone; if (existing.name) fill.needs_check = null; } // the number arrived later
     if (d.exp_jewellery !== undefined && d.exp_jewellery !== null && d.exp_jewellery !== '') fill.exp_jewellery = d.exp_jewellery;
     if (d.city) { fill.city = d.city; fill.state = d.state || stateOf(d.city); }
     if (d.exp_total !== undefined && d.exp_total !== null && d.exp_total !== '') fill.exp_total = d.exp_total;
