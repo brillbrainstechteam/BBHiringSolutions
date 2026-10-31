@@ -7,7 +7,9 @@ const DEFAULT_OPENAI = 'gpt-5.4-nano'; // smallest current model: fast, cheap, f
 const provider = () => (process.env.OPENAI_API_KEY ? 'openai' : process.env.ANTHROPIC_API_KEY ? 'anthropic' : null);
 const available = () => !!provider();
 
-async function viaOpenAI({ system, user, schema, name, maxTokens }) {
+// files: [{ name, buf }] — PDFs and images the model reads itself (resumes with no text layer).
+const mime = (n) => (/\.pdf$/i.test(n) ? 'application/pdf' : /\.png$/i.test(n) ? 'image/png' : /\.jpe?g$/i.test(n) ? 'image/jpeg' : '');
+async function viaOpenAI({ system, user, schema, name, maxTokens, files = [] }) {
   const model = process.env.OPENAI_MODEL || DEFAULT_OPENAI; const reasoning = /^(gpt-5|o\d)/.test(model);
   let res;
   try {
@@ -16,7 +18,7 @@ async function viaOpenAI({ system, user, schema, name, maxTokens }) {
       headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}`, 'Content-Type': 'application/json' },
       // Reasoning models (gpt-5…, o…) think before answering: low effort keeps them quick and cheap, and their limit
       // covers that thinking too, so it gets more room.
-      body: JSON.stringify({ model, max_completion_tokens: reasoning ? maxTokens * 3 : maxTokens, ...(reasoning ? { reasoning_effort: process.env.OPENAI_REASONING || 'low' } : {}), messages: [{ role: 'system', content: system }, { role: 'user', content: user }], response_format: { type: 'json_schema', json_schema: { name, strict: true, schema } } }),
+      body: JSON.stringify({ model, max_completion_tokens: reasoning ? maxTokens * 3 : maxTokens, ...(reasoning ? { reasoning_effort: process.env.OPENAI_REASONING || 'low' } : {}), messages: [{ role: 'system', content: system }, { role: 'user', content: files.length ? [{ type: 'text', text: user }, ...files.map((x) => (mime(x.name) === 'application/pdf' ? { type: 'file', file: { filename: x.name, file_data: `data:application/pdf;base64,${x.buf.toString('base64')}` } } : { type: 'image_url', image_url: { url: `data:${mime(x.name)};base64,${x.buf.toString('base64')}` } }))] : user }], response_format: { type: 'json_schema', json_schema: { name, strict: true, schema } } }),
     });
   } catch (e) { throw httpError(424, `The AI service could not be reached (${e.name === 'TimeoutError' ? 'timed out' : e.message}).`); }
   const body = await res.json().catch(() => ({}));
@@ -30,12 +32,12 @@ async function viaOpenAI({ system, user, schema, name, maxTokens }) {
 }
 
 let sdk;
-async function viaAnthropic({ system, user, schema, maxTokens }) {
+async function viaAnthropic({ system, user, schema, maxTokens, files = [] }) {
   if (sdk === undefined) { try { const m = require('@anthropic-ai/sdk'); sdk = m.default || m; } catch { sdk = null; } }
   if (!sdk) throw httpError(424, 'AI is not set up on this server.');
   const client = new sdk(); let res;
   try {
-    res = await client.messages.create({ model: 'claude-haiku-5-5', max_tokens: maxTokens, output_config: { effort: 'low', format: { type: 'json_schema', schema } }, system, messages: [{ role: 'user', content: user }] });
+    res = await client.messages.create({ model: 'claude-haiku-5-5', max_tokens: maxTokens, output_config: { effort: 'low', format: { type: 'json_schema', schema } }, system, messages: [{ role: 'user', content: files.length ? [...files.map((x) => ({ type: mime(x.name) === 'application/pdf' ? 'document' : 'image', source: { type: 'base64', media_type: mime(x.name), data: x.buf.toString('base64') } })), { type: 'text', text: user }] : user }] });
   } catch (e) {
     if (e instanceof sdk.RateLimitError) throw httpError(429, 'The AI service is busy. Please try again in a minute.');
     if (e instanceof sdk.AuthenticationError) { console.error('Anthropic: API key rejected'); throw httpError(424, 'The AI key was rejected.'); }
@@ -49,9 +51,10 @@ async function viaAnthropic({ system, user, schema, maxTokens }) {
 
 // system + user text in, an object matching schema out. The schema must list every property in "required" and set
 // additionalProperties: false (OpenAI's strict mode needs both).
-async function json({ system, user, schema, name = 'answer', maxTokens = 3000 }) {
+async function json({ system, user, schema, name = 'answer', maxTokens = 3000, files = [] }) {
   const p = provider(); if (!p) throw httpError(424, 'AI is not set up yet: add OPENAI_API_KEY to the server .env.');
-  return p === 'openai' ? viaOpenAI({ system, user, schema, name, maxTokens }) : viaAnthropic({ system, user, schema, maxTokens });
+  files = files.filter((x) => mime(x.name) && x.buf && x.buf.length <= 15 * 1024 * 1024);
+  return p === 'openai' ? viaOpenAI({ system, user, schema, name, maxTokens, files }) : viaAnthropic({ system, user, schema, maxTokens, files });
 }
 
 // ---------- candidate details from an email and/or a resume ----------
@@ -79,9 +82,10 @@ const CAND_SCHEMA = {
 const CAND_SYSTEM = `You read job applications sent by email to an Indian recruitment agency that hires for the jewellery trade and other businesses. From the email and the resume text, pull out the candidate's details.
 Use only what is written. Never guess a phone number, email, salary or experience that is not there: leave it empty or null. Salaries written as LPA or per year become per month (yearly / 12). "Immediate" notice is 0 days; months become days (x30).
 Emails from job portals (Naukri, Indeed, Apna, WorkIndia, LinkedIn) describe the applicant: use the applicant's details, not the portal's.`;
-async function extractCandidate({ subject = '', from = '', body = '', resume = '' }) {
-  const user = `Email from: ${from}\nSubject: ${subject}\n\nEmail text:\n${String(body).slice(0, 6000)}\n\nResume text:\n${String(resume).slice(0, 14000) || '(no readable resume)'}`;
-  return json({ system: CAND_SYSTEM, user, schema: CAND_SCHEMA, name: 'candidate', maxTokens: 1500 });
+// files: resume PDFs/images whose text could not be read, attached for the model to read itself.
+async function extractCandidate({ subject = '', from = '', body = '', resume = '', files = [] }) {
+  const user = `Email from: ${from}\nSubject: ${subject}\n\nEmail text:\n${String(body).slice(0, 6000)}\n\nResume text:\n${String(resume).slice(0, 14000) || (files.length ? '(attached: read the resume file)' : '(no readable resume)')}`;
+  return json({ system: CAND_SYSTEM, user, schema: CAND_SCHEMA, name: 'candidate', maxTokens: 1500, files });
 }
 
 module.exports = { json, available, provider, extractCandidate };

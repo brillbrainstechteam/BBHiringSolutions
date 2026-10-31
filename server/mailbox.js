@@ -1,8 +1,7 @@
-// Email inbox door (11.1): every unread email with a CV in the jobs@ mailbox becomes a candidate lead.
+// Email inbox door (11.1): every job application in the hiring mailbox label becomes a candidate.
 // Name, phone and email are read from the email and the CV where possible; anything not found is marked "Needs checking".
 // Mailbox settings come from .env (IMAP_HOST, IMAP_PORT, IMAP_USER, IMAP_PASS, IMAP_FOLDER). No outside packages.
 const tls = require('tls');
-const zlib = require('zlib');
 const D = require('./db');
 const F = require('./files');
 
@@ -10,9 +9,9 @@ const F = require('./files');
 function imapConnect({ host, port }) {
   return new Promise((resolve, reject) => {
     const sock = tls.connect({ host, port, servername: host });
-    let buf = Buffer.alloc(0); let tagN = 0; let pending = null; let greeted = false;
+    let buf = Buffer.alloc(0); let tagN = 0; let pending = null; let greeted = false; let dead = null;
     sock.setTimeout(60000, () => { sock.destroy(new Error('Mailbox timed out')); });
-    const fail = (e) => { if (pending) { pending.reject(e); pending = null; } else reject(e); };
+    const fail = (e) => { dead = dead || e; if (pending) { pending.reject(e); pending = null; } else reject(e); };
     sock.on('error', fail);
     sock.on('close', () => fail(new Error('Mailbox closed the connection')));
     // Reads complete responses, keeping {n} literals (message bodies) as Buffers.
@@ -43,8 +42,10 @@ function imapConnect({ host, port }) {
     };
     sock.on('data', (d) => { buf = Buffer.concat([buf, d]); pump(); });
     const api = {
+      get dead() { return !!dead; },
       cmd(text) {
         return new Promise((res, rej) => {
+          if (dead) { rej(dead); return; } // a closed connection answers nothing: fail now rather than wait forever
           const tag = `A${++tagN}`;
           pending = { tag, lines: [], literals: [], pos: 0, resolve: res, reject: rej };
           sock.write(`${tag} ${text}\r\n`);
@@ -101,29 +102,12 @@ function parseMessage(buf) {
 }
 
 // ---------- text out of a CV ----------
-function textOfPdf(buf) {
-  const s = buf.toString('latin1'); const out = [];
-  const re = /stream\r?\n/g; let m;
-  while ((m = re.exec(s))) {
-    const start = m.index + m[0].length; const end = s.indexOf('endstream', start); if (end < 0) break;
-    let data = Buffer.from(s.slice(start, end), 'latin1');
-    try { data = zlib.inflateSync(data); } catch { /* not compressed */ }
-    const t = data.toString('latin1');
-    for (const x of t.matchAll(/\[(.*?)\]\s*TJ|\((.*?)(?<!\\)\)\s*Tj/gs)) {
-      const piece = x[1] !== undefined ? [...x[1].matchAll(/\((.*?)(?<!\\)\)/g)].map((y) => y[1]).join('') : x[2];
-      out.push(piece.replace(/\\([()\\])/g, '$1'));
-    }
-    out.push('\n');
-  }
-  return out.join('\n').replace(/[^\x20-\x7E\n]/g, ' ');
-}
 function textOfDocx(buf) {
   try { const z = F.unzip(buf); const xml = (z['word/document.xml'] || Buffer.alloc(0)).toString('utf8'); return xml.replace(/<\/w:p>/g, '\n').replace(/<[^>]+>/g, '').replace(/&amp;/g, '&'); } catch { return ''; }
 }
 function cvText(att) {
   const better = require('./cvparse').cvText(att.name, att.content); if (better) return better; // reads Word/Chrome/Canva PDFs too
   const n = String(att.name || '').toLowerCase();
-  if (n.endsWith('.pdf')) return textOfPdf(att.content);
   if (n.endsWith('.docx')) return textOfDocx(att.content);
   if (n.endsWith('.txt')) return att.content.toString('utf8');
   return '';
@@ -141,18 +125,31 @@ function findName(text) {
   return '';
 }
 
+// A CV attachment: any PDF or Word file; an image only when named like a resume (logos and signatures are not).
+const isCv = (n) => /\.(pdf|docx?)$/i.test(n || '') || (/\.(jpe?g|png)$/i.test(n || '') && /cv|resume|bio.?data|profile/i.test(n || ''));
 // One email → one candidate lead (or an update to the same number).
+// Your own addresses (the mailbox's domain, the business website's, the team's): their mail is not a candidate's.
+function ownDomains() {
+  const ds = new Set(String(process.env.IMAP_OWN_DOMAINS || '').split(',').map((x) => x.trim().toLowerCase()).filter(Boolean));
+  const add = (e) => { const d = String(e || '').split('@')[1]; if (d && !/^(gmail|yahoo|outlook|hotmail|rediffmail|icloud)\./i.test(d)) ds.add(d.toLowerCase()); };
+  add(D.ENV.imap.user);
+  try { ds.add(new URL(D.settings().business.base_url).hostname.replace(/^(www|hire|app)\./, '')); } catch { /* no site */ }
+  for (const u of D.all("SELECT email FROM users WHERE email IS NOT NULL AND email != ''")) add(u.email);
+  return [...ds];
+}
 async function intakeEmail({ fromName, fromEmail, subject, text, attachments }) {
   const L = require('./logic');
-  const cvs = (attachments || []).filter((a) => /\.(pdf|docx?|jpe?g|png)$/i.test(a.name || ''));
-  const cvTextAll = cvs.map((a) => cvText({ name: a.name, content: a.buf })).join('\n');
+  const cvs = (attachments || []).filter((a) => isCv(a.name));
+  const texts = cvs.map((a) => cvText({ name: a.name, content: a.buf }));
+  const cvTextAll = texts.join('\n');
+  const unread = cvs.filter((a, i) => String(texts[i] || '').replace(/\s/g, '').length < 100 && /\.(pdf|jpe?g|png)$/i.test(a.name)).slice(0, 2); // design PDFs, photos: the AI reads the file
   const all = `${subject || ''}\n${text || ''}\n${cvTextAll}`;
   const s = D.settings();
   // The AI (when a key is set) reads the email and the resume for the candidate's details; the rules below fill gaps.
   let ai = null; let aiErr = '';
   const LLM = require('./llm');
-  if (LLM.available()) { try { ai = await LLM.extractCandidate({ subject, from: `${fromName || ''} <${fromEmail || ''}>`, body: text, resume: cvTextAll }); } catch (e) { aiErr = e.message; } }
-  if (ai && ai.is_job_application === false && !cvs.length) return { skipped: 'Not a job application (AI)' };
+  if (LLM.available()) { try { ai = await LLM.extractCandidate({ subject, from: `${fromName || ''} <${fromEmail || ''}>`, body: text, resume: cvTextAll, files: unread.map((a) => ({ name: a.name, buf: a.buf })) }); } catch (e) { aiErr = e.message; } }
+  if (ai && ai.is_job_application === false) return { skipped: 'Not a job application (AI)' };
   const d10 = (v) => { const x = String(v || '').replace(/\D/g, '').slice(-10); return /^[6-9]\d{9}$/.test(x) ? x : ''; };
   const phone = (ai && d10(ai.whatsapp)) || findPhone(all);
   const email = (ai && /@/.test(ai.email || '') && ai.email) || fromEmail || findEmail(all);
@@ -162,11 +159,16 @@ async function intakeEmail({ fromName, fromEmail, subject, text, attachments }) 
   const city = (ai && ai.city) || cityRule || '';
   const jobRule = L.jobList().map((j) => j.title).sort((a, b) => b.length - a.length).find((t) => new RegExp(`\\b${t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(`${subject}\n${text}\n${cvTextAll}`)) || '';
   const job = (ai && ai.job_wanted) || jobRule || '';
-  const missing = [!name && 'name', !phone && 'phone'].filter(Boolean);
+  // the same person writing again (a reply in the thread, documents later): their record, found by email address
+  const known = (email ? D.get('SELECT id, whatsapp FROM candidates WHERE lower(email)=lower(?) AND merged_into IS NULL AND removed=0 ORDER BY (whatsapp != \'\') DESC, created_at LIMIT 1', email) : null)
+    // or the same name where one side has no number (an agency's forward and the original, one read without it)
+    || (name ? D.get('SELECT id, whatsapp FROM candidates WHERE lower(name)=lower(?) AND merged_into IS NULL AND removed=0 AND (whatsapp = \'\' OR ? = \'\') ORDER BY created_at LIMIT 1', name, phone) : null);
+  const phoneUse = phone || (known && known.whatsapp) || '';
+  const missing = [!name && 'name', !phoneUse && 'phone'].filter(Boolean);
   const num = (v) => (v === null || v === undefined || v === '' || Number.isNaN(Number(v)) ? null : Number(v));
-  const r = L.intakeCandidate({ name: name || (email ? email.split('@')[0] : 'Email candidate'), whatsapp: phone, email, city, state: (ai && ai.state) || '', work_cities: city ? [city] : [], job_wanted: job,
+  const r = L.intakeCandidate({ name: name || (email ? email.split('@')[0] : 'Email candidate'), whatsapp: phoneUse, email, city, state: (ai && ai.state) || '', work_cities: city ? [city] : [], job_wanted: job,
     ...(ai ? { exp_total: num(ai.exp_total), exp_jewellery: num(ai.exp_jewellery), current_company: ai.current_company || '', cur_salary: num(ai.current_salary_month) !== null ? num(ai.current_salary_month) * 12 : null, exp_salary: num(ai.expected_salary_month) !== null ? num(ai.expected_salary_month) * 12 : null, notice_days: num(ai.notice_days), skills: (ai.skills || []).slice(0, 12) } : {}) },
-    { source: 'Email', allowNoPhone: true, consent: false, needsCheck: missing.length ? `Not found in email or CV: ${missing.join(', ')}` : null });
+    { source: 'Email', allowNoPhone: true, consent: false, existingId: known ? known.id : null, needsCheck: missing.length ? `Not found in email or CV: ${missing.join(', ')}` : null });
   const id = r.candidate.id;
   D.insert('notes', { record_id: id, text: `Email: ${subject || '(no subject)'}${text ? ' — ' + String(text).trim().slice(0, 300) : ''}`, author: 'Email inbox', at: D.now() });
   if (ai) D.insert('notes', { record_id: id, text: `Read by AI: ${[ai.education && `education ${ai.education}`, (ai.languages || []).length && `languages ${ai.languages.join(', ')}`, ai.role_applied_for && `applied for ${ai.role_applied_for}`].filter(Boolean).join(' · ') || 'details filled from the email and resume'}`, author: 'Email inbox', at: D.now() });
@@ -191,22 +193,33 @@ async function intakeEmail({ fromName, fromEmail, subject, text, attachments }) 
   return { id, isNew: r.isNew, applications: applied, found: { name: !!name, phone: !!phone, email: !!email, city, job } };
 }
 
-// Reads unread emails (up to 25 a run), makes leads, marks them read.
-async function check() {
+// Reads every email in the label not handled before (50 a run) and makes candidates; read/unread is left alone.
+// One run at a time: a big backlog can outlast the 10-minute timer.
+let running = null;
+function check() {
+  if (running) return Promise.resolve({ skipped: 'Already checking the mailbox' });
+  running = checkNow().finally(() => { running = null; });
+  return running;
+}
+async function checkNow() {
   const cfg = D.ENV.imap;
   if (!cfg.host || !cfg.user) return { skipped: 'Email inbox not set in .env' };
   const done = { read: 0, leads: 0, errors: [] };
-  const box = await imapConnect(cfg);
+  const open = async () => { const b = await imapConnect(cfg); await b.cmd(`LOGIN ${q(cfg.user)} ${q(cfg.pass)}`); await b.cmd(`SELECT ${q(cfg.folder)}`); return b; };
+  let box = await open();
   try {
-    await box.cmd(`LOGIN ${q(cfg.user)} ${q(cfg.pass)}`);
-    await box.cmd(`SELECT ${q(cfg.folder)}`);
-    const sr = await box.cmd('UID SEARCH UNSEEN');
-    const uids = (sr.lines.find((l) => l.startsWith('* SEARCH')) || '').replace('* SEARCH', '').trim().split(/\s+/).filter(Boolean).slice(0, 25);
+    // Every email in the label, read or not (people open them too), each handled once: mail_seen remembers it.
+    // IMAP_ONLY_UNREAD=1 goes back to unread emails only.
+    const sr = await box.cmd(/^(1|true|yes|on)$/i.test(process.env.IMAP_ONLY_UNREAD || '') ? 'UID SEARCH UNSEEN' : 'UID SEARCH ALL');
+    const uids = (sr.lines.find((l) => l.startsWith('* SEARCH')) || '').replace('* SEARCH', '').trim().split(/\s+/).filter(Boolean)
+      .filter((u) => !D.get('SELECT 1 FROM mail_seen WHERE uid=?', `${cfg.user}:${cfg.folder}:${u}`)).slice(0, 50);
+    const dbg = process.env.MAIL_DEBUG ? (...a) => console.log(new Date().toISOString().slice(11, 19), ...a) : () => {}; dbg(`${uids.length} emails to read`);
     for (const uid of uids) {
       const key = `${cfg.user}:${cfg.folder}:${uid}`;
       try {
         if (!D.get('SELECT 1 FROM mail_seen WHERE uid=?', key)) {
-          const fr = await box.cmd(`UID FETCH ${uid} BODY.PEEK[]`);
+          if (box.dead) box = await open(); // dropped while the last email was being read
+          dbg(`fetch ${uid}`); const fr = await box.cmd(`UID FETCH ${uid} BODY.PEEK[]`); dbg(`  got ${fr.literals[0] ? fr.literals[0].length : 0} bytes`);
           const raw = fr.literals[0]; if (!raw) continue;
           const { headers, parts } = parseMessage(raw);
           const from = decodeWords(headers.from || '');
@@ -214,18 +227,33 @@ async function check() {
           const text = parts.filter((p) => p.type === 'text/plain' && !p.name).map((p) => p.content.toString('utf8')).join('\n')
             || parts.filter((p) => p.type === 'text/html' && !p.name).map((p) => p.content.toString('utf8').replace(/<[^>]+>/g, ' ')).join('\n');
           const attachments = parts.filter((p) => p.name).map((p) => ({ name: p.name, buf: p.content }));
-          if (attachments.some((a) => /\.(pdf|docx?|jpe?g|png)$/i.test(a.name)) || /cv|resume|bio.?data|job|apply/i.test(headers.subject || '')) {
-            await intakeEmail({ fromName: fm ? fm[1].replace(/"/g, '').trim() : '', fromEmail: fm ? fm[2] : from, subject: decodeWords(headers.subject || ''), text, attachments });
-            done.leads++;
-          }
+          const fromEmail = fm ? fm[2] : from; const hasCv = attachments.some((a) => isCv(a.name));
+          const own = ownDomains().includes((String(fromEmail).split('@')[1] || '').toLowerCase());
+          const subj = decodeWords(headers.subject || '');
+          // The team's own replies in a thread are not candidates; a CV they forward is (read from the CV, not the sender).
+          if (own && !hasCv) done.skipped = (done.skipped || 0) + 1;
+          else if (hasCv || require('./llm').available() || /cv|resume|bio.?data|job|appl|position|profile|candidate|opening|vacanc|interview|portfolio|work experience/i.test(subj)) {
+            // Several CVs with different phone numbers are different people (an agency sending profiles): one
+            // candidate per CV, read from the CV alone. One person's CV + portfolio stays one candidate.
+            const cvAtts = attachments.filter((a) => isCv(a.name) && !/portfolio|work.?sample/i.test(a.name));
+            const phones = new Set(cvAtts.map((a) => findPhone(cvText({ name: a.name, content: a.buf }))).filter(Boolean));
+            const batches = cvAtts.length > 1 && phones.size > 1
+              ? cvAtts.map((a) => ({ fromName: '', fromEmail: '', subject: subj, text: '', attachments: [a] }))
+              : [{ fromName: own ? '' : (fm ? fm[1].replace(/"/g, '').trim() : ''), fromEmail: own ? '' : fromEmail, subject: subj, text, attachments }];
+            for (const b of batches) {
+              const t0 = Date.now(); const r = await intakeEmail(b);
+              dbg(`  ${r && r.skipped ? 'skipped' : 'candidate'} in ${Date.now() - t0} ms`, subj.slice(0, 60), batches.length > 1 ? `(${b.attachments[0].name})` : '');
+              if (r && !r.skipped) done.leads++; else done.skipped = (done.skipped || 0) + 1;
+            }
+          } else done.skipped = (done.skipped || 0) + 1;
           D.run('INSERT OR IGNORE INTO mail_seen (uid,at) VALUES (?,?)', key, D.now());
         }
-        await box.cmd(`UID STORE ${uid} +FLAGS (\\Seen)`);
+        if (/^(1|true|yes|on)$/i.test(process.env.IMAP_ONLY_UNREAD || '')) { if (box.dead) box = await open(); await box.cmd(`UID STORE ${uid} +FLAGS (\\Seen)`); }
         done.read++;
       } catch (e) { done.errors.push(`${uid}: ${e.message}`); }
     }
   } finally { box.end(); }
-  D.setHealth('last_mail_check', `${D.now()} · ${done.read} read · ${done.leads} leads`);
+  D.setHealth('last_mail_check', `${D.now()} · ${done.read} read · ${done.leads} candidates · ${done.skipped || 0} skipped`);
   if (done.errors.length) require('./alerts').devAlert('Email inbox: some emails could not be read', done.errors.join('; '));
   return done;
 }
