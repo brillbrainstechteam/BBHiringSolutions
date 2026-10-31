@@ -7,7 +7,6 @@ const F = require('./files');
 const CV = require('./cvparse');
 const { get, httpError, now } = D;
 
-const MODEL = 'claude-opus-5-5';
 const DAILY_LIMIT = 5; // AI resumes per candidate per day (each one costs money)
 
 // ---------- the score ----------
@@ -70,40 +69,14 @@ Rules:
 - Keep it to what fits on one or two pages. No photos, no personal details beyond those given.
 - If the source text is in Hindi or Hinglish, write the resume in English.`;
 
-let sdk; // the Anthropic SDK, loaded on first use (optional dependency)
-function aiAvailable() {
-  if (!process.env.ANTHROPIC_API_KEY) return false;
-  if (sdk === undefined) { try { const m = require('@anthropic-ai/sdk'); sdk = m.default || m; } catch { sdk = null; } }
-  return !!sdk;
-}
-
+const LLM = require('./llm');
+const aiAvailable = () => LLM.available();
 async function writeWithAI(c, cvText) {
-  const client = new sdk();
   const profile = {
     name: c.name, city: c.city, job_wanted: c.job_wanted, department: c.department, total_experience_years: c.exp_total, jewellery_experience_years: c.exp_jewellery,
     business_types_worked_in: c.exp_business, current_company: c.current_company, skills: c.skills, notice_days: c.notice_days, work_cities: c.work_cities,
   };
-  let res;
-  try {
-    res = await client.beta.messages.create({
-      model: MODEL,
-      max_tokens: 16000,
-      betas: ['server-side-fallback-2026-07-01'],
-      fallbacks: 'default', // if the model declines, the API retries on a suitable fallback model
-      output_config: { effort: 'medium', format: { type: 'json_schema', schema: SCHEMA } },
-      system: SYSTEM,
-      messages: [{ role: 'user', content: `Candidate profile (JSON):\n${JSON.stringify(profile, null, 2)}\n\nCurrent CV text:\n${cvText || '(no CV uploaded)'}` }],
-    });
-  } catch (e) {
-    if (e instanceof sdk.RateLimitError) throw httpError(429, 'The resume writer is busy. Please try again in a minute.');
-    if (e instanceof sdk.AuthenticationError) { console.error('Resume writer: API key rejected'); throw httpError(424, 'The resume writer is not available right now.'); }
-    if (e instanceof sdk.APIError) { console.error('Resume writer API error', e.status, e.message); throw httpError(424, 'The resume writer could not finish. Please try again.'); }
-    throw e;
-  }
-  if (res.stop_reason === 'refusal') throw httpError(422, 'The resume writer could not work with this profile. Please check your details.');
-  if (res.stop_reason === 'max_tokens') throw httpError(424, 'The resume came out too long. Please try again.');
-  const text = res.content.filter((b) => b.type === 'text').map((b) => b.text).join('');
-  try { return JSON.parse(text); } catch { throw httpError(424, 'The resume writer gave an unreadable answer. Please try again.'); }
+  return LLM.json({ system: SYSTEM, user: `Candidate profile (JSON):\n${JSON.stringify(profile, null, 2)}\n\nCurrent CV text:\n${cvText || '(no CV uploaded)'}`, schema: SCHEMA, name: 'resume', maxTokens: 6000 });
 }
 
 // Without AI: the same layout, filled straight from the profile.

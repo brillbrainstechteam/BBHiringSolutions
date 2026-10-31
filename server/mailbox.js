@@ -148,17 +148,29 @@ async function intakeEmail({ fromName, fromEmail, subject, text, attachments }) 
   const cvTextAll = cvs.map((a) => cvText({ name: a.name, content: a.buf })).join('\n');
   const all = `${subject || ''}\n${text || ''}\n${cvTextAll}`;
   const s = D.settings();
-  const phone = findPhone(all);
-  const email = fromEmail || findEmail(all);
+  // The AI (when a key is set) reads the email and the resume for the candidate's details; the rules below fill gaps.
+  let ai = null; let aiErr = '';
+  const LLM = require('./llm');
+  if (LLM.available()) { try { ai = await LLM.extractCandidate({ subject, from: `${fromName || ''} <${fromEmail || ''}>`, body: text, resume: cvTextAll }); } catch (e) { aiErr = e.message; } }
+  if (ai && ai.is_job_application === false && !cvs.length) return { skipped: 'Not a job application (AI)' };
+  const d10 = (v) => { const x = String(v || '').replace(/\D/g, '').slice(-10); return /^[6-9]\d{9}$/.test(x) ? x : ''; };
+  const phone = (ai && d10(ai.whatsapp)) || findPhone(all);
+  const email = (ai && /@/.test(ai.email || '') && ai.email) || fromEmail || findEmail(all);
   const senderName = fromName && !/@/.test(fromName) && /\S+\s+\S+/.test(fromName.trim()) ? fromName.trim() : '';
-  const name = senderName || findName(cvTextAll) || '';
-  const city = s.cities.map((c) => c.name).find((c) => new RegExp(`\\b${c.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(all)) || '';
-  const job = L.jobList().map((j) => j.title).sort((a, b) => b.length - a.length).find((t) => new RegExp(`\\b${t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(`${subject}\n${text}\n${cvTextAll}`)) || '';
+  const name = (ai && ai.name) || senderName || findName(cvTextAll) || '';
+  const cityRule = s.cities.map((c) => c.name).find((c) => new RegExp(`\\b${c.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(all)) || '';
+  const city = (ai && ai.city) || cityRule || '';
+  const jobRule = L.jobList().map((j) => j.title).sort((a, b) => b.length - a.length).find((t) => new RegExp(`\\b${t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(`${subject}\n${text}\n${cvTextAll}`)) || '';
+  const job = (ai && ai.job_wanted) || jobRule || '';
   const missing = [!name && 'name', !phone && 'phone'].filter(Boolean);
-  const r = L.intakeCandidate({ name: name || (email ? email.split('@')[0] : 'Email candidate'), whatsapp: phone, email, city, work_cities: city ? [city] : [], job_wanted: job },
+  const num = (v) => (v === null || v === undefined || v === '' || Number.isNaN(Number(v)) ? null : Number(v));
+  const r = L.intakeCandidate({ name: name || (email ? email.split('@')[0] : 'Email candidate'), whatsapp: phone, email, city, state: (ai && ai.state) || '', work_cities: city ? [city] : [], job_wanted: job,
+    ...(ai ? { exp_total: num(ai.exp_total), exp_jewellery: num(ai.exp_jewellery), current_company: ai.current_company || '', cur_salary: num(ai.current_salary_month) !== null ? num(ai.current_salary_month) * 12 : null, exp_salary: num(ai.expected_salary_month) !== null ? num(ai.expected_salary_month) * 12 : null, notice_days: num(ai.notice_days), skills: (ai.skills || []).slice(0, 12) } : {}) },
     { source: 'Email', allowNoPhone: true, consent: false, needsCheck: missing.length ? `Not found in email or CV: ${missing.join(', ')}` : null });
   const id = r.candidate.id;
   D.insert('notes', { record_id: id, text: `Email: ${subject || '(no subject)'}${text ? ' — ' + String(text).trim().slice(0, 300) : ''}`, author: 'Email inbox', at: D.now() });
+  if (ai) D.insert('notes', { record_id: id, text: `Read by AI: ${[ai.education && `education ${ai.education}`, (ai.languages || []).length && `languages ${ai.languages.join(', ')}`, ai.role_applied_for && `applied for ${ai.role_applied_for}`].filter(Boolean).join(' · ') || 'details filled from the email and resume'}`, author: 'Email inbox', at: D.now() });
+  else if (aiErr) D.insert('notes', { record_id: id, text: `AI could not read this email (${aiErr}); details found by rules only.`, author: 'Email inbox', at: D.now() });
   let first = true;
   for (const a of cvs) {
     try {
@@ -170,8 +182,8 @@ async function intakeEmail({ fromName, fromEmail, subject, text, attachments }) 
   // An application too, but only when the email clearly names the job: a portal job ID (JB-2031) anywhere in the
   // subject or text, or else a role in the subject ("Application for CAD Designer") that matches open jobs.
   const applied = [];
-  const idHit = /(?:^|[^A-Za-z0-9])JB[-\s_]?(\d{3,})(?!\d)/i.exec(`${subject || ''}\n${text || ''}`);
-  const role = String(subject || '').replace(/\b(application|applying|apply|resume|cv|for|the|post|of|job|re|fw|fwd)\b/gi, ' ');
+  const idHit = /(?:^|[^A-Za-z0-9])JB[-\s_]?(\d{3,})(?!\d)/i.exec(`${subject || ''}\n${text || ''}\n${(ai && ai.job_id_mentioned) || ''}`);
+  const role = (ai && ai.role_applied_for) || String(subject || '').replace(/\b(application|applying|apply|resume|cv|for|the|post|of|job|re|fw|fwd)\b/gi, ' ');
   let targets = idHit ? [D.get('SELECT * FROM jobs WHERE id=?', `JB-${idHit[1]}`)].filter(Boolean) : L.jobsForRole(role);
   if (!idHit && L.roleTokens(role).length < 2 && targets.length > 1) targets = []; // one vague word ("Sales") is not clear enough
   for (const j of targets) { try { applied.push(L.createApplication(id, j.id, { label: 'Email inbox' }, 'Email', `From the email "${String(subject || '').slice(0, 80)}"`).id); } catch { /* closed job, or already on it */ } }

@@ -792,12 +792,25 @@ route('POST', '/api/candidates', T, async (ctx) => {
 });
 // ---------- candidates from resumes ----------
 // Read one CV: the details found, and whether this person is already in the portal (same WhatsApp or email).
-route('POST', '/api/candidates/cv-read', T, (ctx) => {
+route('POST', '/api/candidates/cv-read', T, async (ctx) => {
   const b = ctx.body || {};
   if (!b.base64 || !/\.(pdf|docx|txt)$/i.test(String(b.name || ''))) return { fields: {}, readable: false, why: 'Only PDF, Word (.docx) or text CVs can be read.' };
   const buf = Buffer.from(String(b.base64).replace(/^data:[^,]*,/, ''), 'base64');
   if (buf.length > 10 * 1024 * 1024) throw httpError(400, 'The file is bigger than 10 MB.');
   let fields = {}; try { fields = require('./cvparse').read(b.name, buf); } catch { /* unreadable */ }
+  // With an AI key, the AI reads the resume too; its answers win where it found something.
+  const LLM = require('./llm');
+  if (LLM.available()) {
+    try {
+      const text = require('./cvparse').cvText(b.name, buf);
+      if (text && text.trim().length > 40) {
+        const ai = await LLM.extractCandidate({ resume: text });
+        const pick = { name: ai.name, whatsapp: String(ai.whatsapp || '').replace(/\D/g, '').slice(-10), email: ai.email, city: ai.city, state: ai.state, job_wanted: ai.job_wanted, exp_total: ai.exp_total, current_company: ai.current_company, skills: ai.skills };
+        for (const [k, v] of Object.entries(pick)) if (v !== null && v !== undefined && v !== '' && !(Array.isArray(v) && !v.length)) fields[k] = v;
+        fields.ai = true;
+      }
+    } catch { /* the rules' answer stands */ }
+  }
   const readable = Object.keys(fields).length > 0;
   const same = (fields.whatsapp && get('SELECT id, name FROM candidates WHERE whatsapp=? AND merged_into IS NULL AND removed=0', fields.whatsapp)) || (fields.email && get('SELECT id, name FROM candidates WHERE lower(email)=lower(?) AND merged_into IS NULL AND removed=0', fields.email)) || null;
   return { fields, readable, why: readable ? '' : 'No text found: a scanned or photo CV. Type the details.', existing: same };
