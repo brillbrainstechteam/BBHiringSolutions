@@ -67,6 +67,17 @@ function deleteOne(u, actor, kind, id, dry) {
   return { ok: true, kind, id: rid, label: t.label, counts };
 }
 
+// Once (31 Oct 2026): applications made automatically for Email candidates (by the inbox or the auto-mapper) go to
+// Deleted items; email candidates stay candidates only. Restorable from Settings -> Deleted items.
+if (!(D.settings().done_once || []).includes('email_apps_binned')) {
+  const sys = { level: 'super' }; const actor = { label: 'System: email applications removed' }; let n = 0;
+  for (const a of all("SELECT a.id FROM applications a JOIN candidates c ON c.id=a.candidate_id WHERE c.source='Email' AND EXISTS (SELECT 1 FROM app_history h WHERE h.app_id=a.id AND (h.note LIKE 'From the email%' OR h.note LIKE 'Matched automatically%'))")) {
+    try { deleteOne(sys, actor, 'application', a.id); n++; } catch (e) { console.error('email app', a.id, e.message); }
+  }
+  D.setSetting('done_once', [...(D.settings().done_once || []), 'email_apps_binned']);
+  if (n) console.log(`Moved ${n} email applications to Deleted items`);
+}
+
 // dry=true: what would go with it (for the confirmation). ids: several of one kind at once.
 route('POST', '/api/delete', T, (ctx) => {
   const b = ctx.body || {}; const ids = Array.isArray(b.ids) ? b.ids.slice(0, 500) : [b.id];

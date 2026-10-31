@@ -1062,7 +1062,8 @@ route('POST', '/api/applications/:id/close', T, (ctx) => { const a = loadApp(ctx
 // names or "Job you want" point to, unless they already have one there (open or closed). dry=true only shows it.
 route('POST', '/api/applications/auto-map', T, (ctx) => {
   const u = ctx.user; const b = ctx.body || {}; const plan = [];
-  const cands = all('SELECT * FROM candidates WHERE merged_into IS NULL AND removed=0 AND junk=0 AND archived=0').filter((c) => isSuper(u) || c.agency_id === u.agency_id || !c.agency_id);
+  // Email candidates stay candidates only: the team picks their jobs by hand.
+  const cands = all("SELECT * FROM candidates WHERE merged_into IS NULL AND removed=0 AND junk=0 AND archived=0 AND source != 'Email'").filter((c) => isSuper(u) || c.agency_id === u.agency_id || !c.agency_id);
   for (const c of cands) {
     if (b.ids && !b.ids.includes(c.id)) continue;
     const m = L.jobsForPerson(c, b.same_city ? { cities: [c.city, ...(c.work_cities || [])].filter(Boolean) } : {});
