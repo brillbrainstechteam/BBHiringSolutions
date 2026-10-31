@@ -1,18 +1,22 @@
 // One door for every AI call in the portal: JSON answers that follow a schema. Uses OpenAI when OPENAI_API_KEY is
-// set (model: OPENAI_MODEL, default gpt-4o-mini, cheap and accurate for extraction and writing), else Anthropic when
+// set (model: OPENAI_MODEL, default gpt-5.4-nano), else Anthropic when
 // ANTHROPIC_API_KEY is set. No outside packages: OpenAI is called over HTTPS with Node's fetch.
 const { httpError } = require('./db');
 
+const DEFAULT_OPENAI = 'gpt-5.4-nano'; // smallest current model: fast, cheap, faithful on resumes (tested against gpt-5-nano and gpt-4o-mini)
 const provider = () => (process.env.OPENAI_API_KEY ? 'openai' : process.env.ANTHROPIC_API_KEY ? 'anthropic' : null);
 const available = () => !!provider();
 
 async function viaOpenAI({ system, user, schema, name, maxTokens }) {
+  const model = process.env.OPENAI_MODEL || DEFAULT_OPENAI; const reasoning = /^(gpt-5|o\d)/.test(model);
   let res;
   try {
     res = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST', signal: AbortSignal.timeout(90000),
       headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: process.env.OPENAI_MODEL || 'gpt-4o-mini', max_tokens: maxTokens, messages: [{ role: 'system', content: system }, { role: 'user', content: user }], response_format: { type: 'json_schema', json_schema: { name, strict: true, schema } } }),
+      // Reasoning models (gpt-5…, o…) think before answering: low effort keeps them quick and cheap, and their limit
+      // covers that thinking too, so it gets more room.
+      body: JSON.stringify({ model, max_completion_tokens: reasoning ? maxTokens * 3 : maxTokens, ...(reasoning ? { reasoning_effort: process.env.OPENAI_REASONING || 'low' } : {}), messages: [{ role: 'system', content: system }, { role: 'user', content: user }], response_format: { type: 'json_schema', json_schema: { name, strict: true, schema } } }),
     });
   } catch (e) { throw httpError(424, `The AI service could not be reached (${e.name === 'TimeoutError' ? 'timed out' : e.message}).`); }
   const body = await res.json().catch(() => ({}));
