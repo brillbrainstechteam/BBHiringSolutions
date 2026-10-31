@@ -43,13 +43,21 @@
   // Candidate filters used on both Candidates and Candidate leads (the server applies the same rules, and the
   // download link carries the same address, so a download always matches what is on screen).
   const CAND_MORE = ['from', 'to', 'exp_min', 'exp_max', 'sal_min', 'sal_max'];
+  // A drop-down of tick boxes (several values at once), saved as "a,b,c" in the address.
+  const multiSel = (k, all, plural, opts, val) => { const on = String(val || '').split(',').filter(Boolean);
+    return `<details class="msel" data-msel="${k}"><summary>${on.length === 0 ? all : on.length === 1 ? esc(on[0]) : `${on.length} ${plural}`}</summary><div class="msel-pop"><div class="msel-list">${opts.map((o) => `<label class="row small"><input type="checkbox" value="${esc(o)}" ${on.includes(o) ? 'checked' : ''}> ${esc(o)}</label>`).join('')}</div><div class="row msel-foot"><button type="button" class="btn sm ghost" data-mclear>Clear</button><button type="button" class="btn sm primary" data-mapply>Apply</button></div></div></details>`; };
+  BB.wireMultiSel = (root) => $$('[data-msel]', root).forEach((d) => {
+    const k = d.dataset.msel; const apply = (v) => BB.setQ({ [k]: v, page: 1 });
+    $('[data-mapply]', d).onclick = () => apply($$('input:checked', d).map((x) => x.value).join(','));
+    $('[data-mclear]', d).onclick = () => apply('');
+  });
   function candFilters(q, desigs) {
     const s = BB.boot;
     const sel = (k, label, opts) => `<select data-f="${k}"><option value="">${label}</option>${opts.map((o) => { const [v, t] = Array.isArray(o) ? o : [o, o]; return `<option value="${esc(v)}" ${String(q[k] || '') === String(v) ? 'selected' : ''}>${esc(t)}</option>`; }).join('')}</select>`;
     const states = [...new Set((s.places || []).map((x) => x.state).filter(Boolean))].sort();
     const n = (k, ph) => `<input type="number" min="0" placeholder="${ph}" data-f="${k}" value="${esc(q[k] || '')}">`;
     return {
-      main: `${sel('dept', 'All departments', s.departments || [])}${sel('job', 'All designations', desigs)}${sel('city', 'All cities', s.cities || [])}${sel('state', 'All states', states)}${sel('jewellery', 'Any jewellery experience', [['0', 'Jewellery: no experience'], ['lt1', 'Jewellery: under 1 year'], ['1-3', 'Jewellery: 1–3 years'], ['3-5', 'Jewellery: 3–5 years'], ['5-10', 'Jewellery: 5–10 years'], ['10+', 'Jewellery: 10+ years']])}`,
+      main: `${multiSel('dept', 'All departments', 'departments', s.departments || [], q.dept)}${sel('job', 'All designations', desigs)}${sel('city', 'All cities', s.cities || [])}${sel('state', 'All states', states)}${sel('jewellery', 'Any jewellery experience', [['0', 'Jewellery: no experience'], ['lt1', 'Jewellery: under 1 year'], ['1-3', 'Jewellery: 1–3 years'], ['3-5', 'Jewellery: 3–5 years'], ['5-10', 'Jewellery: 5–10 years'], ['10+', 'Jewellery: 10+ years']])}`,
       more: `<div class="grid g2"><label class="mf"><span>Applied from</span><input type="date" data-f="from" value="${esc(q.from || '')}"></label><label class="mf"><span>Applied up to</span><input type="date" data-f="to" value="${esc(q.to || '')}"></label></div>
         <div class="grid g4"><label class="mf"><span>Experience from (years)</span>${n('exp_min', 'Min')}</label><label class="mf"><span>Experience up to (years)</span>${n('exp_max', 'Max')}</label><label class="mf"><span>Expected salary from (₹/month)</span>${n('sal_min', 'Min')}</label><label class="mf"><span>Expected salary up to (₹/month)</span>${n('sal_max', 'Max')}</label></div>`,
       count: (extra = []) => [...CAND_MORE, ...extra].filter((k) => q[k]).length,
@@ -88,7 +96,7 @@
     $$('[data-tab]', el).forEach((b) => (b.onclick = () => BB.setQ({ tab: b.dataset.tab })));
     $$('[data-days]', el).forEach((b) => (b.onclick = () => BB.setQ({ days: b.dataset.days })));
     $$('[data-src]', el).forEach((b) => (b.onclick = () => BB.setQ({ source: q.source === b.dataset.src ? '' : b.dataset.src })));
-    $$('[data-f]', el).forEach((i) => (i.onchange = () => BB.setQ({ [i.dataset.f]: i.type === 'checkbox' ? (i.checked ? '1' : '') : i.value })));
+    BB.wireMultiSel(el); $$('[data-f]', el).forEach((i) => (i.onchange = () => BB.setQ({ [i.dataset.f]: i.type === 'checkbox' ? (i.checked ? '1' : '') : i.value })));
     { const mf = $('.more-f', el); if (mf) mf.ontoggle = () => { BB.moreFiltersOpen = mf.open; }; const cl = $('[data-clear]', el); if (cl) cl.onclick = clearCandFilters; }
     $$('[data-assign]', el).forEach((s) => { s.onclick = (e) => e.stopPropagation(); s.onchange = async () => { const [type, id] = s.dataset.assign.split(':'); try { await BB.post('/api/leads/assign', { type, id, agency_id: s.value }); BB.toast(`${id} assigned — the agency admin got a task alert`); BB.refreshPage(); } catch (e) { BB.fail(e); } }; });
     $$('[data-junk]', el).forEach((b) => (b.onclick = async () => { const [type, id] = b.dataset.junk.split(':'); if (await BB.confirm('Mark as junk', `${id} will be hidden from lists (not deleted).`, 'Mark junk')) { await BB.post('/api/leads/junk', { type, id }); BB.refreshPage(); } }));
@@ -367,7 +375,7 @@
     const s = BB.boot;
     const superAdmin = me.level === 'super'; // candidate downloads are for the super admin only
     const editing = !seg && q.editseg ? saved.find((x) => String(x.id) === String(q.editseg)) : null;
-    actions.innerHTML = seg ? '<button class="btn" data-backseg>← All segments</button>' : `${superAdmin ? dl(`/api/candidates?${BB.qs(q, { format: 'xlsx', tab: undefined, editseg: undefined })}`) : ''}<button class="btn" data-up>Upload Excel</button><button class="btn" data-fromcv>Add from resumes</button><button class="btn primary" data-new>+ Create candidate account</button>`;
+    actions.innerHTML = seg ? '<button class="btn" data-backseg>← All segments</button>' : `${superAdmin ? `${dl(`/api/candidates?${BB.qs(q, { format: 'xlsx', tab: undefined, editseg: undefined })}`).replace('>Download<', ' title="Every matching candidate as an Excel list">Download list<')}<button class="btn sm" data-dl="/api/candidates/cvs.zip?${esc(BB.qs(q, { tab: undefined, editseg: undefined, page: undefined }))}" title="Every matching candidate's CV in one zip, with the list">Download CVs (zip)</button>` : ''}<button class="btn" data-up>Upload Excel</button><button class="btn" data-fromcv>Add from resumes</button><button class="btn primary" data-new>+ Create candidate account</button>`;
     // Industry: Jewellery unless another (or "All industries") is picked; designations follow the industry.
     const indNow = q.industry || s.default_industry || 'Jewellery';
     const indSel = `<select data-f="industry" title="Industry">${[['all', 'All industries'], ...(s.industry_list || ['Jewellery'])].map((o) => { const [v, t] = Array.isArray(o) ? o : [o, o]; return `<option value="${esc(v)}" ${indNow === v ? 'selected' : ''}>${esc(t)}</option>`; }).join('')}</select>`;
@@ -423,7 +431,7 @@
       wireSegButtons(el, () => seg);
     } else {
       let t; $('[data-q]', el).oninput = (e) => { clearTimeout(t); t = setTimeout(() => BB.setQ({ q: e.target.value, page: 1 }), 350); };
-      $$('[data-f]', el).forEach((i) => (i.onchange = () => { if (i.dataset.f === 'saved') { if (i.value) openSeg(i.value); return; } BB.setQ({ [i.dataset.f]: i.type === 'checkbox' ? (i.checked ? '1' : '') : i.value, ...(i.dataset.f === 'industry' ? { job: '' } : {}), page: 1 }); }));
+      BB.wireMultiSel(el); $$('[data-f]', el).forEach((i) => (i.onchange = () => { if (i.dataset.f === 'saved') { if (i.value) openSeg(i.value); return; } BB.setQ({ [i.dataset.f]: i.type === 'checkbox' ? (i.checked ? '1' : '') : i.value, ...(i.dataset.f === 'industry' ? { job: '' } : {}), page: 1 }); }));
       const filtersNow = { ...q, page: undefined, tab: undefined, editseg: undefined };
       $('[data-save]', el).onclick = () => BB.ask({ title: 'Save as segment', note: `${r.total ?? r.rows.length} candidates match these filters now. The segment keeps the filters, so it stays up to date.`, fields: [{ name: 'name', label: 'Segment name', placeholder: 'e.g. Jaipur sales, 3+ yrs jewellery' }, { name: 'shared', label: 'Share with the whole team', type: 'check' }], submit: (v) => BB.post('/api/saved-searches', { name: v.name, shared: v.shared, query: filtersNow }) }).then((x) => { if (x) { BB.toast('Segment saved'); openSeg(x.id); } });
       const upd = $('[data-updseg]', el); if (upd) upd.onclick = async () => { try { await BB.patch(`/api/segments/${editing.id}`, { query: filtersNow }); BB.toast(`“${editing.name}” updated`); openSeg(editing.id); } catch (e) { BB.fail(e); } };
@@ -734,7 +742,7 @@
       ${name === 'funnel' ? `<div class="card pad">${d.rows.map((r) => { const max = Math.max(1, ...d.rows.map((x) => x.count)); return `<div class="hbar"><span class="l" style="width:150px">${esc(r.step)}</span><div class="b bar gold"><i style="width:${(r.count / max) * 100}%"></i></div><span class="v">${r.count}</span><span class="small muted" style="width:70px">${r.drop ? '−' + r.drop : ''}</span></div>`; }).join('')}</div>`
         : `<div class="card">${BB.table(cols.map((c) => ({ t: c.replace(/_/g, ' '), num: typeof d.rows[0][c] === 'number', f: (r) => (typeof r[c] === 'number' && /fee|billed|paid|total|gst|balance|received|share|tds/.test(c) ? inr(r[c]) : esc(r[c])) })), d.rows, { empty: 'No data for these filters.' })}</div>`}`;
     $$('[data-r]', el).forEach((c) => (c.onclick = () => BB.setQ({ r: c.dataset.r })));
-    $$('[data-f]', el).forEach((i) => (i.onchange = () => BB.setQ({ [i.dataset.f]: i.value })));
+    BB.wireMultiSel(el); $$('[data-f]', el).forEach((i) => (i.onchange = () => BB.setQ({ [i.dataset.f]: i.value })));
   };
 
   // ---------- Logins & team ----------

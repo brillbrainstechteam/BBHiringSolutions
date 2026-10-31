@@ -145,7 +145,7 @@ function crc32(buf) { let c = 0xffffffff; for (const b of buf) c = CRC_TABLE[(c 
 function zipStore(files) {
   const locals = []; const centrals = []; let offset = 0;
   for (const [name, content] of Object.entries(files)) {
-    const data = Buffer.from(content, 'utf8'); const nameBuf = Buffer.from(name); const crc = crc32(data);
+    const data = Buffer.isBuffer(content) ? content : Buffer.from(content, 'utf8'); const nameBuf = Buffer.from(name); const crc = crc32(data);
     const lh = Buffer.alloc(30); lh.writeUInt32LE(0x04034b50, 0); lh.writeUInt16LE(20, 4); lh.writeUInt32LE(crc, 14); lh.writeUInt32LE(data.length, 18); lh.writeUInt32LE(data.length, 22); lh.writeUInt16LE(nameBuf.length, 26);
     const ch = Buffer.alloc(46); ch.writeUInt32LE(0x02014b50, 0); ch.writeUInt16LE(20, 4); ch.writeUInt16LE(20, 6); ch.writeUInt32LE(crc, 16); ch.writeUInt32LE(data.length, 20); ch.writeUInt32LE(data.length, 24); ch.writeUInt16LE(nameBuf.length, 28); ch.writeUInt32LE(offset, 42);
     locals.push(lh, nameBuf, data); centrals.push(ch, nameBuf); offset += 30 + nameBuf.length + data.length;
@@ -227,4 +227,4 @@ function makePdf(title, lines, brand) {
   return Buffer.from(out, 'latin1');
 }
 
-module.exports = { unzip, toXLSX, saveFile, storeBuffer, readStored, readSpreadsheet, parseCSV, toCSV, makePdf };
+module.exports = { zipStore, unzip, toXLSX, saveFile, storeBuffer, readStored, readSpreadsheet, parseCSV, toCSV, makePdf };

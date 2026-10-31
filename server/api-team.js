@@ -249,7 +249,7 @@ function candMatch(q) {
   const eMin = num(q.exp_min); const eMax = num(q.exp_max); const sMin = num(q.sal_min); const sMax = num(q.sal_max);
   const from = /^\d{4}-\d{2}-\d{2}$/.test(q.from || '') ? q.from : null; const to = /^\d{4}-\d{2}-\d{2}$/.test(q.to || '') ? q.to : null;
   return (c) => {
-    if (q.dept && c.department !== q.dept) return false;
+    if (q.dept) { const ds = String(q.dept).split(',').map((x) => x.trim()).filter(Boolean); if (ds.length && !ds.includes(c.department)) return false; } // one or several departments
     if (q.job && c.job_wanted !== q.job) return false;
     if (q.city && c.city !== q.city && !(c.work_cities || []).includes(q.city)) return false;
     if (q.state && (c.state || L.stateOf(c.city)) !== q.state) return false;
@@ -737,6 +737,21 @@ function candRows(q, u) {
     .map((c) => ({ ...candidateOut(u, c), status: V.candStatus(c.id) }))
     .filter((c) => !q.status || c.status.startsWith(q.status));
 }
+// Every matching candidate's CV in one zip, with the list as Excel. Downloads are for the super admin only.
+route('GET', '/api/candidates/cvs.zip', { auth: 'team', levels: ['super'] }, (ctx) => {
+  const rows = candRows(ctx.query, ctx.user); const files = {}; let size = 0; let skipped = 0;
+  const safe = (v) => String(v || '').replace(/[^\w .-]+/g, '').trim().slice(0, 60) || 'candidate';
+  for (const c of rows) {
+    const fl = c.cv_file && get('SELECT * FROM files WHERE id=?', c.cv_file); if (!fl) continue;
+    let buf; try { buf = F.readStored(fl); } catch { skipped++; continue; }
+    if (size + buf.length > 200 * 1024 * 1024 || Object.keys(files).length >= 1000) { skipped++; continue; }
+    const ext = (/\.[a-z0-9]{2,5}$/i.exec(fl.name || '') || ['.pdf'])[0];
+    files[`CVs/${c.id} ${safe(c.name)}${ext}`] = buf; size += buf.length;
+  }
+  files['candidates.xlsx'] = F.toXLSX([['ID', 'Name', 'WhatsApp', 'Email', 'Job wanted', 'Department', 'City', 'Experience (yrs)', 'Jewellery (yrs)', 'Status', 'Source', 'CV in zip'], ...rows.map((c) => [c.id, c.name, c.whatsapp, c.email, c.job_wanted, c.department, c.city, c.exp_total ?? '', c.exp_jewellery ?? '', c.status, c.source, Object.keys(files).some((k) => k.startsWith(`CVs/${c.id} `)) ? 'Yes' : 'No'])], 'candidates');
+  D.history(ctx.actor.label, 'download', null, 'candidate CVs', null, `${rows.length} candidates, ${Object.keys(files).length - 1} CVs${skipped ? `, ${skipped} left out` : ''}`, null, ctx.ip);
+  return { __file: { name: `candidates-cvs-${L.istDay()}.zip`, mime: 'application/zip', buf: F.zipStore(files) } };
+});
 route('GET', '/api/candidates', T, (ctx) => {
   const q = ctx.query; const u = ctx.user;
   const ind = q.industry || D.settings().default_industry || 'Jewellery'; const inInd = (c) => ind === 'all' || (c.industry || 'Jewellery') === ind;
@@ -1729,7 +1744,7 @@ route('GET', '/api/reports/:name', T, (ctx) => {
   } else if (name === 'replacements') {
     rows = apps.filter((a) => a.left_date && inR(new Date(a.left_date).toISOString())).map((a) => { const v = V.appView(a); const cl = get('SELECT * FROM clients WHERE id=?', v.client_id); const win = cl.replacement_days || D.settings().replacement_days; return { application: a.id, candidate: v.candidate_name, client: v.client_name, job: v.job_title, joined: L.istFmt(a.joined_at, false), left: a.left_date, days: L.daysBetween(a.joined_at, a.left_date), within_window: L.daysBetween(a.joined_at, a.left_date) <= win ? 'Yes' : 'No', reason: a.left_reason, free_replacement: a.replacement_used ? 'Yes' : 'No' }; });
   } else if (name === 'bank') {
-    const cands = all('SELECT * FROM candidates WHERE merged_into IS NULL AND removed=0 AND junk=0').filter((c) => (!q.city || c.city === q.city) && (!q.dept || c.department === q.dept));
+    const cands = all('SELECT * FROM candidates WHERE merged_into IS NULL AND removed=0 AND junk=0').filter((c) => (!q.city || c.city === q.city) && (!q.dept || String(q.dept).split(',').includes(c.department)));
     const m = {};
     for (const c of cands) { const k = `${c.city || '—'}|${c.department || '—'}`; m[k] = m[k] || { city: c.city || '—', department: c.department || '—', active: 0, new_in_range: 0, fresh_90: 0, stale_90: 0 }; if (['Actively looking', 'Open to offers'].includes(c.looking)) m[k].active++; if (inR(c.created_at)) m[k].new_in_range++; if (L.daysBetween(c.last_updated || c.created_at) <= 90) m[k].fresh_90++; else m[k].stale_90++; }
     rows = Object.values(m).sort((a, b) => b.active - a.active);
