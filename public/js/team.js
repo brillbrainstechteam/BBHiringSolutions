@@ -28,7 +28,7 @@
   const menuFor = (u) => (u.channel_only ? MENU.filter((m) => ['channels', 'logins'].includes(m[0])) : MENU.filter((m) => m[0] !== 'channels' && (!m[3] || m[3].includes(u.level))));
   const MENU = [
     ['channels', 'Hiring channels', 'flow'], ['myday', 'My day', 'sun', ['sub']], ['dashboard', 'Dashboard', 'grid'], ['leads', 'Leads', 'inbox', ['super'], 'leads'],
-    ['clients', 'Clients', 'building'], ['jobs', 'Job openings', 'brief'], ['candidates', 'Candidates', 'users'], ['applications', 'Applications', 'flow'],
+    ['clients', 'Clients', 'building'], ['jobs', 'Job openings', 'brief'], ['candidates', 'Candidates', 'users', null, 'cand_new'], ['applications', 'Applications', 'flow'],
     ['interviews', 'Interviews', 'cal', null, 'pending'], ['whatsapp', 'WhatsApp', 'chat', null, 'unread'],
     ['performance', 'Performance', 'chart'], ['logs', 'Daily logs', 'note'], ['bills', 'Bills', 'rupee', ['super', 'admin']], ['money', 'Money', 'money', ['super']],
     ['reports', 'Reports', 'report'], ['logins', 'Logins & team', 'key'], ['settings', 'Settings', 'cog'],
@@ -38,10 +38,10 @@
     channels: 'The hiring channels you own, for every open job. Copy a job\'s link for the channel, post it, then mark the cell Done.',
     myday: 'Everything you need to do today: interviews, results to record, follow-ups and stuck applications.',
     dashboard: 'Counts and the Needs attention list. Every item has a WhatsApp button to nudge the right person.',
-    leads: 'New clients and candidates from every door (forms, WhatsApp bot, email, Excel). Assign each to an agency.',
+    leads: 'New clients from every door (forms, WhatsApp bot, email, Excel). Assign each to an agency. New candidates go straight to Candidates.',
     clients: 'Jewellery businesses that hire through us. Open one to see onboarding, job openings and chats.',
     jobs: 'Each role a client wants to fill. The status is worked out from its applications — never typed by hand (except On hold and Closed).',
-    candidates: 'The resume bank, shared by all agencies. Segments are saved groups of candidates that stay up to date. Phone numbers show only for your own agency\'s candidates.',
+    candidates: 'Every candidate from every door lands here, with New and Unassigned views. Domain and skills are read from each CV automatically. The resume bank is shared by all agencies. Segments are saved groups of candidates that stay up to date. Phone numbers show only for your own agency\'s candidates.',
     applications: 'One candidate on one job. Move cards step by step; days in this step turn red after 7.',
     interviews: 'Our rounds and client rounds. "Result pending" means the time has passed and no result is recorded.',
     whatsapp: 'One shared inbox. Replies open a 24-hour window for free typing; otherwise only approved formats can be sent.',
@@ -81,7 +81,7 @@
         <span class="who-chip"><span class="av">${esc(u.name.split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase())}</span><span><b>${esc(u.name)}</b><span>${BB.levelName(u.level)}${ag ? ' · ' + esc(ag.name) : ''}</span></span></span>
         <button class="btn sm ghost" data-out>Log out</button></header><div class="page" data-page></div></div></div>`;
     updateNav();
-    $('[data-out]').onclick = async () => { await BB.post('/api/team/logout').catch(() => {}); BB.setToken('team', null); BB.closePanels(); BB.unguard(); loginView(); };
+    $('[data-out]').onclick = async () => { await BB.post('/api/team/logout').catch(() => {}); BB.setToken('team', null); BB.closePanels(); BB.unguard(); BB.me = null; if (BB.setUrl) BB.setUrl('team'); BB.toast('You have logged out'); loginView(); };
     if (!u.channel_only) { $('[data-addlead]').onclick = quickLead; wireSearch(); }
     wireBell();
   }

@@ -167,16 +167,16 @@
   function render() {
     const c = D.client; const p = D.perms;
     const tabs = [['home', 'Home'], ['jobs', 'Job openings'], ...(p.candidates ? [['candidates', 'Candidates', D.counts.to_review]] : []), ['interviews', 'Interviews'], ...(p.bills ? [['bills', 'Bills']] : []), ['company', 'Company & papers']];
-    $('#app').innerHTML = `<div class="pub">${BB.publicTop('Client account')}
+    $('#app').innerHTML = `<div class="pub">${BB.publicTop('Client account', false, 'client')}
       <div class="acct-band"><div class="in"><div class="grow"><span class="eyebrow">${BB.greeting()}, ${esc(String((D.member && D.member.name) || c.contact || '').split(' ')[0] || 'there')}</span><h1 style="margin-top:8px">${esc(c.company)}</h1>
         <p class="welcome-line">Welcome to your BrillBrains client account. Your openings, shortlisted candidates and interviews are all here.</p><div class="meta"><span class="mono">${esc(c.id)}</span> · ${esc(c.city || '')}${D.member ? ` · logged in as ${esc(D.member.name)} (${esc(D.member.role)})` : ''}</div></div>
-        <div class="row"><button class="btn gold" data-raise>${BB.icon('plus', 'wa-ico')} Raise a job opening</button><button class="btn" data-out>Log out</button></div></div></div>
+        <div class="row"><button class="btn gold" data-raise>${BB.icon('plus', 'wa-ico')} Raise a job opening</button></div></div></div>
       <div class="acct">
         <div class="tabs">${tabs.map(([k, l, n]) => `<button data-tab="${k}" class="${tab === k ? 'on' : ''}">${l}${n ? ` <span class="n">${n}</span>` : ''}</button>`).join('')}</div>
         <div data-body></div></div></div>`;
     // Every tab shows the latest: what the team did a minute ago (an interview, a profile) is there.
     $$('[data-tab]').forEach((b) => (b.onclick = () => { tab = b.dataset.tab; BB.setUrl(`my-account/${tab}`); reload().catch(() => render()); }));
-    $('[data-out]').onclick = async () => { await BB.post('/api/account/logout', {}).catch(() => {}); BB.setToken('client', null); BB.route(); };
+    $('[data-logout]').onclick = () => BB.logout('client');
     $('[data-raise]').onclick = raiseJob;
     const body = $('[data-body]');
     ({ home, jobs, candidates, interviews, bills, company }[tab] || home)(body);

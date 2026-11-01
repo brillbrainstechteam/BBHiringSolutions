@@ -112,6 +112,7 @@ function runTimer() {
 
 function safeRun() { try { runTimer(); } catch (e) { console.error('timer', e); require('./alerts').devAlert('Timer run failed', e.message); } }
 function start() {
+  require('./extract').start(); // reads domain and skills for new candidates and new CVs
   setTimeout(safeRun, 5000);
   setInterval(safeRun, 10 * 60 * 1000);
   // Watchdog: alert if the timer has not finished a run for 30 minutes.

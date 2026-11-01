@@ -173,7 +173,7 @@
     </div>`;
     const cp = $('[data-copyid]', card); if (cp) cp.onclick = () => BB.copy(res.id);
     const acc = $('[data-access]', card);
-    if (mode === 'job' && BB.boot.candidate_login === false) { if (acc) acc.remove(); return; } // candidate login is switched off
+    if (mode === 'job' && BB.boot.candidate_login === false) { const panel = $('.ty-access', card); if (panel) panel.remove(); return; } // candidate login is switched off: no empty box
 
     const pretty = res.phone ? `+91 ${esc(res.phone.slice(0, 5))} ${esc(res.phone.slice(5))}` : '';
     const phoneLine = `<div class="phone-line"><span class="muted small">WhatsApp</span><b class="mono">${pretty}</b><a href="#" class="small right" data-edit>Wrong number?</a></div>`;

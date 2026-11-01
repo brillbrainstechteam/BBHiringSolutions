@@ -45,19 +45,20 @@
   const CAND_MORE = ['from', 'to', 'exp_min', 'exp_max', 'sal_min', 'sal_max'];
   // A drop-down of tick boxes (several values at once), saved as "a,b,c" in the address.
   const multiSel = (k, all, plural, opts, val) => { const on = String(val || '').split(',').filter(Boolean);
-    return `<details class="msel" data-msel="${k}"><summary>${on.length === 0 ? all : on.length === 1 ? esc(on[0]) : `${on.length} ${plural}`}</summary><div class="msel-pop"><div class="msel-list">${opts.map((o) => `<label class="row small"><input type="checkbox" value="${esc(o)}" ${on.includes(o) ? 'checked' : ''}> ${esc(o)}</label>`).join('')}</div><div class="row msel-foot"><button type="button" class="btn sm ghost" data-mclear>Clear</button><button type="button" class="btn sm primary" data-mapply>Apply</button></div></div></details>`; };
+    return `<details class="msel" data-msel="${k}"><summary>${on.length === 0 ? all : on.length === 1 ? esc(on[0]) : `${on.length} ${plural}`}</summary><div class="msel-pop">${opts.length > 8 ? '<input class="msel-find" placeholder="Find…" data-mfind>' : ''}<div class="msel-list">${[...opts].sort((a, b) => Number(on.includes(b)) - Number(on.includes(a))).map((o) => `<label class="row small"><input type="checkbox" value="${esc(o)}" ${on.includes(o) ? 'checked' : ''}> ${esc(o)}</label>`).join('')}</div><div class="row msel-foot"><button type="button" class="btn sm ghost" data-mclear>Clear</button><button type="button" class="btn sm primary" data-mapply>Apply</button></div></div></details>`; };
   BB.wireMultiSel = (root) => $$('[data-msel]', root).forEach((d) => {
     const k = d.dataset.msel; const apply = (v) => BB.setQ({ [k]: v, page: 1 });
     $('[data-mapply]', d).onclick = () => apply($$('input:checked', d).map((x) => x.value).join(','));
     $('[data-mclear]', d).onclick = () => apply('');
+    const fd = $('[data-mfind]', d); if (fd) fd.oninput = () => { const w = fd.value.trim().toLowerCase(); $$('.msel-list label', d).forEach((l) => { l.hidden = !!w && !l.textContent.toLowerCase().includes(w); }); };
   });
-  function candFilters(q, desigs) {
+  function candFilters(q, desigs, skills) {
     const s = BB.boot;
     const sel = (k, label, opts) => `<select data-f="${k}"><option value="">${label}</option>${opts.map((o) => { const [v, t] = Array.isArray(o) ? o : [o, o]; return `<option value="${esc(v)}" ${String(q[k] || '') === String(v) ? 'selected' : ''}>${esc(t)}</option>`; }).join('')}</select>`;
     const states = [...new Set((s.places || []).map((x) => x.state).filter(Boolean))].sort();
     const n = (k, ph) => `<input type="number" min="0" placeholder="${ph}" data-f="${k}" value="${esc(q[k] || '')}">`;
     return {
-      main: `${multiSel('dept', 'All departments', 'departments', s.departments || [], q.dept)}${sel('job', 'All designations', desigs)}${sel('city', 'All cities', s.cities || [])}${sel('state', 'All states', states)}${sel('jewellery', 'Any jewellery experience', [['0', 'Jewellery: no experience'], ['lt1', 'Jewellery: under 1 year'], ['1-3', 'Jewellery: 1–3 years'], ['3-5', 'Jewellery: 3–5 years'], ['5-10', 'Jewellery: 5–10 years'], ['10+', 'Jewellery: 10+ years']])}`,
+      main: `${multiSel('domain', 'All domains', 'domains', [...(s.industry_list || []), 'Other', 'Not clear', 'Not read yet'], q.domain)}${multiSel('dept', 'All departments', 'departments', s.departments || [], q.dept)}${multiSel('job', 'All designations', 'designations', desigs, q.job)}${multiSel('skills', 'All skills', 'skills', skills || [], q.skills)}${multiSel('city', 'All cities', 'cities', s.cities || [], q.city)}${multiSel('state', 'All states', 'states', states, q.state)}${multiSel('source', 'All sources', 'sources', [...new Set([...(s.lead_sources || []), ...String(q.source || '').split(',').filter(Boolean)])], q.source)}${sel('jewellery', 'Jewellery experience', [['0', 'Jewellery: no experience'], ['lt1', 'Jewellery: under 1 year'], ['1-3', 'Jewellery: 1–3 years'], ['3-5', 'Jewellery: 3–5 years'], ['5-10', 'Jewellery: 5–10 years'], ['10+', 'Jewellery: 10+ years']])}`,
       more: `<div class="grid g2"><label class="mf"><span>Applied from</span><input type="date" data-f="from" value="${esc(q.from || '')}"></label><label class="mf"><span>Applied up to</span><input type="date" data-f="to" value="${esc(q.to || '')}"></label></div>
         <div class="grid g4"><label class="mf"><span>Experience from (years)</span>${n('exp_min', 'Min')}</label><label class="mf"><span>Experience up to (years)</span>${n('exp_max', 'Max')}</label><label class="mf"><span>Expected salary from (₹/month)</span>${n('sal_min', 'Min')}</label><label class="mf"><span>Expected salary up to (₹/month)</span>${n('sal_max', 'Max')}</label></div>`,
       count: (extra = []) => [...CAND_MORE, ...extra].filter((k) => q[k]).length,
@@ -65,21 +66,23 @@
   }
   const jewYrs = (y) => (y === null || y === undefined ? '—' : y === 0 ? 'None' : `${y} yrs`);
   const moreBtn = (n) => `More filters${n ? ` <span class="badge b-primary tiny">${n}</span>` : ''}`;
-  const anyCandFilter = (q) => ['dept', 'job', 'city', 'state', 'jewellery', 'ad', ...CAND_MORE].some((k) => q[k]);
-  const clearCandFilters = () => BB.setQ(Object.fromEntries(['dept', 'job', 'city', 'state', 'jewellery', 'ad', ...CAND_MORE, 'q', 'source', 'looking', 'status', 'notice', 'updated', 'stale'].map((k) => [k, ''])));
+  const anyCandFilter = (q) => ['domain', 'skills', 'source', 'new', 'agency', 'dept', 'job', 'city', 'state', 'jewellery', 'ad', ...CAND_MORE].some((k) => q[k]);
+  const clearCandFilters = () => BB.setQ(Object.fromEntries(['domain', 'skills', 'new', 'agency', 'dept', 'job', 'city', 'state', 'jewellery', 'ad', ...CAND_MORE, 'q', 'source', 'looking', 'status', 'notice', 'updated', 'stale'].map((k) => [k, ''])));
+
+  // Possible repeats and records with a problem, with a Merge button (Leads for clients, Candidates for candidates).
+  const checkTable = (rows) => BB.table([{ t: 'ID', f: (r) => `<span class="mono">${r.id}</span>` }, { t: 'Name', f: (r) => esc(r.label || '—') }, { t: 'Problem', f: (r) => `${r.needs_check ? `<span class="badge b-amber">${esc(r.needs_check)}</span>` : ''}${r.possible_repeat_of ? `<span class="badge b-amber">Possible repeat of ${esc(r.possible_repeat_of)}</span>` : ''}` }, { t: 'Source', f: (r) => esc(r.source) }, { t: '', f: (r) => `<div class="row nowrap" onclick="event.stopPropagation()">${r.possible_repeat_of ? `<button class="btn sm" data-merge="${r.type}:${r.possible_repeat_of}:${r.id}">Merge</button>` : ''}</div>` }], rows, { open: (r) => `${r.type}:${r.id}`, empty: 'Nothing to check.' });
 
   // ---------- Leads ----------
   P.leads = async ({ el, actions, q }) => {
+    if (q.tab === 'candidate') return BB.go('team/candidates?new=1'); // candidate leads moved to Candidates
     const tab = q.tab || 'client';
-    const d = await BB.api(`/api/leads?${BB.qs(q, { tab: undefined })}`);
+    const d = await BB.api(`/api/leads?${BB.qs(q, { tab: undefined })}`); d.check = d.check.filter((r) => r.type === 'client');
     actions.innerHTML = dl(`/api/leads?${BB.qs(q, { tab, format: 'xlsx' })}`); wireDl(actions);
     const agencyOpts = d.agencies.map((a) => `<option value="${a.id}">${esc(a.name)}</option>`).join('');
     const assignCell = (type, r) => (r.agency_id ? `<span class="badge b-outline">${esc(r.agency_id)}</span>` : `<select data-assign="${type}:${r.id}" class="mini"><option value="">Assign to agency…</option>${agencyOpts}</select>`);
     const src = Object.entries(d.sources).sort((a, b) => b[1] - a[1]);
     el.innerHTML = `<div class="card pad" style="margin-bottom:14px"><div class="row between"><b>Leads by source · last ${q.days || 30} days</b><div class="seg">${[7, 30].map((n) => `<button data-days="${n}" class="${String(q.days || 30) === String(n) ? 'on' : ''}">${n} days</button>`).join('')}</div></div><div class="row" style="margin-top:8px">${src.map(([s, n]) => `<span class="chip" data-src="${esc(s)}">${esc(s)} <span class="n">${n}</span>${d.hires[s] ? ` <span class="badge b-green tiny">${d.hires[s]} hired</span>` : ''}</span>`).join('') || '<span class="faint">No leads yet.</span>'}</div></div>
-      <div class="tabs">${[['client', 'Client leads', d.clients.length], ['candidate', 'Candidate leads', d.candidates.length], ['check', 'Needs checking', d.check.length]].map(([k, l, n]) => `<button data-tab="${k}" class="${tab === k ? 'on' : ''}">${l} <span class="n">${n}</span></button>`).join('')}</div>
-      ${tab === 'candidate' ? (() => { const cf = candFilters(q, [...new Set([...BB.boot.jobs.map((j) => j.title), ...d.candidates.map((c) => c.job_wanted).filter(Boolean)])]); return `<div class="filters cand-filters">${cf.main}
-        <details class="more-f" ${BB.moreFiltersOpen ? 'open' : ''}><summary class="btn sm">${moreBtn(cf.count())}</summary><div class="card more-pop">${cf.more}</div></details>${anyCandFilter(q) ? '<button class="btn sm ghost" data-clear>Clear filters</button>' : ''}</div>`; })() : ''}
+      <div class="tabs">${[['client', 'Client leads', d.clients.length], ['check', 'Needs checking', d.check.length]].map(([k, l, n]) => `<button data-tab="${k}" class="${tab === k ? 'on' : ''}">${l} <span class="n">${n}</span></button>`).join('')}</div>
       <div class="filters"><select data-f="source"><option value="">All sources</option>${BB.boot.lead_sources.map((s) => `<option ${q.source === s ? 'selected' : ''}>${esc(s)}</option>`).join('')}</select><label class="row small"><input type="checkbox" data-f="all" ${q.all ? 'checked' : ''}> Include assigned</label><label class="row small"><input type="checkbox" data-f="new" ${q.new ? 'checked' : ''}> New only</label></div>
       ${tab !== 'check' ? `<div class="row small bulkbar" data-leadbar><span class="muted" data-selcount>Tick leads to act on them:</span>
         <button class="btn sm" data-lb="download">Download selected</button>
@@ -91,8 +94,7 @@
       <div class="card" data-list></div>`;
     const list = $('[data-list]', el);
     if (tab === 'client') list.innerHTML = BB.table([{ t: '', f: (r) => (r.is_new ? '<span class="dot new" title="new"></span>' : '') }, { t: 'ID', f: (r) => `<span class="mono">${r.id}</span>` }, { t: 'Company', f: (r) => `<b>${esc(r.company)}</b><div class="tiny muted">${esc(r.contact)}</div>` }, { t: 'City', f: (r) => esc(r.city) }, { t: 'Need', f: (r) => esc(r.need) }, { t: 'Source', f: (r) => esc(r.source) }, { t: 'Came', f: (r) => `<span class="nw">${BB.daysAgo(r.created_at)}</span>` }, { t: 'Agency', f: (r) => assignCell('client', r) }, { t: '', f: (r) => `<div class="row nowrap" onclick="event.stopPropagation()">${BB.waBtn({ ptype: 'client', pid: r.id, format: 'bbhs_client_welcome' }, '', 'btn sm icon wa')}</div>` }], d.clients, { open: (r) => `client:${r.id}`, select: true, empty: 'No new client leads.' });
-    else if (tab === 'candidate') list.innerHTML = BB.table([{ t: '', f: (r) => (r.is_new ? '<span class="dot new"></span>' : '') }, { t: 'ID', f: (r) => `<span class="mono">${r.id}</span>` }, { t: 'Name', f: (r) => `<b>${esc(r.name)}</b>` }, { t: 'Job wanted', f: (r) => esc(r.job_wanted) }, { t: 'City', f: (r) => esc(r.city) }, { t: 'Jewellery exp', f: (r) => jewYrs(r.exp_jewellery) }, { t: 'Source', f: (r) => esc(r.source) }, { t: 'Came', f: (r) => `<span class="nw">${BB.daysAgo(r.created_at)}</span>` }, { t: 'Agency', f: (r) => assignCell('candidate', r) }, { t: '', f: (r) => `<div class="row nowrap" onclick="event.stopPropagation()">${BB.waBtn({ ptype: 'candidate', pid: r.id, format: 'bbhs_candidate_welcome' }, '', 'btn sm icon wa')}</div>` }], d.candidates, { open: (r) => `candidate:${r.id}`, select: true, empty: 'No new candidate leads.' });
-    else list.innerHTML = BB.table([{ t: 'ID', f: (r) => `<span class="mono">${r.id}</span>` }, { t: 'Type', f: (r) => r.type }, { t: 'Name', f: (r) => esc(r.label || '—') }, { t: 'Problem', f: (r) => `${r.needs_check ? `<span class="badge b-amber">${esc(r.needs_check)}</span>` : ''}${r.possible_repeat_of ? `<span class="badge b-amber">Possible repeat of ${esc(r.possible_repeat_of)}</span>` : ''}` }, { t: 'Source', f: (r) => esc(r.source) }, { t: '', f: (r) => `<div class="row nowrap" onclick="event.stopPropagation()">${r.possible_repeat_of ? `<button class="btn sm" data-merge="${r.type}:${r.possible_repeat_of}:${r.id}">Merge</button>` : ''}</div>` }], d.check, { open: (r) => `${r.type}:${r.id}`, empty: 'Nothing to check.' });
+    else list.innerHTML = checkTable(d.check);
     $$('[data-tab]', el).forEach((b) => (b.onclick = () => BB.setQ({ tab: b.dataset.tab })));
     $$('[data-days]', el).forEach((b) => (b.onclick = () => BB.setQ({ days: b.dataset.days })));
     $$('[data-src]', el).forEach((b) => (b.onclick = () => BB.setQ({ source: q.source === b.dataset.src ? '' : b.dataset.src })));
@@ -307,9 +309,9 @@
 
   // ---------- Segments: saved candidate filters, shared with the team, downloadable ----------
   const JEW_LABEL = { 0: 'no experience', lt1: 'under 1 year', '1-3': '1–3 years', '3-5': '3–5 years', '5-10': '5–10 years', '10+': '10+ years' };
-  const SEG_LABEL = [['q', 'Search'], ['industry', 'Industry', (v) => (v === 'all' ? 'All industries' : v)], ['dept', 'Department'], ['job', 'Designation'], ['city', 'City'], ['state', 'State'], ['jewellery', 'Jewellery', (v) => JEW_LABEL[v] || v],
+  const SEG_LABEL = [['q', 'Search'], ['industry', 'Industry', (v) => (v === 'all' ? 'All industries' : v)], ['domain', 'Domain'], ['skills', 'Skills'], ['dept', 'Department'], ['job', 'Designation'], ['city', 'City'], ['state', 'State'], ['jewellery', 'Jewellery', (v) => JEW_LABEL[v] || v],
     ['from', 'Applied from'], ['to', 'Applied up to'], ['exp_min', 'Experience from', (v) => `${v} yrs`], ['exp_max', 'Experience up to', (v) => `${v} yrs`], ['sal_min', 'Expected salary from', (v) => `${inr(v)}/mo`], ['sal_max', 'Expected salary up to', (v) => `${inr(v)}/mo`],
-    ['looking', 'Looking'], ['status', 'Status'], ['source', 'Source'], ['ad', 'Ad'], ['updated', 'Updated in last', (v) => `${v} days`], ['notice', 'Notice up to', (v) => `${v} days`], ['stale', 'Not updated in 90+ days', () => 'yes'], ['archived', 'Archived', () => 'yes']];
+    ['looking', 'Current job status'], ['status', 'Status'], ['source', 'Source'], ['ad', 'Ad'], ['updated', 'Updated in last', (v) => `${v} days`], ['notice', 'Notice up to', (v) => `${v} days`], ['stale', 'Not updated in 90+ days', () => 'yes'], ['archived', 'Archived', () => 'yes']];
   const segChips = (q) => SEG_LABEL.filter(([k]) => q[k]).map(([k, l, f]) => `<span class="chip">${esc(l)}: <b>${esc(f ? f(q[k]) : q[k])}</b></span>`).join('') || '<span class="faint">All candidates</span>';
 
   // Share / rename / delete / copy link / download buttons, the same in the segment list and on an open segment.
@@ -362,11 +364,12 @@
   P.candidates = async (ctx) => {
     const { el, actions, q } = ctx; const tab = q.tab || 'bank';
     // Gap view is hidden for now (its page still works at ?tab=gap); put ['gap', 'Gap view'] back in this list to show it.
-    el.innerHTML = `<div class="tabs">${[['bank', 'Resume bank'], ['segments', 'Segments'], ['tieups', 'Tie-ups'], ['import', 'Upload Excel']].map(([k, l]) => `<button data-tab="${k}" class="${tab === k ? 'on' : ''}">${l}</button>`).join('')}</div><div data-tabbody></div>`;
+    el.innerHTML = `<div class="tabs">${[['bank', 'Resume bank'], ['segments', 'Segments'], ...(ctx.me.level === 'super' ? [['check', 'Needs checking']] : []), ['tieups', 'Tie-ups'], ['import', 'Upload Excel']].map(([k, l]) => `<button data-tab="${k}" class="${tab === k ? 'on' : ''}">${l}</button>`).join('')}</div><div data-tabbody></div>`;
     $$('[data-tab]', el).forEach((b) => (b.onclick = () => BB.setQ({ tab: b.dataset.tab === 'bank' ? '' : b.dataset.tab, page: '', seg: '' })));
     const body = $('[data-tabbody]', el); actions.innerHTML = '';
     if (tab === 'segments') return segmentsTab(body, actions, q, ctx.me);
     if (tab === 'gap') return gapView(body);
+    if (tab === 'check') { const d = await BB.api('/api/leads'); body.innerHTML = `<div class="card">${checkTable(d.check.filter((r) => r.type === 'candidate'))}</div>`; $$('[data-merge]', body).forEach((b) => (b.onclick = () => { const [type, a, c] = b.dataset.merge.split(':'); BB.mergeScreen(type, a, c); })); return; }
     if (tab === 'tieups') return tieups(body);
     if (tab === 'import') return importView(body, ctx.me);
     return bank(body, actions, q, ctx.me);
@@ -381,12 +384,10 @@
     const editing = !seg && q.editseg ? saved.find((x) => String(x.id) === String(q.editseg)) : null;
     actions.innerHTML = seg ? '<button class="btn" data-backseg>← All segments</button>' : `${superAdmin ? `${dl(`/api/candidates?${BB.qs(q, { format: 'xlsx', tab: undefined, editseg: undefined })}`).replace('>Download<', ' title="Every matching candidate as an Excel list">Download list<')}<button class="btn sm" data-dl="/api/candidates/cvs.zip?${esc(BB.qs(q, { tab: undefined, editseg: undefined, page: undefined }))}" title="Every matching candidate's CV in one zip, with the list">Download CVs (zip)</button>` : ''}<button class="btn" data-up>Upload Excel</button><button class="btn" data-fromcv>Add from resumes</button><button class="btn primary" data-new>+ Create candidate account</button>`;
     // Industry: Jewellery unless another (or "All industries") is picked; designations follow the industry.
-    const indNow = q.industry || s.default_industry || 'Jewellery';
-    const indSel = `<select data-f="industry" title="Industry">${[['all', 'All industries'], ...(s.industry_list || ['Jewellery'])].map((o) => { const [v, t] = Array.isArray(o) ? o : [o, o]; return `<option value="${esc(v)}" ${indNow === v ? 'selected' : ''}>${esc(t)}</option>`; }).join('')}</select>`;
-    const desigs = [...new Set([...(indNow === 'Jewellery' || indNow === 'all' ? s.jobs.map((j) => j.title) : []), ...(r.designations || [])])];
+    const desigs = [...new Set([...s.jobs.map((j) => j.title), ...(r.designations || [])])];
     const sel = (k, label, opts) => `<select data-f="${k}"><option value="">${label}</option>${opts.map((o) => { const [v, t] = Array.isArray(o) ? o : [o, o]; return `<option value="${esc(v)}" ${String(q[k] || '') === String(v) ? 'selected' : ''}>${esc(t)}</option>`; }).join('')}</select>`;
-    const cf = candFilters(q, desigs);
-    const total = r.total ?? r.rows.length; const filtered = anyCandFilter(q) || q.q || q.looking || q.status || q.source || q.updated || q.notice || q.stale;
+    const cf = candFilters(q, desigs, (r.quick || {}).skills);
+    const total = r.total ?? r.rows.length; const filtered = anyCandFilter(q) || q.q || q.looking || q.status || q.updated || q.notice || q.stale;
     const LOOK_BADGE = { 'Actively looking': 'b-green', 'Open to offers': 'b-primary', 'Not reachable': 'b-amber', Placed: 'b-gold' };
     const bulkBtn = (a, label, cls = '') => `<button class="btn sm ${cls}" data-bulk="${a}" disabled>${label}</button>`;
     // An open segment: its name, live count and filters, with the segment's own buttons.
@@ -394,28 +395,27 @@
       <div class="row cand-seg">${segButtons(seg, seg.can_download, false)}</div></div></section>` : '';
     // Filters and saved segments in one card; the selection bar; then the table in its own scroll box.
     const head = seg ? segHead : `<section class="card cand-panel">
-      <div class="filters cand-filters"><input placeholder="Search name, ID, phone, job…" value="${esc(q.q || '')}" data-q aria-label="Search candidates">${indSel}${cf.main}${sel('looking', 'Any looking status', BB.boot.looking)}${sel('status', 'Any status', ['Available', 'In process', 'Hired'])}${(r.ads || []).length || q.ad ? sel('ad', 'Any ad', r.ads || [q.ad]) : ''}
-      <details class="more-f" ${BB.moreFiltersOpen ? 'open' : ''}><summary class="btn sm">${moreBtn(cf.count(['source', 'notice', 'updated', 'stale']))}</summary><div class="card more-pop">
+      <div class="filters cand-filters"><input placeholder="Search name, ID, phone, job…" value="${esc(q.q || '')}" data-q aria-label="Search candidates">${cf.main}${sel('looking', 'Current job status', BB.boot.looking)}${sel('status', 'Any status', ['Available', 'In process', 'Hired'])}${(r.ads || []).length || q.ad ? sel('ad', 'Any ad', r.ads || [q.ad]) : ''}
+      <details class="more-f" ${BB.moreFiltersOpen ? 'open' : ''}><summary class="btn sm">${moreBtn(cf.count(['notice', 'updated', 'stale']))}</summary><div class="card more-pop">
         ${cf.more}
-        <div class="grid g3"><label class="mf"><span>Source</span>${sel('source', 'Any source', s.lead_sources)}</label><label class="mf"><span>Profile last updated</span>${sel('updated', 'Any time', [['7', 'Last 7 days'], ['30', 'Last 30 days'], ['90', 'Last 90 days']])}</label><label class="mf"><span>Notice period up to (days)</span><input type="number" min="0" placeholder="Days" data-f="notice" value="${esc(q.notice || '')}"></label></div>
+        <div class="grid g2"><label class="mf"><span>Profile last updated</span>${sel('updated', 'Any time', [['7', 'Last 7 days'], ['30', 'Last 30 days'], ['90', 'Last 90 days']])}</label><label class="mf"><span>Notice period up to (days)</span><input type="number" min="0" placeholder="Days" data-f="notice" value="${esc(q.notice || '')}"></label></div>
         <label class="row small mf-check"><input type="checkbox" data-f="stale" ${q.stale ? 'checked' : ''}> Only profiles not updated in 90+ days</label></div></details></div>
       <div class="cand-result"><div class="cand-count"><b>${total}</b> candidate${total === 1 ? '' : 's'}${filtered ? ' <span class="faint">match these filters</span>' : ''}</div>
+        ${superAdmin && r.quick ? `<div class="chips cand-views"><button class="chip ${!q.new && !q.agency ? 'on' : ''}" data-view="">All</button><button class="chip ${q.new ? 'on' : ''}" data-view="new">New <span>${r.quick.new}</span></button><button class="chip ${q.agency === 'none' ? 'on' : ''}" data-view="none">Unassigned <span>${r.quick.unassigned}</span></button>${r.quick.check ? `<button class="chip" data-view="check">Needs checking <span>${r.quick.check}</span></button>` : ''}</div>` : ''}
         <div class="row cand-seg">${filtered ? '<button class="btn sm ghost" data-clear>Clear filters</button>' : ''}${saved.length ? sel('saved', 'Open a segment…', saved.map((x) => [x.id, x.name])) : ''}${editing ? `<button class="btn sm primary" data-updseg>Update “${esc(editing.name)}”</button>` : ''}<button class="btn sm" data-save>${editing ? 'Save as new segment' : 'Save as segment'}</button></div></div>
     </section>`;
     el.innerHTML = `${head}
     <div class="row small bulkbar cand-bulk" data-bulkbar><span class="sel-count" data-selcount>Select the checkboxes to take actions</span>
-      ${bulkBtn('add_to_job', 'Add to a job')}${me.level !== 'sub' ? bulkBtn('alert', 'Send job alert', 'gold') : ''}${bulkBtn('set_looking', 'Set status')}${bulkBtn('note', 'Add note')}${bulkBtn('followup', 'Follow-up')}${me.level !== 'sub' ? `${bulkBtn('assign', 'Assign recruiter')}${bulkBtn(q.archived ? 'unarchive' : 'archive', q.archived ? 'Unarchive' : 'Archive')}` : ''}${superAdmin ? bulkBtn('download', 'Download selected') : ''}${me.level !== 'sub' ? bulkBtn('delete', 'Delete', 'danger') : ''}<button class="btn sm ghost" data-unsel hidden>Clear selection</button></div>
+      ${bulkBtn('add_to_job', 'Add to a job')}${me.level !== 'sub' ? bulkBtn('alert', 'Send job alert', 'gold') : ''}${bulkBtn('set_looking', 'Set job status')}${bulkBtn('note', 'Add note')}${bulkBtn('followup', 'Follow-up')}${me.level !== 'sub' ? `${bulkBtn('assign', 'Assign recruiter')}${bulkBtn(q.archived ? 'unarchive' : 'archive', q.archived ? 'Unarchive' : 'Archive')}` : ''}${superAdmin ? `${bulkBtn('agency', 'Assign to agency')}${bulkBtn('welcome', 'Send account link')}${bulkBtn('seen', 'Mark as seen')}${bulkBtn('download', 'Download selected')}${bulkBtn('junk', 'Mark as junk')}` : ''}${me.level !== 'sub' ? bulkBtn('delete', 'Delete', 'danger') : ''}<button class="btn sm ghost" data-unsel hidden>Clear selection</button></div>
     <div class="card cand-table">${BB.table([
-      { t: 'ID', f: (c) => `<span class="mono">${c.id}</span>${c.is_new ? ' <span class="dot new" title="New"></span>' : ''}<div class="tiny muted" title="Applied">${fmtD(c.created_at)}</div>` },
-      { t: 'Name', cls: 'name-col', f: (c) => `<b>${esc(c.name)}</b>${c.opted_out ? ' <span class="badge b-red tiny">STOP</span>' : ''}<div class="mono tiny ${c.phone_hidden ? 'faint' : 'muted'}">${esc(c.whatsapp)}</div>` },
-      { t: 'Job wanted', cls: 'wrap', f: (c) => esc(c.job_wanted) || '<span class="faint">—</span>' },
+      { t: 'Candidate', cls: 'name-col', f: (c) => `<b>${esc(c.name)}</b>${c.is_new ? ' <span class="dot new" title="New"></span>' : ''}${c.opted_out ? ' <span class="badge b-red tiny">STOP</span>' : ''}<div class="mono tiny ${c.phone_hidden ? 'faint' : 'muted'}">${esc(c.whatsapp)}</div><div class="mono tiny faint">${c.id}</div>` },
+      { t: 'Role and domain', cls: 'wrap', f: (c) => `${esc(c.job_wanted) || '<span class="faint">—</span>'}<div class="tiny muted">${c.domain && c.domain !== 'Not clear' ? esc(c.domain) : ''}</div>` },
+      { t: 'Skills', cls: 'skills-col', f: (c) => { const sk = c.skills || []; return sk.length ? `<div class="sk-wrap">${sk.slice(0, 5).map((x) => `<span class="sk">${esc(x)}</span>`).join('')}${sk.length > 5 ? `<span class="sk more" title="${esc(sk.slice(5).join(', '))}">+${sk.length - 5}</span>` : ''}</div>` : '<span class="faint">—</span>'; } },
+      { t: 'Experience', f: (c) => `${c.exp_total === null || c.exp_total === undefined ? '—' : `${c.exp_total} yrs`}<div class="tiny muted">Jewellery: ${jewYrs(c.exp_jewellery)}</div>` },
       { t: 'City', cls: 'city-col', f: (c) => esc(c.city) },
-      { t: 'Exp', f: (c) => (c.exp_total === null || c.exp_total === undefined ? '—' : `${c.exp_total} yrs`) },
-      { t: 'Jewel Exp', f: (c) => jewYrs(c.exp_jewellery) },
       { t: 'Expects /mo', num: 1, f: (c) => (c.exp_salary ? inr(c.exp_salary / 12) : '—'), hideSm: 1 },
-      { t: 'Status', cls: 'stack-col', f: (c) => `${c.looking ? `<span class="badge ${LOOK_BADGE[c.looking] || 'b-outline'}">${esc(c.looking)}</span>` : ''}<span class="badge ${c.status === 'Hired' ? 'b-green' : c.status.startsWith('In process') ? 'b-primary' : 'b-outline'}">${esc(c.status)}</span>` },
-      { t: 'Source', cls: 'wrap', f: (c) => `${esc(c.source)}${c.ad_set || c.ad_name || c.ad_campaign ? `<div class="tiny muted">${esc(c.ad_name || c.ad_set || c.ad_campaign)}</div>` : ''}`, hideSm: 1 },
-      { t: '<span class="sr-only">Profile</span>', cls: 'act-col', f: (c) => `<button class="btn sm" data-pdl="${c.id}" title="Download ${esc(c.name)}'s profile as PDF" onclick="event.stopPropagation()">PDF</button>` },
+      { t: 'Status', cls: 'stack-col', f: (c) => `<span class="badge ${c.status === 'Hired' ? 'b-green' : c.status.startsWith('In process') ? 'b-primary' : 'b-outline'}">${esc(c.status)}</span>${c.looking && c.status === 'Available' ? `<div class="tiny muted">${esc(c.looking)}</div>` : ''}` },
+      { t: 'Applied', f: (c) => `${fmtD(c.created_at)}<div class="tiny muted src-cut" title="${esc(c.ad_name || c.ad_set || c.ad_campaign || c.source || '')}">${esc(c.source || '')}</div>`, hideSm: 1 },
     ], r.rows, { open: (c) => `candidate:${c.id}`, select: true, scroll: true, empty: filtered ? 'No candidates match these filters.' : 'No candidates yet.' })}${BB.pager(r)}</div>`;
     // More filters stays open while filters in it are changed (each change redraws the list).
     const mf = $('.more-f', el); if (mf) mf.ontoggle = () => { BB.moreFiltersOpen = mf.open; };
@@ -428,7 +428,7 @@
     $('[data-unsel]', bar).onclick = () => { $$('[data-sel], [data-all]', el).forEach((x) => { x.checked = false; }); onSel(); };
     // A shadow on the fixed columns once the table is scrolled sideways, so it is clear more columns sit to the right.
     const box = $('.tbl-scroll', el); if (box) { const edge = () => { box.classList.toggle('scrolled-x', box.scrollLeft > 2); box.classList.toggle('more-x', box.scrollLeft + box.clientWidth < box.scrollWidth - 2); }; box.addEventListener('scroll', edge, { passive: true }); edge(); }
-    $$('[data-pdl]', el).forEach((b) => b.addEventListener('click', () => BB.download(`/api/candidates/${b.dataset.pdl}/profile.pdf`)));
+    $$('[data-view]', el).forEach((b) => (b.onclick = () => { const v = b.dataset.view; if (v === 'check') return BB.setQ({ tab: 'check', page: '' }); BB.setQ({ new: v === 'new' ? '1' : '', agency: v === 'none' ? 'none' : '', page: 1 }); }));
     const openSeg = (id) => BB.go(`team/candidates?tab=segments&seg=${id}`);
     if (seg) {
       $('[data-backseg]', actions).onclick = () => BB.setQ({ seg: '', page: '' });
@@ -449,7 +449,12 @@
       // Shows what was done and, if some were skipped, why (e.g. another agency's candidate).
       const report = (res) => { if (!res) return; BB.toast(`${res.done} done${res.errors.length ? `, ${res.errors.length} skipped` : ''}`); if (res.errors.length) BB.modal({ title: `${res.errors.length} skipped`, body: `<div class="stack-sm small">${res.errors.slice(0, 30).map((x) => `<div>${esc(x)}</div>`).join('')}${res.errors.length > 30 ? `<div class="faint">…and ${res.errors.length - 30} more</div>` : ''}</div>` }); BB.refreshPage(); };
       const send = (extra) => BB.post('/api/candidates/bulk', { ids, action: act, ...extra });
-      if (act === 'set_looking') return BB.ask({ title: `Set status · ${n}`, fields: [{ name: 'looking', label: 'Looking status', type: 'select', options: BB.boot.looking, placeholder: false }], ok: 'Update', submit: send }).then(report);
+      const lead = (action) => BB.post('/api/leads/bulk', { type: 'candidate', ids, action }).then((x) => ({ done: x.done, errors: x.skipped })).then(report).catch(BB.fail);
+      if (act === 'seen') return lead('seen');
+      if (act === 'junk') return BB.confirm('Mark as junk', `${n} will be hidden from all lists (not deleted).`, 'Mark as junk').then((ok) => ok && lead('junk'));
+      if (act === 'welcome') return BB.confirm('Send account link on WhatsApp', `${n} get their welcome message with the link to their profile. People who said STOP are skipped.`, 'Send').then((ok) => ok && lead('welcome'));
+      if (act === 'agency') return BB.api('/api/users').then((d) => BB.ask({ title: `Assign to agency · ${n}`, note: 'The agency admin gets a task alert.', fields: [{ name: 'agency_id', label: 'Agency', type: 'select', options: d.agencies.filter((a) => a.status === 'Active').map((a) => [a.id, a.name]) }], ok: 'Assign', submit: (v) => BB.post('/api/leads/assign', { type: 'candidate', ids, agency_id: v.agency_id }) })).then((x) => { if (x) { BB.toast(`${x.count} assigned`); BB.refreshPage(); } });
+      if (act === 'set_looking') return BB.ask({ title: `Set job status · ${n}`, fields: [{ name: 'looking', label: 'Current job status', type: 'select', options: BB.boot.looking, placeholder: false }], ok: 'Update', submit: send }).then(report);
       if (act === 'note') return BB.ask({ title: `Add note · ${n}`, fields: [{ name: 'text', label: 'Note', type: 'textarea', placeholder: 'e.g. Called 29 Oct, no answer' }], ok: 'Add note', submit: send }).then(report);
       if (act === 'followup') return BB.ask({ title: `Follow-up · ${n}`, note: 'You get a reminder on My day and the bell at this time.', fields: [{ name: 'at', label: 'When', type: 'datetime-local' }, { name: 'note', label: 'What to do', opt: true, placeholder: 'e.g. Call back about the Jaipur showroom job' }], ok: 'Set follow-up', submit: (v) => send({ ...v, at: v.at ? BB.fromLocalInput(v.at) : '' }) }).then(report);
       if (act === 'archive' || act === 'unarchive') return BB.confirm(act === 'archive' ? 'Archive candidates' : 'Unarchive candidates', act === 'archive' ? `${n} will move to Archived. Nothing is deleted.` : `${n} will come back to the resume bank.`, act === 'archive' ? 'Archive' : 'Unarchive').then((ok) => ok && send({}).catch(BB.fail).then(report));

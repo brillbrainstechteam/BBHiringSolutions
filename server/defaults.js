@@ -126,7 +126,7 @@ const AUTO_RULES = [
   // Emails to the team's notification address (NOTIFY_EMAILS) when a lead comes in.
   { key: 'team_new_client', when: 'New client hiring request', to: 'Team (notification email)', format: null, team_email: true, on: true },
   { key: 'team_new_candidate', when: 'New candidate (form, bot, email, resume)', to: 'Team (notification email)', format: null, team_email: true, on: false },
-  { key: 'candidate_login', when: 'Candidate asks to log in to their profile (login code)', to: 'Candidate', format: 'bbhs_login_code', on: false },
+  { key: 'candidate_login', when: 'Candidate asks to log in to their profile (login code)', to: 'Candidate', format: 'bbhs_login_code', on: true },
 ];
 
 module.exports.defaultSettings = () => ({

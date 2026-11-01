@@ -93,7 +93,7 @@ CREATE INDEX IF NOT EXISTS ix_client_phone ON clients(whatsapp);
 `);
 
 // Columns added after the first version.
-for (const [table, col] of [['candidates', 'state TEXT'], ['candidates', "language TEXT DEFAULT 'en'"], ['candidates', "industry TEXT DEFAULT 'Jewellery'"], ['candidates', "exp_business TEXT DEFAULT '[]'"], ['users', 'email TEXT'], ['emails', 'send_after TEXT'], ['emails', 'dedupe TEXT'], ['users', "team TEXT DEFAULT 'Recruitment'"], ['interviews', 'mode TEXT'], ['interviews', 'link TEXT'], ['interviews', 'client_joins INTEGER DEFAULT 0'], ['candidates', "social TEXT DEFAULT '{}'"], ['candidates', "resume_check TEXT DEFAULT '{}'"], ['saved_searches', 'shared INTEGER DEFAULT 0'], ['saved_searches', 'created_at TEXT'], ['saved_searches', 'updated_at TEXT'], ['candidates', 'ad_campaign TEXT'], ['candidates', 'ad_set TEXT'], ['candidates', 'ad_name TEXT'], ['applications', 'ad_campaign TEXT'], ['applications', 'ad_set TEXT'], ['applications', 'ad_name TEXT'], ['clients', 'placeholder INTEGER DEFAULT 0'], ['clients', 'internal INTEGER DEFAULT 0'], ['postings', 'status TEXT'], ['postings', 'ckey TEXT'], ['postings', 'done_by TEXT'], ['jobs', "ad_match TEXT DEFAULT '[]'"], ['applications', 'screen TEXT'], ['applications', 'screen_note TEXT'], ['applications', 'screen_at TEXT'], ['applications', 'screen_by TEXT']]) { try { db.exec(`ALTER TABLE ${table} ADD COLUMN ${col}`); } catch { /* already there */ } }
+for (const [table, col] of [['candidates', 'state TEXT'], ['candidates', "language TEXT DEFAULT 'en'"], ['candidates', "industry TEXT DEFAULT 'Jewellery'"], ['candidates', "exp_business TEXT DEFAULT '[]'"], ['users', 'email TEXT'], ['emails', 'send_after TEXT'], ['emails', 'dedupe TEXT'], ['users', "team TEXT DEFAULT 'Recruitment'"], ['candidates', 'domain TEXT'], ['candidates', 'extract_for TEXT'], ['interviews', 'mode TEXT'], ['interviews', 'link TEXT'], ['interviews', 'client_joins INTEGER DEFAULT 0'], ['candidates', "social TEXT DEFAULT '{}'"], ['candidates', "resume_check TEXT DEFAULT '{}'"], ['saved_searches', 'shared INTEGER DEFAULT 0'], ['saved_searches', 'created_at TEXT'], ['saved_searches', 'updated_at TEXT'], ['candidates', 'ad_campaign TEXT'], ['candidates', 'ad_set TEXT'], ['candidates', 'ad_name TEXT'], ['applications', 'ad_campaign TEXT'], ['applications', 'ad_set TEXT'], ['applications', 'ad_name TEXT'], ['clients', 'placeholder INTEGER DEFAULT 0'], ['clients', 'internal INTEGER DEFAULT 0'], ['postings', 'status TEXT'], ['postings', 'ckey TEXT'], ['postings', 'done_by TEXT'], ['jobs', "ad_match TEXT DEFAULT '[]'"], ['applications', 'screen TEXT'], ['applications', 'screen_note TEXT'], ['applications', 'screen_at TEXT'], ['applications', 'screen_by TEXT']]) { try { db.exec(`ALTER TABLE ${table} ADD COLUMN ${col}`); } catch { /* already there */ } }
 db.exec('CREATE INDEX IF NOT EXISTS ix_emails_dedupe ON emails(dedupe); CREATE INDEX IF NOT EXISTS ix_emails_after ON emails(status, send_after);');
 
 // ---------- small helpers ----------
@@ -198,6 +198,11 @@ function ensureSettings() {
   if (!once.includes('rules_off_2026_10_30')) {
     setSetting('auto_rules', settings().auto_rules.map((r) => (['post_join_checkin', 'still_looking', 'candidate_login'].includes(r.key) ? { ...r, on: false } : r)));
     setSetting('done_once', [...(settings().done_once || []), 'rules_off_2026_10_30']);
+  }
+  // Candidate login back on: new applicants must activate, and the portal needs its login.
+  if (!once.includes('candidate_login_on_2026_11_01')) {
+    setSetting('auto_rules', settings().auto_rules.map((r) => (r.key === 'candidate_login' ? { ...r, on: true } : r)));
+    setSetting('done_once', [...(settings().done_once || []), 'candidate_login_on_2026_11_01']);
   }
   // Copies made before the navy-and-mustard design keep the old emerald on papers; move them over.
   if (cur.business && cur.business.primary === '#0E5E4E') setSetting('business', { ...cur.business, primary: '#101A3A', accent: '#D19B12' });

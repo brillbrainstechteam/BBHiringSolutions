@@ -39,7 +39,8 @@ function visibleApps(u) {
 route('GET', '/api/me', { auth: 'team', allow2fa: true, channels: true }, (ctx) => {
   const u = ctx.user;
   const counts = {
-    leads: isSuper(u) ? get('SELECT (SELECT COUNT(*) FROM clients WHERE agency_id IS NULL AND junk=0 AND archived=0) + (SELECT COUNT(*) FROM candidates WHERE agency_id IS NULL AND is_new=1 AND junk=0 AND archived=0) c').c : 0,
+    leads: isSuper(u) ? get('SELECT COUNT(*) c FROM clients WHERE agency_id IS NULL AND junk=0 AND archived=0').c : 0,
+    cand_new: isSuper(u) ? get('SELECT COUNT(*) c FROM candidates WHERE agency_id IS NULL AND is_new=1 AND junk=0 AND archived=0 AND merged_into IS NULL AND removed=0').c : 0,
     pending: all("SELECT i.*, a.job_id, a.owner_id FROM interviews i JOIN applications a ON a.id=i.app_id WHERE i.status IN ('Scheduled','Rescheduled') AND i.at < ?", now()).filter((i) => seeApp(u, { id: i.app_id, owner_id: i.owner_id, job_id: i.job_id })).length,
     unread: unreadThreads(u),
     alerts: get('SELECT COUNT(*) c FROM alerts WHERE user_id=? AND read=0', u.id).c,
@@ -203,11 +204,13 @@ route('GET', '/api/dashboard', T, (ctx) => {
   for (const b of bills.filter((x) => x.view_status === 'Overdue')) { const cl = get('SELECT company FROM clients WHERE id=?', b.client_id); att.push({ kind: 'Overdue bill', text: `${b.bill_no} ${cl.company} — ${L.inr(b.balance)}`, open: { type: 'bill', id: b.id }, wa: { ptype: 'client', pid: b.client_id, format: 'bbhs_payment_reminder', bl: b.id, vars: { bill_no: b.bill_no, amount: L.inr(b.balance), status: 'overdue', link: L.upiLink(b.balance, b.bill_no) } } }); }
   for (const b of bills.filter((x) => x.status === 'Draft')) { const cl = get('SELECT company FROM clients WHERE id=?', b.client_id); att.push({ kind: 'Bill to issue', text: `${b.id} draft for ${cl.company}`, open: { type: 'bill', id: b.id } }); }
   if (isSuper(u)) {
-    const nl = get('SELECT (SELECT COUNT(*) FROM clients WHERE agency_id IS NULL AND junk=0 AND archived=0) + (SELECT COUNT(*) FROM candidates WHERE agency_id IS NULL AND is_new=1 AND junk=0 AND archived=0) c').c;
-    if (nl) att.push({ kind: 'Leads to assign', text: `${nl} new lead(s) waiting for an agency`, open: { type: 'page', id: 'leads' } });
+    const nl = get('SELECT COUNT(*) c FROM clients WHERE agency_id IS NULL AND junk=0 AND archived=0').c;
+    if (nl) att.push({ kind: 'Leads to assign', text: `${nl} new client lead(s) waiting for an agency`, open: { type: 'page', id: 'leads' } });
+    const nc = get('SELECT COUNT(*) c FROM candidates WHERE agency_id IS NULL AND is_new=1 AND junk=0 AND archived=0 AND merged_into IS NULL AND removed=0').c;
+    if (nc) att.push({ kind: 'New candidates', text: `${nc} new candidate(s) waiting for an agency`, open: { type: 'page', id: 'candidates' } });
     for (const r of all("SELECT * FROM data_requests WHERE status='Waiting'")) att.push({ kind: 'Data request', text: `${r.person_id} asked to ${r.kind === 'delete' ? 'delete their data' : r.kind}`, open: { type: 'page', id: 'settings' } });
   }
-  const leadsNew = isSuper(u) ? get('SELECT (SELECT COUNT(*) FROM clients WHERE agency_id IS NULL AND junk=0 AND archived=0) + (SELECT COUNT(*) FROM candidates WHERE agency_id IS NULL AND is_new=1 AND junk=0 AND archived=0) c').c : 0;
+  const leadsNew = isSuper(u) ? get('SELECT COUNT(*) c FROM clients WHERE agency_id IS NULL AND junk=0 AND archived=0').c : 0;
   const out = {
     counts: {
       open_jobs: jobs.filter((j) => ['Open', 'Sourcing', 'Interviewing', 'Offer stage'].includes(j.status)).length,
@@ -244,15 +247,21 @@ route('GET', '/api/myday', T, (ctx) => {
 // application date (from / to, India time), years in the jewellery industry (none, under 1, 1–3, 3–5, 5–10, 10+), experience in years (min / max) and expected salary a month (min / max).
 // A salary filter leaves out people who have not given an expected salary.
 const JEW_RANGE = { lt1: [0, 1], '1-3': [1, 3], '3-5': [3, 5], '5-10': [5, 10], '10+': [10, Infinity] };
+const many = (v) => String(v || '').split(',').map((x) => x.trim()).filter(Boolean);
 function candMatch(q) {
   const num = (v) => (v === undefined || v === null || v === '' || Number.isNaN(Number(v)) ? null : Number(v));
   const eMin = num(q.exp_min); const eMax = num(q.exp_max); const sMin = num(q.sal_min); const sMax = num(q.sal_max);
   const from = /^\d{4}-\d{2}-\d{2}$/.test(q.from || '') ? q.from : null; const to = /^\d{4}-\d{2}-\d{2}$/.test(q.to || '') ? q.to : null;
   return (c) => {
-    if (q.dept) { const ds = String(q.dept).split(',').map((x) => x.trim()).filter(Boolean); if (ds.length && !ds.includes(c.department)) return false; } // one or several departments
-    if (q.job && c.job_wanted !== q.job) return false;
-    if (q.city && c.city !== q.city && !(c.work_cities || []).includes(q.city)) return false;
-    if (q.state && (c.state || L.stateOf(c.city)) !== q.state) return false;
+    // Each of these takes one value or several ("a,b"): a candidate matching any of them stays.
+    const list = (k) => many(q[k]);
+    if (q.dept && !list('dept').includes(c.department)) return false;
+    if (q.job && !list('job').includes(c.job_wanted)) return false;
+    if (q.source && !list('source').includes(c.source)) return false;
+    if (q.domain && !list('domain').includes(c.domain || 'Not read yet')) return false;
+    if (q.city && !list('city').some((x) => c.city === x || (c.work_cities || []).includes(x))) return false;
+    if (q.state && !list('state').includes(c.state || L.stateOf(c.city))) return false;
+    if (q.skills) { const has = (c.skills || []).map((x) => String(x).toLowerCase()); if (!list('skills').some((x) => has.includes(x.toLowerCase()))) return false; }
     if (q.ad && ![c.ad_campaign, c.ad_set, c.ad_name].includes(q.ad)) return false;
     if (from || to) { const day = L.istDay(c.created_at); if ((from && day < from) || (to && day > to)) return false; }
     if (q.jewellery === '0' && c.exp_jewellery !== 0) return false;
@@ -269,14 +278,14 @@ function candMatch(q) {
 }
 // Campaigns, ad sets and ad names seen so far, for the "Any ad" filter.
 const adOptions = (table) => [...new Set(all(`SELECT ad_campaign, ad_set, ad_name FROM ${table} WHERE ad_campaign IS NOT NULL OR ad_set IS NOT NULL OR ad_name IS NOT NULL`).flatMap((r) => [r.ad_campaign, r.ad_set, r.ad_name]).filter(Boolean))].sort();
-const CAND_EXPORT = ['id', 'name', 'whatsapp', 'email', 'industry', 'job_wanted', 'department', 'city', 'state', 'exp_total', 'exp_jewellery', [(r) => (r.exp_business || []).join(', '), 'worked_in'], [(r) => (r.cur_salary ? Math.round(r.cur_salary / 12) : ''), 'current_per_month'], [(r) => (r.exp_salary ? Math.round(r.exp_salary / 12) : ''), 'expected_per_month'], 'notice_days', 'current_company', 'looking', 'source', [(r) => L.istDay(r.created_at), 'applied_on']];
+const CAND_EXPORT = ['id', 'name', 'whatsapp', 'email', 'domain', [(r) => (r.skills || []).join(', '), 'skills'], 'job_wanted', 'department', 'city', 'state', 'exp_total', 'exp_jewellery', [(r) => (r.exp_business || []).join(', '), 'worked_in'], [(r) => (r.cur_salary ? Math.round(r.cur_salary / 12) : ''), 'current_per_month'], [(r) => (r.exp_salary ? Math.round(r.exp_salary / 12) : ''), 'expected_per_month'], 'notice_days', 'current_company', 'looking', 'source', [(r) => L.istDay(r.created_at), 'applied_on']];
 route('GET', '/api/leads', SUPER, (ctx) => {
   const q = ctx.query; const days = Number(q.days) || 30; const since = new Date(Date.now() - days * 86400000).toISOString();
-  const filt = (r) => (!q.source || r.source === q.source) && (!q.agency || (q.agency === 'none' ? !r.agency_id : r.agency_id === q.agency)) && (!q.new || r.is_new) && (!q.from || L.istDay(r.created_at) >= q.from) && (!q.to || L.istDay(r.created_at) <= q.to);
+  const filt = (r) => (!q.source || many(q.source).includes(r.source)) && (!q.agency || (q.agency === 'none' ? !r.agency_id : r.agency_id === q.agency)) && (!q.new || r.is_new) && (!q.from || L.istDay(r.created_at) >= q.from) && (!q.to || L.istDay(r.created_at) <= q.to);
   const clients = all('SELECT * FROM clients WHERE junk=0 AND merged_into IS NULL AND removed=0 ORDER BY created_at DESC').filter((c) => (!c.agency_id || q.all) && filt(c)).map(V.clientView);
   const match = candMatch(q);
   const cands = all('SELECT * FROM candidates WHERE junk=0 AND merged_into IS NULL AND removed=0 ORDER BY created_at DESC').filter((c) => ((!c.agency_id && c.is_new) || q.all) && filt(c) && match(c));
-  const check = [
+  const check = [ // the candidate rows show on the Candidates page (Needs checking tab)
     ...all("SELECT id, name AS label, whatsapp, email, source, needs_check, possible_repeat_of, created_at, 'candidate' AS type FROM candidates WHERE (needs_check IS NOT NULL OR possible_repeat_of IS NOT NULL) AND merged_into IS NULL AND junk=0"),
     ...all("SELECT id, company AS label, whatsapp, email, source, needs_check, possible_repeat_of, created_at, 'client' AS type FROM clients WHERE (needs_check IS NOT NULL OR possible_repeat_of IS NOT NULL) AND merged_into IS NULL AND junk=0"),
   ];
@@ -730,12 +739,12 @@ route('POST', '/api/jobs/:id/send-profiles', T, (ctx) => {
 // The resume bank as filtered by q (the same filters a segment saves), as this user may see it.
 function candRows(q, u) {
   const fresh = q.updated ? Number(q.updated) : null; const match = candMatch(q);
-  const ind = q.industry || D.settings().default_industry || 'Jewellery'; const inInd = (c) => ind === 'all' || (c.industry || 'Jewellery') === ind;
+  const ind = q.industry || 'all'; const inInd = (c) => ind === 'all' || (c.industry || 'Jewellery') === ind; // old segments may still carry an industry
   return all('SELECT * FROM candidates WHERE merged_into IS NULL AND removed=0 AND junk=0 ORDER BY created_at DESC')
     .filter((c) => (q.archived ? c.archived : !c.archived) && inInd(c) && match(c) && (!q.notice || (c.notice_days ?? 999) <= Number(q.notice))
-      && (!q.looking || c.looking === q.looking) && (!q.source || c.source === q.source) && (!q.tieup || String(c.tieup_id) === String(q.tieup)) && (!q.agency || c.agency_id === q.agency)
+      && (!q.looking || c.looking === q.looking) && (!q.tieup || String(c.tieup_id) === String(q.tieup)) && (!q.agency || (q.agency === 'none' ? !c.agency_id : c.agency_id === q.agency)) && (!q.new || c.is_new)
       && (!fresh || L.daysBetween(c.last_updated || c.created_at) <= fresh) && (!q.stale || L.daysBetween(c.last_updated || c.created_at) > 90)
-      && like(q.q, c.id, c.name, R.phoneVisible(u, c) ? c.whatsapp : '', c.job_wanted, c.city, c.current_company, c.old_code))
+      && like(q.q, c.id, c.name, R.phoneVisible(u, c) ? c.whatsapp : '', c.job_wanted, c.city, c.current_company, c.old_code, c.domain, (c.skills || []).join(' ')))
     .map((c) => ({ ...candidateOut(u, c), status: V.candStatus(c.id) }))
     .filter((c) => !q.status || c.status.startsWith(q.status));
 }
@@ -756,12 +765,16 @@ route('GET', '/api/candidates/cvs.zip', { auth: 'team', levels: ['super'] }, (ct
 });
 route('GET', '/api/candidates', T, (ctx) => {
   const q = ctx.query; const u = ctx.user;
-  const ind = q.industry || D.settings().default_industry || 'Jewellery'; const inInd = (c) => ind === 'all' || (c.industry || 'Jewellery') === ind;
+  const ind = q.industry || 'all'; const inInd = (c) => ind === 'all' || (c.industry || 'Jewellery') === ind;
   const rows = candRows(q, u);
+  const open = all('SELECT is_new, agency_id, skills, needs_check, possible_repeat_of FROM candidates WHERE merged_into IS NULL AND removed=0 AND junk=0 AND archived=0');
+  // Skills to filter by: the ones candidates really have, most common first.
+  const tally = {}; for (const c of open) for (const s of c.skills || []) { const k = String(s).trim(); if (k) tally[k] = (tally[k] || 0) + 1; }
+  ctx.quick = { new: open.filter((c) => c.is_new && !c.agency_id).length, unassigned: open.filter((c) => !c.agency_id).length, check: open.filter((c) => c.needs_check || c.possible_repeat_of).length, skills: Object.entries(tally).sort((a, b) => b[1] - a[1]).slice(0, 300).map(([k]) => k) };
   ctx.designations = [...new Set(all('SELECT industry, job_wanted FROM candidates WHERE merged_into IS NULL AND removed=0 AND junk=0').filter(inInd).map((c) => c.job_wanted).filter(Boolean))].sort();
   // Only the super admin downloads candidates (as filtered on screen); agencies and recruiters work in the portal.
   if (['csv', 'xlsx'].includes(ctx.query.format) && !isSuper(u)) throw httpError(403, 'Only the super admin can download candidates.');
-  return { ...page(ctx, rows, 'candidates', [...CAND_EXPORT, [(r) => L.adLabel(r), 'ad'], 'status']), designations: ctx.designations, ads: adOptions('candidates') };
+  return { ...page(ctx, rows, 'candidates', [...CAND_EXPORT, [(r) => L.adLabel(r), 'ad'], 'status']), designations: ctx.designations, ads: adOptions('candidates'), quick: ctx.quick };
 });
 route('POST', '/api/candidates', T, async (ctx) => {
   // Same questions and checks as the public job-seeker form (api-public /apply), plus salary, notice, industry and source.
@@ -864,7 +877,7 @@ route('PATCH', '/api/candidates/:id', T, (ctx) => {
   const c = get('SELECT * FROM candidates WHERE id=?', ctx.params.id); if (!c) throw httpError(404, 'Not found');
   if (!R.phoneVisible(ctx.user, c)) throw httpError(403, 'Only the candidate\'s own agency can edit this profile.');
   if (ctx.body.exp_business !== undefined) ctx.body.exp_business = L.cleanBusiness(ctx.body.exp_business);
-  const allowed = ['exp_business', 'name', 'whatsapp', 'email', 'city', 'state', 'work_cities', 'industry', 'job_wanted', 'exp_total', 'exp_jewellery', 'cur_salary', 'exp_salary', 'notice_days', 'skills', 'current_company', 'looking', 'tieup_id', 'archived', 'recruiter_id'];
+  const allowed = ['exp_business', 'name', 'whatsapp', 'email', 'city', 'state', 'work_cities', 'industry', 'domain', 'job_wanted', 'exp_total', 'exp_jewellery', 'cur_salary', 'exp_salary', 'notice_days', 'skills', 'current_company', 'looking', 'tieup_id', 'archived', 'recruiter_id'];
   const patch = {}; for (const k of allowed) if (ctx.body[k] !== undefined) patch[k] = ctx.body[k];
   if (patch.looking && !L.LOOKING.includes(patch.looking)) throw httpError(400, 'Pick a looking status', 'looking');
   if (patch.whatsapp) { patch.whatsapp = L.digits10(patch.whatsapp); if (!L.validPhone(patch.whatsapp)) throw httpError(400, 'Enter a 10-digit WhatsApp number', 'whatsapp'); }
@@ -944,7 +957,7 @@ route('POST', '/api/tieups', T, (ctx) => {
 // ---------- segments (saved candidate searches) ----------
 // A segment is a named set of resume-bank filters. Its owner sees it; shared ones are seen by the whole team.
 // The list of people is worked out again each time, so counts and downloads are always current.
-const SEG_KEYS = ['q', 'industry', 'dept', 'job', 'city', 'state', 'ad', 'jewellery', 'from', 'to', 'exp_min', 'exp_max', 'sal_min', 'sal_max', 'looking', 'status', 'source', 'updated', 'notice', 'stale', 'archived'];
+const SEG_KEYS = ['q', 'industry', 'domain', 'skills', 'dept', 'job', 'city', 'state', 'ad', 'jewellery', 'from', 'to', 'exp_min', 'exp_max', 'sal_min', 'sal_max', 'looking', 'status', 'source', 'updated', 'notice', 'stale', 'archived'];
 const segQuery = (raw) => { const q = typeof raw === 'string' ? JSON.parse(raw || '{}') : raw || {}; return Object.fromEntries(SEG_KEYS.filter((k) => q[k] !== undefined && q[k] !== null && q[k] !== '').map((k) => [k, String(q[k])])); };
 const segVisible = (u) => all('SELECT s.*, us.name AS owner_name FROM saved_searches s LEFT JOIN users us ON us.id=s.user_id WHERE s.user_id=? OR s.shared=1 ORDER BY s.name COLLATE NOCASE', u.id);
 function segOwn(ctx) {

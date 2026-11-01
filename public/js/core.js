@@ -476,6 +476,11 @@ BB.gcal = (iv, title, details) => {
 };
 // The three usual rounds: telephonic (our team), virtual (our team, sometimes with the client), final in person (client).
 BB.ivModes = { phone: 'Telephonic round', video: 'Virtual round', in_person: 'Final round (in person)' };
+// Log out of a client or candidate account: ends the session on the server, then back to that account's login.
+BB.logout = async (kind) => {
+  await BB.post('/api/account/logout', {}, { kind }).catch(() => {});
+  BB.setToken(kind, null); BB.toast('You have logged out'); BB.route();
+};
 // "Good morning / afternoon / evening", by the time in India.
 BB.greeting = () => { const h = Number(new Date().toLocaleString('en-IN', { hour: 'numeric', hour12: false, timeZone: 'Asia/Kolkata' })); return h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening'; };
 BB.track = (event, params) => { try { if (window.fbq && document.body.dataset.view !== 'team') window.fbq('track', event, params || {}); } catch { /* ads tracking never breaks the page */ } };
@@ -497,7 +502,7 @@ BB.brand = (tagline, href = '/') => {
   return `<a class="brand" href="${href}"><img class="brand-logo" src="/img/logo.png" alt="${esc(name)}"><img class="brand-mark" src="/img/icon.png" alt="${esc(name)}">${tagline ? `<span class="brand-tag">${esc(tagline)}</span>` : ''}</a>`;
 };
 // Navy top bar. nav=false on the form links (they open only the form, no other menus).
-BB.publicTop = (sub, nav = false) => `<header class="pub-top">${BB.brand(sub)}${nav ? `<nav class="pub-nav"><a href="/hire">For Employers</a><a href="/apply">For Job Seekers</a><a href="/my-account">Client login</a><a href="/my-profile">Candidate login</a></nav><details class="pub-login"><summary class="btn sm" aria-label="Menu"><span class="burger" aria-hidden="true"><i></i><i></i><i></i></span>Menu</summary><div class="pub-login-menu"><a href="/hire">For Employers</a><a href="/apply">For Job Seekers</a><hr><a href="/my-account">Client login</a><a href="/my-profile">Candidate login</a></div></details>` : `${sub === 'Team portal' ? '' : `<a class="btn sm top-home" href="/" aria-label="Back to home">${BB.icon('home')}<span>Home</span></a>`}<a class="btn sm help" href="https://wa.me/91${esc(BB.boot.business.support_phone)}" target="_blank" rel="noopener">${waIcon} Need help?</a>`}${sub === 'Team portal' ? '' : BB.langSwitch()}</header>`;
+BB.publicTop = (sub, nav = false, out = null) => `<header class="pub-top">${BB.brand(sub)}${nav ? `<nav class="pub-nav"><a href="/hire">For Employers</a><a href="/apply">For Job Seekers</a><a href="/my-account">Client login</a><a href="/my-profile">Candidate login</a></nav><details class="pub-login"><summary class="btn sm" aria-label="Menu"><span class="burger" aria-hidden="true"><i></i><i></i><i></i></span>Menu</summary><div class="pub-login-menu"><a href="/hire">For Employers</a><a href="/apply">For Job Seekers</a><hr><a href="/my-account">Client login</a><a href="/my-profile">Candidate login</a></div></details>` : `${sub === 'Team portal' ? '' : `<a class="btn sm top-home" href="/" aria-label="Back to home">${BB.icon('home')}<span>Home</span></a>`}<a class="btn sm help" href="https://wa.me/91${esc(BB.boot.business.support_phone)}" target="_blank" rel="noopener">${waIcon} Need help?</a>`}${sub === 'Team portal' ? '' : BB.langSwitch()}${out ? `<button class="btn sm top-out" data-logout="${out}">Log out</button>` : ''}</header>`;
 // Background behind the big headings: soft gold and sky glows drifting, small sparkles twinkling.
 BB.deco = () => `<div class="deco-dots" aria-hidden="true"><i></i><i></i><i></i><i></i></div><div class="gem-bg" aria-hidden="true"><span class="orb o1"></span><span class="orb o2"></span><span class="orb o3"></span>${['s1', 's2', 's3', 's4', 's5'].map((c) => `<i class="spark ${c}"></i>`).join('')}</div>`;
 // Split page: big heading + perks on the left, a card on the right.

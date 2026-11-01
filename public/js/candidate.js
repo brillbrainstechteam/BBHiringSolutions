@@ -25,7 +25,7 @@
   function render() {
     const p = D.profile; const first = esc(String(p.name || '').split(' ')[0]);
     const tabs = [['home', 'Home', 'home'], ['jobs', 'Jobs for you', 'brief', D.jobs.length], ['apps', 'Applications', 'flow', active().length], ['profile', 'Profile', 'users']];
-    $('#app').innerHTML = `<div class="pub">${BB.publicTop('My profile')}
+    $('#app').innerHTML = `<div class="pub">${BB.publicTop('My profile', false, 'candidate')}
       <div class="acct-band cp-hero"><div class="in">
         <div class="cp-avatar">${esc(initials(p.name))}</div>
         <div class="grow"><span class="eyebrow">${BB.greeting()}</span><h1>Welcome, <span class="hl">${first}</span></h1>
@@ -35,10 +35,9 @@
         <button class="cp-strength" data-goto="profile" title="Profile strength">${ring(D.pct, 50)}<span><b>Profile</b><br>strength</span></button>
       </div></div>
       <div class="acct"><div class="tabs cp-tabs">${tabs.map(([k, l, ic, n]) => `<button data-tab="${k}" class="${tab === k ? 'on' : ''}">${icon(ic)}<span>${l}</span>${n ? `<span class="n">${n}</span>` : ''}</button>`).join('')}</div><div data-body></div></div></div>`;
-    const help = $('.pub-top .help'); if (help) help.insertAdjacentHTML('afterend', '<button class="btn sm top-out" data-out>Log out</button>');
     $$('[data-tab]').forEach((b) => (b.onclick = () => go(b.dataset.tab)));
     $$('[data-goto]').forEach((b) => (b.onclick = (e) => { e.preventDefault(); go(b.dataset.goto, b.dataset.f); }));
-    $('[data-out]').onclick = async () => { await BB.post('/api/account/logout', {}).catch(() => {}); BB.setToken('candidate', null); BB.route(); };
+    $('[data-logout]').onclick = () => BB.logout('candidate');
     const el = $('[data-body]');
     ({ home, jobs, apps, profile }[tab] || home)(el);
     BB.attachMics(el); BB.romanizeFields(el); wire(el);

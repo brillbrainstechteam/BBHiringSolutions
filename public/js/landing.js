@@ -54,6 +54,7 @@
   //   phone       — logo | language · Menu ▾ (the same actions, grouped)
   const top = (here) => {
     const c = L().contact || {}; const phone = (c.phones || [])[0];
+    const acct = BB.token('client') ? 'client' : BB.token('candidate') ? 'candidate' : null;
     const item = (href, b, sub, attr = '') => `<a href="${href}"${attr}><b>${b}</b><span>${sub}</span></a>`;
     const seekers = item('/apply', 'Apply for a job', 'One form, free for you') + item('/#openings', 'See open jobs', 'Roles we are hiring for now', ' data-jobs-link') + item('/my-profile', 'Candidate login', 'Your profile and applications');
     const employers = item('/hire', 'Hire with us', 'Share your requirement in two minutes') + item('/my-account', 'Client login', 'Openings, shortlists and bills');
@@ -64,9 +65,9 @@
         <nav class="lp-nav">${dd('Job Seekers', seekers)}${dd('Employers', employers)}<a href="/partners"${here === 'partners' ? ' class="on"' : ''}>Partners</a></nav>
         <div class="lp-right">
           ${BB.langSwitch()}
-          <a class="btn gold sm lp-cta" href="/hire">Hire with us</a>
+          ${acct ? `<a class="btn sm lp-acct" href="/${acct === 'client' ? 'my-account' : 'my-profile'}">My account</a><button class="btn sm lp-acct" data-lpout="${acct}">Log out</button>` : '<a class="btn gold sm lp-cta" href="/hire">Hire with us</a>'}
           <details class="lp-dd lp-menu"><summary aria-label="Menu"><span class="burger" aria-hidden="true"><i></i><i></i><i></i></span>Menu</summary><div class="lp-dd-menu">
-            <span class="lp-dd-h">Job Seekers</span>${seekers}<hr><span class="lp-dd-h">Employers</span>${employers}<hr>${item('/partners', 'Partners', 'Agencies, institutes and recruiters')}<hr><a href="${MAIN}" target="_blank" rel="noopener"><b>BrillBrains Consultants ↗</b><span>Our group website</span></a></div></details>
+            <span class="lp-dd-h">Job Seekers</span>${seekers}<hr><span class="lp-dd-h">Employers</span>${employers}<hr>${item('/partners', 'Partners', 'Agencies, institutes and recruiters')}<hr><a href="${MAIN}" target="_blank" rel="noopener"><b>BrillBrains Consultants ↗</b><span>Our group website</span></a>${acct ? `<hr><a href="/${acct === 'client' ? 'my-account' : 'my-profile'}"><b>My account</b></a><a href="#" data-lpout="${acct}"><b>Log out</b></a>` : ''}</div></details>
         </div></header>`;
   };
   // Desktop: the audience menus open on hover as well as on click.
@@ -77,6 +78,11 @@
     if (d && !d.open) d.open = true;
   });
   document.addEventListener('mouseleave', (e) => { if (e.target.classList && e.target.classList.contains('lp-hov')) e.target.open = false; }, true);
+  document.addEventListener('click', async (e) => {
+    const b = e.target.closest && e.target.closest('[data-lpout]'); if (!b) return; e.preventDefault();
+    await BB.post('/api/account/logout', {}, { kind: b.dataset.lpout }).catch(() => {});
+    BB.setToken(b.dataset.lpout, null); BB.toast('You have logged out'); BB.route();
+  });
   // "Find jobs" scrolls to the openings on the home page, or opens the home page there.
   document.addEventListener('click', (e) => {
     const a = e.target.closest && e.target.closest('[data-jobs-link]'); if (!a || e.ctrlKey || e.metaKey) return;

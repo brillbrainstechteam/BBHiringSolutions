@@ -1414,3 +1414,17 @@ html[lang="hi"] .ss-g { letter-spacing: 0; }
 .own-sec { padding: 10px 0; border-top: 1px solid var(--border); }
 .own-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 4px 0 4px 12px; font-size: 13.5px; }
 .own-row select, .own-sec select { width: auto; max-width: 210px; }
+
+/* Candidates: skills as wrapped tags, quick views, find box in long multi-selects. */
+.tbl-scroll td.skills-col { white-space: normal; min-width: 210px; max-width: 280px; width: auto; }
+.sk-wrap { display: flex; flex-wrap: wrap; gap: 3px; }
+.sk { font-size: 11px; line-height: 1.5; padding: 0 7px; border-radius: 999px; background: var(--sky-50); color: var(--ink); white-space: nowrap; max-width: 170px; overflow: hidden; text-overflow: ellipsis; }
+.sk.more { background: var(--surface-2); color: var(--muted); }
+.src-cut { max-width: 110px; overflow: hidden; text-overflow: ellipsis; }
+.cand-views { display: flex; flex-wrap: wrap; gap: 6px; }
+.msel-find { width: 100%; margin-bottom: 8px; min-height: 34px; }
+.msel-list label[hidden] { display: none; }
+.cand-filters .msel > summary { height: 36px; font-size: 13.5px; white-space: nowrap; }
+.pub-top .top-out { flex: none; }
+.lp-right .lp-acct { color: #fff; border-color: rgba(255, 255, 255, .28); background: transparent; }
+@media (max-width: 1000px) { .lp-right .lp-acct { display: none; } }
