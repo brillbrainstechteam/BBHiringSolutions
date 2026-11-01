@@ -29,6 +29,7 @@ function page(ctx, rows, name, columns) {
 }
 const like = (q, ...vals) => !q || vals.some((v) => v && String(v).toLowerCase().includes(String(q).toLowerCase()));
 function mustSee(ok, what = 'record') { if (!ok) throw httpError(403, `You cannot see this ${what}.`); }
+const leadCount = (u) => all('SELECT * FROM clients WHERE agency_id IS NULL AND junk=0 AND archived=0 AND merged_into IS NULL AND removed=0').filter((c) => seeClient(u, c)).length;
 const visibleJobs = (u) => all('SELECT * FROM jobs WHERE archived=0 ORDER BY created_at DESC').filter((j) => seeJob(u, j));
 function visibleApps(u) {
   const jobs = new Map(all('SELECT * FROM jobs').map((j) => [j.id, j]));
@@ -39,13 +40,13 @@ function visibleApps(u) {
 route('GET', '/api/me', { auth: 'team', allow2fa: true, channels: true }, (ctx) => {
   const u = ctx.user;
   const counts = {
-    leads: isSuper(u) ? get('SELECT COUNT(*) c FROM clients WHERE agency_id IS NULL AND junk=0 AND archived=0').c : 0,
+    leads: leadCount(u),
     cand_new: isSuper(u) ? get('SELECT COUNT(*) c FROM candidates WHERE agency_id IS NULL AND is_new=1 AND junk=0 AND archived=0 AND merged_into IS NULL AND removed=0').c : 0,
     pending: all("SELECT i.*, a.job_id, a.owner_id FROM interviews i JOIN applications a ON a.id=i.app_id WHERE i.status IN ('Scheduled','Rescheduled') AND i.at < ?", now()).filter((i) => seeApp(u, { id: i.app_id, owner_id: i.owner_id, job_id: i.job_id })).length,
     unread: unreadThreads(u),
     alerts: get('SELECT COUNT(*) c FROM alerts WHERE user_id=? AND read=0', u.id).c,
   };
-  return { user: { id: u.id, name: u.name, level: u.level, agency_id: u.agency_id, role: u.role, username: u.username, must_change: u.must_change, whatsapp: u.whatsapp, team: u.team || 'Recruitment', channel_only: R.channelOnly(u) }, agency: ctx.agency, counts };
+  return { user: { id: u.id, name: u.name, level: u.level, agency_id: u.agency_id, role: u.role, username: u.username, must_change: u.must_change, whatsapp: u.whatsapp, team: u.team || 'Recruitment', channel_only: R.channelOnly(u), leads: isSuper(u) || R.sharedWith(u) || R.canAllocate(u) }, agency: ctx.agency, counts };
 });
 function unreadThreads(u) {
   const rows = all("SELECT person_type, person_id FROM messages WHERE direction='in' AND read_by_us=0 GROUP BY person_type, person_id");
@@ -203,14 +204,13 @@ route('GET', '/api/dashboard', T, (ctx) => {
   }
   for (const b of bills.filter((x) => x.view_status === 'Overdue')) { const cl = get('SELECT company FROM clients WHERE id=?', b.client_id); att.push({ kind: 'Overdue bill', text: `${b.bill_no} ${cl.company} — ${L.inr(b.balance)}`, open: { type: 'bill', id: b.id }, wa: { ptype: 'client', pid: b.client_id, format: 'bbhs_payment_reminder', bl: b.id, vars: { bill_no: b.bill_no, amount: L.inr(b.balance), status: 'overdue', link: L.upiLink(b.balance, b.bill_no) } } }); }
   for (const b of bills.filter((x) => x.status === 'Draft')) { const cl = get('SELECT company FROM clients WHERE id=?', b.client_id); att.push({ kind: 'Bill to issue', text: `${b.id} draft for ${cl.company}`, open: { type: 'bill', id: b.id } }); }
+  const leadsNew = leadCount(u);
+  if (leadsNew && R.canAllocate(u)) att.push({ kind: 'Leads to assign', text: `${leadsNew} new client lead(s) waiting for an agency`, open: { type: 'page', id: 'leads' } });
   if (isSuper(u)) {
-    const nl = get('SELECT COUNT(*) c FROM clients WHERE agency_id IS NULL AND junk=0 AND archived=0').c;
-    if (nl) att.push({ kind: 'Leads to assign', text: `${nl} new client lead(s) waiting for an agency`, open: { type: 'page', id: 'leads' } });
     const nc = get('SELECT COUNT(*) c FROM candidates WHERE agency_id IS NULL AND is_new=1 AND junk=0 AND archived=0 AND merged_into IS NULL AND removed=0').c;
     if (nc) att.push({ kind: 'New candidates', text: `${nc} new candidate(s) waiting for an agency`, open: { type: 'page', id: 'candidates' } });
     for (const r of all("SELECT * FROM data_requests WHERE status='Waiting'")) att.push({ kind: 'Data request', text: `${r.person_id} asked to ${r.kind === 'delete' ? 'delete their data' : r.kind}`, open: { type: 'page', id: 'settings' } });
   }
-  const leadsNew = isSuper(u) ? get('SELECT COUNT(*) c FROM clients WHERE agency_id IS NULL AND junk=0 AND archived=0').c : 0;
   const out = {
     counts: {
       open_jobs: jobs.filter((j) => ['Open', 'Sourcing', 'Interviewing', 'Offer stage'].includes(j.status)).length,
@@ -279,36 +279,46 @@ function candMatch(q) {
 // Campaigns, ad sets and ad names seen so far, for the "Any ad" filter.
 const adOptions = (table) => [...new Set(all(`SELECT ad_campaign, ad_set, ad_name FROM ${table} WHERE ad_campaign IS NOT NULL OR ad_set IS NOT NULL OR ad_name IS NOT NULL`).flatMap((r) => [r.ad_campaign, r.ad_set, r.ad_name]).filter(Boolean))].sort();
 const CAND_EXPORT = ['id', 'name', 'whatsapp', 'email', 'domain', [(r) => (r.skills || []).join(', '), 'skills'], 'job_wanted', 'department', 'city', 'state', 'exp_total', 'exp_jewellery', [(r) => (r.exp_business || []).join(', '), 'worked_in'], [(r) => (r.cur_salary ? Math.round(r.cur_salary / 12) : ''), 'current_per_month'], [(r) => (r.exp_salary ? Math.round(r.exp_salary / 12) : ''), 'expected_per_month'], 'notice_days', 'current_company', 'looking', 'source', [(r) => L.istDay(r.created_at), 'applied_on']];
-route('GET', '/api/leads', SUPER, (ctx) => {
+// Client leads for everyone who can see them; candidates, hires and downloads stay with the super admin.
+route('GET', '/api/leads', T, (ctx) => {
+  const u = ctx.user; const sup = isSuper(u);
+  if (ctx.query.format && !sup) throw httpError(403, 'Only the super admin downloads leads.');
   const q = ctx.query; const days = Number(q.days) || 30; const since = new Date(Date.now() - days * 86400000).toISOString();
   const filt = (r) => (!q.source || many(q.source).includes(r.source)) && (!q.agency || (q.agency === 'none' ? !r.agency_id : r.agency_id === q.agency)) && (!q.new || r.is_new) && (!q.from || L.istDay(r.created_at) >= q.from) && (!q.to || L.istDay(r.created_at) <= q.to);
-  const clients = all('SELECT * FROM clients WHERE junk=0 AND merged_into IS NULL AND removed=0 ORDER BY created_at DESC').filter((c) => (!c.agency_id || q.all) && filt(c)).map(V.clientView);
+  const clients = all('SELECT * FROM clients WHERE junk=0 AND merged_into IS NULL AND removed=0 ORDER BY created_at DESC').filter((c) => seeClient(u, c) && (!c.agency_id || q.all) && filt(c)).map(V.clientView);
   const match = candMatch(q);
-  const cands = all('SELECT * FROM candidates WHERE junk=0 AND merged_into IS NULL AND removed=0 ORDER BY created_at DESC').filter((c) => ((!c.agency_id && c.is_new) || q.all) && filt(c) && match(c));
+  const cands = !sup ? [] : all('SELECT * FROM candidates WHERE junk=0 AND merged_into IS NULL AND removed=0 ORDER BY created_at DESC').filter((c) => ((!c.agency_id && c.is_new) || q.all) && filt(c) && match(c));
   const check = [ // the candidate rows show on the Candidates page (Needs checking tab)
     ...all("SELECT id, name AS label, whatsapp, email, source, needs_check, possible_repeat_of, created_at, 'candidate' AS type FROM candidates WHERE (needs_check IS NOT NULL OR possible_repeat_of IS NOT NULL) AND merged_into IS NULL AND junk=0"),
     ...all("SELECT id, company AS label, whatsapp, email, source, needs_check, possible_repeat_of, created_at, 'client' AS type FROM clients WHERE (needs_check IS NOT NULL OR possible_repeat_of IS NOT NULL) AND merged_into IS NULL AND junk=0"),
-  ];
+  ].filter((r) => sup || (r.type === 'client' && seeClient(u, get('SELECT * FROM clients WHERE id=?', r.id))));
   const srcCount = {};
-  for (const r of [...all('SELECT source, created_at FROM clients'), ...all('SELECT source, created_at FROM candidates')]) if (r.created_at >= since) srcCount[r.source || 'Other'] = (srcCount[r.source || 'Other'] || 0) + 1;
+  for (const r of sup ? [...all('SELECT source, created_at FROM clients'), ...all('SELECT source, created_at FROM candidates')] : all('SELECT * FROM clients').filter((c) => seeClient(u, c))) if (r.created_at >= since) srcCount[r.source || 'Other'] = (srcCount[r.source || 'Other'] || 0) + 1;
   const hires = {};
-  for (const a of all("SELECT a.source, a.joined_at FROM applications a WHERE a.result='Hired'")) if (a.joined_at >= since) hires[a.source || 'Other'] = (hires[a.source || 'Other'] || 0) + 1;
+  if (sup) for (const a of all("SELECT a.source, a.joined_at FROM applications a WHERE a.result='Hired'")) if (a.joined_at >= since) hires[a.source || 'Other'] = (hires[a.source || 'Other'] || 0) + 1;
   if (q.format) {
     const only = q.ids ? new Set(String(q.ids).split(',')) : null; const pick = (rows) => (only ? rows.filter((r) => only.has(r.id)) : rows);
     if (q.tab === 'candidate') return page(ctx, pick(cands), 'candidate-leads', [...CAND_EXPORT, 'agency_id']);
     if (q.tab === 'check') return page(ctx, check, 'leads-to-check', ['id', 'type', 'label', 'whatsapp', 'email', 'source', 'needs_check', 'possible_repeat_of']);
     return page(ctx, pick(clients), 'client-leads', ['id', 'company', 'contact', 'whatsapp', 'email', 'city', 'state', 'business_type', 'need', 'roles', 'stage', 'source', 'created_at', 'agency_name']);
   }
-  return { clients, candidates: cands, check, sources: srcCount, hires, stages: D.settings().client_stages, agencies: all("SELECT id, name FROM agencies WHERE status='Active'") };
+  return { clients, candidates: cands, check, sources: srcCount, hires, stages: D.settings().client_stages, agencies: all("SELECT id, name FROM agencies WHERE status='Active'"), can_allocate: R.canAllocate(u), can_download: sup, shared: R.sharedWith(u) };
 });
-route('POST', '/api/leads/assign', SUPER, (ctx) => {
-  const { type, ids, agency_id } = ctx.body;
+route('POST', '/api/leads/assign', ADMINS, (ctx) => {
+  const { type, ids, agency_id } = ctx.body; const u = ctx.user;
+  if (!R.canAllocate(u)) throw httpError(403, 'Clients are allocated once a second agency is active.');
+  if (!isSuper(u)) {
+    if (type !== 'client') throw httpError(403, 'Only the super admin assigns candidates.');
+    if (!get("SELECT 1 FROM agencies WHERE id=? AND status='Active'", agency_id)) throw httpError(400, 'Pick an active agency', 'agency_id');
+    for (const id of ids || [ctx.body.id]) { const c = get('SELECT * FROM clients WHERE id=?', id); if (c && c.agency_id) throw httpError(400, `${id} is already allocated`); }
+  }
   const out = (ids || [ctx.body.id]).map((id) => L.assignLead(type, id, agency_id, ctx.actor));
   return { ok: true, count: out.length };
 });
 // Bulk actions on ticked leads (Leads page, super admin): mark seen, junk, send the account link on WhatsApp,
 // move clients to a stage, add candidates to a job opening. Each record is done on its own; failures are listed.
-route('POST', '/api/leads/bulk', SUPER, (ctx) => {
+route('POST', '/api/leads/bulk', T, (ctx) => {
+  if (!isSuper(ctx.user) && ctx.body.type !== 'client') throw httpError(403, 'Only the super admin acts on candidates here.');
   const { type, action, value } = ctx.body; const ids = (ctx.body.ids || []).map(String).slice(0, 500);
   const table = type === 'client' ? 'clients' : 'candidates'; const out = { done: 0, skipped: [] };
   if (!ids.length) throw httpError(400, 'Tick some leads first');
@@ -316,7 +326,7 @@ route('POST', '/api/leads/bulk', SUPER, (ctx) => {
   if (action === 'add_to_job' && !get('SELECT 1 FROM jobs WHERE id=?', value)) throw httpError(400, 'Pick a job opening');
   for (const id of ids) {
     try {
-      const r = get(`SELECT id FROM ${table} WHERE id=? AND merged_into IS NULL AND removed=0`, id); if (!r) { out.skipped.push(`${id}: not found`); continue; }
+      const r = get(`SELECT id FROM ${table} WHERE id=? AND merged_into IS NULL AND removed=0`, id); if (!r || (type === 'client' && !seeClient(ctx.user, get('SELECT * FROM clients WHERE id=?', id)))) { out.skipped.push(`${id}: not found`); continue; }
       if (action === 'seen') D.edit(table, id, { is_new: 0 }, ctx.actor.label, ctx.ip);
       else if (action === 'junk') D.edit(table, id, { junk: 1, is_new: 0 }, ctx.actor.label, ctx.ip);
       else if (action === 'stage' && type === 'client') D.edit(table, id, { stage: value, is_new: 0 }, ctx.actor.label, ctx.ip);
@@ -342,6 +352,7 @@ route('POST', '/api/security-event', { auth: 'team', channels: true, rate: { key
 });
 route('POST', '/api/leads/junk', T, (ctx) => {
   const { type, id } = ctx.body; const table = type === 'client' ? 'clients' : 'candidates';
+  if (type === 'client') mustSee(seeClient(ctx.user, get('SELECT * FROM clients WHERE id=?', id)), 'client');
   D.edit(table, id, { junk: 1, is_new: 0 }, ctx.actor.label, ctx.ip); return { ok: true };
 });
 route('POST', '/api/leads/quick', T, (ctx) => {
@@ -384,14 +395,14 @@ route('GET', '/api/clients/:id', T, (ctx) => {
     ...V.clientView(c), onboarding_items: V.onboardingView(c), jobs, members: all('SELECT * FROM client_members WHERE client_id=?', c.id),
     messages: all("SELECT * FROM messages WHERE person_type='client' AND person_id=? ORDER BY at DESC LIMIT 30", c.id),
     files: all('SELECT * FROM files WHERE record_id=? AND replaced=0 ORDER BY at DESC', c.id), notes: all('SELECT * FROM notes WHERE record_id=? ORDER BY at DESC', c.id),
-    consents: all("SELECT * FROM consents WHERE person_type='client' AND person_id=? ORDER BY at DESC", c.id), agencies: all('SELECT id, name FROM agencies'),
-    agency_users: all("SELECT id, name FROM users WHERE agency_id=? AND status='On'", c.agency_id),
+    consents: all("SELECT * FROM consents WHERE person_type='client' AND person_id=? ORDER BY at DESC", c.id), agencies: all(`SELECT id, name FROM agencies${isSuper(ctx.user) ? '' : " WHERE status='Active'"}`), can_allocate: isSuper(ctx.user) || (!c.agency_id && R.canAllocate(ctx.user)),
+    agency_users: all("SELECT id, name FROM users WHERE agency_id=? AND status='On'", c.agency_id || D.soleAgency()),
   };
 });
 route('PATCH', '/api/clients/:id', T, (ctx) => {
   const c = get('SELECT * FROM clients WHERE id=?', ctx.params.id); mustSee(seeClient(ctx.user, c), 'client');
   const allowed = ['company', 'contact', 'whatsapp', 'email', 'city', 'state', 'business_type', 'need', 'roles', 'stage', 'owner_id', 'industry', 'fee_type', 'fee_value', 'replacement_days', 'payment_days', 'language', 'hide_name_until', 'extra', 'archived', 'dnc'];
-  if (isSuper(ctx.user)) allowed.push('agency_id');
+  if (isSuper(ctx.user) || (!c.agency_id && R.canAllocate(ctx.user))) allowed.push('agency_id');
   const patch = {}; for (const k of allowed) if (ctx.body[k] !== undefined) patch[k] = ctx.body[k];
   if (patch.whatsapp) { patch.whatsapp = L.digits10(patch.whatsapp); if (!L.validPhone(patch.whatsapp)) throw httpError(400, 'Enter a 10-digit WhatsApp number', 'whatsapp'); }
   if (patch.fee_value === '') patch.fee_value = null;
@@ -608,7 +619,7 @@ route('POST', '/api/jobs/import', T, (ctx) => {
   return { summary, created: made, rows: plan.map(out) };
 });
 route('GET', '/api/jobs/:id', T, (ctx) => {
-  const j = get('SELECT * FROM jobs WHERE id=?', ctx.params.id); mustSee(seeJob(ctx.user, j) || (ctx.user.level !== 'super' && j && j.agency_id === ctx.user.agency_id), 'job opening');
+  const j = get('SELECT * FROM jobs WHERE id=?', ctx.params.id); mustSee(seeJob(ctx.user, j) || R.sameAgency(ctx.user, j), 'job opening');
   const apps = L.appsOfJob(j.id);
   const client = get('SELECT * FROM clients WHERE id=?', j.client_id);
   return {
@@ -889,7 +900,7 @@ route('PATCH', '/api/candidates/:id', T, (ctx) => {
 route('POST', '/api/candidates/bulk', T, (ctx) => {
   const { ids, action, job_id } = ctx.body; const out = { done: 0, errors: [] };
   if (action === 'add_to_job') {
-    const j = get('SELECT * FROM jobs WHERE id=?', job_id); mustSee(seeJob(ctx.user, j) || (j && j.agency_id === ctx.user.agency_id), 'job opening');
+    const j = get('SELECT * FROM jobs WHERE id=?', job_id); mustSee(seeJob(ctx.user, j) || R.sameAgency(ctx.user, j), 'job opening');
     for (const id of ids) { try { L.createApplication(id, job_id, ctx.actor, null, 'Added from resume bank'); out.done++; } catch (e) { out.errors.push(`${id}: ${e.message}`); } }
   } else if (action === 'alert') {
     if (ctx.user.level === 'sub') throw httpError(403, 'Sub admins cannot send bulk job alerts.');
@@ -1030,7 +1041,7 @@ route('GET', '/api/board', T, (ctx) => {
   return { steps: L.STEPS, apps: rows, jobs: visibleJobs(ctx.user).map((j) => ({ id: j.id, title: j.title, client: V.jobView(j).client_name })) };
 });
 route('POST', '/api/applications', T, (ctx) => {
-  const j = get('SELECT * FROM jobs WHERE id=?', ctx.body.job_id); mustSee(seeJob(ctx.user, j) || (j && j.agency_id === ctx.user.agency_id), 'job opening');
+  const j = get('SELECT * FROM jobs WHERE id=?', ctx.body.job_id); mustSee(seeJob(ctx.user, j) || R.sameAgency(ctx.user, j), 'job opening');
   return L.createApplication(ctx.body.candidate_id, j.id, ctx.actor, ctx.body.source, ctx.body.note);
 });
 function loadApp(ctx) {

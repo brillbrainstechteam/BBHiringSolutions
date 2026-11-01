@@ -811,7 +811,7 @@ route('GET', '/api/files/:id', {}, (ctx) => {
     if (rid.startsWith('CA-')) { const c = get('SELECT * FROM candidates WHERE id=?', rid); ok = R.phoneVisible(u, c) || ['cv', 'short_cv'].includes(f.type); }
     else if (rid.startsWith('CL-')) ok = R.seeClient(u, get('SELECT * FROM clients WHERE id=?', rid));
     else if (rid.startsWith('AP-')) ok = R.seeApp(u, get('SELECT * FROM applications WHERE id=?', rid));
-    else if (rid.startsWith('JB-')) { const j = get('SELECT * FROM jobs WHERE id=?', rid); ok = R.seeJob(u, j) || (j && j.agency_id === u.agency_id); }
+    else if (rid.startsWith('JB-')) { const j = get('SELECT * FROM jobs WHERE id=?', rid); ok = R.seeJob(u, j) || R.sameAgency(u, j); }
     else if (rid.startsWith('BL-')) ok = R.seeBill(u, get('SELECT * FROM bills WHERE id=?', rid));
     if (ok) D.history(u.name, 'open file', rid, f.type, null, f.name, null, ctx.ip);
   } else if (s.kind === 'client') {

@@ -86,18 +86,23 @@ function rateCheck(key, max, minutes) {
 
 // ---------- access rules (section 4) ----------
 const isSuper = (u) => u.level === 'super';
-function seeClient(u, c) { return c && (isSuper(u) || (c.agency_id && c.agency_id === u.agency_id)); }
+// One active agency: its whole team works every client, and the agency on a record stays as it is (it decides bill shares).
+// Several active: admins allocate the unallocated clients and each agency then sees its own.
+const sharedWith = (u) => !!u.agency_id && D.soleAgency() === u.agency_id;
+const canAllocate = (u) => isSuper(u) || (u.level === 'admin' && !D.soleAgency() && !!D.get("SELECT 1 FROM agencies WHERE id=? AND status='Active'", u.agency_id));
+const sameAgency = (u, j) => !!j && ((!!j.agency_id && j.agency_id === u.agency_id) || sharedWith(u));
+function seeClient(u, c) { return c && (isSuper(u) || (c.agency_id && c.agency_id === u.agency_id) || sharedWith(u) || (!c.agency_id && canAllocate(u))); }
 function seeJob(u, j) {
   if (!j) return false;
   if (isSuper(u)) return true;
-  if (u.level === 'admin') return j.agency_id === u.agency_id;
+  if (u.level === 'admin') return sameAgency(u, j);
   return j.recruiter_id === u.id;
 }
 function seeApp(u, a, j) {
   if (!a) return false;
   j = j || D.get('SELECT * FROM jobs WHERE id=?', a.job_id);
   if (isSuper(u)) return true;
-  if (u.level === 'admin') return j && j.agency_id === u.agency_id;
+  if (u.level === 'admin') return sameAgency(u, j);
   return a.owner_id === u.id || (j && j.recruiter_id === u.id);
 }
 const phoneVisible = (u, c) => isSuper(u) || (c.agency_id && c.agency_id === u.agency_id);
@@ -105,7 +110,7 @@ function seeBill(u, b) { return isSuper(u) || (u.level === 'admin' && b.agency_i
 function seeThread(u, ptype, pid) {
   if (isSuper(u)) return true;
   if (ptype === 'user') { const t = D.get('SELECT * FROM users WHERE id=?', pid); return t && (t.id === u.id || (u.level === 'admin' && t.agency_id === u.agency_id)); }
-  if (ptype === 'client') { const c = D.get('SELECT * FROM clients WHERE id=?', pid); if (!c) return false; return u.level === 'admin' ? c.agency_id === u.agency_id : c.owner_id === u.id || !!D.get('SELECT 1 FROM jobs WHERE client_id=? AND recruiter_id=?', pid, u.id); }
+  if (ptype === 'client') { const c = D.get('SELECT * FROM clients WHERE id=?', pid); if (!c) return false; return sharedWith(u) || (u.level === 'admin' ? c.agency_id === u.agency_id : c.owner_id === u.id || !!D.get('SELECT 1 FROM jobs WHERE client_id=? AND recruiter_id=?', pid, u.id)); }
   if (ptype === 'candidate') { const c = D.get('SELECT * FROM candidates WHERE id=?', pid); if (!c) return false; return u.level === 'admin' ? c.agency_id === u.agency_id || !!D.get('SELECT 1 FROM applications a JOIN jobs j ON j.id=a.job_id WHERE a.candidate_id=? AND j.agency_id=?', pid, u.agency_id) : c.recruiter_id === u.id || !!D.get('SELECT 1 FROM applications a JOIN jobs j ON j.id=a.job_id WHERE a.candidate_id=? AND (a.owner_id=? OR j.recruiter_id=?)', pid, u.id, u.id); }
   return false;
 }
@@ -116,4 +121,4 @@ function candidateOut(u, c) {
   return { ...c, whatsapp: show ? c.whatsapp : maskPhone(c.whatsapp), email: show ? c.email : '', phone_hidden: !show };
 }
 
-module.exports = { channelOnly, route, dispatch, newSession, loadSession, actorOf, isSuper, seeClient, seeJob, seeApp, seeBill, seeThread, phoneVisible, candidateOut, maskPhone };
+module.exports = { channelOnly, route, dispatch, newSession, loadSession, actorOf, isSuper, sharedWith, canAllocate, sameAgency, seeClient, seeJob, seeApp, seeBill, seeThread, phoneVisible, candidateOut, maskPhone };

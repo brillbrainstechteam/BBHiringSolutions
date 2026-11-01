@@ -267,4 +267,7 @@ function testRestore() {
 }
 function setHealth(key, value) { run('INSERT INTO health (key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value', key, String(value)); }
 
-module.exports = { db, ENV, DATA_DIR, all, get, run, insert, update, tx, nextId, settings, setSetting, history, edit, httpError, now, backup, testRestore, setHealth };
+// The one active agency, or null once there are none or several. While it is alone it handles every client.
+function soleAgency() { const a = all("SELECT id FROM agencies WHERE status='Active' LIMIT 2"); return a.length === 1 ? a[0].id : null; }
+
+module.exports = { soleAgency, db, ENV, DATA_DIR, all, get, run, insert, update, tx, nextId, settings, setSetting, history, edit, httpError, now, backup, testRestore, setHealth };

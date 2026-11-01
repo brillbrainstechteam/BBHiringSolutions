@@ -805,7 +805,10 @@ function intakeClient(d, o) {
   history(who, 'create', id, null, null, `Client ${d.company || d.contact} from ${source}`);
   if (o.consent !== false) saveConsent('client', id, source, o.wording);
   if (o.consent !== false && !o.silent) sendWA({ ptype: 'client', pid: id, format: 'bbhs_client_welcome', vars: { client_id: id, link: link('my-account') }, auto: true, rule: 'client_welcome', dedupe: `welcome:${id}` });
-  if (!agency && !o.silent) for (const s of superAdmins()) insert('alerts', { user_id: s.id, text: `New client lead ${id} (${d.company || d.contact})`, record_id: id, read: 0, at: now() });
+  if (!agency && !o.silent) {
+    const team = D.soleAgency() ? D.all("SELECT id, team FROM users WHERE agency_id=? AND status='On'", D.soleAgency()).filter((x) => (x.team || 'Recruitment') === 'Recruitment') : [];
+    for (const s of [...superAdmins(), ...team]) insert('alerts', { user_id: s.id, text: `New client lead ${id} (${d.company || d.contact})`, record_id: id, read: 0, at: now() });
+  }
   return { client: get('SELECT * FROM clients WHERE id=?', id), isNew: true };
 }
 // The ad a lead came from (campaign, ad set, ad name from the link), as columns; empty when there was no ad.

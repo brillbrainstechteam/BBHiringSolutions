@@ -25,9 +25,9 @@
   }
 
   // Social media and tech logins see only their hiring channels and their own login page.
-  const menuFor = (u) => (u.channel_only ? MENU.filter((m) => ['channels', 'logins'].includes(m[0])) : MENU.filter((m) => m[0] !== 'channels' && (!m[3] || m[3].includes(u.level))));
+  const menuFor = (u) => (u.channel_only ? MENU.filter((m) => ['channels', 'logins'].includes(m[0])) : MENU.filter((m) => m[0] !== 'channels' && (m[0] !== 'leads' || u.leads) && (!m[3] || m[3].includes(u.level))));
   const MENU = [
-    ['channels', 'Hiring channels', 'flow'], ['myday', 'My day', 'sun', ['sub']], ['dashboard', 'Dashboard', 'grid'], ['leads', 'Leads', 'inbox', ['super'], 'leads'],
+    ['channels', 'Hiring channels', 'flow'], ['myday', 'My day', 'sun', ['sub']], ['dashboard', 'Dashboard', 'grid'], ['leads', 'Leads', 'inbox', null, 'leads'],
     ['clients', 'Clients', 'building'], ['jobs', 'Job openings', 'brief'], ['candidates', 'Candidates', 'users', null, 'cand_new'], ['applications', 'Applications', 'flow'],
     ['interviews', 'Interviews', 'cal', null, 'pending'], ['whatsapp', 'WhatsApp', 'chat', null, 'unread'],
     ['performance', 'Performance', 'chart'], ['logs', 'Daily logs', 'note'], ['bills', 'Bills', 'rupee', ['super', 'admin']], ['money', 'Money', 'money', ['super']],
@@ -38,7 +38,7 @@
     channels: 'The hiring channels you own, for every open job. Copy a job\'s link for the channel, post it, then mark the cell Done.',
     myday: 'Everything you need to do today: interviews, results to record, follow-ups and stuck applications.',
     dashboard: 'Counts and the Needs attention list. Every item has a WhatsApp button to nudge the right person.',
-    leads: 'New clients from every door (forms, WhatsApp bot, email, Excel). Assign each to an agency. New candidates go straight to Candidates.',
+    leads: 'New clients from every door (forms, WhatsApp bot, email, Excel). With one active agency everyone sees them all; with more, an admin allocates each to an agency. New candidates go straight to Candidates.',
     clients: 'Jewellery businesses that hire through us. Open one to see onboarding, job openings and chats.',
     jobs: 'Each role a client wants to fill. The status is worked out from its applications — never typed by hand (except On hold and Closed).',
     candidates: 'Every candidate from every door lands here, with New and Unassigned views. Domain and skills are read from each CV automatically. The resume bank is shared by all agencies. Segments are saved groups of candidates that stay up to date. Phone numbers show only for your own agency\'s candidates.',

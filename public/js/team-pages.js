@@ -83,16 +83,16 @@
     if (q.tab === 'candidate') return BB.go('team/candidates?new=1'); // candidate leads moved to Candidates
     const tab = q.tab || 'client';
     const d = await BB.api(`/api/leads?${BB.qs(q, { tab: undefined })}`); d.check = d.check.filter((r) => r.type === 'client');
-    actions.innerHTML = dl(`/api/leads?${BB.qs(q, { tab, format: 'xlsx' })}`); wireDl(actions);
+    if (d.can_download) { actions.innerHTML = dl(`/api/leads?${BB.qs(q, { tab, format: 'xlsx' })}`); wireDl(actions); }
     const agencyOpts = d.agencies.map((a) => `<option value="${a.id}">${esc(a.name)}</option>`).join('');
-    const assignCell = (type, r) => (r.agency_id ? `<span class="badge b-outline">${esc(r.agency_id)}</span>` : `<select data-assign="${type}:${r.id}" class="mini"><option value="">Assign to agency…</option>${agencyOpts}</select>`);
+    const assignCell = (type, r) => (r.agency_id ? `<span class="badge b-outline">${esc(r.agency_id)}</span>` : !d.can_allocate ? '<span class="tiny muted">Not allocated</span>' : `<select data-assign="${type}:${r.id}" class="mini"><option value="">Assign to agency…</option>${agencyOpts}</select>`);
     const src = Object.entries(d.sources).sort((a, b) => b[1] - a[1]);
-    el.innerHTML = `<div class="card pad" style="margin-bottom:14px"><div class="row between"><b>Leads by source · last ${q.days || 30} days</b><div class="seg">${[7, 30].map((n) => `<button data-days="${n}" class="${String(q.days || 30) === String(n) ? 'on' : ''}">${n} days</button>`).join('')}</div></div><div class="row" style="margin-top:8px">${src.map(([s, n]) => `<span class="chip" data-src="${esc(s)}">${esc(s)} <span class="n">${n}</span>${d.hires[s] ? ` <span class="badge b-green tiny">${d.hires[s]} hired</span>` : ''}</span>`).join('') || '<span class="faint">No leads yet.</span>'}</div></div>
+    el.innerHTML = `${d.shared ? '<div class="small muted" style="margin-bottom:10px">One agency is active, so every client shows for the whole team. Allocation starts when a second agency is active.</div>' : ''}<div class="card pad" style="margin-bottom:14px"><div class="row between"><b>Leads by source · last ${q.days || 30} days</b><div class="seg">${[7, 30].map((n) => `<button data-days="${n}" class="${String(q.days || 30) === String(n) ? 'on' : ''}">${n} days</button>`).join('')}</div></div><div class="row" style="margin-top:8px">${src.map(([s, n]) => `<span class="chip" data-src="${esc(s)}">${esc(s)} <span class="n">${n}</span>${d.hires[s] ? ` <span class="badge b-green tiny">${d.hires[s]} hired</span>` : ''}</span>`).join('') || '<span class="faint">No leads yet.</span>'}</div></div>
       <div class="tabs">${[['client', 'Client leads', d.clients.length], ['check', 'Needs checking', d.check.length]].map(([k, l, n]) => `<button data-tab="${k}" class="${tab === k ? 'on' : ''}">${l} <span class="n">${n}</span></button>`).join('')}</div>
       <div class="filters"><select data-f="source"><option value="">All sources</option>${BB.boot.lead_sources.map((s) => `<option ${q.source === s ? 'selected' : ''}>${esc(s)}</option>`).join('')}</select><label class="row small"><input type="checkbox" data-f="all" ${q.all ? 'checked' : ''}> Include assigned</label><label class="row small"><input type="checkbox" data-f="new" ${q.new ? 'checked' : ''}> New only</label></div>
       ${tab !== 'check' ? `<div class="row small bulkbar" data-leadbar><span class="muted" data-selcount>Tick leads to act on them:</span>
-        <button class="btn sm" data-lb="download">Download selected</button>
-        <select class="mini" data-lb-ag><option value="">Assign to agency…</option>${agencyOpts}</select>
+        ${d.can_download ? '<button class="btn sm" data-lb="download">Download selected</button>' : ''}
+        ${d.can_allocate ? `<select class="mini" data-lb-ag><option value="">Assign to agency…</option>${agencyOpts}</select>` : ''}
         ${tab === 'client' ? `<select class="mini" data-lb-stage><option value="">Move to stage…</option>${(d.stages || []).map((x) => `<option>${esc(x)}</option>`).join('')}</select>` : '<button class="btn sm" data-lb="add_to_job">Add to a job</button>'}
         <button class="btn sm" data-lb="welcome">${BB.icon('chat')} Send account link</button>
         <button class="btn sm" data-lb="seen">Mark as seen</button>
@@ -128,7 +128,7 @@
         if (a === 'seen') return run('seen', null, 'Marked as seen');
         if (a === 'junk') { if (!ids().length) return; if (await BB.confirm('Mark as junk', `${many(v.length)} will be hidden from all lists (not deleted).`, 'Mark as junk')) run('junk', null, 'Marked as junk'); }
       }));
-      const ag = $('[data-lb-ag]', bar); ag.onchange = async () => { const v = ids(); if (!v.length || !ag.value) { ag.value = ''; return; } try { await BB.post('/api/leads/assign', { type: tab, ids: v, agency_id: ag.value }); BB.toast(`${many(v.length)} assigned — the agency admin got a task alert`); BB.refreshPage(); } catch (e) { BB.fail(e); } };
+      const ag = $('[data-lb-ag]', bar); if (ag) ag.onchange = async () => { const v = ids(); if (!v.length || !ag.value) { ag.value = ''; return; } try { await BB.post('/api/leads/assign', { type: tab, ids: v, agency_id: ag.value }); BB.toast(`${many(v.length)} assigned — the agency admin got a task alert`); BB.refreshPage(); } catch (e) { BB.fail(e); } };
       const st = $('[data-lb-stage]', bar); if (st) st.onchange = () => { const val = st.value; st.value = ''; if (val) run('stage', val, `Moved to ${val}`); };
     }
   };
