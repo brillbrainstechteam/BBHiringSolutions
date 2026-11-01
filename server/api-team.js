@@ -378,7 +378,7 @@ route('GET', '/api/merge/:type/:a/:b', T, (ctx) => {
 route('GET', '/api/clients', T, (ctx) => {
   const q = ctx.query; const u = ctx.user;
   const rows = all('SELECT * FROM clients WHERE merged_into IS NULL AND removed=0 AND junk=0 ORDER BY created_at DESC')
-    .filter((c) => seeClient(u, c) && (q.archived ? c.archived : !c.archived) && (!q.stage || c.stage === q.stage) && like(q.q, c.id, c.company, c.contact, c.city, c.whatsapp, c.old_code))
+    .filter((c) => seeClient(u, c) && (q.archived ? c.archived : !c.archived) && (!q.stage || c.stage === q.stage) && (!q.lifecycle || (q.lifecycle === 'Active' ? !!c.activated_at : !c.activated_at)) && like(q.q, c.id, c.company, c.contact, c.city, c.whatsapp, c.old_code))
     .map(V.clientView);
   return page(ctx, rows, 'clients', ['id', 'company', 'contact', 'whatsapp', 'city', 'business_type', 'stage', 'agency_name', 'owner_name', 'jobs_open', 'jobs_total', 'account_status', 'source']);
 });
@@ -395,6 +395,7 @@ route('GET', '/api/clients/:id', T, (ctx) => {
     ...V.clientView(c), onboarding_items: V.onboardingView(c), jobs, members: all('SELECT * FROM client_members WHERE client_id=?', c.id),
     messages: all("SELECT * FROM messages WHERE person_type='client' AND person_id=? ORDER BY at DESC LIMIT 30", c.id),
     files: all('SELECT * FROM files WHERE record_id=? AND replaced=0 ORDER BY at DESC', c.id), notes: all('SELECT * FROM notes WHERE record_id=? ORDER BY at DESC', c.id),
+    activation: L.activationState(c), calls: all('SELECT * FROM client_calls WHERE client_id=? ORDER BY at DESC', c.id), mails: all('SELECT id, subject, kind, status, at, to_addr FROM emails WHERE record_id=? ORDER BY id DESC LIMIT 20', c.id),
     consents: all("SELECT * FROM consents WHERE person_type='client' AND person_id=? ORDER BY at DESC", c.id), agencies: all(`SELECT id, name FROM agencies${isSuper(ctx.user) ? '' : " WHERE status='Active'"}`), can_allocate: isSuper(ctx.user) || (!c.agency_id && R.canAllocate(ctx.user)),
     agency_users: all("SELECT id, name FROM users WHERE agency_id=? AND status='On'", c.agency_id || D.soleAgency()),
   };
@@ -406,7 +407,8 @@ route('PATCH', '/api/clients/:id', T, (ctx) => {
   const patch = {}; for (const k of allowed) if (ctx.body[k] !== undefined) patch[k] = ctx.body[k];
   if (patch.whatsapp) { patch.whatsapp = L.digits10(patch.whatsapp); if (!L.validPhone(patch.whatsapp)) throw httpError(400, 'Enter a 10-digit WhatsApp number', 'whatsapp'); }
   if (patch.fee_value === '') patch.fee_value = null;
-  if (patch.agency_id && patch.agency_id !== c.agency_id) { const adm = L.agencyAdmin(patch.agency_id); patch.owner_id = adm ? adm.id : null; patch.is_new = 0; }
+  if (patch.stage === 'Client activated' && !c.activated_at) { const st = L.activationState(c); if (!st.ready) throw httpError(400, `A lead becomes an active client after: ${st.missing.join(' and ')}.`); }
+  if (patch.agency_id && patch.agency_id !== c.agency_id) { const adm = L.agencyAdmin(patch.agency_id); patch.owner_id = adm ? adm.id : null; patch.is_new = 0; D.run('UPDATE jobs SET agency_id=? WHERE client_id=? AND agency_id IS NULL', patch.agency_id, c.id); }
   return D.edit('clients', c.id, patch, ctx.actor.label, ctx.ip);
 });
 route('POST', '/api/clients/:id/onboarding', T, (ctx) => {
@@ -415,11 +417,12 @@ route('POST', '/api/clients/:id/onboarding', T, (ctx) => {
   const ob = { ...(c.onboarding || {}) }; ob[item] = { done: !!done, date: done ? now() : null, by: ctx.actor.label, note: note || (ob[item] || {}).note || '' };
   const patch = { onboarding: ob };
   const stages = D.settings().client_stages;
-  if (done && it.stage && stages.indexOf(it.stage) > stages.indexOf(c.stage)) patch.stage = it.stage;
+  if (done && it.stage && it.stage !== 'Client activated' && stages.indexOf(it.stage) > stages.indexOf(c.stage)) patch.stage = it.stage;
   if (item === 'contract' && done && !c.contract) patch.contract = JSON.stringify({ by: ctx.actor.label, at: now(), method: 'Marked by team' });
   D.edit('clients', c.id, patch, ctx.actor.label, ctx.ip);
   if (done && note) insert('notes', { record_id: c.id, text: `${it.label}: ${note}`, author: ctx.actor.label, at: now() });
-  return { ok: true, stage: patch.stage || c.stage };
+  L.checkActivation(c.id, ctx.actor);
+  return { ok: true, stage: get('SELECT stage FROM clients WHERE id=?', c.id).stage };
 });
 route('POST', '/api/clients/:id/summary', T, (ctx) => {
   const c = get('SELECT * FROM clients WHERE id=?', ctx.params.id); mustSee(seeClient(ctx.user, c), 'client');
@@ -474,7 +477,9 @@ function internalClient(agencyId) {
 route('POST', '/api/jobs', T, (ctx) => {
   const b = ctx.body; const c = b.client_id === 'TBC' ? placeholderClient(ctx.user.agency_id) : b.client_id === 'INTERNAL' ? internalClient(ctx.user.agency_id) : get('SELECT * FROM clients WHERE id=?', b.client_id); mustSee(seeClient(ctx.user, c), 'client');
   if (ctx.user.level === 'sub') b.recruiter_id = ctx.user.id;
-  return createJob(c, b, ctx.actor, false);
+  const made = createJob(c, b, ctx.actor, false);
+  if (b.jewel_need) { const j = get('SELECT jd FROM jobs WHERE id=?', made.id); update('jobs', made.id, { jd: { ...(j.jd || {}), jewel_need: b.jewel_need, ...(b.duties ? { duties: b.duties } : {}) } }); }
+  return made;
 });
 function createJob(c, b, actor, byClient) {
   if (!b.title) throw httpError(400, 'Pick the job', 'title');
@@ -521,6 +526,15 @@ route('GET', '/api/postings/tracker', { ...T, channels: true }, (ctx) => {
   for (const j of jobs) { syncPostings(j.id); cells[j.id] = {}; for (const p of all('SELECT ckey, status, done_date, post_link, done_by FROM postings WHERE job_id=? AND ckey IS NOT NULL', j.id)) cells[j.id][p.ckey] = { status: p.status || (p.done_date ? 'Done' : ''), done_date: p.done_date, post_link: p.post_link, done_by: p.done_by }; }
   const tags = Object.fromEntries(channels().map((c) => [c.key, c.tag]));
   return { channels: channels(), link_base: L.link('apply', '?'), tags, jobs: jobs.map((j) => ({ id: j.id, code: j.old_code || j.id, title: j.title, city: j.city, client: limited ? '' : j.client_name, status: j.status })), cells };
+});
+// The same status on one channel for every ticked job.
+route('POST', '/api/postings/tracker/bulk', { ...T, channels: true }, (ctx) => {
+  const b = ctx.body || {}; let done = 0;
+  for (const id of (b.job_ids || []).slice(0, 200)) {
+    const j = get('SELECT * FROM jobs WHERE id=?', id); if (!j || !(R.channelOnly(ctx.user) || seeJob(ctx.user, j) || R.sameAgency(ctx.user, j))) continue;
+    syncPostings(j.id); const p = get('SELECT * FROM postings WHERE job_id=? AND ckey=?', j.id, b.ckey); if (p) { setPosting(p, b.status, '', ctx.actor); done++; }
+  }
+  return { done };
 });
 route('POST', '/api/postings/tracker', { ...T, channels: true }, (ctx) => {
   const j = get('SELECT * FROM jobs WHERE id=?', ctx.body.job_id); mustSee(R.channelOnly(ctx.user) ? !!j : seeJob(ctx.user, j), 'job opening');
@@ -1054,7 +1068,7 @@ route('GET', '/api/applications/:id', T, (ctx) => {
   return {
     ...v, candidate: candidateOut(ctx.user, cand), job: V.jobView(job), client: { id: client.id, company: client.company, contact: client.contact },
     history: all('SELECT * FROM app_history WHERE app_id=? ORDER BY at DESC, id DESC', a.id), messages: all('SELECT * FROM messages WHERE ap=? ORDER BY at DESC', a.id),
-    score: L.matchScore(cand, job, L.ratingOf(cand.id)), bill: bill ? L.billView(bill) : null, suggest: suggestFor(a), steps: L.STEPS,
+    score: L.matchScore(cand, job, L.ratingOf(cand.id)), bill: bill ? L.billView(bill) : null, suggest: suggestFor(a), steps: L.STEPS, next: require('./flow').nextStep(a, bill), client_cv: cand.short_cv_file || null,
     files: all('SELECT * FROM files WHERE record_id=? AND replaced=0 ORDER BY at DESC', a.id), notes: all('SELECT * FROM notes WHERE record_id=? ORDER BY at DESC', a.id),
     calls: all('SELECT * FROM calls WHERE candidate_id=? ORDER BY at DESC LIMIT 50', a.candidate_id), call_outcomes: L.CALL_OUTCOMES, client_city: client.city,
     checklist_items: D.settings().templates.joining_checklist.split('\n').filter(Boolean),
@@ -1567,7 +1581,7 @@ route('POST', '/api/roles/role', T, (ctx) => {
 });
 
 // ---------- settings (super admin) ----------
-const EDITABLE = ['hiring_channels', 'landing_roles', 'wa_pause', 'business', 'industries', 'default_industry', 'hidden_jobs', 'departments', 'cities', 'skills', 'client_stages', 'closing_reasons', 'job_close_reasons', 'reopen_reasons', 'lead_sources', 'src_tags', 'fee', 'agency_share_pct', 'gst', 'replacement_days', 'payment_days', 'targets', 'log_deadline', 'quiet', 'daily_limit', 'bulk_budget', 'match', 'languages', 'id_start', 'bill_prefix', 'retention_years', 'team_idle_hours', 'formats', 'auto_rules', 'crm', 'posting_channels', 'gap_targets', 'templates', 'jd_template', 'jd_templates'];
+const EDITABLE = ['accounts_email', 'expense_categories', 'revenue_kinds', 'call_script', 'email_templates', 'creative_template', 'hiring_channels', 'landing_roles', 'wa_pause', 'business', 'industries', 'default_industry', 'hidden_jobs', 'departments', 'cities', 'skills', 'client_stages', 'closing_reasons', 'job_close_reasons', 'reopen_reasons', 'lead_sources', 'src_tags', 'fee', 'agency_share_pct', 'gst', 'replacement_days', 'payment_days', 'targets', 'log_deadline', 'quiet', 'daily_limit', 'bulk_budget', 'match', 'languages', 'id_start', 'bill_prefix', 'retention_years', 'team_idle_hours', 'formats', 'auto_rules', 'crm', 'posting_channels', 'gap_targets', 'templates', 'jd_template', 'jd_templates'];
 route('GET', '/api/settings', SUPER, () => { const s = { ...D.settings() }; s.crm = { ...s.crm, token: s.crm.token ? '••••••••' : '', webhook_secret: s.crm.from_env && s.crm.from_env.webhook_secret ? '••••••••' : s.crm.webhook_secret }; return s; });
 route('POST', '/api/health/mail', SUPER, async () => require('./mailbox').check());
 route('POST', '/api/health/email', SUPER, (ctx) => {
@@ -1689,8 +1703,9 @@ route('POST', '/api/files', T, async (ctx) => {
   const b = ctx.body; const f = await F.saveFile({ recordId: b.record_id, type: b.type || 'file', name: b.name, base64: b.base64, by: ctx.actor.label });
   if (b.type === 'cv') { update('candidates', b.record_id, { cv_file: String(f.id), last_updated: now() }); f.filled = require('./cvparse').fillCandidate(b.record_id, b.name, b.base64, ctx.actor.label); }
   if (b.type === 'short_cv') update('candidates', b.record_id, { short_cv_file: String(f.id) });
-  if (['gst', 'pan', 'owner_id'].includes(b.type)) { const c = get('SELECT * FROM clients WHERE id=?', b.record_id); update('clients', c.id, { kyc: { ...(c.kyc || {}), [b.type]: f.id } }); }
+  if (['gst', 'pan', 'owner_id'].includes(b.type)) { const c = get('SELECT * FROM clients WHERE id=?', b.record_id); update('clients', c.id, { kyc: { ...(c.kyc || {}), [b.type]: f.id } }); L.checkActivation(c.id, ctx.actor); }
   if (b.type === 'contract_signed') update('clients', b.record_id, { contract: JSON.stringify({ file: f.id, by: ctx.actor.label, at: now(), method: 'Signed copy uploaded' }) });
+  if (b.type === 'contract_signed') L.checkActivation(b.record_id, ctx.actor);
   if (b.type === 'jd') D.edit('jobs', b.record_id, { jd: { ...(get('SELECT jd FROM jobs WHERE id=?', b.record_id) || {}).jd, file: f.id } }, ctx.actor.label);
   return f;
 });
@@ -1801,4 +1816,5 @@ route('GET', '/api/reports/:name', T, (ctx) => {
 });
 module.exports.removePerson = removePerson;
 require('./trash'); // delete with a recycle bin (Settings -> Deleted items)
+require('./flow'); // client onboarding, screening with AI, client CVs, invoices, books
 require('./adspend'); // ad spend reports from Meta and LinkedIn (Job openings -> Ad spend)

@@ -12,7 +12,7 @@ const DB_FILE = path.join(DATA_DIR, 'bbhs.db');
 const db = new DatabaseSync(DB_FILE);
 db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;'); // wait up to 5 s if another write is in progress
 
-const JSON_COLS = new Set(['exp_business', 'kyc', 'extra', 'perms', 'jd', 'qa', 'buttons', 'checklist', 'onboarding', 'work_cities', 'skills', 'rounds', 'screening_qs', 'value', 'map', 'vars', 'joining_docs', 'social', 'resume_check', 'ad_match']);
+const JSON_COLS = new Set(['wa_group', 'exp_business', 'kyc', 'extra', 'perms', 'jd', 'qa', 'buttons', 'checklist', 'onboarding', 'work_cities', 'skills', 'rounds', 'screening_qs', 'value', 'map', 'vars', 'joining_docs', 'social', 'resume_check', 'ad_match']);
 
 db.exec(`
 CREATE TABLE IF NOT EXISTS counters (name TEXT PRIMARY KEY, next INTEGER NOT NULL);
@@ -93,7 +93,7 @@ CREATE INDEX IF NOT EXISTS ix_client_phone ON clients(whatsapp);
 `);
 
 // Columns added after the first version.
-for (const [table, col] of [['candidates', 'state TEXT'], ['candidates', "language TEXT DEFAULT 'en'"], ['candidates', "industry TEXT DEFAULT 'Jewellery'"], ['candidates', "exp_business TEXT DEFAULT '[]'"], ['users', 'email TEXT'], ['emails', 'send_after TEXT'], ['emails', 'dedupe TEXT'], ['users', "team TEXT DEFAULT 'Recruitment'"], ['candidates', 'domain TEXT'], ['candidates', 'extract_for TEXT'], ['interviews', 'mode TEXT'], ['interviews', 'link TEXT'], ['interviews', 'client_joins INTEGER DEFAULT 0'], ['candidates', "social TEXT DEFAULT '{}'"], ['candidates', "resume_check TEXT DEFAULT '{}'"], ['saved_searches', 'shared INTEGER DEFAULT 0'], ['saved_searches', 'created_at TEXT'], ['saved_searches', 'updated_at TEXT'], ['candidates', 'ad_campaign TEXT'], ['candidates', 'ad_set TEXT'], ['candidates', 'ad_name TEXT'], ['applications', 'ad_campaign TEXT'], ['applications', 'ad_set TEXT'], ['applications', 'ad_name TEXT'], ['clients', 'placeholder INTEGER DEFAULT 0'], ['clients', 'internal INTEGER DEFAULT 0'], ['postings', 'status TEXT'], ['postings', 'ckey TEXT'], ['postings', 'done_by TEXT'], ['jobs', "ad_match TEXT DEFAULT '[]'"], ['applications', 'screen TEXT'], ['applications', 'screen_note TEXT'], ['applications', 'screen_at TEXT'], ['applications', 'screen_by TEXT']]) { try { db.exec(`ALTER TABLE ${table} ADD COLUMN ${col}`); } catch { /* already there */ } }
+for (const [table, col] of [['clients', 'activated_at TEXT'], ['clients', 'wa_group TEXT'], ['jobs', 'mass_batch TEXT'], ['candidates', 'short_cv_for TEXT'], ['applications', 'verbal_at TEXT'], ['applications', 'verbal_ok_at TEXT'], ['applications', 'letter_at TEXT'], ['bills', 'accounts_asked_at TEXT'], ['bills', 'invoice_file TEXT'], ['emails', 'attachments TEXT'], ['candidates', 'state TEXT'], ['candidates', "language TEXT DEFAULT 'en'"], ['candidates', "industry TEXT DEFAULT 'Jewellery'"], ['candidates', "exp_business TEXT DEFAULT '[]'"], ['users', 'email TEXT'], ['emails', 'send_after TEXT'], ['emails', 'dedupe TEXT'], ['users', "team TEXT DEFAULT 'Recruitment'"], ['candidates', 'domain TEXT'], ['candidates', 'extract_for TEXT'], ['interviews', 'mode TEXT'], ['interviews', 'link TEXT'], ['interviews', 'client_joins INTEGER DEFAULT 0'], ['candidates', "social TEXT DEFAULT '{}'"], ['candidates', "resume_check TEXT DEFAULT '{}'"], ['saved_searches', 'shared INTEGER DEFAULT 0'], ['saved_searches', 'created_at TEXT'], ['saved_searches', 'updated_at TEXT'], ['candidates', 'ad_campaign TEXT'], ['candidates', 'ad_set TEXT'], ['candidates', 'ad_name TEXT'], ['applications', 'ad_campaign TEXT'], ['applications', 'ad_set TEXT'], ['applications', 'ad_name TEXT'], ['clients', 'placeholder INTEGER DEFAULT 0'], ['clients', 'internal INTEGER DEFAULT 0'], ['postings', 'status TEXT'], ['postings', 'ckey TEXT'], ['postings', 'done_by TEXT'], ['jobs', "ad_match TEXT DEFAULT '[]'"], ['applications', 'screen TEXT'], ['applications', 'screen_note TEXT'], ['applications', 'screen_at TEXT'], ['applications', 'screen_by TEXT']]) { try { db.exec(`ALTER TABLE ${table} ADD COLUMN ${col}`); } catch { /* already there */ } }
 db.exec('CREATE INDEX IF NOT EXISTS ix_emails_dedupe ON emails(dedupe); CREATE INDEX IF NOT EXISTS ix_emails_after ON emails(status, send_after);');
 
 // ---------- small helpers ----------
@@ -200,6 +200,23 @@ function ensureSettings() {
     setSetting('done_once', [...(settings().done_once || []), 'rules_off_2026_10_30']);
   }
   // Candidate login back on: new applicants must activate, and the portal needs its login.
+  // Everything automatic is held until the owner switches it on (Settings -> Messages on hold). Nothing already
+  // waiting goes out: 644 old emails and any scheduled WhatsApp are marked held, not deleted.
+  if (!once.includes('messages_off_2026_11_02')) {
+    setSetting('wa_pause', { ...(settings().wa_pause || {}), everyone: true, email: true });
+    run("UPDATE emails SET status='held', error='Held: messages are off' WHERE status LIKE 'not sent%' OR status IN ('queued','scheduled')");
+    run("UPDATE messages SET status='held', error='Held: messages are off' WHERE status='scheduled'");
+    setSetting('done_once', [...(settings().done_once || []), 'messages_off_2026_11_02']);
+  }
+  // Clients already working with us stay active; from now on a client becomes active on signed contract + KYC.
+  if (!once.includes('clients_activated_2026_11_02')) {
+    run("UPDATE clients SET activated_at=created_at WHERE activated_at IS NULL AND stage IN ('Client activated','Job opening active')");
+    setSetting('done_once', [...(settings().done_once || []), 'clients_activated_2026_11_02']);
+  }
+  if (!once.includes('format_client_thanks')) {
+    const f = defs.formats.bbhs_client_thanks; setSetting('formats', { ...settings().formats, bbhs_client_thanks: f });
+    setSetting('done_once', [...(settings().done_once || []), 'format_client_thanks']);
+  }
   if (!once.includes('candidate_login_on_2026_11_01')) {
     setSetting('auto_rules', settings().auto_rules.map((r) => (r.key === 'candidate_login' ? { ...r, on: true } : r)));
     setSetting('done_once', [...(settings().done_once || []), 'candidate_login_on_2026_11_01']);

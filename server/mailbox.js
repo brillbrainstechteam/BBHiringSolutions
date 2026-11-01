@@ -224,7 +224,9 @@ async function checkNow() {
           const own = ownDomains().includes((String(fromEmail).split('@')[1] || '').toLowerCase());
           const subj = decodeWords(headers.subject || '');
           // The team's own replies in a thread are not candidates; a CV they forward is (read from the CV, not the sender).
-          if (own && !hasCv) done.skipped = (done.skipped || 0) + 1;
+          const client = own ? null : require('./flow').clientByEmail(fromEmail); // a client's reply with papers lands on the client
+          if (client) { await require('./flow').clientMail(client, subj, text, attachments); done.client = (done.client || 0) + 1; }
+          else if (own && !hasCv) done.skipped = (done.skipped || 0) + 1;
           else if (hasCv || require('./llm').available() || /cv|resume|bio.?data|job|appl|position|profile|candidate|opening|vacanc|interview|portfolio|work experience/i.test(subj)) {
             // Several CVs with different phone numbers are different people (an agency sending profiles): one
             // candidate per CV, read from the CV alone. One person's CV + portfolio stays one candidate.

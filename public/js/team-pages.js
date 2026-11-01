@@ -137,9 +137,11 @@
   P.clients = async ({ el, actions, q, me }) => {
     const r = await BB.api(`/api/clients?${BB.qs(q)}`);
     actions.innerHTML = `${dl(`/api/clients?${BB.qs(q, { format: 'xlsx' })}`)}<button class="btn primary" data-new>+ Create client account</button>`;
-    el.innerHTML = `<div class="filters"><input placeholder="Search name, ID, phone, city…" value="${esc(q.q || '')}" data-q><select data-stage><option value="">All stages</option>${BB.boot.stages.map((s) => `<option ${q.stage === s ? 'selected' : ''}>${esc(s)}</option>`).join('')}</select><label class="row small"><input type="checkbox" data-arch ${q.archived ? 'checked' : ''}> Archived</label></div>
-      <div class="card">${BB.table([{ t: 'ID', f: (c) => `<span class="mono">${c.id}</span>${c.is_new ? ' <span class="dot new"></span>' : ''}` }, { t: 'Company', f: (c) => `<b>${esc(c.company)}</b><div class="tiny muted">${esc(c.contact)}</div>` }, { t: 'City', f: (c) => esc(c.city) }, { t: 'Stage', f: (c) => `<span class="badge b-outline">${esc(c.stage)}</span>` }, { t: 'Agency', f: (c) => esc(c.agency_name || '—'), hideSm: 1 }, { t: 'Jobs open / total', num: 1, f: (c) => `${c.jobs_open} / ${c.jobs_total}` }, { t: 'Login', f: (c) => `<span class="badge ${c.account_status === 'Opened' ? 'b-green' : 'b-outline'}">${esc(c.account_status)}</span>`, hideSm: 1 }], r.rows, { open: (c) => `client:${c.id}` })}${BB.pager(r)}</div>`;
-    wireDl(actions); BB.wirePager(el);
+    el.innerHTML = `<div class="filters"><input placeholder="Search name, ID, phone, city…" value="${esc(q.q || '')}" data-q><select data-stage><option value="">All stages</option>${BB.boot.stages.map((s) => `<option ${q.stage === s ? 'selected' : ''}>${esc(s)}</option>`).join('')}</select><select data-life><option value="">Leads and active clients</option><option value="Lead" ${q.lifecycle === 'Lead' ? 'selected' : ''}>Leads</option><option value="Active" ${q.lifecycle === 'Active' ? 'selected' : ''}>Active clients</option></select><label class="row small"><input type="checkbox" data-arch ${q.archived ? 'checked' : ''}> Archived</label></div>
+      <div class="row small bulkbar" data-cbar><span class="muted" data-ccount>Tick clients to email them</span><button class="btn sm" data-cm="general">Email</button><button class="btn sm" data-cm="contract">Send agreement</button><button class="btn sm" data-cm="kyc">Ask for KYC</button></div>
+      <div class="card">${BB.table([{ t: 'ID', f: (c) => `<span class="mono">${c.id}</span>${c.is_new ? ' <span class="dot new"></span>' : ''}` }, { t: 'Company', f: (c) => `<b>${esc(c.company)}</b><div class="tiny muted">${esc(c.contact)}</div>` }, { t: 'City', f: (c) => esc(c.city) }, { t: 'Status', f: (c) => `<span class="badge ${c.lifecycle === 'Lead' ? 'b-amber' : 'b-green'}">${esc(c.lifecycle)}</span>` }, { t: 'Stage', f: (c) => `<span class="badge b-outline">${esc(c.stage)}</span>` }, { t: 'Agency', f: (c) => esc(c.agency_name || '—'), hideSm: 1 }, { t: 'Jobs open / total', num: 1, f: (c) => `${c.jobs_open} / ${c.jobs_total}` }, { t: 'Login', f: (c) => `<span class="badge ${c.account_status === 'Opened' ? 'b-green' : 'b-outline'}">${esc(c.account_status)}</span>`, hideSm: 1 }], r.rows, { open: (c) => `client:${c.id}`, select: (c) => c.id })}${BB.pager(r)}</div>`;
+    wireDl(actions); BB.wirePager(el); BB.flow.clientsMount(el);
+    $('[data-life]', el).onchange = (e) => BB.setQ({ lifecycle: e.target.value, page: 1 });
     let t; $('[data-q]', el).oninput = (e) => { clearTimeout(t); t = setTimeout(() => BB.setQ({ q: e.target.value, page: 1 }), 350); };
     $('[data-stage]', el).onchange = (e) => BB.setQ({ stage: e.target.value, page: 1 });
     $('[data-arch]', el).onchange = (e) => BB.setQ({ archived: e.target.checked ? '1' : '' });
@@ -177,7 +179,7 @@
     };
   }
   async function postingTracker(el, actions, q) {
-    const d = await BB.api(`/api/postings/tracker?${BB.qs({ all: q.all })}`);
+    const d = await BB.api(`/api/postings/tracker?${BB.qs({ all: q.all })}`); const cr = await BB.api('/api/creatives'); d.creative_steps = cr.steps;
     const limited = BB.me.user.channel_only;
     if (!limited) { actions.innerHTML = jobViews('tracker'); $$('[data-jv]', actions).forEach((b) => (b.onclick = () => BB.setQ({ view: b.dataset.jv }))); }
     const owners = [...new Set(d.channels.map((c) => c.owner))];
@@ -191,9 +193,10 @@
     }
     const doneOf = (j) => chs.filter((c) => ((d.cells[j.id] || {})[c.key] || {}).status === 'Done').length;
     el.innerHTML = `<div class="filters"><select data-own><option value="">All owners</option>${owners.map((o) => `<option ${own === o ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select><label class="row small"><input type="checkbox" data-all ${q.all ? 'checked' : ''}> Include closed and filled jobs</label><span class="small muted">Click a cell: — → Pending → Done → Not needed.</span></div>
-      <div class="card tbl-wrap trk-wrap"><table class="tbl trk-tbl"><thead><tr><th>Channel</th><th>Owner</th>${d.jobs.map((j) => `<th class="trk-job">${limited ? esc(j.code) : `<a href="#" data-open="job:${j.id}">${esc(j.code)}</a>`}<div class="tiny muted">${esc(j.title)}</div><div class="tiny faint">${esc(j.client || '')}</div><div class="tiny"><b>${doneOf(j)}</b>/${chs.length} done</div></th>`).join('')}</tr></thead><tbody>${rows}</tbody></table></div>`;
+      ${BB.flow.trackerTop(d, chs)}<div class="card tbl-wrap trk-wrap"><table class="tbl trk-tbl"><thead><tr><th>Channel</th><th>Owner</th>${d.jobs.map((j) => `<th class="trk-job"><input type="checkbox" data-tj="${j.id}" aria-label="Tick ${esc(j.code)}"> ${limited ? esc(j.code) : `<a href="#" data-open="job:${j.id}">${esc(j.code)}</a>`}<div class="tiny muted">${esc(j.title)}</div><div class="tiny faint">${esc(j.client || '')}</div><div class="tiny"><b>${doneOf(j)}</b>/${chs.length} done</div></th>`).join('')}</tr></thead><tbody><tr><td class="trk-ch"><b>Creative</b><div class="tiny muted">Brief to posting</div></td><td class="small nowrap">Social media</td>${d.jobs.map((j) => `<td class="trk-cell"><button class="trk ${(cr.rows[j.id] || {}).status === 'Posted' ? 'done' : (cr.rows[j.id] || {}).status ? 'pending' : ''}" data-tcreative="${j.id}">${esc((cr.rows[j.id] || {}).status || '—')}</button></td>`).join('')}</tr>${rows}</tbody></table></div>`;
     // Each cell gets the apply link for that job and channel, so the source of every application is known.
     $$('[data-trk]', el).forEach((b) => { const [jid, ck] = b.dataset.trk.split('|'); const a = document.createElement('a'); a.href = '#'; a.className = 'trk-link'; a.textContent = 'Copy link'; a.onclick = (e) => { e.preventDefault(); BB.copy(`${d.link_base}job=${jid}&src=${d.tags[ck]}`); }; b.after(a); });
+    BB.flow.trackerMount(el, d);
     $('[data-own]', el).onchange = (e) => BB.setQ({ owner: e.target.value });
     $('[data-all]', el).onchange = (e) => BB.setQ({ all: e.target.checked ? '1' : '' });
     const NEXT = { '': 'Pending', Pending: 'Done', Done: 'Not needed', 'Not needed': '' };
@@ -207,7 +210,7 @@
     if (q.view === 'tracker') return postingTracker(el, actions, q);
     if (q.view === 'spend' && isSuper(me)) return adSpend(el, actions);
     const r = await BB.api(`/api/jobs?${BB.qs(q)}`); const st = q.status || 'All';
-    actions.innerHTML = `${dl(`/api/jobs?${BB.qs(q, { format: 'xlsx' })}`)}${jobViews('')}<button class="btn" data-jobxl>Upload jobs (Excel)</button><button class="btn primary" data-new>+ New job opening</button>`;
+    actions.innerHTML = `${dl(`/api/jobs?${BB.qs(q, { format: 'xlsx' })}`)}${jobViews('')}<button class="btn" data-jobxl>Upload jobs (Excel)</button><button class="btn" data-fnotes>Paste notes</button><button class="btn" data-fmass>Mass hiring</button><button class="btn primary" data-new>+ New job opening</button>`; BB.flow.jobsActions(actions);
     el.innerHTML = `<div class="filters"><input placeholder="Search job, client, ID, old code…" value="${esc(q.q || '')}" data-q>${['All', 'Active', ...STATUSES].map((s) => `<span class="chip ${st === s ? 'on' : ''}" data-st="${s}">${s} <span class="n">${r.counts[s] || 0}</span></span>`).join('')}</div>
       <div class="row small bulkbar cand-bulk" data-jbar><span class="sel-count" data-jcount>Select the checkboxes to take actions</span>${[['approve_jd', 'Approve JD'], ['hold', 'Put on hold'], ['resume', 'Resume'], ['close', 'Close'], ['reopen', 'Reopen'], ['priority', 'Priority'], ...(me.level !== 'sub' ? [['recruiter', 'Assign recruiter']] : []), ['client', 'Set client'], ...(me.level !== 'sub' ? [['delete', 'Delete']] : [])].map(([a, l]) => `<button class="btn sm ${a === 'delete' ? 'danger' : ''}" data-jb="${a}" disabled>${l}</button>`).join('')}</div>
       <div class="card">${BB.table([{ t: 'ID', f: (j) => `<span class="mono">${j.id}</span>` }, { t: 'Job', f: (j) => `<b>${esc(j.title)}</b><div class="tiny muted">${esc(j.city)}${j.priority === 'High' ? ' · <span style="color:var(--red)">High</span>' : ''}</div>` }, { t: 'Client', f: (j) => (j.internal ? '<span class="badge b-violet tiny">Internal</span>' : j.client_tbc ? '<span class="badge b-amber tiny">Client to be confirmed</span>' : esc(j.client_name)) }, { t: 'Filled', f: (j) => `${j.filled}/${j.openings} <div class="bar" style="width:60px;display:inline-block;vertical-align:middle"><i style="width:${Math.min(100, (j.filled / j.openings) * 100)}%"></i></div>` }, { t: 'Apps', num: 1, f: (j) => j.apps_total }, { t: 'Status', f: (j) => `${statusBadge(j.status)}${j.reopened ? ` <span class="badge b-gold tiny">${esc(j.reopened)}</span>` : ''}` }, { t: 'Recruiter', f: (j) => esc(j.recruiter_name || '—'), hideSm: 1 }, { t: 'Days open', num: 1, f: (j) => j.days_open, hideSm: 1 }], r.rows, { open: (j) => `job:${j.id}`, select: true })}${BB.pager(r)}</div>
@@ -832,8 +835,8 @@
     $$('[data-purge]', body).forEach((b) => (b.onclick = async () => { if (await BB.confirm('Delete for good', 'This cannot be undone.', 'Delete for good')) { try { await BB.post(`/api/trash/${b.dataset.purge}/purge`); BB.toast('Deleted for good'); trashView(body); } catch (e) { BB.fail(e); } } }));
   }
   P.settings = async ({ el, q, me }) => {
-    const sup = isSuper(me); const tab = sup ? q.tab || 'whatsapp' : q.tab === 'jdpool' && me.level === 'admin' ? 'jdpool' : 'roles';
-    const tabs = sup ? [['whatsapp', 'WhatsApp'], ['rules', 'Automatic messages'], ['formats', 'Message formats'], ['match', 'Matching'], ['money', 'Fees & limits'], ['lists', 'Lists'], ['roles', 'Departments & roles'], ['jdpool', 'JD pool'], ['trash', 'Deleted items'], ['jobs', 'Job list'], ['papers', 'Paper templates'], ['business', 'Business'], ['privacy', 'Data requests'], ['health', 'Health']] : [['roles', 'Departments & roles'], ...(me.level === 'admin' ? [['jdpool', 'JD pool']] : [])];
+    const sup = isSuper(me); const tab = sup ? q.tab || 'holds' : q.tab === 'jdpool' && me.level === 'admin' ? 'jdpool' : 'roles';
+    const tabs = sup ? [['holds', 'Messages on hold'], ['whatsapp', 'WhatsApp'], ['rules', 'Automatic messages'], ['formats', 'Message formats'], ['match', 'Matching'], ['money', 'Fees & limits'], ['lists', 'Lists'], ['roles', 'Departments & roles'], ['jdpool', 'JD pool'], ['trash', 'Deleted items'], ['jobs', 'Job list'], ['papers', 'Paper templates'], ['business', 'Business'], ['privacy', 'Data requests'], ['health', 'Health']] : [['roles', 'Departments & roles'], ...(me.level === 'admin' ? [['jdpool', 'JD pool']] : [])];
     el.innerHTML = `<div class="tabs">${tabs.map(([k, l]) => `<button data-tab="${k}" class="${tab === k ? 'on' : ''}">${l}</button>`).join('')}</div><div data-tb></div>`;
     $$('[data-tab]', el).forEach((b) => (b.onclick = () => BB.setQ({ tab: b.dataset.tab })));
     if (tab === 'roles') return rolesView($('[data-tb]', el), q, me);
@@ -844,6 +847,7 @@
     const save = async (key, value, msg = 'Saved') => { try { await BB.put(`/api/settings/${key}`, { value }); BB.toast(msg); BB.boot = await (await fetch('/api/bootstrap')).json(); BB.refreshPage(); } catch (e) { BB.fail(e); } };
     const listEditor = (key, label, items) => `<div class="card pad stack-sm"><div class="row between"><h3>${label}</h3><button class="btn sm primary" data-savelist="${key}">Save</button></div><textarea data-list="${key}" rows="8">${esc(items.join('\n'))}</textarea><div class="faint tiny">One per line.</div></div>`;
     const chan = (r) => r.channel || (['log_reminder', 'day_summary', 'monthly_summary', 'still_looking'].includes(r.key) ? 'email' : 'both');
+    if (tab === 'holds') return BB.flow.holds(body, save);
     if (tab === 'whatsapp') {
       const c = s.crm;
       body.innerHTML = `<div class="card pad stack" style="max-width:720px"><div class="notice small">Messages go from the BrillBrains business number through the BrillBrains WhatsApp CRM. The CRM sends replies (chats marked "Hiring") to <span class="mono">${esc(location.origin)}/api/crm/inbound</span> and status updates to <span class="mono">${esc(location.origin)}/api/crm/status</span>, with the header <span class="mono">x-bbhs-secret</span>.</div>
@@ -878,7 +882,7 @@
       $$('[data-w]', body).forEach((i) => (i.oninput = () => { $(`[data-wv="${i.dataset.w}"]`, body).textContent = i.value; tot(); }));
       $('[data-savem]', body).onclick = () => { const weights = {}; $$('[data-w]', body).forEach((i) => (weights[i.dataset.w] = Number(i.value))); const v = BB.formValues(body); save('match', { weights, strong: Number(v.strong), show: Number(v.show) }); };
     } else if (tab === 'money') {
-      body.innerHTML = `<form class="card pad stack" style="max-width:760px" data-money>
+      body.innerHTML = `<form class="card pad stack-sm" style="max-width:760px;margin-bottom:14px" data-accmail>${field({ name: 'accounts_email', label: 'Accounts email (asked to prepare invoices)', type: 'email', value: s.accounts_email || '', opt: true })}<button class="btn primary" style="width:max-content">Save</button></form><form class="card pad stack" style="max-width:760px" data-money>
         <div class="grid g3">${field({ name: 'fee_type', label: 'Fee type', type: 'select', options: [['percent', '% of yearly CTC'], ['fixed', 'Fixed per hire']], value: s.fee.type, placeholder: false })}${field({ name: 'fee_value', label: 'Fee value', type: 'number', value: s.fee.value })}${field({ name: 'agency_share_pct', label: 'Agency share % of fee', type: 'number', value: s.agency_share_pct })}</div>
         <div class="grid g3">${field({ name: 'gst_on', label: 'GST on', type: 'check', value: s.gst.on })}${field({ name: 'gst_rate', label: 'GST rate %', type: 'number', value: s.gst.rate })}${field({ name: 'bill_prefix', label: 'Bill number prefix', value: s.bill_prefix, hint: 'BB/26-27/001 — financial year changes on 1 April' })}</div>
         <div class="grid g3">${field({ name: 'replacement_days', label: 'Free replacement window (days)', type: 'number', value: s.replacement_days })}${field({ name: 'payment_days', label: 'Payment due in (days)', type: 'number', value: s.payment_days })}${field({ name: 'retention_years', label: 'Keep inactive candidates (years)', type: 'number', value: s.retention_years })}</div>
@@ -888,6 +892,7 @@
         <div class="grid g3">${field({ name: 'daily_limit', label: 'Max automatic messages a day per person', type: 'number', value: s.daily_limit })}${field({ name: 'bulk_budget', label: 'Bulk alert budget (messages per send)', type: 'number', value: s.bulk_budget })}${field({ name: 'team_idle_hours', label: 'Team logged out after idle (hours)', type: 'number', value: s.team_idle_hours })}</div>
         <div class="grid g3">${['CL', 'JB', 'CA', 'AP', 'IV', 'BL'].map((p) => field({ name: `id_${p}`, label: `${p} starts at`, type: 'number', value: s.id_start[p] })).join('')}</div>
         <button class="btn primary">Save</button></form>`;
+      $('[data-accmail]', body).onsubmit = (e) => { e.preventDefault(); save('accounts_email', e.target.accounts_email.value.trim()); };
       $('[data-money]', body).onsubmit = async (e) => {
         e.preventDefault(); const v = BB.formValues(e.target); const n = (x) => Number(x);
         try {

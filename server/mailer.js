@@ -11,7 +11,7 @@ const configured = () => !!(cfg().host && cfg().from);
 const secureMode = () => cfg().secure || (cfg().port === 465 ? 'ssl' : cfg().port === 25 ? 'none' : 'starttls');
 
 // One SMTP conversation: EHLO, STARTTLS when asked, AUTH, MAIL/RCPT/DATA, QUIT.
-function smtpSend({ to, subject, text, html }) {
+function smtpSend({ to, subject, text, html, attachments }) {
   const c = cfg();
   return new Promise((resolve, reject) => {
     let sock; let buf = ''; let waiting = null;
@@ -55,7 +55,7 @@ function smtpSend({ to, subject, text, html }) {
       await cmd(`MAIL FROM:<${fromAddr}>`, /^250/);
       for (const r of to) await cmd(`RCPT TO:<${r}>`, /^25[01]/);
       await cmd('DATA', /^354/);
-      sock.write(buildMessage({ from: c.from, to, subject, text, html }) + '\r\n.\r\n');
+      sock.write(buildMessage({ from: c.from, to, subject, text, html, attachments }) + '\r\n.\r\n');
       const done = await read(); if (!/^250/.test(done)) throw new Error(`Email server said: ${done.trim()}`);
       try { sock.write('QUIT\r\n'); } catch { /* closing */ }
       sock.end(); resolve(true);
@@ -64,15 +64,19 @@ function smtpSend({ to, subject, text, html }) {
 }
 const b64lines = (s) => Buffer.from(s, 'utf8').toString('base64').replace(/(.{76})/g, '$1\r\n');
 const encHeader = (s) => (/^[\x20-\x7E]*$/.test(s) ? s : `=?UTF-8?B?${Buffer.from(s, 'utf8').toString('base64')}?=`);
-function buildMessage({ from, to, subject, text, html }) {
-  const boundary = 'bbhs-' + crypto.randomBytes(8).toString('hex');
+function buildMessage({ from, to, subject, text, html, attachments = [] }) {
+  const boundary = 'bbhs-' + crypto.randomBytes(8).toString('hex'); const outer = 'bbhs-mix-' + crypto.randomBytes(8).toString('hex');
   const domain = (/@([^>\s]+)/.exec(from) || [null, 'bbhs.local'])[1];
   const msg = [
     `From: ${from}`, `To: ${to.join(', ')}`, `Subject: ${encHeader(subject)}`, `Date: ${new Date().toUTCString()}`,
-    `Message-ID: <${crypto.randomBytes(12).toString('hex')}@${domain}>`, 'MIME-Version: 1.0', `Content-Type: multipart/alternative; boundary="${boundary}"`, '',
+    `Message-ID: <${crypto.randomBytes(12).toString('hex')}@${domain}>`, 'MIME-Version: 1.0',
+    ...(attachments.length ? [`Content-Type: multipart/mixed; boundary="${outer}"`, '', `--${outer}`] : []),
+    `Content-Type: multipart/alternative; boundary="${boundary}"`, '',
     `--${boundary}`, 'Content-Type: text/plain; charset=UTF-8', 'Content-Transfer-Encoding: base64', '', b64lines(text), '',
     `--${boundary}`, 'Content-Type: text/html; charset=UTF-8', 'Content-Transfer-Encoding: base64', '', b64lines(html), '',
     `--${boundary}--`,
+    ...attachments.flatMap((a) => ['', `--${outer}`, `Content-Type: ${a.mime || 'application/octet-stream'}; name="${a.name}"`, 'Content-Transfer-Encoding: base64', `Content-Disposition: attachment; filename="${a.name}"`, '', a.buf.toString('base64').replace(/(.{76})/g, '$1\r\n')]),
+    ...(attachments.length ? ['', `--${outer}--`] : []),
   ].join('\r\n');
   return msg.replace(/^\./gm, '..'); // dot-stuffing (base64 lines never start with a dot, but headers might)
 }
@@ -95,23 +99,31 @@ const textRows = (pairs) => pairs.filter(([, v]) => v !== undefined && v !== nul
 
 // Queue one email (saved first, so nothing is lost if sending fails).
 // sendAfter: hold it until then (quiet hours); dedupe: never send the same one twice.
-function queue({ to, subject, text, html, kind, recordId, sendAfter, dedupe }) {
+// Off (settings.wa_pause.email): saved as held, not sent. Login codes (force) still go. attachments: [{ file_id } | { agreement: true }].
+const HELD = 'Held: messages are off';
+function queue({ to, subject, text, html, kind, recordId, sendAfter, dedupe, attachments, force }) {
   const list = (Array.isArray(to) ? to : [to]).map((x) => String(x || '').trim()).filter((x) => /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(x));
   if (!list.length) return null;
   if (dedupe && D.get('SELECT 1 FROM emails WHERE dedupe=?', dedupe)) return null;
+  const att = attachments && attachments.length ? JSON.stringify(attachments) : null;
+  if (!force && (D.settings().wa_pause || {}).email) {
+    const r = D.run('INSERT INTO emails (to_addr,subject,kind,record_id,text,html,status,tries,at,dedupe,attachments,error) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)', list.join(', '), subject, kind || null, recordId || null, text, html, 'held', 0, D.now(), dedupe || null, att, HELD);
+    return Number(r.lastInsertRowid);
+  }
   if (sendAfter && sendAfter > D.now()) {
     const r = D.run('INSERT INTO emails (to_addr,subject,kind,record_id,text,html,status,tries,at,send_after,dedupe) VALUES (?,?,?,?,?,?,?,?,?,?,?)', list.join(', '), subject, kind || null, recordId || null, text, html, 'scheduled', 0, D.now(), sendAfter, dedupe || null);
     return Number(r.lastInsertRowid);
   }
   const r = D.run('INSERT INTO emails (to_addr,subject,kind,record_id,text,html,status,tries,at,dedupe) VALUES (?,?,?,?,?,?,?,?,?,?)', list.join(', '), subject, kind || null, recordId || null, text, html, configured() ? 'queued' : 'not sent (email not set up)', 0, D.now(), dedupe || null);
   const id = Number(r.lastInsertRowid);
+  if (att) D.update('emails', id, { attachments: att });
   if (configured()) setImmediate(() => deliver(id));
   return id;
 }
 async function deliver(id) {
   const e = D.get('SELECT * FROM emails WHERE id=?', id); if (!e || e.status === 'sent') return;
   try {
-    await smtpSend({ to: e.to_addr.split(',').map((x) => x.trim()), subject: e.subject, text: e.text, html: e.html });
+    await smtpSend({ to: e.to_addr.split(',').map((x) => x.trim()), subject: e.subject, text: e.text, html: e.html, attachments: e.attachments ? require('./flow').mailFiles(JSON.parse(e.attachments)) : [] });
     D.update('emails', id, { status: 'sent', tries: e.tries + 1, error: null, sent_at: D.now() });
     D.setHealth('last_email_sent', D.now());
   } catch (err) {
@@ -196,10 +208,10 @@ function accountCode(to, code, recordId, why) {
     ? { subject: `Confirm your email: ${code}`, title: 'Confirm your email', line: 'Use this code to finish creating your account.', after: 'If you did not ask for an account, ignore this email.' }
     : { subject: `Your password reset code: ${code}`, title: 'Reset your password', line: 'Use this code to set a new password.', after: 'If you did not ask for it, ignore this email. Your password stays the same.' };
   const text = `${b.name}: ${w.line} Code: ${code} (valid for 10 minutes). ${w.after}`;
-  return queue({ to, subject: w.subject, text, html: layout(w.title, `<p style="font-size:14px;line-height:1.6">${w.line} It is valid for 10 minutes.</p><p style="font-size:30px;font-weight:bold;letter-spacing:6px;margin:12px 0">${esc(code)}</p><p style="font-size:12px;color:#5A6482">${w.after}</p>`), kind: `account_${why}`, recordId });
+  return queue({ force: true, to, subject: w.subject, text, html: layout(w.title, `<p style="font-size:14px;line-height:1.6">${w.line} It is valid for 10 minutes.</p><p style="font-size:30px;font-weight:bold;letter-spacing:6px;margin:12px 0">${esc(code)}</p><p style="font-size:12px;color:#5A6482">${w.after}</p>`), kind: `account_${why}`, recordId });
 }
 function testEmail(to) {
-  return queue({ to, kind: 'test', subject: 'BBHS test email', text: 'This is a test email from BBHS. If you can read this, outgoing email works.', html: layout('Outgoing email works', '<p style="font-size:14px">This is a test email from BBHS. If you can read this, outgoing email works.</p>') });
+  return queue({ force: true, to, kind: 'test', subject: 'BBHS test email', text: 'This is a test email from BBHS. If you can read this, outgoing email works.', html: layout('Outgoing email works', '<p style="font-size:14px">This is a test email from BBHS. If you can read this, outgoing email works.</p>') });
 }
 
-module.exports = { accountCode, configured, queue, deliver, retryQueued, newLead, confirmToPerson, copyOfWhatsApp, testEmail, smtpSend };
+module.exports = { buildMessage, layout, accountCode, configured, queue, deliver, retryQueued, newLead, confirmToPerson, copyOfWhatsApp, testEmail, smtpSend };

@@ -88,4 +88,23 @@ async function extractCandidate({ subject = '', from = '', body = '', resume = '
   return json({ system: CAND_SYSTEM, user, schema: CAND_SCHEMA, name: 'candidate', maxTokens: 1500, files });
 }
 
-module.exports = { json, available, provider, extractCandidate };
+// Web research with OpenAI's search tool. Priced per search on top of the words used (see the usage returned).
+async function webLookup({ system, user, schema, name = 'answer', maxTokens = 2500 }) {
+  if (provider() !== 'openai') throw httpError(424, 'Online lookup needs OPENAI_API_KEY in the server .env.');
+  const model = process.env.OPENAI_SEARCH_MODEL || process.env.OPENAI_MODEL || DEFAULT_OPENAI; let res;
+  try {
+    res = await fetch('https://api.openai.com/v1/responses', {
+      method: 'POST', signal: AbortSignal.timeout(120000),
+      headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model, tools: [{ type: 'web_search' }], max_output_tokens: maxTokens * 3, input: [{ role: 'system', content: system }, { role: 'user', content: user }], text: { format: { type: 'json_schema', name, schema, strict: true } } }),
+    });
+  } catch (e) { throw httpError(424, `The AI service could not be reached (${e.name === 'TimeoutError' ? 'timed out' : e.message}).`); }
+  const body = await res.json().catch(() => ({}));
+  if (res.status === 429) throw httpError(429, 'The AI service is busy or out of credit. Please try again later.');
+  if (!res.ok) { console.error('OpenAI search error', res.status, body.error && body.error.message); throw httpError(424, 'The online lookup could not finish. Please try again.'); }
+  const msg = (body.output || []).filter((o) => o.type === 'message').pop();
+  const text = msg && (msg.content || []).map((c) => c.text || '').join('');
+  try { return { answer: JSON.parse(text), usage: { ...body.usage, searches: (body.output || []).filter((o) => o.type === 'web_search_call').length, model } }; } catch { throw httpError(424, 'The AI gave an unreadable answer. Please try again.'); }
+}
+
+module.exports = { json, available, provider, extractCandidate, webLookup };

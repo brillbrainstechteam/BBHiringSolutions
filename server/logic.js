@@ -113,11 +113,11 @@ const actorName = (a) => (a ? a.label || a.name || 'System' : 'System');
 // Testing pause (settings.wa_pause): why a WhatsApp to a candidate is held instead of sent, or null to send it.
 function waHeld(msg) {
   const w = settings().wa_pause || {};
-  if (!w.candidates || msg.person_type !== 'candidate') return null;
-  if ((w.allow || []).map((x) => String(x).replace(/\D/g, '').slice(-10)).includes(String(msg.phone || '').slice(-10))) return null;
-  if (msg.format === 'bbhs_login_code') return null; // people must still be able to log in
+  if (!w.everyone && !(w.candidates && msg.person_type === 'candidate')) return null;
+  if (['bbhs_login_code', 'bbhs_team_login'].includes(msg.format)) return null; // people must still be able to log in
   if (!msg.format && !['Auto', 'Bot', 'System'].includes(msg.sent_by)) return null; // typed by a team member
-  return 'Held: candidate WhatsApp paused for testing';
+  if ((w.allow || []).map((x) => String(x).replace(/\D/g, '').slice(-10)).includes(String(msg.phone || '').slice(-10))) return null;
+  return w.everyone ? 'Held: messages are off' : 'Held: candidate WhatsApp paused for testing';
 }
 
 // ---------- WhatsApp records (section 8) ----------
@@ -149,7 +149,7 @@ function sendWA(o) {
     if (!fmt) return { skipped: 'Unknown format' };
     // Switched off in Settings → Message formats: not sent to anyone, by WhatsApp or email.
     if (fmt.off) { if (o.auto || o.bulk) return { skipped: 'Message switched off in Settings' }; throw httpError(400, 'This message is switched off in Settings → Message formats. Switch it on there to send it.'); }
-    if (!fmt.approved) { if (o.auto) waOnlyStop = 'Format waiting for Meta approval'; else throw httpError(400, 'This format is waiting for Meta approval and cannot be sent.'); }
+    if (!fmt.approved && !(s.wa_pause || {}).everyone) { if (o.auto) waOnlyStop = 'Format waiting for Meta approval'; else throw httpError(400, 'This format is waiting for Meta approval and cannot be sent.'); }
   }
   if (o.toPhone) p.phone = o.toPhone; // a one-off number, e.g. the code that proves a new number is theirs
   if (!p.phone) waOnlyStop = 'No WhatsApp number';
@@ -428,6 +428,7 @@ function refreshBill(billId, by) {
   return billView(get('SELECT * FROM bills WHERE id=?', billId));
 }
 function createBillForApp(app, by) {
+  const made = get("SELECT * FROM bills WHERE app_id=? AND credit_of IS NULL AND status!='Cancelled'", app.id); if (made) return made; // already made when Accounts were asked
   const job = get('SELECT * FROM jobs WHERE id=?', app.job_id);
   const client = get('SELECT * FROM clients WHERE id=?', job.client_id);
   if (client && client.internal) return null; // BrillBrains' own hiring: nobody to bill
@@ -452,16 +453,17 @@ function createBillForApp(app, by) {
   history(actorName(by), 'create', id, null, null, `Bill for ${cand.name} (${app.id})`);
   return bill;
 }
-function issueBill(billId, by) {
+// Accounts raise the invoice and send it to the client themselves: o.bill_no is their number, and we send nothing.
+function issueBill(billId, by, o = {}) {
   const b = get('SELECT * FROM bills WHERE id=?', billId);
   if (b.status !== 'Draft') throw httpError(400, 'Only a draft bill can be issued.');
   const client = get('SELECT * FROM clients WHERE id=?', b.client_id);
   const days = client.payment_days || settings().payment_days;
-  const bill_no = nextBillNo();
+  const bill_no = o.bill_no || nextBillNo();
   update('bills', billId, { status: 'Issued', bill_no, issued_at: now(), date: istDay(), due_date: addDays(new Date(), days).slice(0, 10) });
   history(actorName(by), 'issue', billId, 'status', 'Draft', 'Issued');
   const app = get('SELECT * FROM applications WHERE id=?', b.app_id); const cand = get('SELECT * FROM candidates WHERE id=?', app.candidate_id);
-  if (b.total > 0) sendWA({ ptype: 'client', pid: b.client_id, format: 'bbhs_bill_raised', vars: { bill_no, candidate: cand.name, amount: inr(b.total), link: upiLink(b.total, bill_no) }, bl: billId, ap: b.app_id, auto: true, rule: 'bill_raised', dedupe: `bill:${billId}` });
+  if (b.total > 0 && !o.bill_no) sendWA({ ptype: 'client', pid: b.client_id, format: 'bbhs_bill_raised', vars: { bill_no, candidate: cand.name, amount: inr(b.total), link: upiLink(b.total, bill_no) }, bl: billId, ap: b.app_id, auto: true, rule: 'bill_raised', dedupe: `bill:${billId}` });
   return refreshBill(billId, by);
 }
 const upiLink = (amt, ref) => `upi://pay?pa=${settings().business.upi_id}&pn=${encodeURIComponent(settings().business.name)}&am=${Math.round(amt)}&tn=${encodeURIComponent(ref || '')}`;
@@ -502,6 +504,7 @@ function moveStep(appId, step, by, note) {
   history(actorName(by), 'step', appId, 'step', app.step, step);
   const job = get('SELECT * FROM jobs WHERE id=?', app.job_id);
   if (step === 'Sent to client') {
+    try { require('./flow').clientCvFor(app.candidate_id, by); } catch (e) { console.error('Client CV', appId, e.message); }
     const count = get("SELECT COUNT(*) c FROM applications WHERE job_id=? AND step='Sent to client' AND result='open'", job.id).c;
     sendWA({ ptype: 'client', pid: job.client_id, format: 'bbhs_shortlist_ready', vars: { count, job: job.title, job_id: job.id, link: link('my-account') }, jb: job.id, ap: appId, auto: true, rule: 'shortlist_ready', dedupe: `shortlist:${appId}` });
   }
@@ -532,6 +535,8 @@ function closeApplication(appId, reason, by, note) {
   update('applications', appId, { result: reason });
   appHist(appId, app.step, by, `Closed: ${reason}${note ? ' — ' + note : ''}`, 'close');
   history(actorName(by), 'close', appId, 'result', app.result, reason);
+  // Asked Accounts for an invoice, then the offer fell through: the unissued draft goes.
+  if (reason !== 'Did not join') for (const b of all("SELECT * FROM bills WHERE app_id=? AND status='Draft' AND credit_of IS NULL", appId)) { update('bills', b.id, { status: 'Cancelled', payout_status: 'Not due' }); history(actorName(by), 'cancel', b.id, 'status', b.status, 'Cancelled'); }
   if (reason === 'Did not join') {
     for (const b of all("SELECT * FROM bills WHERE app_id=? AND status!='Cancelled' AND credit_of IS NULL", appId)) {
       if (b.status !== 'Draft') insert('credit_notes', { bill_id: b.id, amount: b.total, reason: 'Did not join', by: actorName(by), at: now() });
@@ -774,6 +779,20 @@ const CONSENT_WORDING = 'By sending, you agree to be contacted on WhatsApp, phon
 function saveConsent(ptype, pid, source, wording, what) {
   insert('consents', { person_type: ptype, person_id: pid, what: what || 'Contact on WhatsApp, phone and email; share profile with employers', wording: wording || CONSENT_WORDING, source, at: now(), opted_out: 0 });
 }
+// A lead becomes an active client only with the signed contract and the KYC in hand.
+function activationState(c) {
+  const ob = c.onboarding || {}; const k = c.kyc || {};
+  const kyc = ['gst', 'pan', 'owner_id'].every((x) => k[x]) || !!(ob.kyc || {}).done; const contract = !!c.contract || !!(ob.contract || {}).done;
+  return { kyc, contract, ready: kyc && contract, missing: [!contract && 'Signed contract', !kyc && 'KYC (GST certificate, PAN, owner ID)'].filter(Boolean) };
+}
+function checkActivation(clientId, by) {
+  const c = get('SELECT * FROM clients WHERE id=?', clientId); if (!c || c.activated_at || !activationState(c).ready) return false;
+  const stages = settings().client_stages; const patch = { activated_at: now() };
+  if (stages.indexOf('Client activated') > stages.indexOf(c.stage)) patch.stage = 'Client activated';
+  update('clients', c.id, patch); history(actorName(by), 'activate', c.id, 'stage', c.stage, 'Active client');
+  if (c.owner_id) alertUser(c.owner_id, `${c.company} is now an active client: contract and KYC are in`, c.id, false);
+  return true;
+}
 function intakeClient(d, o) {
   const phone = digits10(d.whatsapp);
   const source = o.source || 'Website';
@@ -871,6 +890,7 @@ function assignLead(type, id, agencyId, by) {
   const patch = { agency_id: agencyId, is_new: 0 };
   if (type === 'client') patch.owner_id = admin ? admin.id : null; else patch.recruiter_id = rec.recruiter_id || (admin ? admin.id : null);
   D.edit(table, id, patch, actorName(by));
+  if (type === 'client') run('UPDATE jobs SET agency_id=? WHERE client_id=? AND agency_id IS NULL', agencyId, id); // its jobs go with it
   if (admin) alertUser(admin.id, `New ${type} lead assigned: ${rec.company || rec.name || id}`, id, 'leads');
   return get(`SELECT * FROM ${table} WHERE id=?`, id);
 }
@@ -971,7 +991,7 @@ function sendSystemText(ptype, pid, text) {
 
 module.exports = { adLabel,
   STEPS, stepIdx, digits10, validPhone, inr, istDay, istFmt, istTime, istHour, inQuiet, next9am, daysBetween, addDays, hashPassword, checkPassword, newPassword, sha,
-  waHeld, TEAMS, IV_MODES, clientSeesIv, addIvNote, CALL_OUTCOMES, logCall, jobList, deptOf, stateOf, person, fillFormat, windowOpenUntil, sendWA, setDispatcher, alertUser, link, agencyAdmin, superAdmins,
+  activationState, checkActivation, waHeld, TEAMS, IV_MODES, clientSeesIv, addIvNote, CALL_OUTCOMES, logCall, jobList, deptOf, stateOf, person, fillFormat, windowOpenUntil, sendWA, setDispatcher, alertUser, link, agencyAdmin, superAdmins,
   computeJobStatus, jobStatusReason, recalcJob, filledCount, appsOfJob, matchScore, jobsFor, cleanBusiness, BUSINESS_TYPES, EXP_YEARS, JEW_YEARS, LOOKING, NOT_LOOKING, ratingOf, bestMatches, isPlaced, salaryText, autoJobAlert,
   feeFor, gstFor, fyOf, billView, refreshBill, createBillForApp, issueBill, upiLink,
   appHist, createApplication, moveStep, closeApplication, reopenApplication, screenApplication, SCREEN, jobsForRole, jobsForPerson, roleTokens, scheduleInterview, recordInterview, interviewView, ivVars, recordOffer, leftJob, jobAction,

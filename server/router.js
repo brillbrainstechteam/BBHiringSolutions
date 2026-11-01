@@ -106,7 +106,7 @@ function seeApp(u, a, j) {
   return a.owner_id === u.id || (j && j.recruiter_id === u.id);
 }
 const phoneVisible = (u, c) => isSuper(u) || (c.agency_id && c.agency_id === u.agency_id);
-function seeBill(u, b) { return isSuper(u) || (u.level === 'admin' && b.agency_id === u.agency_id); }
+function seeBill(u, b) { return isSuper(u) || (u.level === 'admin' && sameAgency(u, b)); }
 function seeThread(u, ptype, pid) {
   if (isSuper(u)) return true;
   if (ptype === 'user') { const t = D.get('SELECT * FROM users WHERE id=?', pid); return t && (t.id === u.id || (u.level === 'admin' && t.agency_id === u.agency_id)); }

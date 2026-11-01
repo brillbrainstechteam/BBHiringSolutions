@@ -32,6 +32,7 @@
     'We search and screen': 'हम खोजते और जाँचते हैं', 'Our jewellery recruiters call, check and interview every candidate first.': 'हमारे ज्वेलरी रिक्रूटर हर उम्मीदवार से पहले बात, जाँच और इंटरव्यू करते हैं।',
     'Meet a shortlist': 'शॉर्टलिस्ट से मिलिए', 'See profiles in your client account and pick interview times that suit you.': 'अपने क्लाइंट अकाउंट में प्रोफ़ाइल देखें और अपनी सुविधा का इंटरव्यू समय चुनें।',
     'Hire and relax': 'हायर करें, निश्चिंत रहें',
+    'Recruitment Agreement': 'भर्ती अनुबंध', 'Read': 'पढ़ें', 'Download': 'डाउनलोड करें',
     'Share your details': 'अपनी जानकारी दें', 'Upload your CV or speak your details — in English or Hindi. It is free.': 'अपना CV डालें या बोलकर जानकारी दें — अंग्रेज़ी या हिन्दी में। यह मुफ़्त है।',
     'Talk to a recruiter': 'रिक्रूटर से बात करें', 'We understand your skills and the job and salary you want.': 'हम आपके हुनर, पसंद की नौकरी और सैलरी समझते हैं।',
     'Interview with brands': 'ब्रांड्स के साथ इंटरव्यू', 'Get interview dates, reminders and directions on WhatsApp.': 'इंटरव्यू की तारीख, रिमाइंडर और रास्ता WhatsApp पर पाएँ।',

@@ -604,16 +604,15 @@ route('POST', '/api/client/files', C, async (ctx) => {
   const c = get('SELECT * FROM clients WHERE id=?', ctx.client.id);
   if (['gst', 'pan', 'owner_id'].includes(b.type)) {
     const kyc = { ...(c.kyc || {}), [b.type]: f.id, ...(b.gstin ? { gstin: b.gstin } : {}) }; update('clients', c.id, { kyc });
-    if (['gst', 'pan', 'owner_id'].every((k) => kyc[k])) { const ob = { ...(c.onboarding || {}), kyc: { done: true, date: now(), by: ctx.actor.label } }; update('clients', c.id, { onboarding: ob }); }
+    if (['gst', 'pan', 'owner_id'].every((k) => kyc[k])) { const ob = { ...(c.onboarding || {}), kyc: { done: true, date: now(), by: ctx.actor.label } }; update('clients', c.id, { onboarding: ob }); L.checkActivation(c.id, ctx.actor); }
   }
   if (b.type === 'contract_signed') signContract(c, ctx, 'Signed copy uploaded', f.id);
   return f;
 });
 function signContract(c, ctx, method, fileId) {
   const contract = { by: ctx.actor.label, name: ctx.body.name || ctx.actor.label, at: now(), ip: ctx.ip, method, file: fileId || null };
-  const stages = D.settings().client_stages; const patch = { contract: JSON.stringify(contract), onboarding: { ...(c.onboarding || {}), contract: { done: true, date: now(), by: ctx.actor.label } } };
-  if (stages.indexOf('Client activated') > stages.indexOf(c.stage)) patch.stage = 'Client activated';
-  D.edit('clients', c.id, patch, ctx.actor.label, ctx.ip);
+  const patch = { contract: JSON.stringify(contract), onboarding: { ...(c.onboarding || {}), contract: { done: true, date: now(), by: ctx.actor.label } } };
+  D.edit('clients', c.id, patch, ctx.actor.label, ctx.ip); L.checkActivation(c.id, ctx.actor);
 }
 route('POST', '/api/client/contract/sign', C, (ctx) => {
   if (!ctx.body.agree || !ctx.body.name) throw httpError(400, 'Type your full name and tick "I agree"', 'name');

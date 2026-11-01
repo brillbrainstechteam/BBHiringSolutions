@@ -66,6 +66,7 @@
     return {
       head: `<div class="row"><h2>${esc(c.company || c.contact)}</h2><span class="mono faint">${esc(c.id)}</span>${c.is_new ? '<span class="badge b-gold">new</span>' : ''}${c.opted_out ? '<span class="badge b-red">Opted out</span>' : ''}${c.dnc ? '<span class="badge b-red">Do not contact</span>' : ''}${c.possible_repeat_of ? `<span class="badge b-amber">Possible repeat of ${esc(c.possible_repeat_of)}</span>` : ''}</div><div class="small muted">${esc(c.contact)} · ${esc(c.city)} · ${esc(c.business_type || '')} · source ${esc(c.source || '—')}</div>`,
       body: `<div class="row" style="margin-bottom:14px">${waBtn({ ptype: 'client', pid: c.id })}<button class="btn sm" data-go-chat>Open chat</button>${waBtn({ ptype: 'client', pid: c.id, format: 'bbhs_client_welcome' }, 'Send account link', 'btn sm')}<button class="btn sm primary" data-newjob>+ New job opening</button>${canDelete() ? `<button class="btn sm danger" data-delrec="client" data-id="${c.id}">Delete</button>` : ''}<button class="btn sm" data-edit>Edit</button><button class="btn sm" data-summary>Monthly summary</button>${c.junk ? '' : `<button class="btn sm ghost" data-junkit="client:${c.id}">Mark as junk</button>`}${c.possible_repeat_of ? `<button class="btn sm" data-merge>Merge…</button>` : ''}</div>
+        ${BB.flow.client(c)}
         <div class="grid g2" style="margin-bottom:14px">
           <label class="field"><span class="lab">Stage</span><select data-stage>${s.stages.map((x) => `<option ${x === c.stage ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select></label>
           ${c.can_allocate ? `<label class="field"><span class="lab">Agency</span><select data-agency><option value="">— not assigned —</option>${c.agencies.map((a) => `<option value="${a.id}" ${a.id === c.agency_id ? 'selected' : ''}>${esc(a.name)}</option>`).join('')}</select></label>` : `<div><div class="small muted">Agency</div><b>${esc(c.agency_name || 'Not allocated')}</b></div>`}
@@ -81,7 +82,7 @@
         ${notesBlock(c.id, c.notes)}
         <div class="sec"><h3>Consent</h3>${c.consents.map((x) => `<div class="small">${fmtDT(x.at)} · ${esc(x.what)} · <span class="faint">${esc(x.source)}</span></div>`).join('') || '<div class="faint small">No consent saved.</div>'}</div>`,
       mount: (el) => {
-        wireCommon(el);
+        wireCommon(el); BB.flow.clientMount(el, c);
         $('[data-stage]', el).onchange = (e) => run(() => BB.patch(`/api/clients/${c.id}`, { stage: e.target.value }), 'Stage saved');
         const ag = $('[data-agency]', el); if (ag) ag.onchange = (e) => run(() => (c.agency_id ? BB.patch(`/api/clients/${c.id}`, { agency_id: e.target.value || null }) : BB.post('/api/leads/assign', { type: 'client', id: c.id, agency_id: e.target.value })), 'Agency saved');
         $$('[data-ob]', el).forEach((cb) => (cb.onchange = () => { const done = cb.checked; if (done && ['intro_call', 'background', 'meeting'].includes(cb.dataset.ob)) { BB.ask({ title: 'Add a note', fields: [{ name: 'note', label: 'Notes (optional)', type: 'textarea' }], ok: 'Tick', submit: (v) => BB.post(`/api/clients/${c.id}/onboarding`, { item: cb.dataset.ob, done, note: v.note }) }).then((x) => (x ? after('Ticked') : (cb.checked = false))); } else run(() => BB.post(`/api/clients/${c.id}/onboarding`, { item: cb.dataset.ob, done }), done ? 'Ticked' : 'Unticked'); }));
@@ -138,16 +139,16 @@
           ${!j.jd_approved ? '<button class="btn sm" data-act="approve_jd">Job description approved</button>' : ''}
           <button class="btn sm" data-jd>Write JD</button>
           ${waBtn({ ptype: 'client', pid: j.client_id, jb: j.id, format: 'bbhs_shortlist_ready' }, 'Send profiles to client')}
-          <button class="btn sm" data-addmatch>+ Add a match</button>
+          <button class="btn sm" data-addmatch>+ Add a match</button><button class="btn sm" data-fcreative>Creative</button>
           ${canAdmin ? `<button class="btn sm gold" data-alert>Job alert to top matches</button>` : ''}
           <button class="btn sm" data-editjob>Edit</button>${canDelete() ? `<button class="btn sm danger" data-delrec="job" data-id="${j.id}">Delete</button>` : ''}<button class="btn sm ${j.client_tbc ? 'primary' : ''}" data-setclient>${j.client_tbc ? 'Set the client' : 'Change client'}</button></div>
         <div class="card pad sec"><div class="row small"><span>Filled <b>${j.filled}</b> of <b>${j.openings}</b></span><div class="bar grow"><i style="width:${Math.min(100, (j.filled / j.openings) * 100)}%"></i></div></div><div class="seats" style="margin-top:8px">${(j.seats || []).map((s) => s.app_id ? `<span class="seat on" title="${esc(s.app_id)}">Seat ${s.n}: <b>${esc(s.candidate || '')}</b> · ${esc(s.state)}${s.joining_date ? ` ${fmtD(s.joining_date)}` : ''}</span>` : `<span class="seat">Seat ${s.n}: open</span>`).join('')}</div>
           <dl class="kv" style="margin-top:10px"><dt>Salary</dt><dd>${esc(j.salary_text)} <span class="faint">(${inr(j.sal_from)}–${inr(j.sal_to)} a year)</span></dd><dt>Experience</dt><dd>${j.exp_from ?? '—'}–${j.exp_to ?? '—'} years</dd><dt>Join within</dt><dd>${j.notice_days ?? '—'} days</dd><dt>Skills</dt><dd>${(j.skills || []).map((x) => `<span class="badge b-outline">${esc(x)}</span>`).join(' ') || '—'}</dd><dt>Rounds</dt><dd>${(j.rounds || []).join(' → ')}</dd><dt>JD</dt><dd>${esc(j.jd_status)}${j.jd_note ? ` — <i>${esc(j.jd_note)}</i>` : ''}${jd.file ? ` <button class="btn sm" data-file="${jd.file}">JD file</button>` : ''} <button class="btn sm ghost" data-jdpdf>PDF</button></dd><dt>Old code</dt><dd>${esc(j.old_code || '—')}</dd><dt>Days open</dt><dd>${j.days_open}</dd>
           <dt>Recruiter</dt><dd>${canAdmin ? `<select data-rec style="width:auto">${j.recruiters.map((u) => `<option value="${u.id}" ${u.id === j.recruiter_id ? 'selected' : ''}>${esc(u.name)}</option>`).join('')}<option value="" ${!j.recruiter_id ? 'selected' : ''}>— none —</option></select>` : esc(j.recruiter_name || '—')}</dd></dl>
           ${(j.screening_qs || []).length ? `<div class="small" style="margin-top:8px"><b>Screening questions:</b> ${j.screening_qs.map(esc).join(' · ')}</div>` : ''}${j.notes ? `<div class="small muted" style="margin-top:6px">${esc(j.notes)}</div>` : ''}</div>
-        <div class="sec"><h3>Applications — open (${open.length})</h3><div class="card tbl-wrap"><table class="tbl"><tbody>${open.map(appRow).join('') || '<tr><td class="empty">Nobody in process. Add a match below.</td></tr>'}</tbody></table></div>
+        <div data-flow-screen><div class="sec faint small">Loading screening…</div></div>
+        <div class="sec"><details><summary class="small muted">All open applications (${open.length})</summary><div class="card tbl-wrap" style="margin-top:6px"><table class="tbl"><tbody>${open.map(appRow).join('') || '<tr><td class="empty">Nobody in process.</td></tr>'}</tbody></table></div></details>
           ${closed.length ? `<details style="margin-top:8px"><summary class="small muted">Closed (${closed.length})</summary><div class="card tbl-wrap" style="margin-top:6px"><table class="tbl"><tbody>${closed.map(appRow).join('')}</tbody></table></div></details>` : ''}</div>
-        <div class="sec"><h3>Best matches from the resume bank <span class="faint small">· found automatically</span></h3><div class="card tbl-wrap"><table class="tbl"><tbody>${j.matches.map((m) => `<tr><td>${scoreBadge(m.score)}</td><td><a href="#" data-open="candidate:${m.id}">${esc(m.name)}</a><div class="tiny muted">${esc(m.job_wanted || '')} · ${esc(m.city || '')} · ${m.exp_total ?? '—'} yrs · ${esc(m.status)}</div>${whyMatch(m)}</td><td><button class="btn sm" data-add="${m.id}">Add</button></td></tr>`).join('') || '<tr><td class="empty">No matches.</td></tr>'}</tbody></table></div></div>
         ${adLinks(j)}
         ${postingChecklist(j)}
           <div class="row small" style="margin-top:6px"><button class="btn sm" data-poster>Poster for this job</button><span class="faint">Private link (not on Google): <span class="mono">${esc(location.origin)}/apply?job=${esc(j.id)}</span></span></div></div>
@@ -155,7 +156,7 @@
         ${notesBlock(j.id, j.notes)}
         <div class="sec"><h3>Status history</h3><div class="hist">${j.history.map((h) => `<div class="h"><span class="t">${fmtDT(h.at)}</span><span class="grow"><b>${esc(h.status)}</b> · ${esc(h.by)}${h.note ? ` — ${esc(h.note)}` : ''}</span></div>`).join('')}</div></div>`,
       mount: (el) => {
-        wireCommon(el); BB.wireQuickScreen(el, () => BB.refreshPanel());
+        wireCommon(el); BB.wireQuickScreen(el, () => BB.refreshPanel()); BB.flow.jobMount(el, j);
         $$('[data-act]', el).forEach((b) => (b.onclick = () => jobAct(j, b.dataset.act)));
         $$('[data-add]', el).forEach((b) => (b.onclick = () => run(() => BB.post('/api/applications', { candidate_id: b.dataset.add, job_id: j.id }), 'Added — new application at Applied')));
         $('[data-addmatch]', el).onclick = () => BB.pickCandidate((cid) => run(() => BB.post('/api/applications', { candidate_id: cid, job_id: j.id }), 'Added — a new application'), open.map((a) => a.candidate_id));
@@ -262,13 +263,14 @@
   BB.panels.application = async (id) => {
     const a = await BB.api(`/api/applications/${id}`); const s = BB.boot; const open = a.result === 'open';
     const sug = a.suggest;
-    const btns = [];
+    const btns = []; const L = s.steps;
     if (open) {
       if (a.step !== 'Offer accepted' && a.step !== 'Offer made' && a.step !== 'Joined') btns.push(`<button class="btn sm primary" data-next>→ ${esc(s.steps[s.steps.indexOf(a.step) + 1])}</button>`);
       if (!['Offer made', 'Offer accepted', 'Joined'].includes(a.step)) btns.push('<button class="btn sm" data-sched="phone">📞 Telephonic round</button><button class="btn sm" data-sched="video">Virtual round</button><button class="btn sm" data-sched="in_person">Final round (in person)</button>');
       if (['Client interview', 'Sent to client'].includes(a.step)) btns.push('<button class="btn sm gold" data-offer>Record the offer</button>');
       if (a.step === 'Offer made') btns.push('<button class="btn sm gold" data-offer>Change offer</button><button class="btn sm primary" data-accept>Offer accepted</button><button class="btn sm danger" data-decline>Offer declined</button>');
       if (a.step === 'Offer accepted') btns.push('<button class="btn sm primary" data-joined>Mark joined</button><button class="btn sm danger" data-nojoin>Did not join</button>');
+      if (L.indexOf(a.step) >= 2) btns.push(BB.flow.appCv(a));
       if (a.offer_ctc) btns.push(`<button class="btn sm" data-letter>${a.offer_letter ? 'Remake' : 'Make'} offer letter</button>`);
       btns.push(`<button class="btn sm" data-hold>${a.on_hold ? 'Remove hold' : 'On hold'}</button><button class="btn sm danger" data-close>Close</button>`);
     } else if (a.result === 'Hired') {
@@ -310,9 +312,10 @@
         ${a.ad_campaign || a.ad_set || a.ad_name ? `<div class="wide"><span>Ad</span><span class="ad-path">${[['Campaign', a.ad_campaign], ['Ad set', a.ad_set], ['Ad', a.ad_name]].filter(([, v]) => v).map(([l, v]) => `<i title="${l}">${esc(v)}</i>`).join('<b>›</b>')}</span></div>` : ''}</div>`,
       body: `${sug ? `<div class="notice small row" style="margin-bottom:12px">${waIcon}<span class="grow"><b>Suggested message:</b> ${esc(sug.label)} → ${sug.ptype}</span>${waBtn({ ptype: sug.ptype, pid: sug.ptype === 'client' ? a.client_id : a.candidate_id, ap: a.id, jb: a.job_id, iv: sug.iv, format: sug.format }, 'Send')}</div>` : ''}
         <div class="row" style="margin-bottom:6px">${waBtn({ ptype: 'candidate', pid: a.candidate_id, ap: a.id }, 'Candidate', 'btn sm')}${waBtn({ ptype: 'client', pid: a.client_id, ap: a.id, jb: a.job_id }, 'Client', 'btn sm')}<button class="btn sm ghost" data-open="candidate:${a.candidate_id}">Candidate profile</button></div>
-        ${BB.tracker(a.step, a.result)}
+        ${BB.tracker(a.step, a.result)}${BB.flow.appNext(a)}
         <div class="row" style="margin:10px 0 14px">${btns.join('')}${open ? `<select data-setstep style="width:auto;margin-left:auto" title="Set any step (corrections)"><option value="">Set step…</option>${s.steps.map((x) => `<option>${x}</option>`).join('')}</select>` : ''}</div>
         ${screenBlock(a)}
+        ${BB.flow.appOffer(a)}
         ${a.offer_ctc ? `<div class="sec card pad"><h3 style="margin-bottom:6px">Offer</h3><dl class="kv"><dt>Yearly CTC</dt><dd><b>${inr(a.offer_ctc)}</b></dd><dt>Joining date</dt><dd>${fmtD(a.joining_date)}</dd><dt>Reporting to</dt><dd>${esc(a.reporting_to || '—')}</dd><dt>Offer letter</dt><dd>${a.offer_letter ? `<button class="btn sm" data-file="${a.offer_letter}">Open PDF</button> ${a.offer_sent ? '<span class="badge b-green">sent</span>' : '<span class="badge b-outline">client to check</span>'}` : '—'}</dd>${a.bill ? `<dt>Bill</dt><dd><a href="#" data-open="bill:${a.bill.id}">${esc(a.bill.bill_no || a.bill.id)}</a> · ${inr(a.bill.total)} · ${esc(a.bill.view_status)}</dd>` : ''}</dl></div>` : ''}
         ${a.step === 'Offer accepted' || a.result === 'Hired' ? `<div class="sec"><h3>Joining checklist</h3><div class="card pad">${items.map((it) => `<label class="row small"><input type="checkbox" data-ck="${esc(it)}" ${a.checklist && a.checklist[it] ? 'checked' : ''}> ${esc(it)} <span class="faint tiny">${a.checklist && a.checklist[it] ? esc(a.checklist[it].by) : ''}</span></label>`).join('')}${(a.joining_docs || []).length ? `<div class="row" style="margin-top:6px">${a.joining_docs.map((d) => `<button class="btn sm" data-file="${d.file}">${esc(d.label)}</button>`).join('')}</div>` : '<div class="faint small">No joining documents uploaded yet.</div>'}</div></div>` : ''}
         <div class="sec"><h3>Interviews</h3><div class="stack-sm">${a.interviews.map(iv).join('') || '<div class="faint small">No interviews yet. Usual order: telephonic → virtual → final in person with the client.</div>'}</div></div>
@@ -323,7 +326,7 @@
         ${notesBlock(a.id, a.notes)}
         <div class="sec"><h3>History</h3><div class="hist">${a.history.map((h) => `<div class="h"><span class="t">${fmtDT(h.at)}</span><span class="grow"><b>${esc(h.step)}</b> · ${esc(h.by)}${h.note ? ` — ${esc(h.note)}` : ''}</span></div>`).join('')}</div></div>`,
       mount: (el) => {
-        wireCommon(el);
+        wireCommon(el); BB.flow.appMount(el, a);
         const on = (sel, fn) => { const b = $(sel, el); if (b) b.onclick = fn; };
         on('[data-next]', () => run(() => BB.post(`/api/applications/${a.id}/step`, { next: true }), 'Moved'));
         $$('[data-screen]', el).forEach((b) => (b.onclick = async () => {
@@ -471,11 +474,12 @@
       body: `<div class="row" style="margin-bottom:12px"><button class="btn sm" data-pdf>Invoice PDF</button>${b.status === 'Draft' ? '<button class="btn sm" data-editb>Edit draft</button><button class="btn sm primary" data-issue>Issue</button>' : ''}${b.status === 'Issued' && b.balance > 0 ? `${sup ? '<button class="btn sm primary" data-pay>Record payment</button>' : ''}${waBtn({ ptype: 'client', pid: b.client_id, bl: b.id, format: 'bbhs_payment_reminder' }, 'Payment reminder')}` : ''}${b.status !== 'Draft' ? waBtn({ ptype: 'client', pid: b.client_id, bl: b.id, format: 'bbhs_bill_raised' }, 'Send bill', 'btn sm') : ''}${sup && b.status !== 'Draft' && b.status !== 'Cancelled' ? '<button class="btn sm danger" data-credit>Credit note</button>' : ''}${sup && b.payout_status === 'Due' ? '<button class="btn sm gold" data-payout>Mark agency payout paid</button>' : ''}</div>
         <div class="card pad sec"><dl class="kv"><dt>Yearly CTC</dt><dd>${inr(b.ctc)}</dd><dt>Fee</dt><dd>${inr(b.fee)} <span class="faint small">${esc(b.fee_note)}</span></dd><dt>GST</dt><dd>${b.igst ? `IGST ${inr(b.igst)}` : `CGST ${inr(b.cgst)} + SGST ${inr(b.sgst)}`}</dd><dt>Total</dt><dd><b>${inr(b.total)}</b></dd><dt>Paid / TDS / credit</dt><dd>${inr(b.paid)} / ${inr(b.tds)} / ${inr(b.credit)}</dd><dt>Balance</dt><dd><b>${inr(b.balance)}</b></dd><dt>Bill date / due</dt><dd>${fmtD(b.issued_at || b.date)} / ${fmtD(b.due_date)}</dd>
           <dt>Agency</dt><dd>${esc(b.agency_name)}</dd><dt>Agency share</dt><dd>${inr(b.agency_share)} (${b.share_pct}%) · payout <b>${esc(b.payout_status)}</b>${b.payout_ref ? ` · ref ${esc(b.payout_ref)}` : ''}</dd>${sup ? `<dt>BrillBrains share</dt><dd>${inr(b.fee - b.agency_share)}</dd>` : ''}<dt>UPI link</dt><dd class="mono tiny">${esc(b.upi)}</dd></dl></div>
+        ${BB.flow.bill(b)}
         <div class="sec"><h3>Payments</h3>${b.payments.map((p) => `<div class="small">${fmtD(p.date)} · <b>${inr(p.amount)}</b> · ${esc(p.mode)} · ${esc(p.ref)}${p.tds ? ` · TDS ${inr(p.tds)}` : ''} <span class="faint">by ${esc(p.by)}</span></div>`).join('') || '<div class="faint small">No payments yet.</div>'}</div>
         <div class="sec"><h3>Credit notes</h3>${b.credits.map((p) => `<div class="small">${fmtD(p.at)} · <b>−${inr(p.amount)}</b> · ${esc(p.reason)} <span class="faint">by ${esc(p.by)}</span></div>`).join('') || '<div class="faint small">None.</div>'}</div>
         <div class="sec"><button class="btn sm ghost" data-hist="${b.id}">History</button></div>`,
       mount: (el) => {
-        wireCommon(el);
+        wireCommon(el); BB.flow.billMount(el, b);
         const on = (sel, fn) => { const x = $(sel, el); if (x) x.onclick = fn; };
         on('[data-pdf]', () => BB.download(`/api/bills/${b.id}/pdf`, true));
         on('[data-issue]', async () => { if (await BB.confirm('Issue bill', 'Issued bills cannot be edited. The client gets the bill with the UPI link.', 'Issue')) run(() => BB.post(`/api/bills/${b.id}/issue`), 'Bill issued'); });
@@ -513,17 +517,21 @@
         try { await BB.post('/api/merge', { type, keep, drop, chosen }); close(); BB.closePanels(); BB.toast(`Merged into ${keep}`); BB.open(type, keep); BB.refreshPage && BB.refreshPage(); } catch (e) { BB.fail(e); }
       }; } });
   };
-  BB.newJob = (clientId) => BB.ask({ title: 'New job opening', wide: true, fields: [
+  BB.newJob = (clientId, pre = {}) => BB.ask({ title: 'New job opening', wide: true, fields: [
     `<div class="grid g2"><label class="field" data-f="client_id"><span class="lab">Client</span><select name="client_id" data-clients><option value="${esc(clientId || '')}">${esc(clientId || 'Loading…')}</option></select></label><label class="field" data-f="title"><span class="lab">Job</span><select name="title">${BB.jobOptions('')}</select></label></div>`,
     `<div class="grid g3">${field({ name: 'city', label: 'City', list: 'cities' })}${field({ name: 'openings', label: 'Openings', type: 'number', value: 1 })}${field({ name: 'priority', label: 'Priority', type: 'select', options: ['High', 'Medium', 'Low'], value: 'Medium', placeholder: false })}</div>`,
     `<div class="grid g4">${field({ name: 'sal_from', label: 'Salary from / month', type: 'number' })}${field({ name: 'sal_to', label: 'Salary to / month', type: 'number' })}${field({ name: 'exp_from', label: 'Exp from (yrs)', type: 'number' })}${field({ name: 'exp_to', label: 'Exp to (yrs)', type: 'number' })}</div>`,
     `<div class="grid g2">${field({ name: 'notice_days', label: 'Join within (days)', type: 'number' })}${field({ name: 'skills', label: 'Skills (comma separated)' })}</div>`,
+    `<div class="grid g2">${field({ name: 'jewel_need', label: 'Jewellery experience', type: 'select', options: ['Required', 'Preferred', 'Not required'], value: pre.jewel_need || 'Preferred', placeholder: false })}${field({ name: 'notes', label: 'Notes', opt: true, value: pre.notes || '' })}</div>`,
     { name: 'jd_approved', label: 'Job description already approved (job goes Open; otherwise Draft)', type: 'check' },
-  ], ok: 'Create job opening', submit: (v) => BB.post('/api/jobs', { ...v, salary_per: 'month', skills: v.skills.split(',').map((x) => x.trim()).filter(Boolean) }),
+  ], ok: 'Create job opening', submit: (v) => BB.post('/api/jobs', { ...v, duties: pre.duties || '', salary_per: 'month', skills: v.skills.split(',').map((x) => x.trim()).filter(Boolean) }),
   extra: '' }).then((x) => { if (x) { BB.toast(`${x.id} made`); BB.refreshPage && BB.refreshPage(); BB.open('job', x.id); } }) && setTimeout(async () => {
     const sel = $('[data-clients]'); if (!sel) return; const r = await BB.api('/api/clients?all=1'); const all = r.rows;
     sel.innerHTML = `<option value="">Choose…</option><option value="INTERNAL">BrillBrains — internal hiring (our own team)</option><option value="TBC">Client not decided yet (fill in later)</option>${all.filter((c) => !c.placeholder).map((c) => `<option value="${c.id}" ${c.id === clientId ? 'selected' : ''}>${esc(c.company)} (${c.id})</option>`).join('')}`;
     const city = $('[name=city]'); const title = $('.modal [name=title]');
+    const put = (n, v) => { const x = $(`.modal [name=${n}]`); if (x && v !== null && v !== undefined && v !== '') x.value = v; };
+    for (const k of ['city', 'openings', 'sal_from', 'sal_to', 'exp_from', 'exp_to', 'notice_days', 'priority']) put(k, pre[k]); if (pre.skills) put('skills', [].concat(pre.skills).join(', '));
+    if (pre.title && title) { if (![...title.options].some((o) => o.value === pre.title)) title.add(new Option(pre.title, pre.title)); title.value = pre.title; }
     sel.onchange = () => { const c = all.find((x) => x.id === sel.value); if (!c) return; if (city && !city.value) city.value = c.city; if (title) title.innerHTML = BB.jobOptions(title.value, true, c.industry); }; sel.onchange();
   }, 50);
 })();

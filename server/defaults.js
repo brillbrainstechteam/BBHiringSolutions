@@ -27,6 +27,9 @@ const FORMATS = {
   bbhs_client_welcome: { type: 'Utility', approved: true, buttons: [],
     en: "Hello {name},\n\nWelcome to *BrillBrains Hiring Solutions*.\n\nIn your client account you can:\n• Raise job openings\n• Review candidates\n• Track interviews\n\nOpen your account: {link}\n\nOur team will call you within one working day.",
     hi: "नमस्ते {name},\n\n*BrillBrains Hiring Solutions* में आपका स्वागत है।\n\nअपने क्लाइंट अकाउंट में आप:\n• नई नौकरी डाल सकते हैं\n• उम्मीदवार देख सकते हैं\n• इंटरव्यू ट्रैक कर सकते हैं\n\nअकाउंट खोलें: {link}\n\nहमारी टीम एक कार्य दिवस में आपको कॉल करेगी।" },
+  bbhs_client_thanks: { type: 'Utility', approved: false, buttons: [],
+    en: "Hello {name},\n\nThank you for speaking with us today. We have noted your hiring needs and our team has started work on them.\n\nWe will keep you updated at every step. For anything you need, reply here.\n\n*BrillBrains Hiring Solutions*",
+    hi: "नमस्ते {name},\n\nआज हमसे बात करने के लिए धन्यवाद। हमने आपकी भर्ती की ज़रूरतें नोट कर ली हैं और हमारी टीम ने काम शुरू कर दिया है।\n\nहम हर चरण पर आपको जानकारी देते रहेंगे। किसी भी ज़रूरत के लिए यहीं जवाब दें।\n\n*BrillBrains Hiring Solutions*" },
   bbhs_candidate_welcome: { type: 'Utility', approved: true, buttons: [],
     en: "Hello {name},\n\nWelcome to *BrillBrains Hiring Solutions*. Your profile is ready.\n\nKeep it updated so we can match you with the right jobs: {link}\n\nWe will contact you when a suitable job opens.",
     hi: "नमस्ते {name},\n\n*BrillBrains Hiring Solutions* में आपका स्वागत है। आपकी प्रोफ़ाइल तैयार है।\n\nसही नौकरी से मिलाने के लिए इसे अपडेट रखें: {link}\n\nसही नौकरी खुलने पर हम आपसे संपर्क करेंगे।" },
@@ -101,6 +104,7 @@ const AUTO_RULES = [
   { key: 'offer', when: 'Offer recorded', to: 'Candidate', format: 'bbhs_offer', on: true },
   { key: 'joining_reminder', when: '3 days and 1 day before joining', to: 'Candidate', format: 'bbhs_joining_reminder', on: true },
   { key: 'post_join_checkin', when: '30, 60, 90 days after joining', to: 'Candidate', format: 'bbhs_post_join_checkin', on: false },
+  { key: 'client_thanks', when: 'After the first call (button on the client)', to: 'Client', format: 'bbhs_client_thanks', on: true },
   { key: 'client_welcome', when: 'Fills the form / added by team', to: 'Client', format: 'bbhs_client_welcome', on: true },
   { key: 'jd_approval', when: 'Job description sent for approval', to: 'Client', format: 'bbhs_jd_approval', on: true },
   { key: 'shortlist_ready', when: 'Application reaches Sent to client', to: 'Client', format: 'bbhs_shortlist_ready', on: true },
@@ -145,7 +149,17 @@ module.exports.defaultSettings = () => ({
   // replies a team member types by hand still go. Turn off when the templates have been checked.
   // Roles shown as open on the home page even before a job opening is entered for them (titles from the job list).
   landing_roles: ['CAD Designer', 'B2B Sales Executive', 'Merchandiser', 'Purchase Manager', 'Admin Executive'],
-  wa_pause: { candidates: true, allow: ['9093400666', '9986950695', '8368372836'] },
+  wa_pause: { candidates: true, everyone: true, email: true, allow: ['9093400666', '9986950695', '8368372836'] },
+  accounts_email: '',
+  expense_categories: ['Salaries', 'Job portals', 'Ads', 'Office rent', 'Software', 'Travel', 'Commission', 'Other'],
+  revenue_kinds: ['Recruitment fee', 'Retainer', 'Training', 'Other'],
+  call_script: 'Introduce BrillBrains: jewellery industry specialists since 2011, 100+ brands empowered.\nUnderstand the need: note every field below during the call.\nExplain the terms: fee, payment days and the free replacement window in the Recruitment Agreement.\nClose: if they agree, send the agreement to their email and ask for KYC (GST certificate, PAN, owner ID).',
+  email_templates: {
+    contract: { subject: 'Recruitment Agreement from BrillBrains Hiring Solutions', body: 'Hello {contact},\n\nThank you for speaking with us. Our Recruitment Agreement is attached.\n\nPlease sign it and reply to this email with the signed copy, along with your KYC papers: GST certificate, business PAN and owner ID proof.\n\nOnce we have them, your account goes active and we begin hiring for {company}.\n\nRegards,\n{sender}\nBrillBrains Hiring Solutions' },
+    kyc: { subject: 'KYC papers for {company}', body: 'Hello {contact},\n\nTo activate your account, please reply with these papers: GST certificate, business PAN and owner ID proof.\n\nRegards,\n{sender}\nBrillBrains Hiring Solutions' },
+    general: { subject: 'An update from BrillBrains Hiring Solutions', body: 'Hello {contact},\n\n\n\nRegards,\n{sender}\nBrillBrains Hiring Solutions' },
+  },
+  creative_template: 'Role: {title}\nClient type: {client_type}\nCity: {city}\nOpenings: {openings}\nSalary: {salary}\nExperience: {experience}\nMust have: {must}\nApply link: {link}\nDeadline for creative:\nNotes for the designer:',
   // Home page trust content (editable later): BrillBrains group numbers and the jewellery businesses we hire for.
   // A client shows its logo when it has one (public/img/clients), otherwise its name in the same style.
   landing: {

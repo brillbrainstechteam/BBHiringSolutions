@@ -355,6 +355,7 @@
         <div class="grid g2">${field({ name: 'branches', label: 'Branches', value: ex.branches || '' })}${field({ name: 'website', label: 'Website', value: ex.website || '' })}</div>
         <button class="btn primary">Save</button></form></div>
       <div class="stack">
+        <div class="card"><div class="card-h"><h3>Recruitment Agreement</h3></div><div class="card-b row"><button class="btn sm" data-agr>Read</button><button class="btn sm" data-agrdl>Download</button></div></div>
         <div class="card"><div class="card-h"><h3>KYC</h3></div><div class="card-b checklist">${[['gst', 'GST certificate'], ['pan', 'Business PAN'], ['owner_id', 'Owner ID proof']].map(([key, l]) => `<div class="it"><span class="check ${k[key] ? 'done' : ''}">✓</span><span class="grow">${l}</span><button class="btn sm" data-kyc="${key}">${k[key] ? 'Replace' : 'Upload'}</button></div>`).join('')}</div></div>
         <div class="card"><div class="card-h"><h3>Contract</h3></div><div class="card-b">${contract ? `<div class="row"><span class="check done">✓</span> Signed by <b>${esc(contract.name || contract.by)}</b> on ${fmtD(contract.at)} <span class="faint small">(${esc(contract.method)})</span></div>` : `
           <form class="stack-sm" data-sign>${field({ name: 'name', label: 'Type your full name to sign' })}<label class="row small"><input type="checkbox" name="agree"> I agree to the BrillBrains hiring terms on behalf of ${esc(c.company)}</label><div class="row"><button class="btn primary">Sign contract</button><button type="button" class="btn" data-signed>Upload signed copy</button></div></form>`}</div></div>
@@ -368,6 +369,8 @@
       <div class="card pad" style="margin-top:14px"><h3>Monthly summaries</h3><div class="row" style="margin-top:8px">${D.files.filter((f) => f.type.startsWith('monthly_summary')).sort((a, b) => (a.name < b.name ? 1 : -1)).map((f) => `<button class="btn sm" data-file="${f.id}">${esc(f.name.replace(/^Summary-|\.pdf$/g, ''))}</button>`).join('') || '<span class="muted small">Your first summary comes on the 1st of next month.</span>'}</div></div>`;
     BB.wirePassword(el, '/api/client/password', c.email, () => reload());
     $('[data-co]', el).onsubmit = (e) => { e.preventDefault(); const v = BB.formValues(e.target); act(() => BB.put('/api/client/company', { ...v, extra: { branches: v.branches, website: v.website } }), 'Saved'); };
+    $('[data-agrdl]', el).onclick = () => BB.download('/api/client/agreement/file');
+    $('[data-agr]', el).onclick = async () => { const a = await BB.api('/api/client/agreement'); BB.ask({ title: 'Recruitment Agreement', wide: true, fields: [`<div class="flow-doc">${esc(a.text || '')}</div>`], ok: 'Download', submit: async () => BB.download('/api/client/agreement/file') }); };
     $$('[data-kyc]', el).forEach((b) => (b.onclick = async () => { const f = await BB.pickFile(); if (f) act(() => BB.post('/api/client/files', { type: b.dataset.kyc, ...f }), 'Uploaded'); }));
     const sign = $('[data-sign]', el); if (sign) sign.onsubmit = (e) => { e.preventDefault(); act(() => BB.post('/api/client/contract/sign', BB.formValues(e.target)), 'Contract signed'); };
     const sd = $('[data-signed]', el); if (sd) sd.onclick = async () => { const f = await BB.pickFile(); if (f) act(() => BB.post('/api/client/files', { type: 'contract_signed', ...f }), 'Signed copy uploaded'); };

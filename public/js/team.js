@@ -25,16 +25,18 @@
   }
 
   // Social media and tech logins see only their hiring channels and their own login page.
-  const menuFor = (u) => (u.channel_only ? MENU.filter((m) => ['channels', 'logins'].includes(m[0])) : MENU.filter((m) => m[0] !== 'channels' && (m[0] !== 'leads' || u.leads) && (!m[3] || m[3].includes(u.level))));
+  const menuFor = (u) => (u.channel_only ? MENU.filter((m) => ['channels', 'agreement', 'logins'].includes(m[0])) : MENU.filter((m) => m[0] !== 'channels' && (m[0] !== 'leads' || u.leads) && (!m[3] || m[3].includes(u.level))));
   const MENU = [
     ['channels', 'Hiring channels', 'flow'], ['myday', 'My day', 'sun', ['sub']], ['dashboard', 'Dashboard', 'grid'], ['leads', 'Leads', 'inbox', null, 'leads'],
     ['clients', 'Clients', 'building'], ['jobs', 'Job openings', 'brief'], ['candidates', 'Candidates', 'users', null, 'cand_new'], ['applications', 'Applications', 'flow'],
     ['interviews', 'Interviews', 'cal', null, 'pending'], ['whatsapp', 'WhatsApp', 'chat', null, 'unread'],
-    ['performance', 'Performance', 'chart'], ['logs', 'Daily logs', 'note'], ['bills', 'Bills', 'rupee', ['super', 'admin']], ['money', 'Money', 'money', ['super']],
-    ['reports', 'Reports', 'report'], ['logins', 'Logins & team', 'key'], ['settings', 'Settings', 'cog'],
+    ['performance', 'Performance', 'chart'], ['logs', 'Daily logs', 'note'], ['bills', 'Bills', 'rupee', ['super', 'admin']], ['books', 'Books', 'chart', ['super', 'admin']], ['money', 'Money', 'money', ['super']],
+    ['reports', 'Reports', 'report'], ['agreement', 'Recruitment Agreement', 'note'], ['logins', 'Logins & team', 'key'], ['settings', 'Settings', 'cog'],
   ];
-  const GROUP = { channels: 'Hiring', myday: 'Overview', dashboard: 'Overview', leads: 'Hiring', clients: 'Hiring', jobs: 'Hiring', candidates: 'Hiring', applications: 'Hiring', interviews: 'Hiring', whatsapp: 'Messages', performance: 'Team', logs: 'Team', bills: 'Money', money: 'Money', reports: 'Money', logins: 'Admin', settings: 'Admin' };
+  const GROUP = { books: 'Money', agreement: 'Admin', channels: 'Hiring', myday: 'Overview', dashboard: 'Overview', leads: 'Hiring', clients: 'Hiring', jobs: 'Hiring', candidates: 'Hiring', applications: 'Hiring', interviews: 'Hiring', whatsapp: 'Messages', performance: 'Team', logs: 'Team', bills: 'Money', money: 'Money', reports: 'Money', logins: 'Admin', settings: 'Admin' };
   const HELP = {
+    books: 'Revenue, expenses and how the team is doing, month by month.',
+    agreement: 'The standard Recruitment Agreement. Clients see the same copy in their account.',
     channels: 'The hiring channels you own, for every open job. Copy a job\'s link for the channel, post it, then mark the cell Done.',
     myday: 'Everything you need to do today: interviews, results to record, follow-ups and stuck applications.',
     dashboard: 'Counts and the Needs attention list. Every item has a WhatsApp button to nudge the right person.',

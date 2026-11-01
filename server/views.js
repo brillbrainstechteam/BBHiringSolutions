@@ -46,7 +46,7 @@ function appView(a) {
 }
 function clientView(c) {
   const jobs = all('SELECT * FROM jobs WHERE client_id=? AND archived=0', c.id).map((j) => jobView(j));
-  return { ...c, agency_name: agencyName(c.agency_id), owner_name: userName(c.owner_id), jobs_open: jobs.filter((j) => !['Closed', 'Filled'].includes(j.status)).length, jobs_total: jobs.length };
+  return { ...c, lifecycle: c.activated_at ? 'Active client' : 'Lead', agency_name: agencyName(c.agency_id), owner_name: userName(c.owner_id), jobs_open: jobs.filter((j) => !['Closed', 'Filled'].includes(j.status)).length, jobs_total: jobs.length };
 }
 const ONBOARDING = [
   { key: 'intro_call', label: 'Intro call', stage: 'Understanding needs' },
