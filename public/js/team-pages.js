@@ -46,10 +46,16 @@
   // A drop-down of tick boxes (several values at once), saved as "a,b,c" in the address.
   const multiSel = (k, all, plural, opts, val) => { const on = String(val || '').split(',').filter(Boolean);
     return `<details class="msel" data-msel="${k}"><summary>${on.length === 0 ? all : on.length === 1 ? esc(on[0]) : `${on.length} ${plural}`}</summary><div class="msel-pop">${opts.length > 8 ? '<input class="msel-find" placeholder="Find…" data-mfind>' : ''}<div class="msel-list">${[...opts].sort((a, b) => Number(on.includes(b)) - Number(on.includes(a))).map((o) => `<label class="row small"><input type="checkbox" value="${esc(o)}" ${on.includes(o) ? 'checked' : ''}> ${esc(o)}</label>`).join('')}</div><div class="row msel-foot"><button type="button" class="btn sm ghost" data-mclear>Clear</button><button type="button" class="btn sm primary" data-mapply>Apply</button></div></div></details>`; };
+  // A click outside closes an open list (one list at a time).
+  document.addEventListener('click', (e) => { document.querySelectorAll('.msel[open]').forEach((d) => { if (!d.contains(e.target)) d.open = false; }); });
   BB.wireMultiSel = (root) => $$('[data-msel]', root).forEach((d) => {
     const k = d.dataset.msel; const apply = (v) => BB.setQ({ [k]: v, page: 1 });
-    $('[data-mapply]', d).onclick = () => apply($$('input:checked', d).map((x) => x.value).join(','));
-    $('[data-mclear]', d).onclick = () => apply('');
+    const picked = () => $$('.msel-list input:checked', d).map((x) => x.value).join(',');
+    const was = picked(); let done = false; const go = (v) => { done = true; apply(v); };
+    $('[data-mapply]', d).onclick = () => go(picked());
+    $('[data-mclear]', d).onclick = () => go('');
+    // Closing the list keeps the ticks: no need to press Apply.
+    d.addEventListener('toggle', () => { if (d.open) { const f = $('[data-mfind]', d); if (f) f.focus(); } else if (!done && picked() !== was) go(picked()); });
     const fd = $('[data-mfind]', d); if (fd) fd.oninput = () => { const w = fd.value.trim().toLowerCase(); $$('.msel-list label', d).forEach((l) => { l.hidden = !!w && !l.textContent.toLowerCase().includes(w); }); };
   });
   function candFilters(q, desigs, skills) {

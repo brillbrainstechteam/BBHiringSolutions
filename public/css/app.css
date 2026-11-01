@@ -1428,3 +1428,8 @@ html[lang="hi"] .ss-g { letter-spacing: 0; }
 .pub-top .top-out { flex: none; }
 .lp-right .lp-acct { color: #fff; border-color: rgba(255, 255, 255, .28); background: transparent; }
 @media (max-width: 1000px) { .lp-right .lp-acct { display: none; } }
+
+/* Multi-select: long names stay beside their tick box. */
+.msel-pop { min-width: 290px; }
+.msel-list label { flex-wrap: nowrap; align-items: flex-start; gap: 8px; width: 100%; padding: 3px 2px; cursor: pointer; line-height: 1.3; }
+.msel-list label input { flex: none; margin-top: 1px; }
