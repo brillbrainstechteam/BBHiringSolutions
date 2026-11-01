@@ -23,7 +23,7 @@ Last updated 2 Nov 2026. The live list of messages is in the portal: Settings â†
 
 Everything automatic is held. Held messages are not sent later; only new ones go after switching on. Login codes, team passwords and replies typed by hand still go. On live: 644 old emails and 68 WhatsApp messages are held.
 
-**Before switching on:** items 2 and 3 above, and Meta approval for these templates: `bbhs_client_thanks` (new), `bbhs_jd_approval`, `bbhs_still_looking`, `bbhs_monthly_summary`, `bbhs_consent_request`.
+**Before switching on:** items 2 and 3 above, and Meta approval for these templates: `bbhs_client_thanks` (new), `bbhs_jd_approval`, `bbhs_team_login`.
 
 | Message | To | Goes by |
 |---|---|---|
