@@ -256,7 +256,7 @@ function candMatch(q) {
     // Each of these takes one value or several ("a,b"): a candidate matching any of them stays.
     const list = (k) => many(q[k]);
     if (q.dept && !list('dept').includes(c.department)) return false;
-    if (q.job && !list('job').includes(c.job_wanted)) return false;
+    if (q.job && c.job_wanted !== q.job && !list('job').includes(c.job_wanted)) return false; // a typed role may hold a comma
     if (q.source && !list('source').includes(c.source)) return false;
     if (q.domain && !list('domain').includes(c.domain || 'Not read yet')) return false;
     if (q.city && !list('city').some((x) => c.city === x || (c.work_cities || []).includes(x))) return false;
@@ -1018,7 +1018,7 @@ route('POST', '/api/import/run', T, (ctx) => {
 route('GET', '/api/applications', T, (ctx) => {
   const q = ctx.query;
   const rows = visibleApps(ctx.user).map(V.appView)
-    .filter((a) => (!q.job || a.job_id === q.job) && (!q.title || a.job_title === q.title) && (!q.client || a.client_id === q.client) && (!q.owner || a.owner_id === q.owner) && (!q.source || a.source === q.source) && (!q.from || L.istDay(a.created_at) >= q.from) && (!q.to || L.istDay(a.created_at) <= q.to) && (q.closed || q.screen ? true : a.result === 'open') && (!q.step || a.step === q.step) && (!q.screen || (q.screen === 'none' ? !a.screen : a.screen === q.screen)) && (!q.ad || [a.ad_campaign, a.ad_set, a.ad_name].includes(q.ad)) && like(q.q, a.id, a.candidate_name, a.job_title, a.client_name, a.ad));
+    .filter((a) => (!q.job || a.job_id === q.job) && (!q.title || a.job_title === q.title || many(q.title).includes(a.job_title)) && (!q.client || a.client_id === q.client) && (!q.owner || a.owner_id === q.owner) && (!q.source || a.source === q.source) && (!q.from || L.istDay(a.created_at) >= q.from) && (!q.to || L.istDay(a.created_at) <= q.to) && (q.closed || q.screen ? true : a.result === 'open') && (!q.step || a.step === q.step) && (!q.screen || (q.screen === 'none' ? !a.screen : a.screen === q.screen)) && (!q.ad || [a.ad_campaign, a.ad_set, a.ad_name].includes(q.ad)) && like(q.q, a.id, a.candidate_name, a.job_title, a.client_name, a.ad));
   return { ...page(ctx, rows, 'applications', ['id', 'candidate_name', 'job_id', 'job_title', 'client_name', 'step', 'result', 'days_in_step', 'owner_name', 'source', 'ad', 'screen', 'screen_note']), ads: adOptions('applications'), screens: L.SCREEN,
     // Choices for the filters: the jobs, clients, owners and sources these applications have.
     options: (() => { const vis = visibleApps(ctx.user).map(V.appView); const uniq = (f) => [...new Map(vis.map(f).filter((x) => x && x[0]).map((x) => [x[0], x])).values()].sort((a, b) => String(a[1]).localeCompare(String(b[1])));
