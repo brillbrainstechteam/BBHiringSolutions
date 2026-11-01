@@ -24,15 +24,18 @@
     $('[data-2fa]').onsubmit = async (e) => { e.preventDefault(); try { await BB.post('/api/team/2fa', BB.formValues(e.target)); BB.route(); } catch (er) { BB.showErr(e.target, { message: er.message, field: 'code' }); } };
   }
 
+  // Social media and tech logins see only their hiring channels and their own login page.
+  const menuFor = (u) => (u.channel_only ? MENU.filter((m) => ['channels', 'logins'].includes(m[0])) : MENU.filter((m) => m[0] !== 'channels' && (!m[3] || m[3].includes(u.level))));
   const MENU = [
-    ['myday', 'My day', 'sun', ['sub']], ['dashboard', 'Dashboard', 'grid'], ['leads', 'Leads', 'inbox', ['super'], 'leads'],
+    ['channels', 'Hiring channels', 'flow'], ['myday', 'My day', 'sun', ['sub']], ['dashboard', 'Dashboard', 'grid'], ['leads', 'Leads', 'inbox', ['super'], 'leads'],
     ['clients', 'Clients', 'building'], ['jobs', 'Job openings', 'brief'], ['candidates', 'Candidates', 'users'], ['applications', 'Applications', 'flow'],
     ['interviews', 'Interviews', 'cal', null, 'pending'], ['whatsapp', 'WhatsApp', 'chat', null, 'unread'],
     ['performance', 'Performance', 'chart'], ['logs', 'Daily logs', 'note'], ['bills', 'Bills', 'rupee', ['super', 'admin']], ['money', 'Money', 'money', ['super']],
     ['reports', 'Reports', 'report'], ['logins', 'Logins & team', 'key'], ['settings', 'Settings', 'cog'],
   ];
-  const GROUP = { myday: 'Overview', dashboard: 'Overview', leads: 'Hiring', clients: 'Hiring', jobs: 'Hiring', candidates: 'Hiring', applications: 'Hiring', interviews: 'Hiring', whatsapp: 'Messages', performance: 'Team', logs: 'Team', bills: 'Money', money: 'Money', reports: 'Money', logins: 'Admin', settings: 'Admin' };
+  const GROUP = { channels: 'Hiring', myday: 'Overview', dashboard: 'Overview', leads: 'Hiring', clients: 'Hiring', jobs: 'Hiring', candidates: 'Hiring', applications: 'Hiring', interviews: 'Hiring', whatsapp: 'Messages', performance: 'Team', logs: 'Team', bills: 'Money', money: 'Money', reports: 'Money', logins: 'Admin', settings: 'Admin' };
   const HELP = {
+    channels: 'The hiring channels you own, for every open job. Copy a job\'s link for the channel, post it, then mark the cell Done.',
     myday: 'Everything you need to do today: interviews, results to record, follow-ups and stuck applications.',
     dashboard: 'Counts and the Needs attention list. Every item has a WhatsApp button to nudge the right person.',
     leads: 'New clients and candidates from every door (forms, WhatsApp bot, email, Excel). Assign each to an agency.',
@@ -60,8 +63,8 @@
     // Pages that moved: Segments is a Candidates tab, Departments & roles a Settings tab.
     const MOVED = { segments: 'team/candidates?tab=segments', roles: 'team/settings?tab=roles' };
     if (MOVED[r.sub[0]]) return BB.go(MOVED[r.sub[0]]);
-    const allowed = MENU.filter((m) => !m[3] || m[3].includes(BB.me.user.level)).map((m) => m[0]);
-    pageName = allowed.includes(r.sub[0]) ? r.sub[0] : BB.me.user.level === 'sub' ? 'myday' : 'dashboard';
+    const allowed = menuFor(BB.me.user).map((m) => m[0]);
+    pageName = allowed.includes(r.sub[0]) ? r.sub[0] : BB.me.user.channel_only ? 'channels' : BB.me.user.level === 'sub' ? 'myday' : 'dashboard';
     pageQ = r.q;
     if (!$('.shell')) shell(); else updateNav();
     renderPage();
@@ -72,20 +75,20 @@
     const u = BB.me.user; const ag = BB.me.agency;
     $('#app').innerHTML = `<div class="shell"><aside class="side">${BB.brand('Team portal', '#team')}<nav class="nav" data-nav></nav>
       <div class="me"><b>${esc(u.name)}</b>${BB.levelName(u.level)}${ag ? ` · ${esc(ag.name)}` : ' · BrillBrains'}<div style="margin-top:6px"><a href="/guides/${{ super: 'super-admin', admin: 'admin', sub: 'sub-admin' }[u.level]}.html" target="_blank" rel="noopener" style="color:var(--gold)">1-page guide ↗</a></div></div></aside>
-      <div class="main"><header class="topbar"><div class="search">${icon('search')}<input placeholder="Search ID, name, phone or company…" data-search><div class="search-res hidden" data-res></div></div>
-        <button class="btn sm" data-addlead>${icon('plus', 'wa-ico')} Add lead</button>
+      <div class="main"><header class="topbar"><div class="search"${u.channel_only ? ' hidden' : ''}>${icon('search')}<input placeholder="Search ID, name, phone or company…" data-search><div class="search-res hidden" data-res></div></div>
+        ${u.channel_only ? '' : `<button class="btn sm" data-addlead>${icon('plus', 'wa-ico')} Add lead</button>`}
         <div class="bell" style="position:relative"><button class="btn icon ghost" data-bell title="Alerts">${icon('bell', 'wa-ico')}</button><span class="n hidden" data-bell-n></span><div class="drop hidden" data-bell-drop></div></div>
         <span class="who-chip"><span class="av">${esc(u.name.split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase())}</span><span><b>${esc(u.name)}</b><span>${BB.levelName(u.level)}${ag ? ' · ' + esc(ag.name) : ''}</span></span></span>
         <button class="btn sm ghost" data-out>Log out</button></header><div class="page" data-page></div></div></div>`;
     updateNav();
     $('[data-out]').onclick = async () => { await BB.post('/api/team/logout').catch(() => {}); BB.setToken('team', null); BB.closePanels(); BB.unguard(); loginView(); };
-    $('[data-addlead]').onclick = quickLead;
-    wireSearch(); wireBell();
+    if (!u.channel_only) { $('[data-addlead]').onclick = quickLead; wireSearch(); }
+    wireBell();
   }
   function updateNav() {
     const u = BB.me.user; const c = BB.me.counts;
     let lastGroup = '';
-    $('[data-nav]').innerHTML = MENU.filter((m) => !m[3] || m[3].includes(u.level)).map(([k, l, ic, , cnt]) => { const g = GROUP[k]; const head = g !== lastGroup ? `<div class="grp">${g}</div>` : ''; lastGroup = g; return `${head}<a href="/team/${k}" class="${k === pageName ? 'on' : ''}">${icon(ic)}<span>${l}</span>${cnt && c[cnt] ? `<span class="n">${c[cnt]}</span>` : ''}</a>`; }).join('');
+    $('[data-nav]').innerHTML = menuFor(u).map(([k, l, ic, , cnt]) => { const g = GROUP[k]; const head = g !== lastGroup ? `<div class="grp">${g}</div>` : ''; lastGroup = g; return `${head}<a href="/team/${k}" class="${k === pageName ? 'on' : ''}">${icon(ic)}<span>${l}</span>${cnt && c[cnt] ? `<span class="n">${c[cnt]}</span>` : ''}</a>`; }).join('');
     const n = $('[data-bell-n]'); if (n) { n.textContent = c.alerts; n.classList.toggle('hidden', !c.alerts); }
   }
   BB.refreshCounts = async () => { try { BB.me = await BB.api('/api/me'); updateNav(); } catch { /* logged out */ } };

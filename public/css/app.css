@@ -1408,3 +1408,9 @@ html[lang="hi"] .ss-g { letter-spacing: 0; }
 .msel-pop { position: absolute; z-index: 30; top: calc(100% + 6px); left: 0; min-width: 240px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 12px 30px rgba(16, 26, 58, .14); padding: 10px; }
 .msel-list { max-height: 260px; overflow: auto; display: flex; flex-direction: column; gap: 4px; }
 .msel-foot { justify-content: flex-end; gap: 6px; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); }
+
+/* Hiring channels: copy-link under each cell; owners card on Logins & team. */
+.trk-link { display: block; font-size: 10.5px; margin-top: 2px; }
+.own-sec { padding: 10px 0; border-top: 1px solid var(--border); }
+.own-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 4px 0 4px 12px; font-size: 13.5px; }
+.own-row select, .own-sec select { width: auto; max-width: 210px; }

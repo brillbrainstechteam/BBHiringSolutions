@@ -36,7 +36,7 @@ function visibleApps(u) {
 }
 
 // ---------- me / menu counts ----------
-route('GET', '/api/me', { auth: 'team', allow2fa: true }, (ctx) => {
+route('GET', '/api/me', { auth: 'team', allow2fa: true, channels: true }, (ctx) => {
   const u = ctx.user;
   const counts = {
     leads: isSuper(u) ? get('SELECT (SELECT COUNT(*) FROM clients WHERE agency_id IS NULL AND junk=0 AND archived=0) + (SELECT COUNT(*) FROM candidates WHERE agency_id IS NULL AND is_new=1 AND junk=0 AND archived=0) c').c : 0,
@@ -44,7 +44,7 @@ route('GET', '/api/me', { auth: 'team', allow2fa: true }, (ctx) => {
     unread: unreadThreads(u),
     alerts: get('SELECT COUNT(*) c FROM alerts WHERE user_id=? AND read=0', u.id).c,
   };
-  return { user: { id: u.id, name: u.name, level: u.level, agency_id: u.agency_id, role: u.role, username: u.username, must_change: u.must_change, whatsapp: u.whatsapp }, agency: ctx.agency, counts };
+  return { user: { id: u.id, name: u.name, level: u.level, agency_id: u.agency_id, role: u.role, username: u.username, must_change: u.must_change, whatsapp: u.whatsapp, team: u.team || 'Recruitment', channel_only: R.channelOnly(u) }, agency: ctx.agency, counts };
 });
 function unreadThreads(u) {
   const rows = all("SELECT person_type, person_id FROM messages WHERE direction='in' AND read_by_us=0 GROUP BY person_type, person_id");
@@ -325,7 +325,7 @@ route('POST', '/api/leads/bulk', SUPER, (ctx) => {
 // Screen protection (guard.js): blocked print / copy / screenshot attempts by admins and sub admins go to the
 // history, at most once a minute per person and kind, so the super admin can see who tried what.
 const lastEvent = new Map();
-route('POST', '/api/security-event', { auth: 'team', rate: { key: 'secevent', max: 120, minutes: 60 } }, (ctx) => {
+route('POST', '/api/security-event', { auth: 'team', channels: true, rate: { key: 'secevent', max: 120, minutes: 60 } }, (ctx) => {
   const what = String(ctx.body.what || '').slice(0, 40).replace(/[^\w ]/g, '');
   const key = `${ctx.user.id}:${what}`; const t = Date.now();
   if (what && (lastEvent.get(key) || 0) < t - 60000) { lastEvent.set(key, t); D.history(ctx.actor.label, `blocked ${what}`, null, 'screen', null, null, null, ctx.ip); }
@@ -477,7 +477,7 @@ function createJob(c, b, actor, byClient) {
 }
 module.exports.createJob = createJob;
 // ---------- hiring channels: a checklist row per channel on every job, and the tracker across jobs ----------
-const channels = () => D.settings().hiring_channels || [];
+const channels = () => (D.settings().hiring_channels || []).map((c) => { const o = c.owner_id && get('SELECT name FROM users WHERE id=?', c.owner_id); return o ? { ...c, owner: o.name } : c; });
 const POST_STATUS = ['', 'Pending', 'Done', 'Not needed'];
 function syncPostings(jobId) {
   const have = new Set(all('SELECT ckey FROM postings WHERE job_id=? AND ckey IS NOT NULL', jobId).map((p) => p.ckey));
@@ -494,14 +494,16 @@ function postingRows(j, apps) {
     .sort((a, b) => channels().findIndex((c) => c.key === a.ckey) - channels().findIndex((c) => c.key === b.ckey));
 }
 // The tracker: active jobs as columns, channels as rows, each cell a status.
-route('GET', '/api/postings/tracker', T, (ctx) => {
-  const jobs = visibleJobs(ctx.user).map((j) => V.jobView(j)).filter((j) => ctx.query.all || !['Closed', 'Filled'].includes(j.status));
+route('GET', '/api/postings/tracker', { ...T, channels: true }, (ctx) => {
+  const limited = R.channelOnly(ctx.user);
+  const jobs = (limited ? all('SELECT * FROM jobs WHERE archived=0 ORDER BY created_at DESC') : visibleJobs(ctx.user)).map((j) => V.jobView(j)).filter((j) => ctx.query.all || !['Closed', 'Filled'].includes(j.status));
   const cells = {};
   for (const j of jobs) { syncPostings(j.id); cells[j.id] = {}; for (const p of all('SELECT ckey, status, done_date, post_link, done_by FROM postings WHERE job_id=? AND ckey IS NOT NULL', j.id)) cells[j.id][p.ckey] = { status: p.status || (p.done_date ? 'Done' : ''), done_date: p.done_date, post_link: p.post_link, done_by: p.done_by }; }
-  return { channels: channels(), jobs: jobs.map((j) => ({ id: j.id, code: j.old_code || j.id, title: j.title, city: j.city, client: j.client_name, status: j.status })), cells };
+  const tags = Object.fromEntries(channels().map((c) => [c.key, c.tag]));
+  return { channels: channels(), link_base: L.link('apply', '?'), tags, jobs: jobs.map((j) => ({ id: j.id, code: j.old_code || j.id, title: j.title, city: j.city, client: limited ? '' : j.client_name, status: j.status })), cells };
 });
-route('POST', '/api/postings/tracker', T, (ctx) => {
-  const j = get('SELECT * FROM jobs WHERE id=?', ctx.body.job_id); mustSee(seeJob(ctx.user, j), 'job opening');
+route('POST', '/api/postings/tracker', { ...T, channels: true }, (ctx) => {
+  const j = get('SELECT * FROM jobs WHERE id=?', ctx.body.job_id); mustSee(R.channelOnly(ctx.user) ? !!j : seeJob(ctx.user, j), 'job opening');
   syncPostings(j.id); const p = get('SELECT * FROM postings WHERE job_id=? AND ckey=?', j.id, ctx.body.ckey); if (!p) throw httpError(404, 'Channel not found');
   setPosting(p, ctx.body.status, ctx.body.post_link, ctx.actor); return { ok: true };
 });
@@ -1406,8 +1408,8 @@ route('GET', '/api/earnings', ADMINS, (ctx) => {
 // ---------- logins & team ----------
 route('GET', '/api/users', ADMINS, (ctx) => {
   const u = ctx.user;
-  const users = all('SELECT * FROM users ORDER BY id').filter((x) => isSuper(u) || x.agency_id === u.agency_id).map((x) => ({ id: x.id, name: x.name, whatsapp: x.whatsapp, email: x.email || '', level: x.level, agency_id: x.agency_id, agency_name: V.agencyName(x.agency_id), role: x.role, username: x.username, status: x.status, last_login: x.last_login, locked: x.locked_until && x.locked_until > now(), created_by: x.created_by, view_status: personStatus(x) }));
-  if (ctx.query.format) return page(ctx, users, 'logins', ['id', 'name', 'username', 'level', 'agency_name', 'role', 'status', 'view_status', 'last_login', 'created_by']);
+  const users = all('SELECT * FROM users ORDER BY id').filter((x) => isSuper(u) || x.agency_id === u.agency_id).map((x) => ({ id: x.id, name: x.name, whatsapp: x.whatsapp, email: x.email || '', level: x.level, team: x.team || 'Recruitment', agency_id: x.agency_id, agency_name: V.agencyName(x.agency_id), role: x.role, username: x.username, status: x.status, last_login: x.last_login, locked: x.locked_until && x.locked_until > now(), created_by: x.created_by, view_status: personStatus(x) }));
+  if (ctx.query.format) return page(ctx, users, 'logins', ['id', 'name', 'username', 'level', 'team', 'agency_name', 'role', 'status', 'view_status', 'last_login', 'created_by']);
   return { users, agencies: isSuper(u) ? all('SELECT * FROM agencies ORDER BY id').map((a) => ({ ...a, view_status: agencyStatus(a), people: all('SELECT 1 FROM users WHERE agency_id=?', a.id).length })) : [] };
 });
 const usernameFrom = (name) => String(name).trim().toLowerCase().replace(/[^a-z0-9]+/g, '.').replace(/^\.|\.$/g, '');
@@ -1421,16 +1423,18 @@ route('POST', '/api/users', ADMINS, (ctx) => {
   if (!b.name) throw httpError(400, 'Enter the name', 'name');
   const level = isSuper(u) ? (b.level || 'sub') : 'sub';
   if (!['super', 'admin', 'sub'].includes(level)) throw httpError(400, 'Pick the level: sub admin, admin or super admin', 'level');
+  const team = isSuper(u) && L.TEAMS.includes(b.team) ? b.team : 'Recruitment';
+  const limited = R.channelOnly({ level, team }); // social media and tech people belong to head office, not an agency
   const agency = isSuper(u) ? b.agency_id : u.agency_id;
-  if (level !== 'super' && !agency) throw httpError(400, 'Pick the agency', 'agency_id');
-  if (level !== 'super' && !get('SELECT 1 FROM agencies WHERE id=?', agency)) throw httpError(400, 'That agency does not exist', 'agency_id');
+  if (level !== 'super' && !limited && !agency) throw httpError(400, 'Pick the agency', 'agency_id');
+  if (level !== 'super' && !limited && !get('SELECT 1 FROM agencies WHERE id=?', agency)) throw httpError(400, 'That agency does not exist', 'agency_id');
   const username = (b.username || usernameFrom(b.name)).toLowerCase().trim();
   if (!/^[a-z0-9._-]{3,}$/.test(username)) throw httpError(400, 'Username: at least 3 letters, numbers or dots', 'username');
   if (get('SELECT 1 FROM users WHERE username=?', username)) throw httpError(400, 'This username is already used', 'username');
   const phone = L.digits10(b.whatsapp); if (!L.validPhone(phone)) throw httpError(400, 'Enter a 10-digit WhatsApp number', 'whatsapp');
   const pw = L.newPassword(); const id = D.nextId('U');
   const email = String(b.email || '').trim(); if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) throw httpError(400, 'Enter a valid email, or leave it empty', 'email');
-  insert('users', { id, name: b.name, whatsapp: phone, email: email || null, level, agency_id: level === 'super' ? null : agency, role: b.role || (level === 'admin' ? 'Agency owner' : 'Recruiter'), username, pass_hash: L.hashPassword(pw), status: 'On', must_change: 1, failed: 0, created_by: u.id, created_at: now() });
+  insert('users', { id, name: b.name, whatsapp: phone, email: email || null, level, team, agency_id: level === 'super' || limited ? null : agency, role: b.role || (level === 'admin' ? 'Agency owner' : limited ? team : 'Recruiter'), username, pass_hash: L.hashPassword(pw), status: 'On', must_change: 1, failed: 0, created_by: u.id, created_at: now() });
   D.history(ctx.actor.label, 'create login', id, null, null, `${username} (${level})`);
   L.sendWA({ ptype: 'user', pid: id, format: 'bbhs_team_login', vars: { username, password: pw, link: L.link('team') }, by: ctx.actor, rule: 'team_login', secret: pw, auto: true }); // quietly skipped while Meta has not approved it: the admin sees the password on screen
   return { id, username, password: pw };
@@ -1459,6 +1463,7 @@ route('PATCH', '/api/users/:id', ADMINS, (ctx) => {
   if (!t || !(canManage(ctx.user, t) || self)) throw httpError(403, 'You cannot edit this login.');
   const patch = {}; for (const k of self && !isSuper(ctx.user) ? ['name', 'whatsapp', 'email'] : ['name', 'role', 'whatsapp', 'email']) if (ctx.body[k] !== undefined) patch[k] = k === 'whatsapp' ? L.digits10(ctx.body[k]) : k === 'email' ? String(ctx.body[k]).trim() || null : ctx.body[k];
   if (patch.email && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(patch.email)) throw httpError(400, 'Enter a valid email, or leave it empty', 'email');
+  if (ctx.body.team !== undefined && isSuper(ctx.user) && !self) { if (!L.TEAMS.includes(ctx.body.team)) throw httpError(400, 'Pick the team', 'team'); patch.team = ctx.body.team; }
   return D.edit('users', t.id, patch, ctx.actor.label, ctx.ip);
 });
 route('POST', '/api/agencies', SUPER, (ctx) => {
@@ -1644,8 +1649,8 @@ function removePerson(ptype, pid, who) {
 }
 
 // ---------- bell, notes, follow-ups, history, files ----------
-route('GET', '/api/alerts', T, (ctx) => all('SELECT * FROM alerts WHERE user_id=? ORDER BY at DESC LIMIT 50', ctx.user.id));
-route('POST', '/api/alerts/read', T, (ctx) => { if (ctx.body.id) D.run('UPDATE alerts SET read=1 WHERE id=? AND user_id=?', ctx.body.id, ctx.user.id); else D.run('UPDATE alerts SET read=1 WHERE user_id=?', ctx.user.id); return { ok: true }; });
+route('GET', '/api/alerts', { ...T, channels: true }, (ctx) => all('SELECT * FROM alerts WHERE user_id=? ORDER BY at DESC LIMIT 50', ctx.user.id));
+route('POST', '/api/alerts/read', { ...T, channels: true }, (ctx) => { if (ctx.body.id) D.run('UPDATE alerts SET read=1 WHERE id=? AND user_id=?', ctx.body.id, ctx.user.id); else D.run('UPDATE alerts SET read=1 WHERE user_id=?', ctx.user.id); return { ok: true }; });
 route('POST', '/api/notes', T, (ctx) => {
   if (!ctx.body.text) throw httpError(400, 'Write the note', 'text');
   insert('notes', { record_id: ctx.body.record_id, text: ctx.body.text, author: ctx.actor.label, at: now() }); D.history(ctx.actor.label, 'note', ctx.body.record_id); return { ok: true };

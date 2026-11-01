@@ -27,6 +27,9 @@ function loadSession(req) {
   return s;
 }
 
+// A sub admin in a team other than Recruitment (social media, tech) works on hiring channels only. Routes are closed
+// to them unless marked { channels: true }, so anything new stays closed by default.
+const channelOnly = (u) => !!u && u.level === 'sub' && !!u.team && u.team !== 'Recruitment';
 function actorOf(u) { return { uid: u.id, name: u.name, label: u.name, level: u.level, agency_id: u.agency_id }; }
 
 async function dispatch(req, res, url, body) {
@@ -51,6 +54,7 @@ async function dispatch(req, res, url, body) {
         const ag = u.agency_id ? D.get('SELECT * FROM agencies WHERE id=?', u.agency_id) : null;
         if (ag && ag.status === 'Paused' && u.level !== 'super') throw D.httpError(401, 'This agency is paused.');
         if (r.opts.levels && !r.opts.levels.includes(u.level)) throw D.httpError(403, 'Your level cannot do this.');
+        if (channelOnly(u) && !r.opts.channels) throw D.httpError(403, 'Your login covers hiring channels only.');
         ctx.user = u; ctx.agency = ag; ctx.actor = actorOf(u);
         D.update('users', u.id, { last_action: D.now() });
       } else if (need === 'client') {
@@ -112,4 +116,4 @@ function candidateOut(u, c) {
   return { ...c, whatsapp: show ? c.whatsapp : maskPhone(c.whatsapp), email: show ? c.email : '', phone_hidden: !show };
 }
 
-module.exports = { route, dispatch, newSession, loadSession, actorOf, isSuper, seeClient, seeJob, seeApp, seeBill, seeThread, phoneVisible, candidateOut, maskPhone };
+module.exports = { channelOnly, route, dispatch, newSession, loadSession, actorOf, isSuper, seeClient, seeJob, seeApp, seeBill, seeThread, phoneVisible, candidateOut, maskPhone };

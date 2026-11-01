@@ -628,6 +628,8 @@ function scheduleInterview(appId, o, by) {
   recalcJob(job.id, actorName(by));
   return iv;
 }
+// Sections of the team. Everyone outside Recruitment who is a sub admin gets the hiring-channels-only login.
+const TEAMS = ['Recruitment', 'Social media & marketing', 'Tech'];
 const IV_MODES = { phone: 'Telephonic round', video: 'Virtual round', in_person: 'Final round (in person)' };
 function ivVars(iv, job) {
   return { round: iv.mode === 'phone' ? 'telephonic interview' : iv.mode === 'video' ? (iv.client_joins ? 'video interview with the client' : 'video interview') : iv.round === 'ours' ? 'interview' : 'interview with the client', job: job.title, date: istFmt(iv.at, false), time: istTime(iv.at), place: iv.place };
@@ -966,7 +968,7 @@ function sendSystemText(ptype, pid, text) {
 
 module.exports = { adLabel,
   STEPS, stepIdx, digits10, validPhone, inr, istDay, istFmt, istTime, istHour, inQuiet, next9am, daysBetween, addDays, hashPassword, checkPassword, newPassword, sha,
-  waHeld, IV_MODES, clientSeesIv, addIvNote, CALL_OUTCOMES, logCall, jobList, deptOf, stateOf, person, fillFormat, windowOpenUntil, sendWA, setDispatcher, alertUser, link, agencyAdmin, superAdmins,
+  waHeld, TEAMS, IV_MODES, clientSeesIv, addIvNote, CALL_OUTCOMES, logCall, jobList, deptOf, stateOf, person, fillFormat, windowOpenUntil, sendWA, setDispatcher, alertUser, link, agencyAdmin, superAdmins,
   computeJobStatus, jobStatusReason, recalcJob, filledCount, appsOfJob, matchScore, jobsFor, cleanBusiness, BUSINESS_TYPES, EXP_YEARS, JEW_YEARS, LOOKING, NOT_LOOKING, ratingOf, bestMatches, isPlaced, salaryText, autoJobAlert,
   feeFor, gstFor, fyOf, billView, refreshBill, createBillForApp, issueBill, upiLink,
   appHist, createApplication, moveStep, closeApplication, reopenApplication, screenApplication, SCREEN, jobsForRole, jobsForPerson, roleTokens, scheduleInterview, recordInterview, interviewView, ivVars, recordOffer, leftJob, jobAction,

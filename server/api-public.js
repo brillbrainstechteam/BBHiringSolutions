@@ -19,7 +19,7 @@ route('GET', '/api/bootstrap', {}, () => {
     jobs: L.jobList().filter((j) => !j.hidden), places: (() => { const seen = new Set(); const out = []; for (const p of [...s.cities, ...require('./places').PLACES]) { const k = p.name.toLowerCase(); if (!seen.has(k)) { seen.add(k); out.push({ name: p.name, state: p.state || L.stateOf(p.name) }); } } return out; })(), industries: Object.fromEntries(Object.keys(s.industries).map((k) => [k, L.jobList(k).filter((j) => !j.hidden)])), default_industry: s.default_industry, departments: s.departments, cities: s.cities.map((c) => c.name), skills: s.skills, stages: s.client_stages,
     closing_reasons: s.closing_reasons, job_close_reasons: s.job_close_reasons, reopen_reasons: s.reopen_reasons, lead_sources: s.lead_sources, src_tags: s.src_tags, industry_list: s.industry_list || ['Jewellery'], default_industry: s.default_industry || 'Jewellery',
     steps: L.STEPS, consent: L.CONSENT_WORDING, fee: s.fee, replacement_days: s.replacement_days, payment_days: s.payment_days, agency_share_pct: s.agency_share_pct, gst: s.gst, match: s.match, quiet: s.quiet, log_deadline: s.log_deadline,
-    test_mode: !s.crm.enabled, languages: s.languages, env: D.ENV.name, base_url: s.business.base_url, landing: s.landing || null, landing_roles: s.landing_roles || [], looking: L.LOOKING,
+    test_mode: !s.crm.enabled, languages: s.languages, env: D.ENV.name, base_url: s.business.base_url, landing: s.landing || null, landing_roles: s.landing_roles || [], team_sections: L.TEAMS, looking: L.LOOKING,
   };
 });
 // Home page: open jobs anyone can see (no employer names), and how many there are per field of work.
@@ -113,15 +113,15 @@ route('POST', '/api/team/login', { rate: { key: 'login', max: 30, minutes: 15 } 
   }
   return { token: newSession('team', u.id, null, { device }), must_change: !!u.must_change };
 });
-route('POST', '/api/team/2fa', { auth: 'team', allow2fa: true }, (ctx) => {
+route('POST', '/api/team/2fa', { auth: 'team', allow2fa: true, channels: true }, (ctx) => {
   checkCode(ctx.user.whatsapp, 'team2fa', ctx.body.code);
   D.run('UPDATE sessions SET pending_2fa=0 WHERE token=?', ctx.session.token);
   const devices = JSON.parse(ctx.user.devices || '[]');
   if (ctx.session.device && !devices.includes(ctx.session.device)) update('users', ctx.user.id, { devices: JSON.stringify([...devices, ctx.session.device].slice(-10)) });
   return { ok: true };
 });
-route('POST', '/api/team/logout', { auth: 'team', allow2fa: true }, (ctx) => { D.run('DELETE FROM sessions WHERE token=?', ctx.session.token); D.history(ctx.actor.label, 'logout', ctx.user.id); return { ok: true }; });
-route('POST', '/api/team/password', { auth: 'team' }, (ctx) => {
+route('POST', '/api/team/logout', { auth: 'team', allow2fa: true, channels: true }, (ctx) => { D.run('DELETE FROM sessions WHERE token=?', ctx.session.token); D.history(ctx.actor.label, 'logout', ctx.user.id); return { ok: true }; });
+route('POST', '/api/team/password', { auth: 'team', channels: true }, (ctx) => {
   const { old, password } = ctx.body;
   if (!L.checkPassword(String(old || ''), ctx.user.pass_hash)) throw httpError(400, 'Your current password is wrong', 'old');
   if (!password || String(password).length < 8) throw httpError(400, 'Use at least 8 characters', 'password');
@@ -807,6 +807,7 @@ route('GET', '/api/files/:id', {}, (ctx) => {
   const rid = f.record_id; let ok = false;
   if (s.kind === 'team') {
     const u = get('SELECT * FROM users WHERE id=?', s.subject_id);
+    if (R.channelOnly(u)) throw httpError(403, 'Your login covers hiring channels only.');
     if (rid.startsWith('CA-')) { const c = get('SELECT * FROM candidates WHERE id=?', rid); ok = R.phoneVisible(u, c) || ['cv', 'short_cv'].includes(f.type); }
     else if (rid.startsWith('CL-')) ok = R.seeClient(u, get('SELECT * FROM clients WHERE id=?', rid));
     else if (rid.startsWith('AP-')) ok = R.seeApp(u, get('SELECT * FROM applications WHERE id=?', rid));
