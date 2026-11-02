@@ -10,7 +10,7 @@ Last updated 2 Nov 2026. The live list of messages is in the portal: Settings �
 | 3 | Add the Accounts email: Settings → Fees & limits | Invoice requests have nowhere to go without it. |
 | 4 | Create Dhanvi's login: Logins & team → + Add login (team: Social media) | They run the creative and channel steps. Needs their WhatsApp number. |
 | 5 | Pick owners for the 6 channels marked "To be decided" in Digital Reach | Admins and sub-admins can set them too. College Placement Cell, Training Institutes, Training Institutes (partnership), College Placement Cell (tie-up), Local Hiring Agencies, Job Fairs. |
-| 6 | Settings → Message formats: press Send all formats to Meta for approval, then Check approval status after a day | `bbhs_client_thanks`, `bbhs_jd_approval` and `bbhs_team_login` are not approved. |
+| 6 | Settings → Message formats: press Send new formats to Meta for approval, then Check approval status after a day | `bbhs_client_slots`, `bbhs_client_thanks`, `bbhs_jd_approval` and `bbhs_team_login` are not approved. Ask client for a slot cannot go until `bbhs_client_slots` is. |
 | 7 | Check WhatsApp Manager → Account tools → Phone numbers | Shows whether `9093400444`, `9093400222` and any new number are on this account. It decides the two WhatsApp items below. |
 | 8 | Copy the resumes off the phones with `9093400444` and `9093400222` | See "Old WhatsApp resumes". |
 | 9 | Give the Meta ad account ID and a Marketing API token | Needed to fetch ad spend by itself. Upload works today. Paste the token on the server, never in chat. |
@@ -20,7 +20,7 @@ Last updated 2 Nov 2026. The live list of messages is in the portal: Settings �
 
 ## Messages to switch on later
 
-Everything automatic is held. Held messages are not sent later; only new ones go after switching on. Login codes, team passwords, replies typed by hand and the Recruitment Agreement still go. Decided 2 Nov 2026: KYC and other emails written in the portal stay held. On live: 644 old emails are held.
+Everything automatic is held. Held messages are not sent later; only new ones go after switching on. Login codes, team passwords, replies typed by hand and the Recruitment Agreement still go. Ask client for a slot goes when a recruiter presses it, and so do the interview message to the candidate and the note to the client that follow from it. Decided 2 Nov 2026: KYC and other emails written in the portal stay held. On live: 644 old emails are held.
 
 **Clients from before the portal (28):** they get no automatic WhatsApp or email, even after messages are switched on, until a new job opening is added for them. Added clients get messages as usual.
 

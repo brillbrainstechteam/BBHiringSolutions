@@ -279,6 +279,7 @@
       if (a.step === 'Offer made') btns.push('<button class="btn sm gold" data-offer>Change offer</button><button class="btn sm primary" data-accept>Offer accepted</button><button class="btn sm danger" data-decline>Offer declined</button>');
       if (a.step === 'Offer accepted') btns.push('<button class="btn sm primary" data-joined>Mark joined</button><button class="btn sm danger" data-nojoin>Did not join</button>');
       if (L.indexOf(a.step) >= 2) btns.push(BB.flow.appCv(a));
+      btns.push(BB.flow.appSlotBtn(a));
       if (a.offer_ctc) btns.push(`<button class="btn sm" data-letter>${a.offer_letter ? 'Remake' : 'Make'} offer letter</button>`);
       btns.push(`<button class="btn sm" data-hold>${a.on_hold ? 'Remove hold' : 'On hold'}</button><button class="btn sm danger" data-close>Close</button>`);
     } else if (a.result === 'Hired') {
@@ -323,6 +324,8 @@
         ${BB.tracker(a.step, a.result)}${BB.flow.appNext(a)}
         <div class="row" style="margin:10px 0 14px">${btns.join('')}${open ? `<details class="step-menu"><summary class="btn sm">Move to step</summary><div class="step-pop" role="menu">${s.steps.map((x) => `<button type="button" role="menuitem" class="${x === a.step ? 'on' : ''}" ${x === a.step ? 'disabled' : ''} data-setstep="${esc(x)}">${esc(x)}</button>`).join('')}</div></details>` : ''}</div>
         ${screenBlock(a)}
+        ${BB.flow.appQuestions(a)}
+        ${BB.flow.appSlots(a)}
         ${BB.flow.appOffer(a)}
         ${a.offer_ctc ? `<div class="sec card pad"><h3 style="margin-bottom:6px">Offer</h3><dl class="kv"><dt>Yearly CTC</dt><dd><b>${inr(a.offer_ctc)}</b></dd><dt>Joining date</dt><dd>${fmtD(a.joining_date)}</dd><dt>Reporting to</dt><dd>${esc(a.reporting_to || '—')}</dd><dt>Offer letter</dt><dd>${a.offer_letter ? `<button class="btn sm" data-file="${a.offer_letter}">Open PDF</button> ${a.offer_sent ? '<span class="badge b-green">sent</span>' : '<span class="badge b-outline">client to check</span>'}` : '—'}</dd>${a.bill ? `<dt>Bill</dt><dd><a href="#" data-open="bill:${a.bill.id}">${esc(a.bill.bill_no || a.bill.id)}</a> · ${inr(a.bill.total)} · ${esc(a.bill.view_status)}</dd>` : ''}</dl></div>` : ''}
         ${a.step === 'Offer accepted' || a.result === 'Hired' ? `<div class="sec"><h3>Joining checklist</h3><div class="card pad">${items.map((it) => `<label class="row small"><input type="checkbox" data-ck="${esc(it)}" ${a.checklist && a.checklist[it] ? 'checked' : ''}> ${esc(it)} <span class="faint tiny">${a.checklist && a.checklist[it] ? esc(a.checklist[it].by) : ''}</span></label>`).join('')}${(a.joining_docs || []).length ? `<div class="row" style="margin-top:6px">${a.joining_docs.map((d) => `<button class="btn sm" data-file="${d.file}">${esc(d.label)}</button>`).join('')}</div>` : '<div class="faint small">No joining documents uploaded yet.</div>'}</div></div>` : ''}

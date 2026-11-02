@@ -30,12 +30,11 @@
     ['myday', 'My day', 'sun', ['sub']], ['dashboard', 'Dashboard', 'grid'], ['leads', 'Leads', 'inbox', null, 'leads'],
     ['clients', 'Clients', 'building'], ['candidates', 'Candidates', 'users', null, 'cand_new'], ['jobs', 'Job openings', 'brief'], ['channels', 'Digital Reach', 'flow'], ['applications', 'Applications', 'flow'],
     ['interviews', 'Interviews', 'cal', null, 'pending'], ['whatsapp', 'WhatsApp', 'chat', null, 'unread'],
-    ['performance', 'Performance', 'chart'], ['logs', 'Daily logs', 'note'], ['bills', 'Bills', 'rupee', ['super', 'admin']], ['books', 'Books', 'chart', ['super', 'admin']], ['money', 'Money', 'money', ['super']],
+    ['performance', 'Performance', 'chart'], ['logs', 'Daily logs', 'note'], ['bills', 'Expenses', 'rupee', ['super', 'admin']], ['money', 'Money', 'money', ['super']],
     ['reports', 'Reports', 'report'], ['agreement', 'Recruitment Agreement', 'note'], ['logins', 'Logins & team', 'key'], ['settings', 'Settings', 'cog'],
   ];
   const GROUP = { books: 'Money', agreement: 'Admin', channels: 'Hiring', myday: 'Overview', dashboard: 'Overview', leads: 'Hiring', clients: 'Hiring', jobs: 'Hiring', candidates: 'Hiring', applications: 'Hiring', interviews: 'Hiring', whatsapp: 'Messages', performance: 'Team', logs: 'Team', bills: 'Money', money: 'Money', reports: 'Money', logins: 'Admin', settings: 'Admin' };
   const HELP = {
-    books: 'Revenue, expenses and how the team is doing, month by month.',
     agreement: 'The standard Recruitment Agreement. Clients see the same copy in their account.',
     channels: 'Every channel for every open job. Change the owner in the Owner column. Copy a job\'s link, post it, then click the cell to update it. Everyone sees the same page.',
     myday: 'Everything you need to do today: interviews, results to record, follow-ups and stuck applications.',

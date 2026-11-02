@@ -112,6 +112,8 @@ function person(type, id) {
 const actorName = (a) => (a ? a.label || a.name || 'System' : 'System');
 // Testing pause (settings.wa_pause): why a WhatsApp to a candidate is held instead of sent, or null to send it.
 function waHeld(msg) {
+  // Asking a client for a slot, and telling the candidate the time it gives, are started by a recruiter, so they go.
+  if (msg.format === 'bbhs_client_slots' || (msg.format === 'bbhs_interview_scheduled' && msg.iv && (get('SELECT from_ask FROM interviews WHERE id=?', msg.iv) || {}).from_ask)) return null;
   if (msg.person_type === 'client' && (msg.format || ['Auto', 'Bot', 'System'].includes(msg.sent_by)) && !['bbhs_login_code', 'bbhs_team_login'].includes(msg.format)) {
     const c = get('SELECT quiet FROM clients WHERE id=?', msg.person_id); if (c && c.quiet) return 'Held: earlier client, no messages until a new job opening';
   }
@@ -628,6 +630,8 @@ function scheduleInterview(appId, o, by) {
   const place = mode === 'phone' ? 'Phone call' : mode === 'video' ? (o.place || 'Video call') : (o.place || 'Office');
   insert('interviews', { id, app_id: appId, round, mode, link: mode === 'video' ? String(o.link || '').trim() : '', client_joins: clientJoins, name: o.name || (mode ? IV_MODES[mode] : (round === 'ours' ? 'Round 1' : 'Client round')), at: new Date(o.at).toISOString(), place, interviewer: o.interviewer || '', status: 'Scheduled', qa: [], confirmed: 0, created_by: by && by.uid, created_at: now() });
   history(actorName(by), 'create', id, null, null, `${round} interview on ${appId}`);
+  if (o.from_ask) update('interviews', id, { from_ask: o.from_ask });
+  if (round === 'client') D.run(`UPDATE slot_asks SET status='Scheduled', iv_id=? WHERE app_id=? AND status IN (${OPEN_ASK})`, id, appId);
   const target = round === 'ours' ? 'Our interview' : 'Client interview';
   if (stepIdx(app.step) < stepIdx(target)) moveStep(appId, target, by, `${id} scheduled`);
   else appHist(appId, app.step, by, `${id} scheduled`, 'interview');
@@ -934,6 +938,26 @@ function mergeRecords(type, keepId, dropId, chosen, by) {
 const resolveId = (id) => { const m = get('SELECT kept_id FROM merges WHERE old_id=?', id); return m ? resolveId(m.kept_id) : id; };
 
 // ---------- replies from WhatsApp (8.7) ----------
+// ---------- asking the client for an interview slot ----------
+const OPEN_ASK = "'Waiting','Another time','Replied','Suggested'";
+const openAsks = (clientId) => all(`SELECT * FROM slot_asks WHERE client_id=? AND status IN (${OPEN_ASK}) ORDER BY id DESC`, clientId);
+// A reply belongs to the application the message was about; with no such link, only a single open ask is safe to use.
+function askFor(clientId, ref) { const open = openAsks(clientId); return (ref && ref.ap && open.find((x) => x.app_id === ref.ap)) || (open.length === 1 ? open[0] : null); }
+const askOwner = (app) => app.owner_id || (get('SELECT recruiter_id FROM jobs WHERE id=?', app.job_id) || {}).recruiter_id;
+function fixAsk(ask, at, by) {
+  const app = get('SELECT * FROM applications WHERE id=?', ask.app_id); const whenText = istFmt(at);
+  if (!app || app.result !== 'open') { update('slot_asks', ask.id, { status: 'Closed', replied_at: now() }); return 'Application is closed'; }
+  if (new Date(at) <= new Date()) {
+    update('slot_asks', ask.id, { status: 'Another time', reply_note: `The time picked (${whenText}) has passed`, replied_at: now() });
+    alertUser(askOwner(app), `${app.id}: the client picked a time that has passed. Ask again.`, app.id, 'client'); return 'Slot has passed';
+  }
+  const iv = scheduleInterview(app.id, { round: 'client', mode: 'in_person', at, place: ask.place, name: 'Client round', from_ask: ask.id }, by);
+  update('slot_asks', ask.id, { status: 'Scheduled', iv_id: iv.id, picked_at: iv.at, replied_at: now() });
+  const job = get('SELECT * FROM jobs WHERE id=?', app.job_id); const cand = get('SELECT name FROM candidates WHERE id=?', app.candidate_id);
+  alertUser(askOwner(app), `${app.id}: interview fixed for ${whenText}`, app.id, 'client');
+  try { sendWA({ ptype: 'client', pid: ask.client_id, text: `Thank you. The interview with ${cand.name} for the ${job.title} role is fixed for ${whenText} at ${iv.place}. We will confirm with the candidate.`, ap: app.id, jb: job.id, iv: iv.id, by: { label: 'Interview slots' } }); } catch (e) { appHist(app.id, get('SELECT step FROM applications WHERE id=?', app.id).step, by, `Client not told on WhatsApp: ${e.message}`, 'interview'); }
+  return `${iv.id} scheduled`;
+}
 function receiveReply(phone, text, button, opts = {}) {
   const p10 = digits10(phone);
   let ptype = null; let pid = null;
@@ -962,8 +986,16 @@ function receiveReply(phone, text, button, opts = {}) {
   const t = String(button || text || '').trim().toLowerCase();
   let effect = 'Saved in inbox';
   const table = ptype === 'client' ? 'clients' : ptype === 'candidate' ? 'candidates' : null;
+  const ask = ptype === 'client' ? askFor(pid, ref) : null;
+  const slotNo = ask && Number((t.match(/^(?:slot|option)?\s*#?\s*([123])$/) || [])[1]);
   if (table && (t === 'stop' || t === 'stop messages')) { update(table, pid, { opted_out: 1 }); insert('consents', { person_type: ptype, person_id: pid, what: 'Opted out (STOP)', wording: text, source: 'WhatsApp', at: now(), opted_out: 1 }); effect = 'Opted out'; sendSystemText(ptype, pid, 'You will not get any more automatic messages. Reply START to turn them back on.'); }
   else if (table && t === 'start') { update(table, pid, { opted_out: 0 }); insert('consents', { person_type: ptype, person_id: pid, what: 'Back in (START)', wording: text, source: 'WhatsApp', at: now(), opted_out: 0 }); effect = 'Opted back in'; sendSystemText(ptype, pid, 'Messages are turned back on. Reply STOP any time to stop them.'); }
+  else if (ask && slotNo && ask.slots[slotNo - 1]) effect = fixAsk(ask, ask.slots[slotNo - 1], by);
+  else if (ask && t === 'another time') { update('slot_asks', ask.id, { status: 'Another time', replied_at: now() }); alertUser(askOwner(get('SELECT * FROM applications WHERE id=?', ask.app_id)), `${ask.app_id}: the client asked for another time`, ask.app_id, 'client'); effect = 'Client asked for another time'; }
+  else if (ask && !button && t) {
+    update('slot_asks', ask.id, { status: 'Replied', reply: String(text).slice(0, 500), replied_at: now() }); alertUser(askOwner(get('SELECT * FROM applications WHERE id=?', ask.app_id)), `${ask.app_id}: the client replied about the slot: ${String(text).slice(0, 120)}`, ask.app_id, 'client'); effect = 'Client replied about the slot';
+    setImmediate(() => require('./flow').readSlotReply(ask.id, text).catch((e) => console.error('Slot reply', ask.id, e.message)));
+  }
   else if (ptype === 'candidate' && t === 'i agree') { update('candidates', pid, { consent_alerts: 1 }); saveConsent('candidate', pid, 'WhatsApp', text); effect = 'Consent saved'; }
   else if (ref && ref.iv && t === 'confirm') { update('interviews', ref.iv, { confirmed: 1 }); history(by.label, 'confirm', ref.iv, 'confirmed', 0, 1); effect = `${ref.iv} confirmed`; }
   else if (ref && ref.iv && t === 'reschedule') { const ap = get('SELECT * FROM applications WHERE id=?', ref.ap); if (ap) alertUser(ap.owner_id, `Reschedule asked for ${ref.iv}`, ref.iv, 'candidate'); effect = 'Task alert to recruiter'; }
@@ -1001,3 +1033,4 @@ module.exports = { adLabel,
   appHist, createApplication, moveStep, closeApplication, reopenApplication, screenApplication, SCREEN, jobsForRole, jobsForPerson, roleTokens, scheduleInterview, recordInterview, interviewView, ivVars, recordOffer, leftJob, jobAction,
   CONSENT_WORDING, saveConsent, intakeClient, intakeCandidate, assignLead, mergeRecords, resolveId, receiveReply, actorName,
 };
+Object.assign(module.exports, { fixAsk, openAsks, OPEN_ASK });
