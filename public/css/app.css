@@ -1299,7 +1299,7 @@ html[lang="hi"] .ss-g { letter-spacing: 0; }
 .cand-result { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; padding-top: 12px; border-top: 1px solid var(--border); }
 .cand-count { font-size: 14px; } .cand-count b { font-size: 17px; font-variant-numeric: tabular-nums; }
 .cand-seg { gap: 8px; } .cand-seg select { width: auto; max-width: 240px; height: 34px; padding: 0 38px 0 14px; font-size: 13px; border-radius: 999px; }
-.cand-bulk { margin-bottom: 12px; min-height: 46px; position: sticky; top: 72px; z-index: 6; } /* stays just under the top bar while the page scrolls */
+.cand-bulk { margin-bottom: 12px; min-height: 46px; } /* stays just under the top bar while the page scrolls */
 .cand-bulk .sel-count { font-weight: 600; color: var(--muted); margin-right: 4px; min-width: 150px; }
 .cand-bulk.has-sel .sel-count { color: var(--ink); }
 .cand-bulk .btn:disabled { opacity: .45; cursor: not-allowed; }
@@ -1456,7 +1456,6 @@ html[lang="hi"] .ss-g { letter-spacing: 0; }
 .bulkbar > .btn, .bulkbar > select.mini { flex: 0 0 var(--ctl-w); width: var(--ctl-w); max-width: none; height: var(--ctl-h); padding: 0 12px; font-size: 13px; justify-content: center; }
 .bulkbar > select.mini { padding: 0 34px 0 14px; background-position: right 13px center; text-overflow: ellipsis; }
 .bulkbar > .btn svg { width: 16px; height: 16px; flex: none; }
-.bulkbar > span:first-child { flex: 1 0 100%; min-width: 0; margin: 0; }
 @media (max-width: 760px) {
   .filters > input:not([type=checkbox]):not([type=radio]), .filters > select, .filters > .msel, .filters > label.row, .filters > .more-f, .bulkbar > .btn, .bulkbar > select.mini { flex: 1 1 calc(50% - 4px); width: auto; }
   .filters > input[data-q]:not([type=checkbox]):not([type=radio]) { flex-basis: 100%; }
@@ -1659,3 +1658,39 @@ button.rs-step:hover { background: var(--surface-2); }
 .fit-good { color: var(--green, inherit); margin-top: 3px; }
 .fit-gap { color: var(--amber, var(--muted)); margin-top: 3px; }
 @media (max-width: 560px) { .fit-card { grid-template-columns: 1fr; } }
+/* Candidates and Applications filters: equal boxes across the full width, search on its own row. */
+.filters.cand-filters { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 8px; align-items: center; }
+.filters.cand-filters > input:not([type=checkbox]):not([type=radio]), .filters.cand-filters > select, .filters.cand-filters > .msel, .filters.cand-filters > .more-f, .filters.cand-filters > label.row { width: 100%; flex: none; }
+.filters.cand-filters > input[data-q]:not([type=checkbox]):not([type=radio]) { grid-column: 1 / -1; width: 100%; height: 44px; }
+.filters.cand-filters > label.small { display: flex; align-items: center; gap: 6px; height: var(--ctl-h); white-space: nowrap; }
+.filters.cand-filters > label.small input { min-width: 0; height: var(--ctl-h); border-radius: 999px; font-size: 13px; }
+/* The count has a fixed place, so the views beside it never move when a filter is on. */
+.cand-result:has(.cand-views) { display: grid; grid-template-columns: 150px minmax(0, 1fr) auto; align-items: center; gap: 12px; }
+.cand-seg { flex-wrap: nowrap; }
+.cand-seg select { width: 190px; max-width: 190px; height: 36px; }
+.cand-seg .btn { height: 36px; white-space: nowrap; }
+@media (max-width: 1180px) { .cand-result:has(.cand-views) { grid-template-columns: 150px minmax(0, 1fr); } .cand-seg { grid-column: 1 / -1; justify-content: flex-end; flex-wrap: wrap; } }
+/* Bulk actions on every table. */
+.bulkbar.bulk-card { display: flex; flex-wrap: wrap; gap: 8px; align-items: stretch; padding: 16px; margin-bottom: 12px; background: var(--surface); }
+.bulkbar.bulk-card > .bulk-head { flex: 1 0 100%; margin-bottom: 4px; }
+.bulkbar.bulk-card > .btn, .bulkbar.bulk-card > select.mini { flex: 0 1 calc(20% - 6.4px); min-width: 140px; width: auto; height: 44px; border-radius: 10px; font-size: 13px; box-shadow: none; }
+.bulkbar.bulk-card > select.mini { padding: 0 34px 0 14px; color: var(--ink); border: 1px solid var(--border-strong); }
+.bulkbar.bulk-card > .btn:disabled, .bulkbar.bulk-card > select.mini:disabled { opacity: 1; cursor: not-allowed; color: var(--muted); background-color: var(--surface-2); border-color: var(--border); }
+.bulkbar.bulk-card > .btn.gold:disabled { background-image: none; }
+.bulkbar.bulk-card > .btn { justify-content: center; }
+.bulkbar.bulk-card > .btn:disabled::before { content: ''; width: 16px; height: 16px; flex: none; background: currentColor; -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8'%3E%3Crect x='5' y='11' width='14' height='10' rx='2'/%3E%3Cpath d='M8 11V7a4 4 0 0 1 8 0v4'/%3E%3C/svg%3E") center / contain no-repeat; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8'%3E%3Crect x='5' y='11' width='14' height='10' rx='2'/%3E%3Cpath d='M8 11V7a4 4 0 0 1 8 0v4'/%3E%3C/svg%3E") center / contain no-repeat; }
+.bulkbar.bulk-card > .btn.danger:not([hidden]) { color: var(--red); border-color: color-mix(in srgb, var(--red) 30%, transparent); background: color-mix(in srgb, var(--red) 7%, var(--surface)); }
+.bulkbar.bulk-card > .btn.ghost { border-color: transparent; background: none; }
+.bulkbar.bulk-card > [hidden] { display: none; }
+.cand-bulk.has-sel { position: sticky; top: 72px; z-index: 6; box-shadow: var(--shadow); }
+.bulk-card.has-sel .bulk-head .small { display: none; }
+.bulk-card.has-sel .bulk-count { color: var(--ink); background: var(--mustard-50, var(--surface-2)); }
+/* Voice notes */
+.vn-top { display: flex; align-items: center; gap: 16px; margin-bottom: 14px; }
+.vn-mic { width: 64px; height: 64px; display: grid; place-items: center; flex: none; border: 0; border-radius: 50%; color: #1A1404; background: var(--mustard); cursor: pointer; }
+.vn-mic svg { width: 28px; height: 28px; }
+.vn-mic.on { color: #fff; background: var(--red); animation: vnp 1.4s infinite; }
+@keyframes vnp { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--red) 45%, transparent); } 100% { box-shadow: 0 0 0 18px transparent; } }
+@media (prefers-reduced-motion: reduce) { .vn-mic.on { animation: none; } }
+.vn-lang { margin-top: 6px; }
+.vn-lang select { width: 120px; height: 32px; margin-left: 6px; padding: 0 28px 0 10px; font-size: 13px; }

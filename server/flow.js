@@ -100,19 +100,37 @@ function learnRoles(lines, industry) {
   const added = ind.groups['Added roles'] || { dept: 'Other', jobs: [] };
   D.setSetting('industries', { ...s.industries, [key]: { ...ind, groups: { ...ind.groups, 'Added roles': { ...added, jobs: [...added.jobs, ...fresh] } } } });
 }
-route('POST', '/api/clients/:id/calls', T, (ctx) => {
-  const c = loadClient(ctx); const b = ctx.body || {}; const { lines, loose } = callRoles(b.call_roles);
-  if (!lines.length && !loose.length) throw httpError(400, 'Fill in what the client told you', 'call_roles');
+// One call on the record: its roles, a note, and the client's stage moves on.
+function saveCall(c, lines, notes, actor) {
   learnRoles(lines, c.industry);
   const uniq = (k) => [...new Set(lines.map((x) => x[k]).filter(Boolean))].join(', ');
-  const row = { client_id: c.id, openings: lines.length ? String(lines.reduce((t, x) => t + x.openings, 0)) : '', location: uniq('location'), department: uniq('department'), roles: lines.map((x) => `${x.role} (${x.openings})`).join(', '), call_roles: lines, skills: '', duties: '', notes: loose.join('\n'), by: ctx.actor.label, at: now() };
+  const row = { client_id: c.id, openings: lines.length ? String(lines.reduce((t, x) => t + x.openings, 0)) : '', location: uniq('location'), department: uniq('department'), roles: lines.map((x) => `${x.role} (${x.openings})`).join(', '), call_roles: lines, skills: '', duties: '', notes, by: actor.label, at: now() };
   insert('client_calls', row);
   const line = [['Number of openings', row.openings], ...lines.map((x) => [x.role, [`${x.openings} in ${x.location || c.city || 'no location given'}`, x.department, x.skills && `Skills: ${x.skills}`, x.duties && `Responsibilities: ${x.duties}`, x.notes && `Notes: ${x.notes}`].filter(Boolean).join('; ')]), ['Notes', row.notes]].filter(([, v]) => v).map(([k, v]) => `${k}: ${v}`).join('\n');
-  insert('notes', { record_id: c.id, text: `Client call\n${line}`, author: ctx.actor.label, at: now() });
-  const ob = { ...(c.onboarding || {}), intro_call: { done: true, date: now(), by: ctx.actor.label, note: '' } }; const st = D.settings().client_stages;
+  insert('notes', { record_id: c.id, text: `Client call\n${line}`, author: actor.label, at: now() });
+  const ob = { ...(c.onboarding || {}), intro_call: { done: true, date: now(), by: actor.label, note: '' } }; const st = D.settings().client_stages;
   update('clients', c.id, { onboarding: ob, is_new: 0, ...(st.indexOf('Understanding needs') > st.indexOf(c.stage) ? { stage: 'Understanding needs' } : {}) });
-  D.history(ctx.actor.label, 'client call', c.id);
-  return { ok: true };
+  D.history(actor.label, 'client call', c.id);
+}
+route('POST', '/api/clients/:id/calls', T, (ctx) => {
+  const c = loadClient(ctx); const { lines, loose } = callRoles((ctx.body || {}).call_roles);
+  if (!lines.length && !loose.length) throw httpError(400, 'Fill in what the client told you', 'call_roles');
+  saveCall(c, lines, loose.join('\n'), ctx.actor); return { ok: true };
+});
+const S = (d) => ({ type: 'string', description: d });
+// What a recruiter said or typed on a call. The roles in it wait on the client until someone opens jobs from them.
+const VOICE_PROMPT = 'You read a recruiter\'s spoken notes from a call with a client in India\'s jewellery trade. The notes may be in English, Hindi or both. List each role the client wants to hire for. Use only what the notes say and leave anything else empty. Write everything in English.';
+const VOICE_SCHEMA = { type: 'object', additionalProperties: false, required: ['roles'], properties: { roles: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['role', 'openings', 'location', 'department', 'skills', 'duties', 'notes'], properties: { role: S('Job title'), openings: { type: 'integer', description: 'How many people; 1 if not said' }, location: S('City'), department: S('Department'), skills: S('Skills, comma separated'), duties: S('Responsibilities'), notes: S('Salary, timing and anything else about this role') } } } } };
+async function rolesFrom(text, c) {
+  let list = [];
+  if (LLM.available()) { try { const r = await LLM.json({ system: VOICE_PROMPT, user: text, schema: VOICE_SCHEMA, name: 'call_roles', maxTokens: 900 }); list = (r.answer || r).roles || []; } catch { /* the rules try below */ } }
+  if (!list.length) { const n = ruleNotes(text); if (n.title) list = [{ role: n.title, openings: n.openings || 1, location: n.city, skills: (n.skills || []).join(', '), duties: n.duties }]; }
+  return callRoles(list.filter((x) => String(x.role || '').trim()).map((x) => ({ ...x, openings: Math.max(1, Number(x.openings) || 1), location: x.location || c.city || '' }))).lines;
+}
+route('POST', '/api/clients/:id/voice-note', { auth: 'team', rate: { key: 'jobnotes', max: 40, minutes: 60 } }, async (ctx) => {
+  const c = loadClient(ctx); const text = String((ctx.body || {}).text || '').trim(); if (text.length < 10) throw httpError(400, 'Say or type the notes first');
+  const lines = await rolesFrom(text, c); saveCall(c, lines, text, ctx.actor);
+  return { roles: lines.length };
 });
 // Every role not opened yet becomes a draft job. Salary and experience are filled on each job.
 route('POST', '/api/clients/:id/calls/:call/jobs', T, (ctx) => {
@@ -214,7 +232,6 @@ async function clientMail(c, subject, text, attachments, from) {
 const clientByEmail = (addr) => { const e = String(addr || '').toLowerCase(); if (!e) return null; return all('SELECT * FROM clients WHERE merged_into IS NULL AND removed=0').find((c) => String(c.email || '').toLowerCase() === e || String((c.extra || {}).hr_email || '').toLowerCase() === e) || null; };
 
 // ---------- what the web says about a business (optional, paid per lookup) ----------
-const S = (d) => ({ type: 'string', description: d });
 // What a recruiter wants in front of them before calling a business about its hiring.
 const LOOK_SYSTEM = 'You prepare a recruiter for a phone call with an Indian business about its hiring needs. Search the web for this exact business and use only what you find on its own site, LinkedIn, Google listing or news. Leave a field empty rather than guess. If you cannot be sure it is the right business, say so in "about". Keep every field short and plain.';
 const LOOK_FIELDS = {
@@ -257,15 +274,6 @@ function ruleNotes(text) {
   const n = (x) => (x === undefined ? null : Number(x));
   return { title: (pick(/(?:role|position|designation|hiring for)s?\s*[:\-]\s*(.+)/i) || '').trim(), city: (pick(/(?:location|city)\s*[:\-]\s*(.+)/i) || '').trim(), openings: n(pick(/(?:openings?|vacanc(?:y|ies)|positions?)\s*[:\-]?\s*(\d+)/i)) || 1, skills: (pick(/skills?(?: required)?\s*[:\-]\s*(.+)/i) || '').split(/[,;]/).map((x) => x.trim()).filter(Boolean), duties: (pick(/responsibilit(?:y|ies)[^:\n]*[:\-]\s*(.+)/i) || '').trim(), sal_from: null, sal_to: null, exp_from: n(pick(/(\d+)\s*(?:\+|to|-)?\s*\d*\s*(?:years?|yrs?)/i)), exp_to: null, notice_days: null, jewellery: /jewell?ery/i.test(t) ? 'Required' : 'Preferred', priority: /urgent|immediate/i.test(t) ? 'High' : 'Medium', notes: t.slice(0, 1500) };
 }
-route('POST', '/api/jobs/from-notes', { auth: 'team', rate: { key: 'jobnotes', max: 40, minutes: 60 } }, async (ctx) => {
-  const text = String((ctx.body || {}).text || '').trim(); if (text.length < 10) throw httpError(400, 'Paste the notes first', 'text');
-  if (!LLM.available()) return { job: ruleNotes(text), ai: false };
-  const titles = L.jobList().map((j) => j.title).slice(0, 300).join(', ');
-  try {
-    const job = await LLM.json({ system: `You turn a recruiter's call notes into a job opening for a recruitment agency in India's jewellery trade. Use only what the notes say; leave unknown things null or empty. Salaries in LPA become rupees a month. "jewellery" is "Required" when jewellery experience is demanded or the employer is a jewellery business and the role needs trade knowledge. Prefer a title from this list when one fits: ${titles}`, user: text.slice(0, 6000), schema: JOB_SCHEMA, name: 'job', maxTokens: 1200 });
-    return { job, ai: true };
-  } catch (e) { return { job: ruleNotes(text), ai: false, note: e.message }; }
-});
 route('POST', '/api/jobs/mass', T, (ctx) => {
   const b = ctx.body || {}; const c = get('SELECT * FROM clients WHERE id=?', b.client_id); mustSee(seeClient(ctx.user, c), 'client');
   if (!b.title) throw httpError(400, 'Pick the role', 'title');
@@ -502,4 +510,4 @@ route('GET', '/api/holds', SUPER, () => {
   return { wa: !!w.everyone, email: !!w.email, allow: w.allow || [], rows, mails, smtp: M.configured(), crm: !!s.crm.enabled, accounts_email: s.accounts_email || '', unapproved: Object.entries(fm).filter(([, f]) => !f.approved).map(([k]) => k) };
 });
 
-module.exports = { rowFor, LOOK_SYSTEM, LOOK_SCHEMA, agreementFile, clientMail, clientByEmail, mailFiles, clientCvFor, makeClientCv, nextStep, cleanText };
+module.exports = { VOICE_PROMPT, VOICE_SCHEMA, rowFor, LOOK_SYSTEM, LOOK_SCHEMA, agreementFile, clientMail, clientByEmail, mailFiles, clientCvFor, makeClientCv, nextStep, cleanText };

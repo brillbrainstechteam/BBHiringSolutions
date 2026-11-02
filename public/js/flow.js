@@ -81,7 +81,7 @@
   };
   F.client = (c) => {
     const a = c.activation || {};
-    return `      <div class="row" style="margin-bottom:14px"><button class="btn sm primary" data-fcall>Call notes</button><button class="btn sm" data-fagree>Agreement${a.contract ? ' <span class="badge b-green tiny">Signed</span>' : ''}</button><button class="btn sm" data-fmail="kyc">Ask for KYC</button><button class="btn sm" data-fmail="general">Email</button><button class="btn sm" data-fthanks>Thank-you message</button><button class="btn sm" data-flook>${BB.icon('search')} Client info</button><button class="btn sm" data-fgroup>WhatsApp group</button></div>`;
+    return `      <div class="row" style="margin-bottom:14px"><button class="btn sm primary" data-fcall>Call notes</button><button class="btn sm" data-fvoice>${BB.icon('mic')} Voice notes</button><button class="btn sm" data-fagree>Agreement${a.contract ? ' <span class="badge b-green tiny">Signed</span>' : ''}</button><button class="btn sm" data-fmail="kyc">Ask for KYC</button><button class="btn sm" data-fmail="general">Email</button><button class="btn sm" data-fthanks>Thank-you message</button><button class="btn sm" data-flook>${BB.icon('search')} Client info</button><button class="btn sm" data-fgroup>WhatsApp group</button></div>`;
   };
   F.clientMore = (c) => {
     const g = c.wa_group || {}; const o = (c.extra || {}).online; const k = c.kyc || {}; const a = c.activation || {};
@@ -120,8 +120,28 @@
     const v = await BB.ask({ title: label, wide: true, fields: [who, ...(one ? [{ name: 'to', label: 'To', type: 'email', value: one.email }] : []), { name: 'subject', label: 'Subject', value: tp.subject }, { name: 'body', label: 'Message', type: 'textarea', value: tp.body, voice: false }, contract ? `<div class="small muted">Attached: ${one ? esc(one.agreement || 'Recruitment Agreement') : 'Recruitment Agreement, or the client\'s edited copy'}</div>` : { name: 'attach_agreement', label: 'Attach the Recruitment Agreement', type: 'check' }], ok: held ? 'Save for later' : 'Send', submit: (x) => BB.post('/api/clients/email', { ids, kind, ...x }) });
     if (v) done(`${v.done} of ${ids.length} ${v.held ? 'saved' : 'sent'}${v.skipped.length ? ` · ${v.skipped[0]}` : ''}`);
   };
+  // Voice notes on a call: speak or type, and the roles in it wait on the client, ready to become jobs.
+  const voiceNotes = (c) => {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition; let rec = null; let on = false;
+    const stop = () => { on = false; if (rec) { try { rec.stop(); } catch { /* already stopped */ } } };
+    BB.modal({ title: `Voice notes · ${esc(c.company)}`, wide: true, body: `<div class="vn-top"><button type="button" class="vn-mic" data-vmic aria-label="Start recording">${BB.icon('mic')}</button><div class="grow"><b data-vstate>Tap the mic and speak</b><div class="row vn-lang"><label class="small">Language <select data-vlang aria-label="Language"><option value="en-IN">English</option><option value="hi-IN" ${BB.voiceLang === 'hi-IN' ? 'selected' : ''}>Hindi</option></select></label></div></div></div><label class="field"><span class="lab">Notes</span><textarea data-vtext rows="9"></textarea></label><div class="small muted" data-vlive></div>`,
+      foot: '<button class="btn" data-vx>Cancel</button><button class="btn primary" data-vsave>Save voice notes</button>', onClose: stop,
+      onMount: (m, close) => {
+        const box = $('[data-vtext]', m); const mic = $('[data-vmic]', m); const state = $('[data-vstate]', m); const live = $('[data-vlive]', m);
+        const show = (x) => { mic.classList.toggle('on', x); state.textContent = x ? 'Listening… tap to stop' : 'Tap the mic and speak'; };
+        const start = () => { rec = new SR(); rec.lang = $('[data-vlang]', m).value; rec.continuous = true; rec.interimResults = true;
+          rec.onresult = (e) => { let now = ''; for (let i = e.resultIndex; i < e.results.length; i++) { const t = e.results[i][0].transcript; if (e.results[i].isFinal) box.value = `${box.value}${box.value && !/\s$/.test(box.value) ? ' ' : ''}${t.trim()}`; else now += t; } live.textContent = now; };
+          rec.onerror = (e) => { if (e.error === 'not-allowed') { on = false; show(false); BB.toast('Allow the microphone to record.', true); } };
+          rec.onend = () => { live.textContent = ''; if (on) { try { rec.start(); } catch { on = false; show(false); } } else show(false); }; // the browser stops after a pause; keep going until tapped
+          rec.start(); };
+        mic.onclick = () => { if (!SR) return BB.toast('Recording works in Chrome or Edge. You can type here instead.', true); if (on) stop(); else { on = true; show(true); start(); } };
+        $('[data-vx]', m).onclick = close;
+        $('[data-vsave]', m).onclick = async () => { const b = $('[data-vsave]', m); b.disabled = true; stop(); try { const r = await BB.post(`/api/clients/${c.id}/voice-note`, { text: box.value }); close(); done(r.roles ? `Saved with ${r.roles} role${r.roles === 1 ? '' : 's'}: open jobs from Client calls` : 'Voice notes saved'); } catch (e) { BB.showErr(m, e); b.disabled = false; } };
+      } });
+  };
   F.clientMount = (el, c) => {
     const on = (s, fn) => { const b = $(s, el); if (b) b.onclick = fn; };
+    on('[data-fvoice]', () => voiceNotes(c));
     on('[data-fcall]', async () => {
       const { script } = await BB.api('/api/call-script');
       setTimeout(() => { const box = $('.modal [data-froles]'); if (box) wireRoles(box); }, 0);
@@ -238,12 +258,7 @@
 
   // ---------- jobs page: paste notes, mass hiring ----------
   F.jobsActions = (actions) => {
-    const a = $('[data-fnotes]', actions); if (a) a.onclick = F.fromNotes;
     const b = $('[data-fmass]', actions); if (b) b.onclick = F.mass;
-  };
-  F.fromNotes = async () => {
-    const v = await BB.ask({ title: 'Paste your notes', note: 'Paste what the client said. It fills the job form for you to check.', wide: true, fields: [{ name: 'text', label: 'Notes', type: 'textarea', voice: false }], ok: 'Read notes', submit: (x) => BB.post('/api/jobs/from-notes', x) });
-    if (!v) return; const j = v.job; BB.newJob('', { ...j, jewel_need: j.jewellery, sal_from: j.sal_from, sal_to: j.sal_to });
   };
   F.mass = async () => {
     const r = await BB.api('/api/clients?all=1'); const list = r.rows.filter((c) => !c.placeholder);
@@ -257,7 +272,7 @@
   // ---------- clients page: lead or active, email in bulk ----------
   F.clientsMount = (el) => {
     const bar = $('[data-cbar]', el); if (!bar) return;
-    const n = () => { const k = BB.selected(el).length; $('[data-ccount]', bar).textContent = k ? `${k} selected` : 'Select Multiple'; bar.classList.toggle('has-sel', k > 0); };
+    const n = () => { const k = BB.selected(el).length; $('[data-ccount]', bar).textContent = BB.bulkCount('client', k); bar.classList.toggle('has-sel', k > 0); };
     BB.wireSelect(el, n); $$('[data-sel]', el).forEach((x) => x.addEventListener('change', n));
     const stg = $('[data-cstage]', bar); stg.onchange = async () => { const v = stg.value; const ids = BB.selected(el); stg.value = ''; if (!v) return; if (!ids.length) return BB.toast('Select some clients first', true); await act(() => BB.post('/api/leads/bulk', { type: 'client', ids, action: 'stage', value: v }), (r) => `${r.done} of ${ids.length} updated${r.skipped.length ? ` · ${r.skipped[0].split(': ').pop()}` : ''}`); };
     $$('[data-cm]', bar).forEach((b) => (b.onclick = () => { const ids = BB.selected(el); if (!ids.length) return BB.toast('Select some clients first', true); F.composeMail(ids, b.dataset.cm, b.textContent); }));
