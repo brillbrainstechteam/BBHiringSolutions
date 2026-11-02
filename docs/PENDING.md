@@ -61,6 +61,7 @@ Everything automatic is held. Held messages are not sent later; only new ones go
 
 ## Good to know
 
+- Calls: a call started with the Call button must be logged before anything else can be saved. A step moves on only with a call logged on that application since it reached the step, and the telephonic round needs its call. The super admin is not stopped by the step rule. The portal cannot see calls made from a phone without pressing Call, so the step rule is what catches those.
 - Sub admins can do the same work as admins in their agency, except: record money received, credit notes, payouts, managing other logins, and seeing other people's performance.
 - Settings is open to the team. Kept for the super admin: WhatsApp connection, Deleted items, Data requests, Health, the resume alert, Daily logs, WhatsApp clicks and Resume access reports, agencies, and downloads.
 - Daily logs are no longer asked for: no form, reminder or "log missing" alert. Tasks on the Tasks page replace them.

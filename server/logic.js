@@ -717,15 +717,41 @@ function addIvNote(ivId, text, author, kind) {
 }
 // Phone calls to candidates (the telephonic round and every follow-up): who called, when, what happened.
 const CALL_OUTCOMES = ['Connected', 'No answer', 'Busy', 'Call back later', 'Switched off', 'Wrong number', 'Not interested'];
+// Who the call was with, and which client and application it counts towards: this is the record of work done.
+function callRow(o) {
+  const app = o.app_id ? get('SELECT * FROM applications WHERE id=?', o.app_id) : null; const job = app ? get('SELECT client_id FROM jobs WHERE id=?', app.job_id) : null;
+  const party = o.party === 'client' || (o.client_id && !o.candidate_id) ? 'client' : 'candidate';
+  const candidate_id = o.candidate_id || (app ? app.candidate_id : null) || null; const client_id = o.client_id || (job ? job.client_id : null) || null;
+  if (party === 'candidate' && !get('SELECT 1 FROM candidates WHERE id=?', candidate_id)) throw httpError(404, 'Candidate not found');
+  if (party === 'client' && !get('SELECT 1 FROM clients WHERE id=?', client_id)) throw httpError(404, 'Client not found');
+  return { party, candidate_id, client_id, app_id: app ? app.id : null };
+}
+function startCall(o, by) {
+  const open = openCall(by.uid); if (open) throw httpError(409, `Log your call with ${open.who} first.`);
+  const r = callRow(o); insert('calls', { ...r, user_id: by.uid, by: actorName(by), at: now(), outcome: '', status: 'Open' });
+  return openCall(by.uid);
+}
+const callWho = (k) => (k.party === 'client' ? (get('SELECT company FROM clients WHERE id=?', k.client_id) || {}).company : (get('SELECT name FROM candidates WHERE id=?', k.candidate_id) || {}).name) || 'this person';
+function openCall(userId) { const k = get("SELECT * FROM calls WHERE user_id=? AND status='Open' ORDER BY id DESC LIMIT 1", userId); return k ? { ...k, who: callWho(k) } : null; }
 function logCall(o, by) {
-  const cand = get('SELECT id FROM candidates WHERE id=?', o.candidate_id); if (!cand) throw httpError(404, 'Candidate not found');
   if (!CALL_OUTCOMES.includes(o.outcome)) throw httpError(400, 'Pick what happened on the call', 'outcome');
+  const topics = [...new Set((Array.isArray(o.topics) ? o.topics : []).map((x) => String(x).trim()).filter(Boolean))]; if (!topics.length) throw httpError(400, 'Pick at least one topic', 'topics');
+  const note = String(o.note || '').trim(); if (!note) throw httpError(400, 'Write the summary of the call', 'note');
   const minutes = o.minutes === '' || o.minutes == null ? null : Math.max(0, Math.min(600, Number(o.minutes) || 0));
   // When the call happened (a call logged later keeps its real date); never in the future.
   const when = o.at && !Number.isNaN(Date.parse(o.at)) && Date.parse(o.at) <= Date.now() + 300000 ? new Date(o.at).toISOString() : now();
-  insert('calls', { candidate_id: cand.id, app_id: o.app_id || null, iv_id: o.iv_id || null, user_id: by && by.uid, by: actorName(by), at: when, outcome: o.outcome, minutes, note: String(o.note || '').slice(0, 2000) });
-  if (o.app_id) appHist(o.app_id, (get('SELECT step FROM applications WHERE id=?', o.app_id) || {}).step, by, `Call: ${o.outcome}${minutes ? ` (${minutes} min)` : ''}${o.note ? ` — ${String(o.note).slice(0, 120)}` : ''}`, 'call');
+  const list = settings().call_topics || []; const fresh = topics.filter((x) => !list.some((y) => y.toLowerCase() === x.toLowerCase())); if (fresh.length) D.setSetting('call_topics', [...list, ...fresh]); // a typed topic joins the list
+  const was = o.id ? get("SELECT * FROM calls WHERE id=? AND user_id=? AND status='Open'", o.id, by.uid) : null;
+  const r = callRow(was ? { ...was, app_id: o.app_id || was.app_id } : o); const row = { ...r, at: when, outcome: o.outcome, minutes, note: note.slice(0, 4000), topics, status: 'Done' };
+  if (was) update('calls', was.id, row); else insert('calls', { ...row, iv_id: o.iv_id || null, user_id: by && by.uid, by: actorName(by) });
+  if (r.app_id) appHist(r.app_id, (get('SELECT step FROM applications WHERE id=?', r.app_id) || {}).step, by, `Call with ${r.party}: ${o.outcome}${minutes ? ` (${minutes} min)` : ''}. ${topics.join(', ')}. ${note.slice(0, 160)}`, 'call');
   return { ok: true };
+}
+// The team's rule: a step moves on only with a call on the record. Off on test copies unless switched on there.
+const callGateOn = () => { const v = settings().call_gate; return v === undefined ? D.ENV.name !== 'test' : !!v; };
+function needsCall(app, step, u) {
+  if (!callGateOn() || u.level === 'super' || stepIdx(step) <= stepIdx(app.step) || stepIdx(app.step) < stepIdx('Screening')) return false;
+  return !get("SELECT 1 FROM calls WHERE app_id=? AND status='Done' AND at>=?", app.id, app.step_since || app.created_at);
 }
 
 // ---------- offers ----------
@@ -1092,4 +1118,4 @@ function resumeUse(user, candidateId) {
 }
 const accountsUsers = () => all("SELECT * FROM users WHERE level='sub' AND team='Accounts' AND status='On'");
 const openTasksOf = (userId) => all("SELECT * FROM tasks WHERE owner_id=? AND removed=0 AND status<>'Done' ORDER BY COALESCE(due_date, '9999'), at", userId);
-Object.assign(module.exports, { roundsOf, skipRounds, passRounds, openTasksOf, accountsUsers, fixAsk, openAsks, OPEN_ASK, resumeUse, RESUME_DAYS });
+Object.assign(module.exports, { startCall, openCall, needsCall, callGateOn, roundsOf, skipRounds, passRounds, openTasksOf, accountsUsers, fixAsk, openAsks, OPEN_ASK, resumeUse, RESUME_DAYS });

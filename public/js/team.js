@@ -92,6 +92,7 @@
     let lastGroup = '';
     $('[data-nav]').innerHTML = menuFor(u).map(([k, l, ic, , cnt]) => { const g = GROUP[k]; const head = g !== lastGroup ? `<div class="grp">${g}</div>` : ''; lastGroup = g; return `${head}<a href="/team/${k}" class="${k === pageName ? 'on' : ''}">${icon(ic)}<span>${l}</span>${cnt && c[cnt] ? `<span class="n">${c[cnt]}</span>` : ''}</a>`; }).join('');
     const n = $('[data-bell-n]'); if (n) { n.textContent = c.alerts; n.classList.toggle('hidden', !c.alerts); }
+    if (BB.flow && BB.flow.callBar) BB.flow.callBar();
   }
   BB.refreshCounts = async () => { try { BB.me = await BB.api('/api/me'); updateNav(); } catch { /* logged out */ } };
 

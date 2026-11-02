@@ -107,6 +107,9 @@ function saveCall(c, lines, notes, actor) {
   const uniq = (k) => [...new Set(lines.map((x) => x[k]).filter(Boolean))].join(', ');
   const row = { client_id: c.id, openings: lines.length ? String(lines.reduce((t, x) => t + x.openings, 0)) : '', location: uniq('location'), department: uniq('department'), roles: lines.map((x) => `${x.role} (${x.openings})`).join(', '), call_roles: lines, skills: '', duties: '', notes, by: actor.label, at: now() };
   insert('client_calls', row);
+  // The requirement call is a call like any other: it goes on the log, and closes one started from the portal.
+  const open = L.openCall(actor.uid); const log = { party: 'client', client_id: c.id, at: now(), outcome: 'Connected', topics: ['Hiring requirement'], note: [row.roles, notes].filter(Boolean).join('. ').slice(0, 4000) || 'Requirement call', status: 'Done' };
+  if (open && open.client_id === c.id) update('calls', open.id, log); else insert('calls', { ...log, user_id: actor.uid, by: actor.label });
   const line = [['Number of openings', row.openings], ...lines.map((x) => [x.role, [`${x.openings} in ${x.location || c.city || 'no location given'}`, x.department, x.skills && `Skills: ${x.skills}`, x.duties && `Responsibilities: ${x.duties}`, x.notes && `Notes: ${x.notes}`].filter(Boolean).join('; ')]), ['Notes', row.notes]].filter(([, v]) => v).map(([k, v]) => `${k}: ${v}`).join('\n');
   insert('notes', { record_id: c.id, text: `Client call\n${line}`, author: actor.label, at: now() });
   const ob = { ...(c.onboarding || {}), intro_call: { done: true, date: now(), by: actor.label, note: '' } }; const st = D.settings().client_stages;
@@ -129,7 +132,7 @@ route('POST', '/api/clients/:id/read-notes', { auth: 'team', rate: { key: 'jobno
   return { roles: await rolesFrom(text, c) };
 });
 // Roles typed in the cards win; with none, the roles are read from the notes.
-route('POST', '/api/clients/:id/calls', { auth: 'team', rate: { key: 'jobnotes', max: 40, minutes: 60 } }, async (ctx) => {
+route('POST', '/api/clients/:id/calls', { auth: 'team', calling: true, rate: { key: 'jobnotes', max: 40, minutes: 60 } }, async (ctx) => {
   const c = loadClient(ctx); const b = ctx.body || {}; const notes = String(b.notes || '').trim(); const { lines, loose } = callRoles(b.call_roles);
   if (!lines.length && !loose.length && !notes) throw httpError(400, 'Fill in what the client told you', 'call_roles');
   const list = lines.length || !notes ? lines : await rolesFrom(notes, c);

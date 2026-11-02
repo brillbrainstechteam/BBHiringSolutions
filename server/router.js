@@ -59,6 +59,8 @@ async function dispatch(req, res, url, body) {
         const acc = accountsOnly(u); if (r.opts.levels && !r.opts.levels.includes(u.level) && !(acc && r.opts.accounts)) throw D.httpError(403, 'Your level cannot do this.');
         if (acc && !r.opts.accounts) throw D.httpError(403, 'Your login covers the accounts work only.');
         if (channelOnly(u) && !r.opts.channels) throw D.httpError(403, 'Your login covers Digital Reach only.');
+        // A call started from the portal has to be logged before anything else is done.
+        if (r.opts.calling === undefined && req.method !== 'GET') { const open = L.openCall(u.id); if (open) throw D.httpError(423, `Log your call with ${open.who} first.`, 'call'); }
         ctx.user = u; ctx.agency = ag; ctx.actor = actorOf(u);
         D.update('users', u.id, { last_action: D.now() });
       } else if (need === 'client') {

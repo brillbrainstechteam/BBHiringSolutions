@@ -43,7 +43,7 @@ function visibleApps(u) {
 
 // ---------- me / menu counts ----------
 route('GET', '/api/me', { auth: 'team', allow2fa: true, channels: true, accounts: true }, (ctx) => {
-  const u = ctx.user;
+  const u = ctx.user; const open_call = L.openCall(u.id);
   const counts = {
     leads: leadCount(u),
     cand_new: isSuper(u) ? get('SELECT COUNT(*) c FROM candidates WHERE agency_id IS NULL AND is_new=1 AND junk=0 AND archived=0 AND merged_into IS NULL AND removed=0').c : 0,
@@ -51,7 +51,7 @@ route('GET', '/api/me', { auth: 'team', allow2fa: true, channels: true, accounts
     unread: unreadThreads(u),
     alerts: get('SELECT COUNT(*) c FROM alerts WHERE user_id=? AND read=0', u.id).c,
   };
-  return { user: { id: u.id, name: u.name, level: u.level, agency_id: u.agency_id, role: u.role, username: u.username, must_change: u.must_change, whatsapp: u.whatsapp, team: u.team || 'Recruitment', channel_only: R.channelOnly(u), accounts_only: R.accountsOnly(u), leads: isSuper(u) || R.sharedWith(u) || R.canAllocate(u) }, agency: ctx.agency, counts };
+  return { user: { id: u.id, name: u.name, level: u.level, agency_id: u.agency_id, role: u.role, username: u.username, must_change: u.must_change, whatsapp: u.whatsapp, team: u.team || 'Recruitment', channel_only: R.channelOnly(u), accounts_only: R.accountsOnly(u), leads: isSuper(u) || R.sharedWith(u) || R.canAllocate(u) }, agency: ctx.agency, counts, open_call };
 });
 function unreadThreads(u) {
   const rows = all("SELECT person_type, person_id FROM messages WHERE direction='in' AND read_by_us=0 GROUP BY person_type, person_id");
@@ -351,7 +351,7 @@ route('POST', '/api/leads/bulk', T, (ctx) => {
 // Screen protection (guard.js): blocked print / copy / screenshot attempts by admins and sub admins go to the
 // history, at most once a minute per person and kind, so the super admin can see who tried what.
 const lastEvent = new Map();
-route('POST', '/api/security-event', { auth: 'team', channels: true, accounts: true, rate: { key: 'secevent', max: 120, minutes: 60 } }, (ctx) => {
+route('POST', '/api/security-event', { auth: 'team', channels: true, accounts: true, calling: true, rate: { key: 'secevent', max: 120, minutes: 60 } }, (ctx) => {
   const what = String(ctx.body.what || '').slice(0, 40).replace(/[^\w ]/g, '');
   const key = `${ctx.user.id}:${what}`; const t = Date.now();
   if (what && (lastEvent.get(key) || 0) < t - 60000) { lastEvent.set(key, t); D.history(ctx.actor.label, `blocked ${what}`, null, 'screen', null, null, null, ctx.ip); }
@@ -403,7 +403,8 @@ function clientPast(c, u) {
   const bills = all("SELECT * FROM bills WHERE client_id=? AND status NOT IN ('Draft','Cancelled') AND credit_of IS NULL", c.id);
   const uniq = (l) => [...new Set(l.filter(Boolean))];
   const line = [
-    ...all('SELECT * FROM client_calls WHERE client_id=?', c.id).map((x) => ({ at: x.at, kind: 'Call', text: x.roles || x.notes || 'Call notes', by: x.by })),
+    ...all('SELECT * FROM client_calls WHERE client_id=? AND roles<>\'\'', c.id).map((x) => ({ at: x.at, kind: 'Requirement call', text: x.roles, by: x.by })),
+    ...all("SELECT * FROM calls WHERE client_id=? AND status='Done'", c.id).map((x) => ({ at: x.at, kind: x.party === 'client' ? 'Call with client' : 'Call with candidate', text: `${x.outcome}. ${(x.topics || []).join(', ')}. ${x.note || ''}`, by: x.by })),
     ...all("SELECT subject, status, at FROM emails WHERE record_id=? AND status IN ('sent','received')", c.id).map((x) => ({ at: x.at, kind: x.status === 'received' ? 'Client replied' : 'Email sent', text: x.subject })),
     ...all("SELECT format, text, at, sent_by, direction FROM messages WHERE person_type='client' AND person_id=? AND status NOT IN ('held','failed')", c.id).map((x) => ({ at: x.at, kind: x.direction === 'in' ? 'WhatsApp from client' : 'WhatsApp sent', text: String(x.text || '').slice(0, 90), by: x.sent_by })),
     ...all("SELECT text, author, at FROM notes WHERE record_id=? AND author<>'Email inbox' AND text NOT LIKE 'Client call%' AND text NOT LIKE 'Email %'", c.id).map((x) => ({ at: x.at, kind: 'Note', text: String(x.text).slice(0, 120), by: x.author })),
@@ -421,7 +422,7 @@ route('GET', '/api/clients/:id', T, (ctx) => {
     ...V.clientView(c), past: clientPast(c, ctx.user), onboarding_items: V.onboardingView(c), jobs, members: all('SELECT * FROM client_members WHERE client_id=?', c.id),
     messages: all("SELECT * FROM messages WHERE person_type='client' AND person_id=? ORDER BY at DESC LIMIT 30", c.id),
     files: all('SELECT * FROM files WHERE record_id=? AND replaced=0 ORDER BY at DESC', c.id), notes: all('SELECT * FROM notes WHERE record_id=? ORDER BY at DESC', c.id),
-    activation: L.activationState(c), calls: all('SELECT * FROM client_calls WHERE client_id=? ORDER BY at DESC', c.id), mails: all('SELECT id, subject, kind, status, at, to_addr FROM emails WHERE record_id=? ORDER BY id DESC LIMIT 20', c.id),
+    activation: L.activationState(c), calls: all('SELECT * FROM client_calls WHERE client_id=? ORDER BY at DESC', c.id), call_log: all("SELECT * FROM calls WHERE client_id=? AND status='Done' ORDER BY at DESC LIMIT 200", c.id), call_apps: all("SELECT a.id, a.candidate_id, a.job_id FROM applications a JOIN jobs j ON j.id=a.job_id WHERE j.client_id=? AND a.result='open' ORDER BY a.created_at DESC LIMIT 100", c.id).map(V.appView).map((x) => [x.id, `${x.candidate_name} · ${x.job_title}`]), mails: all('SELECT id, subject, kind, status, at, to_addr FROM emails WHERE record_id=? ORDER BY id DESC LIMIT 20', c.id),
     consents: all("SELECT * FROM consents WHERE person_type='client' AND person_id=? ORDER BY at DESC", c.id), agencies: all(`SELECT id, name FROM agencies${isSuper(ctx.user) ? '' : " WHERE status='Active'"}`), can_allocate: isSuper(ctx.user) || (!c.agency_id && R.canAllocate(ctx.user)),
     agency_users: all("SELECT id, name FROM users WHERE agency_id=? AND status='On'", c.agency_id || D.soleAgency()),
   };
@@ -961,8 +962,8 @@ route('GET', '/api/candidates/:id', T, (ctx) => {
     // History tab: every application, open or closed, with its screening, interviews (results and notes), calls and steps.
     track: apps.map((a) => ({ id: a.id, job_id: a.job_id, job_title: a.job_title, client_name: a.client_name, step: a.step, result: a.result, created_at: a.created_at, screen: a.screen, screen_note: a.screen_note, screen_by: a.screen_by, screen_at: a.screen_at, offer_ctc: a.offer_ctc, joining_date: a.joining_date,
       interviews: (a.interviews || []).map((i) => ({ id: i.id, name: i.name, round: i.round, mode: i.mode, mode_label: i.mode_label, at: i.at, status: i.status, result: i.result, rating: i.rating, remark: i.remark, interviewer: i.interviewer, notes: all('SELECT author, author_kind, text, at FROM iv_notes WHERE iv_id=? ORDER BY at', i.id) })),
-      calls: all('SELECT * FROM calls WHERE app_id=? ORDER BY at', a.id), steps: all("SELECT at, step, by, note, kind FROM app_history WHERE app_id=? ORDER BY at, id", a.id) })),
-    notes: all('SELECT * FROM notes WHERE record_id=? ORDER BY at DESC', c.id), calls: all('SELECT * FROM calls WHERE candidate_id=? ORDER BY at DESC LIMIT 50', c.id), call_outcomes: L.CALL_OUTCOMES,
+      calls: all("SELECT * FROM calls WHERE app_id=? AND status='Done' ORDER BY at", a.id), steps: all("SELECT at, step, by, note, kind FROM app_history WHERE app_id=? ORDER BY at, id", a.id) })),
+    notes: all('SELECT * FROM notes WHERE record_id=? ORDER BY at DESC', c.id), calls: all("SELECT * FROM calls WHERE candidate_id=? AND status='Done' ORDER BY at DESC LIMIT 200", c.id), call_outcomes: L.CALL_OUTCOMES,
     iv_notes: all('SELECT n.*, i.name iv_name, i.mode, i.at iv_at FROM iv_notes n JOIN interviews i ON i.id=n.iv_id WHERE n.candidate_id=? ORDER BY n.at DESC', c.id), consents: all("SELECT * FROM consents WHERE person_type='candidate' AND person_id=? ORDER BY at DESC", c.id),
     tieup: c.tieup_id ? get('SELECT * FROM tieups WHERE id=?', c.tieup_id) : null, referral_link: L.link('apply', `?ref=${c.id}`), agency_name: V.agencyName(c.agency_id), recruiter_name: V.userName(c.recruiter_id),
   };
@@ -979,6 +980,11 @@ route('PATCH', '/api/candidates/:id', T, (ctx) => {
   patch.last_updated = now();
   if (isSuper(ctx.user) && ctx.body.agency_id !== undefined) patch.agency_id = ctx.body.agency_id;
   return D.edit('candidates', c.id, patch, ctx.actor.label, ctx.ip);
+});
+// The copy with phone and email taken out, for reading or sharing inside the team.
+route('POST', '/api/candidates/:id/hidden-cv', T, (ctx) => {
+  const c = get('SELECT * FROM candidates WHERE id=?', ctx.params.id); if (!c) throw httpError(404, 'Candidate not found'); if (!c.cv_file) throw httpError(400, 'No resume uploaded yet.');
+  return require('./flow').clientCvFor(c.id, ctx.actor);
 });
 // Someone in Sales who now wants HR: the role they want changes, their past work stays, and HR searches find them.
 route('POST', '/api/candidates/:id/map-role', T, (ctx) => {
@@ -1168,7 +1174,7 @@ route('GET', '/api/applications/:id', T, (ctx) => {
     history: all('SELECT * FROM app_history WHERE app_id=? ORDER BY at DESC, id DESC', a.id), messages: all('SELECT * FROM messages WHERE ap=? ORDER BY at DESC', a.id),
     score: (() => { const m = L.matchScore(cand, job, L.ratingOf(cand.id)); const f = require('./flow').rowFor(job, cand, m, {}); return { ...m, score: f.score, reasons: f.points, gaps: f.gaps }; })(), bill: bill ? L.billView(bill) : null, suggest: suggestFor(a), steps: L.STEPS, selected: !!get("SELECT 1 FROM interviews WHERE app_id=? AND result='Selected'", a.id), next: require('./flow').nextStep(a, bill), client_cv: cand.short_cv_file || null,
     files: all('SELECT * FROM files WHERE record_id=? AND replaced=0 ORDER BY at DESC', a.id), notes: all('SELECT * FROM notes WHERE record_id=? ORDER BY at DESC', a.id),
-    calls: all('SELECT * FROM calls WHERE candidate_id=? ORDER BY at DESC LIMIT 50', a.candidate_id), call_outcomes: L.CALL_OUTCOMES, client_city: client.city,
+    calls: all("SELECT * FROM calls WHERE app_id=? AND status='Done' ORDER BY at DESC LIMIT 200", a.id), call_outcomes: L.CALL_OUTCOMES, client_city: client.city,
     checklist_items: D.settings().templates.joining_checklist.split('\n').filter(Boolean),
     replacement_window: (client.replacement_days || D.settings().replacement_days),
   };
@@ -1193,6 +1199,7 @@ route('POST', '/api/applications/:id/step', T, (ctx) => {
   const a = loadApp(ctx);
   const step = ctx.body.next ? L.STEPS[Math.min(L.STEPS.length - 1, L.stepIdx(a.step) + 1)] : ctx.body.step;
   if (step === 'Joined' && a.step !== 'Offer accepted' && !ctx.body.force) throw httpError(400, 'Mark Joined after the offer is accepted.');
+  if (L.needsCall(a, step, ctx.user)) throw httpError(400, 'Log a call on this application first: every step needs its call on record.', 'call');
   if (!ctx.body.force || ctx.body.rounds) L.passRounds(a.id, step, ctx.body.skip_reason, ctx.actor);
   return L.moveStep(a.id, step, ctx.actor, ctx.body.note || (ctx.body.next ? 'Move to next step' : 'Step set by hand'));
 });
@@ -1287,7 +1294,7 @@ route('POST', '/api/applications/bulk', T, (ctx) => {
   for (const id of ids || []) {
     try {
       const a = get('SELECT * FROM applications WHERE id=?', id); mustSee(a && seeApp(ctx.user, a), 'application');
-      if (action === 'step') { L.passRounds(id, step, ctx.body.skip_reason, ctx.actor); L.moveStep(id, step, ctx.actor, 'Bulk move'); } else if (action === 'close') L.closeApplication(id, reason, ctx.actor, 'Bulk close');
+      if (action === 'step') { if (L.needsCall(get('SELECT * FROM applications WHERE id=?', id), step, ctx.user)) throw httpError(400, 'Log a call first'); L.passRounds(id, step, ctx.body.skip_reason, ctx.actor); L.moveStep(id, step, ctx.actor, 'Bulk move'); } else if (action === 'close') L.closeApplication(id, reason, ctx.actor, 'Bulk close');
       else if (action === 'screen') L.screenApplication(id, ctx.body.verdict, ctx.actor, ctx.body.note || 'Bulk');
       else if (action === 'wa') {
         const ptype = ctx.body.to === 'client' ? 'client' : 'candidate'; const job = get('SELECT * FROM jobs WHERE id=?', a.job_id);
@@ -1330,6 +1337,7 @@ route('POST', '/api/interviews', T, (ctx) => {
   return { ...iv, clash: clash.map((c) => c.id) };
 });
 route('POST', '/api/interviews/:id/result', T, (ctx) => {
+  const ivNow = get('SELECT * FROM interviews WHERE id=?', ctx.params.id); if (ivNow && ivNow.mode === 'phone' && ctx.body.status === 'Completed' && L.callGateOn() && ctx.user.level !== 'super' && !get("SELECT 1 FROM calls WHERE app_id=? AND status='Done' AND at>=?", ivNow.app_id, ivNow.created_at || ivNow.at)) throw httpError(400, 'Log the call first: the telephonic round needs its call on record.', 'call');
   const iv = get('SELECT * FROM interviews WHERE id=?', ctx.params.id); const a = iv && get('SELECT * FROM applications WHERE id=?', iv.app_id);
   mustSee(a && seeApp(ctx.user, a), 'interview'); return L.recordInterview(iv.id, ctx.body, ctx.actor);
 });
@@ -1337,11 +1345,13 @@ route('POST', '/api/interviews/:id/notes', T, (ctx) => {
   const iv = get('SELECT * FROM interviews WHERE id=?', ctx.params.id); const a = iv && get('SELECT * FROM applications WHERE id=?', iv.app_id);
   mustSee(a && seeApp(ctx.user, a), 'interview'); return L.addIvNote(iv.id, ctx.body.text, ctx.actor.label, 'team');
 });
-route('POST', '/api/calls', T, (ctx) => {
-  const c = get('SELECT * FROM candidates WHERE id=?', ctx.body.candidate_id); if (!c) throw httpError(404, 'Candidate not found');
-  if (ctx.body.app_id) { const a = get('SELECT * FROM applications WHERE id=?', ctx.body.app_id); mustSee(a && seeApp(ctx.user, a), 'application'); }
-  return L.logCall(ctx.body, ctx.actor);
-});
+const callAccess = (ctx, b) => {
+  if (b.app_id) { const a = get('SELECT * FROM applications WHERE id=?', b.app_id); mustSee(a && seeApp(ctx.user, a), 'application'); }
+  if (b.client_id) { const c = get('SELECT * FROM clients WHERE id=?', b.client_id); mustSee(c && seeClient(ctx.user, c), 'client'); }
+};
+route('GET', '/api/call-topics', T, () => ({ topics: D.settings().call_topics || [], outcomes: L.CALL_OUTCOMES }));
+route('POST', '/api/calls/start', { ...T, calling: true }, (ctx) => { const b = ctx.body || {}; callAccess(ctx, b); return L.startCall(b, ctx.actor); });
+route('POST', '/api/calls', { ...T, calling: true }, (ctx) => { const b = ctx.body || {}; callAccess(ctx, b); return L.logCall(b, ctx.actor); });
 route('POST', '/api/interviews/:id/confirm', T, (ctx) => {
   const iv = get('SELECT * FROM interviews WHERE id=?', ctx.params.id); const a = iv && get('SELECT * FROM applications WHERE id=?', iv.app_id);
   mustSee(a && seeApp(ctx.user, a), 'interview'); update('interviews', iv.id, { confirmed: 1 }); D.history(ctx.actor.label, 'confirm', iv.id, 'confirmed', 0, 1); return { ok: true };
@@ -1760,9 +1770,9 @@ route('POST', '/api/roles/role', T, (ctx) => {
 });
 
 // ---------- settings (super admin) ----------
-const EDITABLE = ['accounts_email', 'resume_alert_pct', 'expense_tree', 'expense_accounts', 'revenue_kinds', 'call_script', 'email_templates', 'creative_template', 'hiring_channels', 'landing_roles', 'wa_pause', 'business', 'industries', 'default_industry', 'hidden_jobs', 'departments', 'cities', 'skills', 'client_stages', 'closing_reasons', 'job_close_reasons', 'reopen_reasons', 'lead_sources', 'src_tags', 'fee', 'agency_share_pct', 'gst', 'replacement_days', 'payment_days', 'targets', 'log_deadline', 'quiet', 'daily_limit', 'bulk_budget', 'match', 'languages', 'id_start', 'bill_prefix', 'retention_years', 'team_idle_hours', 'formats', 'auto_rules', 'crm', 'posting_channels', 'gap_targets', 'templates', 'jd_template', 'jd_templates'];
+const EDITABLE = ['call_gate', 'accounts_email', 'resume_alert_pct', 'expense_tree', 'expense_accounts', 'revenue_kinds', 'call_script', 'email_templates', 'creative_template', 'hiring_channels', 'landing_roles', 'wa_pause', 'business', 'industries', 'default_industry', 'hidden_jobs', 'departments', 'cities', 'skills', 'client_stages', 'closing_reasons', 'job_close_reasons', 'reopen_reasons', 'lead_sources', 'src_tags', 'fee', 'agency_share_pct', 'gst', 'replacement_days', 'payment_days', 'targets', 'log_deadline', 'quiet', 'daily_limit', 'bulk_budget', 'match', 'languages', 'id_start', 'bill_prefix', 'retention_years', 'team_idle_hours', 'formats', 'auto_rules', 'crm', 'posting_channels', 'gap_targets', 'templates', 'jd_template', 'jd_templates'];
 // Everyone in the team can set up what goes out. Connection secrets and the checks on the team's own activity stay with the super admin.
-const SUPER_ONLY = ['crm', 'resume_alert_pct'];
+const SUPER_ONLY = ['crm', 'resume_alert_pct', 'call_gate'];
 route('GET', '/api/settings', T, (ctx) => { const s = { ...D.settings() }; if (!isSuper(ctx.user)) { for (const k of SUPER_ONLY) delete s[k]; return s; } s.crm = { ...s.crm, token: s.crm.token ? '••••••••' : '', webhook_secret: s.crm.from_env && s.crm.from_env.webhook_secret ? '••••••••' : s.crm.webhook_secret }; return s; });
 route('POST', '/api/health/mail', SUPER, async () => require('./mailbox').check());
 route('POST', '/api/health/email', SUPER, (ctx) => {
@@ -1871,7 +1881,7 @@ function removePerson(ptype, pid, who) {
 
 // ---------- bell, notes, follow-ups, history, files ----------
 route('GET', '/api/alerts', { ...T, channels: true, accounts: true }, (ctx) => all('SELECT * FROM alerts WHERE user_id=? ORDER BY at DESC LIMIT 50', ctx.user.id));
-route('POST', '/api/alerts/read', { ...T, channels: true, accounts: true }, (ctx) => { if (ctx.body.id) D.run('UPDATE alerts SET read=1 WHERE id=? AND user_id=?', ctx.body.id, ctx.user.id); else D.run('UPDATE alerts SET read=1 WHERE user_id=?', ctx.user.id); return { ok: true }; });
+route('POST', '/api/alerts/read', { ...T, channels: true, accounts: true, calling: true }, (ctx) => { if (ctx.body.id) D.run('UPDATE alerts SET read=1 WHERE id=? AND user_id=?', ctx.body.id, ctx.user.id); else D.run('UPDATE alerts SET read=1 WHERE user_id=?', ctx.user.id); return { ok: true }; });
 route('POST', '/api/notes', T, (ctx) => {
   if (!ctx.body.text) throw httpError(400, 'Write the note', 'text');
   insert('notes', { record_id: ctx.body.record_id, text: ctx.body.text, author: ctx.actor.label, at: now() }); D.history(ctx.actor.label, 'note', ctx.body.record_id); return { ok: true };

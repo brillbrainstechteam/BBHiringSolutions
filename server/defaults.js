@@ -155,6 +155,7 @@ module.exports.defaultSettings = () => ({
   wa_pause: { candidates: true, everyone: true, email: true, allow: ['9093400666', '9986950695', '8368372836'] },
   accounts_email: '',
   resume_alert_pct: 30,
+  call_topics: ['Introduction', 'Hiring requirement', 'Job description', 'Agreement and KYC', 'CV shared', 'Interview scheduling', 'Interview feedback', 'Salary discussion', 'Offer', 'Joining', 'Replacement', 'Invoice and payment', 'Follow-up', 'Other'],
   // The standing work of the team. Each gets an owner on the Tasks page.
   task_list: [
     ['Clients', ['Call new client leads', 'Send the pitch deck', 'Send the Recruitment Agreement and get it signed', 'Collect KYC papers', 'Write the job description and get it approved']],
