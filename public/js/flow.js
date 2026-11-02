@@ -17,26 +17,63 @@
   const F = BB.flow = {};
 
   // ---------- client: from lead to active client ----------
-  const callRoleRows = (x) => `<div class="flow-call-roles">${x.call_roles.map((l, i) => `<div class="row between"><span class="grow"><b>${esc(l.role)}</b> · ${l.openings} ${l.openings === 1 ? 'opening' : 'openings'}${l.location ? ` · ${esc(l.location)}` : ''}${l.department ? ` · ${esc(l.department)}` : ''}</span>${l.job_id ? `<button class="btn sm" data-fopen="${esc(l.job_id)}">${esc(l.job_id)}</button>` : `<button class="btn sm" data-fline="${x.id}:${i}">Open job</button>`}</div>`).join('')}</div>`;
-  const roleRow = (l = {}) => `<div class="flow-role" data-frole><label class="field"><span class="lab">Role</span><input data-r="role" list="flow-roles" value="${esc(l.role || '')}"></label><label class="field"><span class="lab">Openings</span><input data-r="openings" type="number" min="1" inputmode="numeric"></label><label class="field"><span class="lab">Location</span><input data-r="location" value="${esc(l.location || '')}"></label><label class="field"><span class="lab">Department <span class="opt">(optional)</span></span><input data-r="department" value="${esc(l.department || '')}"></label><button type="button" class="btn sm" data-frm aria-label="Remove role">×</button></div>`;
+  const callRoleRows = (x) => `<div class="flow-call-roles">${x.call_roles.map((l, i) => `<div class="call-role"><div class="row between"><span class="grow"><b>${esc(l.role)}</b> · ${l.openings} ${l.openings === 1 ? 'opening' : 'openings'}${l.location ? ` · ${esc(l.location)}` : ''}${l.department ? ` · ${esc(l.department)}` : ''}</span>${l.job_id ? `<button class="btn sm" data-fopen="${esc(l.job_id)}">${esc(l.job_id)}</button>` : `<button class="btn sm" data-fline="${x.id}:${i}">Open job</button>`}</div>${l.skills || l.duties || l.notes ? `<dl class="kv" style="margin-top:6px">${[['Skills', l.skills], ['Responsibilities', l.duties], ['Notes', l.notes]].filter(([, v]) => v).map(([k, v]) => `<dt>${k}</dt><dd>${esc(v)}</dd>`).join('')}</dl>` : ''}</div>`).join('')}</div>`;
+  // One card per role on the call: each has its own count, place, skills, duties and notes.
+  const roleList = () => { const seen = new Map(); for (const j of [...BB.boot.jobs, ...(BB.addedRoles || [])]) if (!seen.has(j.title.toLowerCase())) seen.set(j.title.toLowerCase(), j); return [...seen.values()]; };
+  const deptList = () => [...new Set([...(BB.boot.departments || []), ...BB.boot.jobs.map((j) => j.dept)].filter(Boolean))];
+  const roleRow = (l = {}) => `<div class="role-card" data-frole><div class="role-head"><b data-rtitle>Role</b><button type="button" class="role-x" data-frm aria-label="Remove this role" title="Remove this role">×</button></div>
+    <div class="role-grid"><label class="field role-name"><span class="lab">Role</span><div class="cbx"><input data-r="role" role="combobox" aria-autocomplete="list" aria-expanded="false" autocomplete="off" placeholder="Start typing a role" value="${esc(l.role || '')}"><div class="cbx-pop" role="listbox" hidden></div></div></label>
+    <label class="field"><span class="lab">Openings</span><input data-r="openings" type="number" min="1" inputmode="numeric"></label>
+    <label class="field"><span class="lab">Location</span><input data-r="location" value="${esc(l.location || '')}"></label>
+    <label class="field"><span class="lab">Department <span class="opt">(optional)</span></span><select data-r="department"><option value="">Choose…</option>${deptList().map((d) => `<option ${d === l.department ? 'selected' : ''}>${esc(d)}</option>`).join('')}</select></label></div>
+    ${field({ name: 'r_skills', label: 'Skills required', opt: true, attrs: 'data-r="skills"' })}
+    ${field({ name: 'r_duties', label: 'Roles and responsibilities expected', type: 'textarea', opt: true, attrs: 'data-r="duties"' })}
+    ${field({ name: 'r_notes', label: 'Other notes', type: 'textarea', opt: true, attrs: 'data-r="notes"' })}</div>`;
+  // The role box: suggestions as you type, best matches first, and a typed role can be added to the list.
+  const wireCombo = (card) => {
+    const inp = $('[data-r=role]', card); const pop = $('.cbx-pop', card); let items = []; let at = -1;
+    const close = () => { pop.hidden = true; inp.setAttribute('aria-expanded', 'false'); at = -1; };
+    const pick = (i) => { const it = items[i]; if (!it) return; inp.value = it.title; if (it.fresh) { BB.addedRoles = [...(BB.addedRoles || []), { title: it.title, group: 'Added roles', dept: '' }]; BB.toast(`${it.title} added to the role list`); } const d = $('[data-r=department]', card); if (it.dept && !d.value && [...d.options].some((o) => o.value === it.dept)) d.value = it.dept; close(); inp.dispatchEvent(new Event('input', { bubbles: true })); close(); $('[data-r=openings]', card).focus(); };
+    const draw = () => { pop.innerHTML = items.map((x, i) => `<button type="button" class="cbx-opt ${i === at ? 'on' : ''}" role="option" data-i="${i}">${x.fresh ? `<span>Add “${esc(x.title)}” as a new role</span>` : `<span>${esc(x.title)}</span><span class="cbx-group">${esc(x.group)}</span>`}</button>`).join(''); pop.hidden = !items.length; inp.setAttribute('aria-expanded', String(!pop.hidden)); const on = $('.cbx-opt.on', pop); if (on) on.scrollIntoView({ block: 'nearest' }); };
+    const show = () => { const q = inp.value.trim().toLowerCase(); const all = roleList(); const hit = q ? all.filter((j) => j.title.toLowerCase().includes(q)).sort((a, b) => a.title.toLowerCase().indexOf(q) - b.title.toLowerCase().indexOf(q) || a.title.length - b.title.length) : all; items = hit.slice(0, 40); if (q && !all.some((j) => j.title.toLowerCase() === q)) items.push({ title: inp.value.trim(), fresh: true }); at = -1; draw(); };
+    inp.onfocus = show; inp.oninput = show; inp.onblur = () => setTimeout(close, 120);
+    pop.onmousedown = (e) => { e.preventDefault(); const b = e.target.closest('.cbx-opt'); if (b) pick(Number(b.dataset.i)); };
+    inp.onkeydown = (e) => {
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); if (pop.hidden) show(); at = (at + (e.key === 'ArrowDown' ? 1 : items.length - 1 + (at < 0 ? 1 : 0))) % Math.max(items.length, 1); draw(); }
+      else if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); if (!pop.hidden) pick(at < 0 ? 0 : at); }
+      else if (e.key === 'Escape' && !pop.hidden) { e.stopPropagation(); close(); }
+    };
+  };
   const readRoles = (box) => $$('[data-frole]', box).map((r) => Object.fromEntries($$('[data-r]', r).map((i) => [i.dataset.r, i.value.trim()])));
   const wireRoles = (box) => {
-    const sum = () => { const t = readRoles(box).reduce((n, x) => n + (Number(x.openings) || 0), 0); $('[data-ftotal]', box).textContent = t ? `Total openings: ${t}` : ''; const rm = $$('[data-frm]', box); rm.forEach((b) => (b.disabled = rm.length === 1)); };
+    const sum = () => { const t = readRoles(box).reduce((n, x) => n + (Number(x.openings) || 0), 0); $('[data-ftotal]', box).textContent = t ? `Total openings: ${t}` : ''; const cards = $$('[data-frole]', box); cards.forEach((k, i) => { $('[data-rtitle]', k).textContent = cards.length > 1 ? `Role ${i + 1}` : 'Role'; $('[data-frm]', k).hidden = cards.length === 1; }); };
     box.oninput = sum;
     box.onclick = (e) => {
       if (e.target.closest('[data-frm]')) { e.target.closest('[data-frole]').remove(); sum(); }
-      if (e.target.closest('[data-fadd]')) { const all = readRoles(box); const last = all[all.length - 1] || {}; $('[data-frows]', box).insertAdjacentHTML('beforeend', roleRow({ location: last.location, department: last.department })); const n = $$('[data-frole]', box).pop(); $('[data-r=role]', n).focus(); sum(); }
+      if (e.target.closest('[data-fadd]')) { const all = readRoles(box); const last = all[all.length - 1] || {}; $('[data-frows]', box).insertAdjacentHTML('beforeend', roleRow({ location: last.location })); const n = $$('[data-frole]', box).pop(); wireCombo(n); BB.attachMics(n); sum(); $('[data-r=role]', n).focus(); n.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }
     };
-    sum();
+    $$('[data-frole]', box).forEach(wireCombo); sum();
+  };
+  // What the web says about a client, laid out to read during a call.
+  const webLink = (u) => (/^https?:\/\//i.test(u) ? `<a href="${esc(u)}" target="_blank" rel="noopener">${esc(u.replace(/^https?:\/\/(www\.)?/i, '').replace(/\/$/, ''))}</a>` : esc(u));
+  const clientInfo = (o) => {
+    const phones = String(o.phone || '').split(/[;,/]/).map((x) => x.trim()).filter(Boolean);
+    const tile = (l, v) => (v ? `<div class="ci-tile"><div class="ci-lab">${l}</div><div class="ci-val">${v}</div></div>` : '');
+    const links = [['Website', o.website], ['LinkedIn', o.linkedin], ['Instagram', o.instagram], ['Facebook', o.facebook]].filter(([, v]) => /^https?:\/\//i.test(v || ''));
+    return `<details class="sec ci" open><summary><span class="ci-ico">${BB.icon('search')}</span><span class="grow"><b>Client info</b><span class="small muted"> · found ${fmtD(o.at)}, please check before using</span></span><span class="ci-chev" aria-hidden="true"></span></summary>
+      ${o.about ? `<p class="ci-about">${esc(o.about)}</p>` : ''}
+      ${links.length ? `<div class="ci-links">${links.map(([l, u]) => `<a class="btn sm" href="${esc(u)}" target="_blank" rel="noopener">${l} ↗</a>`).join('')}</div>` : ''}
+      <div class="ci-grid">${tile('Phone', phones.map((p) => `<a href="tel:${esc(p.replace(/[^\d+]/g, ''))}">${esc(p)}</a>`).join('<br>'))}${tile('Email', o.email ? `<a href="mailto:${esc(o.email)}">${esc(o.email)}</a>` : '')}${tile('Address', esc(o.address || ''))}${tile('Business', esc(o.kind || ''))}${tile('Started', esc(o.est_year || ''))}${tile('Branches', esc(o.branches || ''))}${tile('Owners', esc(o.owners || ''))}</div>
+      <div class="ci-foot"><span class="ci-cost">About ₹${o.cost_inr || 1} charged for this search</span><span class="row"><button class="btn sm" data-flook>Search again · about ₹${o.cost_inr || 1}</button><button class="btn sm primary" data-fuse>Use these details</button></span></div></details>`;
   };
   F.client = (c) => {
     const a = c.activation || {};
-    return `      <div class="row" style="margin-bottom:14px"><button class="btn sm primary" data-fcall>Call notes</button><button class="btn sm" data-fagree>Agreement${a.contract ? ' <span class="badge b-green tiny">Signed</span>' : ''}</button><button class="btn sm" data-fmail="kyc">Ask for KYC</button><button class="btn sm" data-fmail="general">Email</button><button class="btn sm" data-fthanks>Thank-you message</button><button class="btn sm" data-flook>Find online</button><button class="btn sm" data-fgroup>WhatsApp group</button></div>`;
+    return `      <div class="row" style="margin-bottom:14px"><button class="btn sm primary" data-fcall>Call notes</button><button class="btn sm" data-fagree>Agreement${a.contract ? ' <span class="badge b-green tiny">Signed</span>' : ''}</button><button class="btn sm" data-fmail="kyc">Ask for KYC</button><button class="btn sm" data-fmail="general">Email</button><button class="btn sm" data-fthanks>Thank-you message</button><button class="btn sm" data-flook>${BB.icon('search')} Client info</button><button class="btn sm" data-fgroup>WhatsApp group</button></div>`;
   };
   F.clientMore = (c) => {
     const g = c.wa_group || {}; const o = (c.extra || {}).online;
     return `${(c.calls || []).length ? `<div class="sec"><h3>Client calls</h3><div class="stack-sm">${c.calls.map((x) => `<div class="card pad small"><div class="row between"><span class="faint">${fmtDT(x.at)} · ${esc(x.by)}</span>${x.call_roles ? (x.call_roles.filter((l) => !l.job_id).length ? `<button class="btn sm" data-fjobs="${x.id}">Open ${x.call_roles.filter((l) => !l.job_id).length > 1 ? 'all as draft jobs' : 'as a draft job'}</button>` : '') : `<button class="btn sm" data-fjob="${x.id}">Open a job from this</button>`}</div>${x.call_roles ? callRoleRows(x) : ''}<dl class="kv" style="margin-top:6px">${[...(x.call_roles ? [] : [['Openings', x.openings], ['Location', x.location], ['Department', x.department], ['Roles', x.roles]]), ['Skills', x.skills], ['Responsibilities', x.duties], ['Notes', x.notes]].filter(([, v]) => v).map(([k, v]) => `<dt>${k}</dt><dd>${esc(v)}</dd>`).join('')}</dl></div>`).join('')}</div></div>` : ''}
-      ${o ? `<div class="sec"><h3>Found online <span class="faint small">· ${fmtD(o.at)}, please check</span></h3><div class="card pad small"><div>${esc(o.about)}</div><dl class="kv" style="margin-top:6px">${[['Website', o.website], ['Instagram', o.instagram], ['Facebook', o.facebook], ['LinkedIn', o.linkedin], ['Phone', o.phone], ['Email', o.email], ['Address', o.address], ['Branches', o.branches], ['Started', o.est_year], ['Owners', o.owners], ['Kind', o.kind]].filter(([, v]) => v).map(([k, v]) => `<dt>${k}</dt><dd>${esc(v)}</dd>`).join('')}</dl><div class="row" style="margin-top:6px"><button class="btn sm" data-fuse>Use these details</button></div></div></div>` : ''}
+      ${o ? clientInfo(o) : ''}
       ${g.name ? `<div class="sec"><h3>WhatsApp group</h3><div class="small"><b>${esc(g.name)}</b> ${g.created ? '<span class="badge b-green">Created</span>' : '<span class="badge b-outline">To create</span>'}${g.link ? ` · <a href="${esc(g.link)}" target="_blank" rel="noopener">invite link</a>` : ''}</div></div>` : ''}
       ${(c.mails || []).length ? `<div class="sec"><h3>Emails</h3>${c.mails.map((m) => `<div class="small">${fmtDT(m.at)} · ${esc(m.subject)} <span class="badge b-outline">${esc(m.status)}</span></div>`).join('')}</div>` : ''}`;
   };
@@ -74,22 +111,21 @@
       const { script } = await BB.api('/api/call-script');
       setTimeout(() => { const box = $('.modal [data-froles]'); if (box) wireRoles(box); }, 0);
       const v = await BB.ask({ title: 'Client call', wide: true, fields: [`<div class="notice small flow-script">${esc(script)}</div>`,
-        `<div class="field" data-froles data-f="call_roles"><div data-frows>${roleRow({ location: c.city || '' })}</div><datalist id="flow-roles">${BB.boot.jobs.map((j) => `<option value="${esc(j.title)}"></option>`).join('')}</datalist><div class="row between" style="margin-top:8px"><button type="button" class="btn sm" data-fadd>Add another role</button><span class="small muted" data-ftotal></span></div></div>`,
-        { name: 'skills', label: 'Skills required', opt: true }, { name: 'duties', label: 'Roles and responsibilities expected', type: 'textarea', opt: true }, { name: 'notes', label: 'Other notes', type: 'textarea', opt: true }], ok: 'Save call notes', submit: (x) => BB.post(`/api/clients/${c.id}/calls`, { ...x, call_roles: readRoles($('.modal [data-froles]')) }) });
+        `<div class="field" data-froles data-f="call_roles"><div data-frows>${roleRow({ location: c.city || '' })}</div><div class="row between" style="margin-top:8px"><button type="button" class="btn sm" data-fadd>+ Add another role</button><span class="small muted" data-ftotal></span></div></div>`], ok: 'Save call notes', submit: (x) => BB.post(`/api/clients/${c.id}/calls`, { ...x, call_roles: readRoles($('.modal [data-froles]')) }) });
       if (v) done('Call notes saved');
     });
     $$('[data-fmail]', el).forEach((b) => (b.onclick = () => F.composeMail([c.id], b.dataset.fmail, b.textContent)));
     on('[data-fthanks]', () => act(() => BB.post(`/api/clients/${c.id}/thanks`), (r) => (r.held ? 'Saved: messages are off for now' : 'Sent')));
     on('[data-fagree]', () => agreementBox(c));
-    on('[data-flook]', async () => {
-      const v = await BB.ask({ title: 'Find this business online', note: 'Optional. Searches the web and fills what it finds for you to check. Each search costs a few rupees.', fields: [{ name: 'name', label: 'Business name', value: c.company }, { name: 'city', label: 'City', value: c.city || '', opt: true }, { name: 'address', label: 'Address', opt: true }], ok: 'Search', submit: (x) => BB.post(`/api/clients/${c.id}/lookup`, x) });
-      if (v) done('Details found: check them below');
-    });
-    on('[data-fuse]', () => { const o = c.extra.online; const ex = { ...c.extra }; for (const [k, s] of [['website', o.website], ['branches', o.branches], ['est_year', o.est_year], ['owner_name', o.owners]]) if (s && !ex[k]) ex[k] = s; act(() => BB.patch(`/api/clients/${c.id}`, { extra: ex }), 'Saved on the client'); });
+    $$('[data-flook]', el).forEach((lk) => (lk.onclick = async () => {
+      const v = await BB.ask({ title: 'Client info', fields: [{ name: 'name', label: 'Business name', value: c.company }, { name: 'city', label: 'City', value: c.city || '', opt: true }, { name: 'address', label: 'Address', opt: true }], ok: 'Search', submit: (x) => BB.post(`/api/clients/${c.id}/lookup`, x) });
+      if (v) done('Client info is ready below');
+    }));
+    on('[data-fuse]', () => { const o = c.extra.online; const ex = { ...c.extra }; for (const [k, s] of [['website', o.website], ['branches', o.branches], ['est_year', o.est_year], ['owner_name', o.owners], ['address', o.address]]) if (s && !ex[k]) ex[k] = s; act(() => BB.patch(`/api/clients/${c.id}`, { extra: ex, ...(!c.email && o.email ? { email: o.email } : {}) }), 'Saved on the client'); });
     on('[data-fgroup]', () => groupDialog(c));
     $$('[data-fopen]', el).forEach((b) => (b.onclick = () => BB.open('job', b.dataset.fopen)));
     $$('[data-fjobs]', el).forEach((b) => (b.onclick = () => act(() => BB.post(`/api/clients/${c.id}/calls/${b.dataset.fjobs}/jobs`), (r) => `${r.jobs.length} draft ${r.jobs.length === 1 ? 'job' : 'jobs'} opened: add the salary on each`)));
-    $$('[data-fline]', el).forEach((b) => (b.onclick = () => { const [id, i] = b.dataset.fline.split(':'); const x = c.calls.find((k) => String(k.id) === id); const l = x.call_roles[i]; BB.newJob(c.id, { title: l.role, city: l.location, openings: l.openings, skills: String(x.skills || '').split(',').map((s) => s.trim()).filter(Boolean), duties: x.duties, notes: [l.department && `Department: ${l.department}`, x.notes].filter(Boolean).join(' · '), call_id: x.id, call_line: Number(i) }); }));
+    $$('[data-fline]', el).forEach((b) => (b.onclick = () => { const [id, i] = b.dataset.fline.split(':'); const x = c.calls.find((k) => String(k.id) === id); const l = x.call_roles[i]; BB.newJob(c.id, { title: l.role, city: l.location, openings: l.openings, skills: String(l.skills || x.skills || '').split(',').map((s) => s.trim()).filter(Boolean), duties: l.duties || x.duties, notes: [l.department && `Department: ${l.department}`, l.notes, x.notes].filter(Boolean).join(' · '), call_id: x.id, call_line: Number(i) }); }));
     $$('[data-fjob]', el).forEach((b) => (b.onclick = () => { const x = c.calls.find((k) => String(k.id) === b.dataset.fjob); BB.newJob(c.id, { title: String(x.roles || '').split(/[,\n]/)[0].trim(), city: x.location, openings: parseInt(x.openings, 10) || 1, skills: String(x.skills || '').split(',').map((s) => s.trim()).filter(Boolean), duties: x.duties, notes: x.notes }); }));
   };
   // The group's picture: the client's logo in a ring, 640 × 640, ready to set on WhatsApp.

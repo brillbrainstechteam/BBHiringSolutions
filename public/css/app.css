@@ -1413,7 +1413,8 @@ html[lang="hi"] .ss-g { letter-spacing: 0; }
 .own-row select, .own-sec select { width: auto; max-width: 210px; }
 
 /* Candidates: skills as wrapped tags, quick views, find box in long multi-selects. */
-.tbl-scroll td.skills-col { white-space: normal; min-width: 170px; max-width: 230px; width: auto; }
+.tbl-scroll td.skills-col { white-space: normal; min-width: 150px; max-width: 210px; width: auto; }
+.tbl-scroll td.src-col { white-space: normal; max-width: 96px; line-height: 1.3; }
 .sk-wrap { display: flex; flex-wrap: wrap; gap: 3px; }
 .sk { font-size: 11px; line-height: 1.5; padding: 0 7px; border-radius: 999px; background: var(--sky-50); color: var(--ink); white-space: nowrap; max-width: 170px; overflow: hidden; text-overflow: ellipsis; }
 .sk.more { background: var(--surface-2); color: var(--muted); }
@@ -1438,9 +1439,7 @@ html[lang="hi"] .ss-g { letter-spacing: 0; }
 .fit-pts .ok{color:#15704A}.fit-pts .no{color:#9A5B00}
 .flow-doc{white-space:pre-wrap;line-height:1.6;font-size:13.5px;max-height:70vh;overflow:auto}
 .flow-script{white-space:pre-wrap}
-.flow-role{display:grid;grid-template-columns:2fr 90px 1.3fr 1.3fr 34px;gap:8px;align-items:end;margin-bottom:8px}
 .flow-call-roles{display:grid;gap:6px;margin-top:8px}
-@media (max-width:640px){.flow-role{grid-template-columns:repeat(6,1fr)}.flow-role>.field{grid-column:span 3}.flow-role>.field:first-child{grid-column:span 4}.flow-role>.field:nth-child(2){grid-column:span 2}.flow-role [data-frm]{grid-column:span 6;justify-self:end}}
 .flow-dp{width:160px;height:160px;border-radius:50%;margin-top:8px}
 .kpi{font-size:22px;font-weight:600;margin-top:4px}
 
@@ -1493,3 +1492,42 @@ html[lang="hi"] .ss-g { letter-spacing: 0; }
 .agr-btns { flex: none; justify-content: flex-end; gap: 6px; }
 @media (max-width: 640px) { .agr-row { flex-direction: column; align-items: stretch; } .agr-btns { justify-content: flex-start; } }
 .offer-tpl { display: flex; align-items: center; gap: 12px; padding: 12px 14px; margin-bottom: 12px; border-radius: 14px; background: var(--mustard-50, var(--surface-2)); border: 1px solid var(--mustard-300, var(--border)); }
+.btn > svg { width: 16px; height: 16px; flex: none; }
+/* Call notes: a card for each role. */
+.role-card { padding: 14px 16px 6px; margin-bottom: 12px; border: 1px solid var(--border); border-radius: 14px; background: var(--surface-2); }
+.role-card .field { margin-bottom: 12px; }
+.role-head { display: flex; align-items: center; justify-content: space-between; min-height: 32px; margin-bottom: 6px; }
+.role-x { width: 32px; height: 32px; display: grid; place-items: center; padding: 0; border: 1px solid var(--border); border-radius: 50%; background: var(--surface); color: var(--muted); font-size: 18px; line-height: 1; cursor: pointer; }
+.role-x:hover, .role-x:focus-visible { color: var(--red); border-color: var(--red); }
+.role-x[hidden] { display: none; }
+.role-grid { display: grid; grid-template-columns: minmax(0, 2.2fr) 110px minmax(0, 1.2fr) minmax(0, 1.2fr); gap: 12px; }
+.role-grid input, .role-grid select { height: 44px; }
+.cbx { position: relative; }
+.cbx-pop { position: absolute; z-index: 40; top: calc(100% + 4px); left: 0; width: min(460px, 86vw); max-height: 260px; overflow-y: auto; padding: 4px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow-lg); }
+.cbx-opt { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; min-height: 38px; padding: 7px 10px; border: 0; border-radius: 8px; background: none; font: 500 13.5px var(--font); color: var(--ink); text-align: left; cursor: pointer; }
+.cbx-opt:hover, .cbx-opt.on { background: var(--surface-2); }
+.cbx-opt > span:first-child { flex: 1; min-width: 0; }
+.cbx-group { flex: 0 1 45%; font-size: 11.5px; color: var(--muted); text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.call-role + .call-role { padding-top: 8px; border-top: 1px solid var(--border); }
+@media (max-width: 760px) { .role-grid { grid-template-columns: 1fr 96px; } .role-grid .field:nth-child(n+3) { grid-column: span 2; } }
+/* Client info. */
+.ci > summary { display: flex; align-items: center; gap: 10px; cursor: pointer; list-style: none; }
+.ci > summary::-webkit-details-marker { display: none; }
+.ci-ico { width: 32px; height: 32px; display: grid; place-items: center; flex: none; border-radius: 10px; color: var(--navy-700, var(--ink)); background: var(--surface-2); border: 1px solid var(--border); }
+.ci-ico svg { width: 16px; height: 16px; }
+.ci-chev { width: 9px; height: 9px; margin-right: 6px; border-right: 2px solid var(--muted); border-bottom: 2px solid var(--muted); transform: rotate(45deg); transition: transform .15s; }
+.ci[open] .ci-chev { transform: rotate(-135deg); }
+.ci-about { margin: 12px 0 0; font-size: 14px; line-height: 1.55; }
+.ci-links { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+.ci-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 12px; }
+.ci-tile { padding: 10px 12px; border-radius: 10px; background: var(--surface-2); border: 1px solid var(--border); min-width: 0; }
+.ci-lab { font-size: 11.5px; color: var(--muted); margin-bottom: 2px; }
+.ci-val { font-size: 13.5px; overflow-wrap: anywhere; }
+.ci-foot { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); }
+.ci-cost { font-size: 12.5px; font-weight: 600; color: var(--amber, var(--muted)); }
+@media (max-width: 560px) { .ci-grid { grid-template-columns: 1fr; } }
+@media (max-width: 1340px) {
+  .cand-table .tbl-scroll th, .cand-table .tbl-scroll td { padding-left: 7px; padding-right: 7px; }
+  .cand-table .sk { max-width: 132px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tbl-scroll td.skills-col { min-width: 140px; max-width: 170px; }
+}

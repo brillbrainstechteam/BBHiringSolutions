@@ -52,8 +52,8 @@ Everything automatic is held. Held messages are not sent later; only new ones go
 
 ## Done on 2 Nov 2026
 
-- OpenAI credit works. One Find online lookup used 8,906 tokens in, 133 out and one web search, roughly ₹1.
-- Historical import: 97 resumes from the Drive folder (source Google Drive) and 473 from three Naukri exports (source Naukri). No message went to anyone. 14 have no phone and show "No phone found". A copy of the database from before the import is at `/var/lib/bbhs-live/before-import-2026-11-02.db`, and the new IDs are in `/var/lib/bbhs-live/imported-ids-2026-11-02.txt`.
+- OpenAI credit works. One Client info search used 8,906 tokens in, 133 out and one web search, roughly ₹1. The charge shows on each search.
+- Historical import: 97 resumes and 473 people from three Naukri exports, all from the Drive folder and all with source Google Drive. No message went to anyone. 14 have no phone and show "No phone found". A copy of the database from before the import is at `/var/lib/bbhs-live/before-import-2026-11-02.db`, the new IDs are in `/var/lib/bbhs-live/imported-ids-2026-11-02.txt`, and the Naukri ones in `/var/lib/bbhs-live/was-naukri-ids-2026-11-02.txt`.
 - Invoice number stays typed in by hand, by decision.
 - Vaibhav Kanpur's share is 35%, and a client with no agency now bills through the one active agency.
 - The "Date & Location" blank stays in the standard agreement: fill it per client in the Agreement box.

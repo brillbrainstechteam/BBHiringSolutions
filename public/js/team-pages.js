@@ -414,11 +414,12 @@
     <div class="card cand-table">${BB.table([
       { t: 'Candidate', cls: 'name-col', f: (c) => `<b>${esc(c.name)}</b>${c.is_new ? ' <span class="dot new" title="New"></span>' : ''}${c.opted_out ? ' <span class="badge b-red tiny">STOP</span>' : ''}<div class="mono tiny ${c.phone_hidden ? 'faint' : 'muted'}">${esc(c.whatsapp)}</div>` },
       { t: 'Role and domain', cls: 'wrap', f: (c) => `${esc(c.job_wanted) || '<span class="faint">—</span>'}<div class="tiny muted">${[(c.exp_business || []).length ? ((c.exp_business || []).includes('Retailer') ? 'B2C' : 'B2B') : '', c.domain && c.domain !== 'Not clear' ? c.domain : ''].filter(Boolean).map(esc).join(' · ')}</div>` },
+      { t: 'Source', cls: 'src-col', f: (c) => `<span class="src-cut" title="${esc(c.ad_name || c.ad_set || c.ad_campaign || c.source || '')}">${esc(c.source || '—')}</span>` },
       { t: 'Skills', cls: 'skills-col', f: (c) => { const sk = c.skills || []; return sk.length ? `<div class="sk-wrap">${sk.slice(0, 5).map((x) => `<span class="sk">${esc(x)}</span>`).join('')}${sk.length > 5 ? `<span class="sk more" title="${esc(sk.slice(5).join(', '))}">+${sk.length - 5}</span>` : ''}</div>` : '<span class="faint">—</span>'; } },
       { t: 'Experience', f: (c) => `${c.exp_total === null || c.exp_total === undefined ? '—' : `${c.exp_total} yrs`}<div class="tiny muted">Jewellery: ${jewYrs(c.exp_jewellery)}</div>${c.exp_salary ? `<div class="tiny muted">Expects ${inr(c.exp_salary / 12)}/mo</div>` : ''}` },
       { t: 'City', cls: 'city-col', f: (c) => esc(c.city) },
       { t: 'Status', cls: 'stack-col', f: (c) => `<span class="badge ${c.status === 'Hired' ? 'b-green' : c.status.startsWith('In process') ? 'b-primary' : 'b-outline'}">${esc(c.status)}</span>${c.looking && c.status === 'Available' ? `<div class="tiny muted">${esc(c.looking)}</div>` : ''}` },
-      { t: 'Applied', f: (c) => `${fmtD(c.created_at)}<div class="tiny muted src-cut" title="${esc(c.ad_name || c.ad_set || c.ad_campaign || c.source || '')}">${esc(c.source || '')}</div>`, hideSm: 1 },
+      { t: 'Applied', f: (c) => fmtD(c.created_at), hideSm: 1 },
     ], r.rows, { open: (c) => `candidate:${c.id}`, select: true, scroll: true, empty: filtered ? 'No candidates match these filters.' : 'No candidates yet.' })}${BB.pager(r)}</div>`;
     // More filters stays open while filters in it are changed (each change redraws the list).
     const mf = $('.more-f', el); if (mf) mf.ontoggle = () => { BB.moreFiltersOpen = mf.open; };

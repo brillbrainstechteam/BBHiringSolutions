@@ -85,18 +85,29 @@ if (!all('PRAGMA table_info(client_calls)').some((x) => x.name === 'call_roles')
 route('GET', '/api/call-script', T, () => ({ script: D.settings().call_script }));
 // One call can carry many roles, each with its own count, location and department.
 function callRoles(lines) {
-  const rows = (Array.isArray(lines) ? lines : []).map((x) => ({ role: String(x.role || '').trim(), openings: String(x.openings ?? '').trim(), location: String(x.location || '').trim(), department: String(x.department || '').trim() })).filter((x) => x.role || x.openings);
-  if (rows.some((x) => !x.role)) throw httpError(400, 'Write the role for every count', 'call_roles');
-  if (rows.some((x) => !/^[1-9]\d*$/.test(x.openings))) throw httpError(400, `Write how many openings for ${(rows.find((x) => !/^[1-9]\d*$/.test(x.openings)) || {}).role}`, 'call_roles');
-  return rows.map((x) => ({ ...x, openings: Number(x.openings), job_id: null }));
+  const txt = (v) => String(v ?? '').trim();
+  const rows = (Array.isArray(lines) ? lines : []).map((x) => ({ role: txt(x.role), openings: txt(x.openings), location: txt(x.location), department: txt(x.department), skills: txt(x.skills), duties: txt(x.duties), notes: txt(x.notes) }));
+  const named = rows.filter((x) => x.role || x.openings);
+  if (named.some((x) => !x.role)) throw httpError(400, 'Write the role for every count', 'call_roles');
+  const noCount = named.find((x) => !/^[1-9]\d*$/.test(x.openings)); if (noCount) throw httpError(400, `Write how many openings for ${noCount.role}`, 'call_roles');
+  return { lines: named.map((x) => ({ ...x, openings: Number(x.openings), job_id: null })), loose: rows.filter((x) => !x.role && !x.openings).map((x) => [x.skills, x.duties, x.notes].filter(Boolean).join('\n')).filter(Boolean) };
+}
+// A role typed on a call joins the list, so it is suggested next time and on job forms.
+function learnRoles(lines, industry) {
+  const s = D.settings(); const key = s.industries[industry] ? industry : s.default_industry || Object.keys(s.industries)[0]; const ind = s.industries[key];
+  const known = new Set(Object.values(ind.groups).flatMap((g) => g.jobs).map((x) => x.toLowerCase()));
+  const fresh = [...new Set(lines.map((x) => x.role).filter((x) => !known.has(x.toLowerCase())))]; if (!fresh.length) return;
+  const added = ind.groups['Added roles'] || { dept: 'Other', jobs: [] };
+  D.setSetting('industries', { ...s.industries, [key]: { ...ind, groups: { ...ind.groups, 'Added roles': { ...added, jobs: [...added.jobs, ...fresh] } } } });
 }
 route('POST', '/api/clients/:id/calls', T, (ctx) => {
-  const c = loadClient(ctx); const b = ctx.body || {}; const lines = callRoles(b.call_roles);
-  if (!lines.length && !['skills', 'duties', 'notes'].some((k) => String(b[k] || '').trim())) throw httpError(400, 'Fill in what the client told you', 'call_roles');
+  const c = loadClient(ctx); const b = ctx.body || {}; const { lines, loose } = callRoles(b.call_roles);
+  if (!lines.length && !loose.length) throw httpError(400, 'Fill in what the client told you', 'call_roles');
+  learnRoles(lines, c.industry);
   const uniq = (k) => [...new Set(lines.map((x) => x[k]).filter(Boolean))].join(', ');
-  const row = { client_id: c.id, openings: lines.length ? String(lines.reduce((t, x) => t + x.openings, 0)) : '', location: uniq('location'), department: uniq('department'), roles: lines.map((x) => `${x.role} (${x.openings})`).join(', '), call_roles: lines, skills: b.skills || '', duties: b.duties || '', notes: b.notes || '', by: ctx.actor.label, at: now() };
+  const row = { client_id: c.id, openings: lines.length ? String(lines.reduce((t, x) => t + x.openings, 0)) : '', location: uniq('location'), department: uniq('department'), roles: lines.map((x) => `${x.role} (${x.openings})`).join(', '), call_roles: lines, skills: '', duties: '', notes: loose.join('\n'), by: ctx.actor.label, at: now() };
   insert('client_calls', row);
-  const line = [['Number of openings', row.openings], ['Roles', lines.map((x) => `${x.role} (${x.openings})${x.location ? ` in ${x.location}` : ''}${x.department ? `, ${x.department}` : ''}`).join('; ')], ['Skills required', row.skills], ['Roles and responsibilities expected', row.duties], ['Notes', row.notes]].filter(([, v]) => v).map(([k, v]) => `${k}: ${v}`).join('\n');
+  const line = [['Number of openings', row.openings], ...lines.map((x) => [x.role, [`${x.openings} in ${x.location || c.city || 'no location given'}`, x.department, x.skills && `Skills: ${x.skills}`, x.duties && `Responsibilities: ${x.duties}`, x.notes && `Notes: ${x.notes}`].filter(Boolean).join('; ')]), ['Notes', row.notes]].filter(([, v]) => v).map(([k, v]) => `${k}: ${v}`).join('\n');
   insert('notes', { record_id: c.id, text: `Client call\n${line}`, author: ctx.actor.label, at: now() });
   const ob = { ...(c.onboarding || {}), intro_call: { done: true, date: now(), by: ctx.actor.label, note: '' } }; const st = D.settings().client_stages;
   update('clients', c.id, { onboarding: ob, is_new: 0, ...(st.indexOf('Understanding needs') > st.indexOf(c.stage) ? { stage: 'Understanding needs' } : {}) });
@@ -108,8 +119,8 @@ route('POST', '/api/clients/:id/calls/:call/jobs', T, (ctx) => {
   const c = loadClient(ctx); const k = get('SELECT * FROM client_calls WHERE id=? AND client_id=?', ctx.params.call, c.id); if (!k) throw httpError(404, 'Call not found');
   const lines = k.call_roles || []; const jobs = [];
   for (const x of lines.filter((l) => !l.job_id)) {
-    const j = TEAM.createJob(c, { title: x.role, city: x.location, openings: x.openings, skills: String(k.skills || '').split(',').map((s) => s.trim()).filter(Boolean), notes: [x.department && `Department: ${x.department}`, k.notes].filter(Boolean).join('\n'), recruiter_id: ctx.user.level === 'sub' ? ctx.user.id : undefined }, ctx.actor, false);
-    if (k.duties) update('jobs', j.id, { jd: { ...(j.jd || {}), duties: k.duties } });
+    const j = TEAM.createJob(c, { title: x.role, city: x.location, openings: x.openings, skills: String(x.skills || k.skills || '').split(',').map((s) => s.trim()).filter(Boolean), notes: [x.department && `Department: ${x.department}`, x.notes, k.notes].filter(Boolean).join('\n'), recruiter_id: ctx.user.level === 'sub' ? ctx.user.id : undefined }, ctx.actor, false);
+    if (x.duties || k.duties) update('jobs', j.id, { jd: { ...(j.jd || {}), duties: x.duties || k.duties } });
     x.job_id = j.id; jobs.push(j.id);
   }
   if (!jobs.length) throw httpError(400, 'Every role on this call already has a job');
@@ -189,7 +200,9 @@ route('POST', '/api/clients/:id/lookup', { auth: 'team', rate: { key: 'lookup', 
     system: 'You research Indian businesses for a recruitment agency. Search the web for the exact business named. Use only what you find, and leave a field empty rather than guess. If you cannot tell which business it is, say so in "about".',
     user: `Business: ${b.name || c.company}\nCity: ${b.city || c.city || ''}\nAddress: ${b.address || ex.address || ''}\nType: ${c.business_type || ''}`, schema: LOOK_SCHEMA, name: 'business',
   });
-  const online = { ...r.answer, at: now(), by: ctx.actor.label }; update('clients', c.id, { extra: { ...ex, online } });
+  // What this search cost, in rupees: the search fee plus the tokens, rounded up. An estimate at $1 = ₹88.
+  const u = r.usage || {}; const usd = (u.searches || 0) * 0.01 + ((u.input_tokens || 0) * 0.2 + (u.output_tokens || 0) * 1.25) / 1e6;
+  const online = { ...r.answer, at: now(), by: ctx.actor.label, cost_inr: Math.max(1, Math.ceil(usd * 88)) }; update('clients', c.id, { extra: { ...ex, online } });
   D.history(ctx.actor.label, 'online lookup', c.id);
   return { ...online, usage: r.usage };
 });
