@@ -350,6 +350,12 @@
   };
   P.books = () => location.replace('/team/bills?tab=summary');
 
+  // ---------- The candidate's other applications ----------
+  F.appOthers = (a) => {
+    const list = a.other_apps || []; if (!list.length) return ''; const live = list.filter((x) => x.result === 'open').length; const hired = list.filter((x) => x.result === 'Hired').length;
+    return `<details class="sec card pad others"><summary><b>Other applications</b> <span class="muted">${list.length} · ${live} in progress${hired ? ` · ${hired} hired` : ''} · ${list.length - live - hired} closed</span></summary><div class="stack-sm" style="margin-top:8px">${list.map((x) => `<div class="row between small"><a href="#" data-open="application:${x.id}">${esc(x.job_title)}</a><span class="muted">${esc(x.client_name || '')}</span><span class="badge ${x.result === 'open' ? 'b-primary' : x.result === 'Hired' ? 'b-green' : 'b-outline'}">${esc(x.result === 'open' ? x.step : x.result)}</span></div>`).join('')}</div></details>`;
+  };
+
   // ---------- Asking the client for a slot, and the reply ----------
   const SLOT_LABEL = { Waiting: ['Waiting for the client', 'b-amber'], 'Another time': ['Client wants another time', 'b-red'], Replied: ['Client replied', 'b-amber'], Suggested: ['Check the reply', 'b-amber'], Scheduled: ['Interview fixed', 'b-green'], Closed: ['Closed', 'b-outline'] };
   F.appSlotBtn = (a) => (['Sent to client', 'Client interview'].includes(a.step) ? '<button class="btn sm" data-fslots>Ask client for a slot</button>' : '');

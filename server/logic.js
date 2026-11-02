@@ -4,7 +4,7 @@ const D = require('./db');
 const { all, get, run, insert, update, nextId, settings, history, now, httpError } = D;
 
 // Closing reasons the software uses itself (not in the team's pick list).
-const SYSTEM_CLOSE = ['Position filled', 'Joined elsewhere', 'Requirement not met', 'Rejected at screening'];
+const SYSTEM_CLOSE = ['Job closed', 'Position filled', 'Joined elsewhere', 'Requirement not met', 'Rejected at screening'];
 // The screening decision on an application. Not met / Rejected close it; Under consideration / Accepted keep it open
 // (reopening one closed by an earlier screening decision), and move it on: Applied -> Screening, Accepted -> Our interview.
 const SCREEN = ['Under consideration', 'Requirement not met', 'Rejected', 'Accepted'];
@@ -541,6 +541,7 @@ function closeApplication(appId, reason, by, note) {
   update('applications', appId, { result: reason });
   appHist(appId, app.step, by, `Closed: ${reason}${note ? ' — ' + note : ''}`, 'close');
   history(actorName(by), 'close', appId, 'result', app.result, reason);
+  D.run(`UPDATE slot_asks SET status='Closed' WHERE app_id=? AND status IN (${OPEN_ASK})`, appId);
   // Asked Accounts for an invoice, then the offer fell through: the unissued draft goes.
   if (reason !== 'Did not join') for (const b of all("SELECT * FROM bills WHERE app_id=? AND status='Draft' AND credit_of IS NULL", appId)) { update('bills', b.id, { status: 'Cancelled', payout_status: 'Not due' }); history(actorName(by), 'cancel', b.id, 'status', b.status, 'Cancelled'); }
   if (reason === 'Did not join') {
@@ -756,12 +757,17 @@ function leftJob(appId, o, by) {
 // ---------- job actions ----------
 function jobAction(jobId, action, o, by) {
   const job = get('SELECT * FROM jobs WHERE id=?', jobId); if (!job) throw httpError(404, 'Job opening not found');
-  const who = actorName(by);
+  const who = actorName(by); let closedApps = 0; let restored = 0;
   if (action === 'hold') { update('jobs', jobId, { manual: 'On hold', manual_reason: o.reason || 'Hiring paused' }); }
   else if (action === 'resume') { update('jobs', jobId, { manual: null, manual_reason: null }); }
   else if (action === 'close') {
     if (!o.reason) throw httpError(400, 'Pick a reason', 'reason');
     update('jobs', jobId, { manual: 'Closed', manual_reason: o.reason });
+    // Nothing stays in progress on a closed job. Interviews ahead come off the calendar.
+    for (const a of appsOfJob(jobId).filter((x) => x.result === 'open')) {
+      closeApplication(a.id, 'Job closed', by, o.reason); closedApps++;
+      D.run("UPDATE interviews SET status='Cancelled' WHERE app_id=? AND status IN ('Scheduled','Rescheduled') AND at>?", a.id, now());
+    }
   } else if (action === 'add_seat') {
     // More people for the same position while it is still hiring: same job ID, one more seat each.
     const add = Math.max(1, Math.min(50, Number(o.add) || 1));
@@ -774,12 +780,14 @@ function jobAction(jobId, action, o, by) {
     const add = cur === 'Filled' ? Math.max(1, Number(o.add) || 1) : 0;
     update('jobs', jobId, { manual: null, manual_reason: null, openings: job.openings + add, reopened_at: now(), reopen_tag: 'Reopened' });
     insert('job_history', { job_id: jobId, at: now(), status: 'Reopened', by: who, note: `${o.reason || 'Reopened'}${add ? `, +${add} opening(s)` : ''}` });
+    // Those closed only because the job closed come back. One that cannot (the seats are taken) stays closed.
+    for (const a of appsOfJob(jobId).filter((x) => x.result === 'Job closed')) { try { reopenApplication(a.id, by); restored++; } catch (e) { appHist(a.id, a.step, by, `Not reopened with the job: ${e.message}`, 'reopen'); } }
   } else if (action === 'approve_jd') {
     update('jobs', jobId, { jd_approved: 1, jd_status: 'Approved', jd_note: o.note || null });
   } else throw httpError(400, 'Unknown action');
   history(who, `job ${action}`, jobId, 'manual', job.manual, o.reason || action);
   recalcJob(jobId, who, o.reason || action);
-  return get('SELECT * FROM jobs WHERE id=?', jobId);
+  return { ...get('SELECT * FROM jobs WHERE id=?', jobId), closed_apps: closedApps, restored_apps: restored };
 }
 
 // ---------- leads: one receiving step for every door (11) ----------

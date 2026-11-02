@@ -215,7 +215,7 @@
   function jobAct(j, action) {
     const s = BB.boot;
     if (action === 'hold') return BB.ask({ title: 'Put on hold', fields: [{ name: 'reason', label: 'Reason' }], ok: 'Put on hold', submit: (v) => BB.post(`/api/jobs/${j.id}/action`, { action, ...v }) }).then((x) => x && after('On hold'));
-    if (action === 'close') return BB.ask({ title: 'Close job opening', fields: [{ name: 'reason', label: 'Reason', type: 'select', options: s.job_close_reasons }], ok: 'Close', submit: (v) => BB.post(`/api/jobs/${j.id}/action`, { action, ...v }) }).then((x) => x && after('Closed'));
+    if (action === 'close') return BB.ask({ title: 'Close job opening', note: 'Every open application on this job closes too, and interviews ahead are cancelled. Candidates and clients are not messaged.', fields: [{ name: 'reason', label: 'Reason', type: 'select', options: s.job_close_reasons }], ok: 'Close', submit: (v) => BB.post(`/api/jobs/${j.id}/action`, { action, ...v }) }).then((x) => x && after(`Closed${x.closed_apps ? ` with ${x.closed_apps} application${x.closed_apps === 1 ? '' : 's'}` : ''}`));
     if (action === 'reopen') return BB.ask({ title: 'Reopen job opening', note: 'It keeps the same ID and history.', fields: [{ name: 'reason', label: 'Reason', type: 'select', options: s.reopen_reasons, value: s.reopen_reasons[0] }, ...(j.status === 'Filled' ? [{ name: 'add', label: 'New openings', type: 'number', value: 1 }] : [])], ok: 'Reopen', submit: (v) => BB.post(`/api/jobs/${j.id}/action`, { action, ...v }) }).then((x) => x && after('Reopened'));
     return run(() => BB.post(`/api/jobs/${j.id}/action`, { action }), action === 'approve_jd' ? 'Job description approved — job is live' : 'Done');
   }
@@ -322,6 +322,7 @@
       body: `${cvBar((a.candidate || {}).cv_file, a.cv_name, (a.candidate || {}).phone_hidden ? '' : a.candidate_id)}
         <div class="row" style="margin-bottom:6px">${waBtn({ ptype: 'candidate', pid: a.candidate_id, ap: a.id }, 'Candidate', 'btn sm')}${waBtn({ ptype: 'client', pid: a.client_id, ap: a.id, jb: a.job_id }, 'Client', 'btn sm')}<button class="btn sm ghost" data-open="candidate:${a.candidate_id}">Candidate profile</button></div>
         ${BB.tracker(a.step, a.result)}${BB.flow.appNext(a)}
+        ${BB.flow.appOthers(a)}
         <div class="row" style="margin:10px 0 14px">${btns.join('')}${open ? `<details class="step-menu"><summary class="btn sm">Move to step</summary><div class="step-pop" role="menu">${s.steps.map((x) => `<button type="button" role="menuitem" class="${x === a.step ? 'on' : ''}" ${x === a.step ? 'disabled' : ''} data-setstep="${esc(x)}">${esc(x)}</button>`).join('')}</div></details>` : ''}</div>
         ${screenBlock(a)}
         ${BB.flow.appQuestions(a)}
