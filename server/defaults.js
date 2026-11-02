@@ -159,6 +159,7 @@ module.exports.defaultSettings = () => ({
     kyc: { subject: 'KYC papers for {company}', body: 'Hello {contact},\n\nTo complete your file, please reply with these papers: GST certificate, business PAN and owner ID proof.\n\nRegards,\n{sender}\nBrillBrains Hiring Solutions' },
     pitch: { subject: 'BrillBrains Hiring Solutions: our pitch deck', body: 'Hello {contact},\n\nThank you for your time. Our pitch deck is attached, with how we work and the brands we have hired for.\n\nRegards,\n{sender}\nBrillBrains Hiring Solutions' },
     jd: { subject: 'Job description: {job}', body: 'Hello {contact},\n\nThe job description for {job} is attached. Please let us know if you would like any changes.\n\nRegards,\n{sender}\nBrillBrains Hiring Solutions' },
+    cv: { subject: 'Candidate profile: {job}', body: 'Hello {contact},\n\nA candidate profile for {job} is attached. Please let us know if you would like to interview this candidate, and we will arrange it.\n\nRegards,\n{sender}\nBrillBrains Hiring Solutions' },
     general: { subject: 'An update from BrillBrains Hiring Solutions', body: 'Hello {contact},\n\n\n\nRegards,\n{sender}\nBrillBrains Hiring Solutions' },
   },
   creative_template: 'Role: {title}\nClient type: {client_type}\nCity: {city}\nOpenings: {openings}\nSalary: {salary}\nExperience: {experience}\nMust have: {must}\nApply link: {link}\nDeadline for creative:\nNotes for the designer:',

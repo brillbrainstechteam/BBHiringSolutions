@@ -61,6 +61,7 @@ Everything automatic is held. Held messages are not sent later; only new ones go
 
 ## Good to know
 
+- A Short CV added by hand must be a readable PDF or Word file with no phone, email or link, or the upload is refused. Candidates cannot add one.
 - The CV for clients is rebuilt as a clean BrillBrains PDF, so it does not keep the candidate's own layout. A scanned or photo CV gives a profile summary only, with no resume text.
 - AI ranking runs when someone presses Rank with AI on a job. It does not run by itself, to control cost.
 - Replies are found by the client's saved email address, so it must match the address they write from. Checked every 10 minutes from 2 Nov 2026 on.

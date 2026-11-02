@@ -169,21 +169,27 @@ route('POST', '/api/clients/email', T, (ctx) => {
   if (!ids.length) throw httpError(400, 'Pick at least one client');
   if (!String(b.subject || '').trim()) throw httpError(400, 'Write the subject', 'subject');
   if (!String(b.body || '').trim()) throw httpError(400, 'Write the message', 'body');
-  const out = { done: 0, held: 0, skipped: [] }; const isContract = b.kind === 'contract'; const isDoc = ['contract', 'pitch', 'jd'].includes(b.kind);
+  const out = { done: 0, held: 0, skipped: [] }; const isContract = b.kind === 'contract'; const isDoc = ['contract', 'pitch', 'jd', 'cv'].includes(b.kind);
   // These documents are sent by a person, so they go even while automatic messages are held.
   if (isDoc && !M.configured()) throw httpError(400, 'Email is not set up on the server yet, so this cannot go. Nothing was sent.');
   const jdJob = b.kind === 'jd' ? get('SELECT * FROM jobs WHERE id=?', b.job) : null; if (b.kind === 'jd' && (!jdJob || !(seeJob(ctx.user, jdJob) || R.sameAgency(ctx.user, jdJob)))) throw httpError(404, 'Job not found');
+  // For a CV, b.job is the application. The file is always the cleaned one, chosen here and never by the browser.
+  const cvApp = b.kind === 'cv' ? get('SELECT * FROM applications WHERE id=?', b.job) : null; if (b.kind === 'cv' && (!cvApp || !R.seeApp(ctx.user, cvApp))) throw httpError(404, 'Application not found');
+  const cvJob = cvApp ? get('SELECT * FROM jobs WHERE id=?', cvApp.job_id) : null;
+  if (cvApp && L.stepIdx(cvApp.step) < 3) throw httpError(400, 'Move the candidate to Sent to client first.');
+  if (cvApp && (ids.length !== 1 || ids[0] !== String(cvJob.client_id))) throw httpError(400, 'This CV can only go to the client of this job.');
   const typed = ids.length === 1 ? String(b.to || '').trim() : '';
   if (typed && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(typed)) throw httpError(400, 'Enter a valid email', 'to');
   for (const id of ids) {
     const c = get('SELECT * FROM clients WHERE id=? AND removed=0', id); if (!c || !seeClient(ctx.user, c)) { out.skipped.push(`${id}: not found`); continue; }
     const to = typed || clientEmail(c); if (!to) { if (ids.length === 1) throw httpError(400, 'Enter the client\'s email', 'to'); out.skipped.push(`${c.company}: no email`); continue; }
     if (typed && !clientEmail(c)) update('clients', c.id, { email: typed });
-    const fill = (t) => String(t).replace(/\{(company|contact|sender|job)\}/g, (m, k) => ({ company: c.company, contact: c.contact || 'Sir/Madam', sender, job: jdJob ? jdJob.title : '' }[k]));
+    const fill = (t) => String(t).replace(/\{(company|contact|sender|job)\}/g, (m, k) => ({ company: c.company, contact: c.contact || 'Sir/Madam', sender, job: (jdJob || cvJob || {}).title || '' }[k]));
     const subject = fill(b.subject); const text = fill(b.body);
     const html = M.layout(subject, text.split(/\n{2,}/).map((p) => `<p style="font-size:14px;line-height:1.65;margin:0 0 12px">${p.split('\n').map((x) => x.replace(/[&<>]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[ch]))).join('<br>')}</p>`).join(''));
-    const eid = M.queue({ to, subject, text, html, kind: b.kind || 'client_mail', recordId: c.id, attachments: b.kind === 'pitch' ? [{ pitch: true }] : jdJob ? [{ jd_job: jdJob.id }] : isContract || b.attach_agreement ? [editedAgreement(c.id) ? { file_id: editedAgreement(c.id).id } : { agreement: true }] : [], force: isDoc, person: true });
+    const eid = M.queue({ to, subject, text, html, kind: b.kind || 'client_mail', recordId: c.id, attachments: b.kind === 'pitch' ? [{ pitch: true }] : jdJob ? [{ jd_job: jdJob.id }] : cvApp ? [{ file_id: clientCvFor(cvApp.candidate_id, ctx.actor).id }] : isContract || b.attach_agreement ? [editedAgreement(c.id) ? { file_id: editedAgreement(c.id).id } : { agreement: true }] : [], force: isDoc, person: true });
     if (!eid) { out.skipped.push(`${c.company}: not a valid email`); continue; }
+    if (cvApp) L.appHist(cvApp.id, cvApp.step, ctx.actor, `CV without phone and email emailed to ${to}`, 'paper');
     if (isContract) {
       const st = D.settings().client_stages;
       update('clients', c.id, { onboarding: { ...(c.onboarding || {}), proposal: { done: true, date: now(), by: ctx.actor.label, note: 'Agreement emailed' } }, ...(st.indexOf('Agreement shared') > st.indexOf(c.stage) ? { stage: 'Agreement shared' } : {}) });
@@ -318,9 +324,21 @@ route('POST', '/api/creatives', CH, (ctx) => {
 });
 
 // ---------- screening: the best people for a job, from applications and the resume bank ----------
+// What a resume loses before a client sees it. Dates look like long numbers, so they are kept apart from phone numbers.
+const MAIL_RE = /[\w.+-]+\s*(?:@|[[({]\s*at\s*[\])}])\s*[\w-]+(?:\.[\w-]+|\s*(?:\.|[[({]\s*dot\s*[\])}]|\bdot\b)\s*(?:com|co|in|net|org|edu|info|biz|io)\b)+/gi;
+const MAIL_WORDS_RE = /[\w.+-]+\s+at\s+[\w-]+\s+dot\s+\w+|[\w.+-]+\s+at\s+(?:gmail|yahoo|hotmail|outlook|rediffmail|icloud)\.\w+/gi;
+const DATE = String.raw`(?:\d{1,2}[.-]){0,2}(?:19|20)\d\d(?:-\d\d\b)?(?!\d)`;
+const DATES_FIRST = new RegExp(String.raw`^[\s(]*(?:${DATE}[\s().-]*){2,}`);
+const DATES_LAST = new RegExp(String.raw`(?:[\s().-]*(?<!\d)${DATE}){2,}\s*$`);
+const ONLY_DATES = new RegExp(String.raw`^[\s(]*(?:${DATE}[\s().-]*)+$`);
+const LABELLED_NO_RE = /\b(?:telephone|phone|tel|mobile|mob|cell|contact|landline|whatsapp|ph|fax)\b(?:\s*(?:no|num|number)\b)?\.?\s*[:\-.]*\s*(\+?[\d()][\d\s().-]{4,}\d)/gi;
+const dropPhone = (m) => {
+  const first = (m.match(DATES_FIRST) || [''])[0]; const rest = m.slice(first.length); const last = (rest.match(DATES_LAST) || [''])[0];
+  return rest.slice(0, rest.length - last.length).replace(/\D/g, '').length >= 10 ? ` ${first} ${last} ` : m;
+};
 const cleanText = (t, c) => {
-  let s = String(t || '').replace(/[\w.+-]+@[\w-]+(\.[\w-]+)+/g, ' ').replace(/https?:\/\/\S+|www\.\S+|wa\.me\/\S+|linkedin\.com\/\S+/gi, ' ').replace(/(?:\+?\d[\d\s().-]{8,}\d)/g, (m) => (m.replace(/\D/g, '').length >= 10 ? ' ' : m));
-  if (c && c.whatsapp) s = s.split(c.whatsapp).join(' ');
+  let s = String(t || '').replace(MAIL_RE, ' ').replace(MAIL_WORDS_RE, ' ').replace(/https?:\/\/\S+|www\.\S+|wa\.me\/\S+|(?:linkedin|facebook|instagram|github|twitter)\.com\/\S+/gi, ' ').replace(/\+?\(?\d[\d\s().-]{8,}\d/g, dropPhone).replace(LABELLED_NO_RE, (m, no) => (no.replace(/\D/g, '').length >= 7 && !ONLY_DATES.test(no) ? ' ' : m));
+  if (c && c.whatsapp) s = s.split(c.whatsapp).join(' ').split(String(c.whatsapp).slice(-10)).join(' ');
   if (c && c.email) s = s.split(c.email).join(' ');
   return s;
 };
@@ -380,7 +398,7 @@ route('POST', '/api/applications/screen-bulk', T, (ctx) => {
 // ---------- the CV the client sees: no phone, no email ----------
 function clientCvLines(c) {
   const head = [{ text: `${c.id} · ${c.job_wanted || ''}`, bold: true, size: 12 }, `City: ${c.city || '-'}  ·  Will work in: ${(c.work_cities || []).join(', ') || c.city || '-'}`, `Experience: ${c.exp_total ?? '-'} years (jewellery ${c.exp_jewellery ?? '-'})`, `Current company: ${c.current_company || '-'}`, `Expected salary: ${c.exp_salary ? `${L.inr(c.exp_salary / 12)} a month` : '-'}  ·  Notice: ${c.notice_days ?? '-'} days`, '', { text: 'Skills', bold: true }, (c.skills || []).join(', ') || '-', ''];
-  const body = cleanText(RES.cvTextOf(c), c).split('\n').map((l) => l.replace(/\b(?:phone|mobile|mob|contact(?: no\.?)?|whatsapp|e-?mail|tel)\b\s*(?:no\.?)?\s*[:\-.]*\s*$/i, '').trimEnd()).filter((l, i, a) => l.trim() || (a[i - 1] || '').trim());
+  const body = cleanText(RES.cvTextOf(c), c).split('\n').map((l) => l.replace(/\b(?:phone|mobile|mob|cell|contact(?: no\.?)?|whatsapp|e-?mail(?: id)?|tel)\b\s*(?:no\.?)?\s*[:\-.]*\s*$/i, '').replace(/^[\s/|,;:()•·-]+$/, '').trimEnd()).filter((l, i, a) => l.trim() || (a[i - 1] || '').trim());
   return [...head, ...(body.join('').trim() ? [{ text: 'Resume', bold: true }, ...body] : []), '', 'Contact details are held by BrillBrains Hiring Solutions, who arrange all interviews.'];
 }
 function makeClientCv(c, by) {
@@ -389,6 +407,12 @@ function makeClientCv(c, by) {
   D.history(L.actorName(by), 'client cv', c.id); return f;
 }
 function clientCvFor(candId, by) { const c = get('SELECT * FROM candidates WHERE id=?', candId); if (!c) return null; return c.short_cv_file && c.short_cv_for === (c.cv_file || 'profile') ? get('SELECT * FROM files WHERE id=?', c.short_cv_file) : makeClientCv(c, by); }
+// A Short CV added by hand goes to the client as it is, so it has to be readable and free of contact details.
+function checkClientCv(name, data, c) {
+  const text = require('./cvparse').cvText(name, Buffer.from(String(data || '').replace(/^data:[^,]*,/, ''), 'base64'));
+  if (!text.trim()) throw httpError(400, 'We could not read this file, so we cannot confirm it has no phone or email. Upload a PDF or Word file with text.');
+  if (cleanText(text, c).replace(/\s+/g, '') !== text.replace(/\s+/g, '')) throw httpError(400, 'This file still shows a phone number, email or link. Remove it and upload again.');
+}
 route('POST', '/api/applications/:id/client-cv', T, (ctx) => { const a = loadApp(ctx); return makeClientCv(get('SELECT * FROM candidates WHERE id=?', a.candidate_id), ctx.actor); });
 
 // ---------- offer stages and the invoice through Accounts ----------
@@ -442,7 +466,7 @@ function nextStep(a, bill) {
   switch (a.step) {
     case 'Applied': case 'Screening': return 'Screen the CV: accept to call them, or mark it not suitable.';
     case 'Our interview': return !passed('phone') ? 'Schedule the telephonic round.' : !passed('video') ? 'Telephonic cleared. Schedule the virtual round.' : 'Virtual cleared. Send the CV to the client.';
-    case 'Sent to client': return 'The CV goes without phone and email. When the client replies, schedule their interview.';
+    case 'Sent to client': return 'Use Email CV to client: it goes without phone and email. When the client replies, schedule their interview.';
     case 'Client interview': return ivs.some((i) => i.result === 'Selected') ? 'Selected. Download the offer letter template below, fill it in, then record the offer.' : 'Record the client\'s decision. Selected goes to the offer; rejected goes back to searching.';
     case 'Offer made': return !a.verbal_at ? 'Note the client\'s verbal offer.' : !a.verbal_ok_at ? 'Note whether the candidate accepted verbally.' : !a.letter_at ? 'Note when the client shares the offer letter.' : bill && bill.accounts_asked_at ? 'Mark the offer accepted once the candidate accepts it.' : 'Ask Accounts to prepare the invoice.';
     case 'Offer accepted': return bill && bill.accounts_asked_at ? 'Mark joined on the joining date.' : 'Ask Accounts to prepare the invoice.';
@@ -514,4 +538,4 @@ route('GET', '/api/holds', SUPER, () => {
   return { wa: !!w.everyone, email: !!w.email, allow: w.allow || [], rows, mails, smtp: M.configured(), crm: !!s.crm.enabled, accounts_email: s.accounts_email || '', unapproved: Object.entries(fm).filter(([, f]) => !f.approved).map(([k]) => k) };
 });
 
-module.exports = { VOICE_PROMPT, VOICE_SCHEMA, rowFor, LOOK_SYSTEM, LOOK_SCHEMA, agreementFile, clientMail, clientByEmail, mailFiles, clientCvFor, makeClientCv, nextStep, cleanText };
+module.exports = { VOICE_PROMPT, VOICE_SCHEMA, rowFor, LOOK_SYSTEM, LOOK_SCHEMA, agreementFile, clientMail, clientByEmail, mailFiles, clientCvFor, makeClientCv, checkClientCv, nextStep, cleanText };

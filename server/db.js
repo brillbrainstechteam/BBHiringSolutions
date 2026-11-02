@@ -236,6 +236,11 @@ function ensureSettings() {
     setSetting('email_templates', { pitch: defs.email_templates.pitch, jd: defs.email_templates.jd, ...(settings().email_templates || {}) });
     setSetting('done_once', [...(settings().done_once || []), 'email_docs_2026_11_02']);
   }
+  if (!once.includes('client_cv_2026_11_02')) {
+    setSetting('email_templates', { cv: defs.email_templates.cv, ...(settings().email_templates || {}) });
+    run('UPDATE candidates SET short_cv_for=NULL'); // made by the older cleaner: the next one is made afresh
+    setSetting('done_once', [...(settings().done_once || []), 'client_cv_2026_11_02']);
+  }
   if (!once.includes('format_client_thanks')) {
     const f = defs.formats.bbhs_client_thanks; setSetting('formats', { ...settings().formats, bbhs_client_thanks: f });
     setSetting('done_once', [...(settings().done_once || []), 'format_client_thanks']);

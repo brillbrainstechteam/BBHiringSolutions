@@ -782,9 +782,11 @@ route('POST', '/api/cand/files', K, async (ctx) => {
     if (b.type === 'offer_signed') L.appHist(a.id, a.step, ctx.actor, 'Signed offer letter uploaded', 'paper');
     return f;
   }
-  const f = await F.saveFile({ recordId: ctx.candidate.id, type: b.type === 'short_cv' ? 'short_cv' : 'cv', name: b.name, base64: b.base64, by: ctx.actor.label });
-  update('candidates', ctx.candidate.id, { [b.type === 'short_cv' ? 'short_cv_file' : 'cv_file']: String(f.id), last_updated: now() });
-  const filled = b.type === 'short_cv' ? [] : CV.fillCandidate(ctx.candidate.id, b.name, b.base64, ctx.actor.label);
+  // The client's copy is made by us, so a candidate cannot put one in place.
+  if (b.type === 'short_cv') throw httpError(400, 'Upload your full CV here.');
+  const f = await F.saveFile({ recordId: ctx.candidate.id, type: 'cv', name: b.name, base64: b.base64, by: ctx.actor.label });
+  update('candidates', ctx.candidate.id, { cv_file: String(f.id), last_updated: now() });
+  const filled = CV.fillCandidate(ctx.candidate.id, b.name, b.base64, ctx.actor.label);
   return { ...f, filled };
 });
 route('GET', '/api/cand/export', K, (ctx) => {

@@ -1794,9 +1794,11 @@ route('POST', '/api/followups/:id/done', T, (ctx) => { D.run('UPDATE followups S
 route('GET', '/api/history/:id', T, (ctx) => all('SELECT * FROM history WHERE record_id=? ORDER BY id DESC LIMIT 200', ctx.params.id));
 route('POST', '/api/files', T, async (ctx) => {
   const b = ctx.body; if (b.type === 'agreement_client' && !/\.(docx|pdf)$/i.test(b.name || '')) throw httpError(400, 'Upload the agreement as a Word or PDF file');
+  const forClient = b.type === 'short_cv' ? get('SELECT * FROM candidates WHERE id=?', b.record_id) : null;
+  if (b.type === 'short_cv') { if (!forClient) throw httpError(404, 'Candidate not found'); require('./flow').checkClientCv(b.name, b.base64, forClient); }
   const f = await F.saveFile({ recordId: b.record_id, type: b.type || 'file', name: b.name, base64: b.base64, by: ctx.actor.label });
   if (b.type === 'cv') { update('candidates', b.record_id, { cv_file: String(f.id), last_updated: now() }); f.filled = require('./cvparse').fillCandidate(b.record_id, b.name, b.base64, ctx.actor.label); }
-  if (b.type === 'short_cv') update('candidates', b.record_id, { short_cv_file: String(f.id) });
+  if (b.type === 'short_cv') update('candidates', b.record_id, { short_cv_file: String(f.id), short_cv_for: forClient.cv_file || 'profile' });
   if (['gst', 'pan', 'owner_id'].includes(b.type)) { const c = get('SELECT * FROM clients WHERE id=?', b.record_id); update('clients', c.id, { kyc: { ...(c.kyc || {}), [b.type]: f.id } }); L.checkActivation(c.id, ctx.actor); }
   if (b.type === 'contract_signed') update('clients', b.record_id, { contract: JSON.stringify({ file: f.id, by: ctx.actor.label, at: now(), method: 'Signed copy uploaded' }) });
   if (b.type === 'contract_signed') L.checkActivation(b.record_id, ctx.actor);

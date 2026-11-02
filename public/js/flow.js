@@ -115,7 +115,7 @@
   };
   F.composeMail = async (ids, kind, label, job) => {
     const t = await BB.api(`/api/email-templates?ids=${ids.join(',')}`); const tp = t.templates[kind] || t.templates.general;
-    const contract = kind === 'contract'; const doc = { contract: 'Recruitment Agreement', pitch: 'BrillBrains Hiring Solutions Pitch Deck', jd: 'Job description (PDF)' }[kind]; const held = t.held && !doc; const one = t.recipients.length === 1 ? t.recipients[0] : null; const none = t.recipients.filter((x) => !x.email);
+    const contract = kind === 'contract'; const doc = { contract: 'Recruitment Agreement', pitch: 'BrillBrains Hiring Solutions Pitch Deck', jd: 'Job description (PDF)', cv: 'Candidate CV, without phone and email' }[kind]; const held = t.held && !doc; const one = t.recipients.length === 1 ? t.recipients[0] : null; const none = t.recipients.filter((x) => !x.email);
     const who = `<div class="small muted">${t.from ? `From: <b>${esc(t.from)}</b>` : ''}${one ? '' : `<div>To: each client's saved email (${t.recipients.length - none.length} of ${t.recipients.length})${none.length ? `. No email for ${none.slice(0, 3).map((x) => esc(x.company)).join(', ')}${none.length > 3 ? ` and ${none.length - 3} more` : ''}` : ''}</div>`}</div>`;
     const v = await BB.ask({ title: label, wide: true, fields: [who, ...(one ? [{ name: 'to', label: 'To', type: 'email', value: one.email }] : []), { name: 'subject', label: 'Subject', value: tp.subject }, { name: 'body', label: 'Message', type: 'textarea', value: tp.body, voice: false }, doc ? `<div class="small muted">Attached: ${contract ? (one ? esc(one.agreement || doc) : `${doc}, or the client's edited copy`) : doc}</div>` : { name: 'attach_agreement', label: 'Attach the Recruitment Agreement', type: 'check' }], ok: held ? 'Save for later' : 'Send', submit: (x) => BB.post('/api/clients/email', { ids, kind, job, ...x }) });
     if (v) done(`${v.done} of ${ids.length} ${v.held ? 'saved' : 'sent'}${v.skipped.length ? ` · ${v.skipped[0]}` : ''}`);
@@ -233,12 +233,13 @@
     return `${tpl}<div class="sec card pad"><h3 style="margin-bottom:6px">Offer steps</h3>${st.map(([k, l, at]) => `<label class="row small"><input type="checkbox" data-ostage="${k}" ${at ? 'checked' : ''} ${a.result === 'open' ? '' : 'disabled'}> ${l}${at ? ` <span class="faint">${fmtDT(at)}</span>` : ''}</label>`).join('')}
       ${canAdmin() && a.offer_ctc ? `<div class="row" style="margin-top:8px">${asked ? `<span class="small muted">Accounts asked ${fmtDT(asked)}</span>` : ''}<button class="btn sm ${asked ? '' : 'primary'}" data-faccounts>${asked ? 'Ask again' : 'Ask Accounts for the invoice'}</button>${a.bill ? `<a href="#" class="small" data-open="bill:${a.bill.id}">Open bill</a>` : ''}</div>` : ''}</div>`;
   };
-  F.appCv = (a) => `<button class="btn sm" data-fcv>CV for client</button>`;
+  F.appCv = (a) => `<button class="btn sm" data-fcv>CV for client</button>${a.step === 'Our interview' ? '' : '<button class="btn sm" data-fcvmail>Email CV to client</button>'}`;
   F.appMount = (el, a) => {
     $$('[data-ostage]', el).forEach((c) => (c.onchange = () => act(() => BB.post(`/api/applications/${a.id}/offer-stage`, { stage: c.dataset.ostage, on: c.checked }), 'Saved')));
     const tp = $('[data-ftpl]', el); if (tp) tp.onclick = () => BB.download('/api/offer-template/file');
     const ac = $('[data-faccounts]', el); if (ac) ac.onclick = () => act(() => BB.post(`/api/applications/${a.id}/ask-invoice`), (r) => (r.email === 'no address' ? 'Draft bill made. Add the Accounts email in Settings → Fees & limits' : r.email === 'held' ? 'Draft bill made. The email is saved: messages are off' : 'Accounts asked'));
     const cv = $('[data-fcv]', el); if (cv) cv.onclick = async () => { try { const f = await BB.post(`/api/applications/${a.id}/client-cv`); BB.openFile(f.id); BB.toast('CV made without phone and email'); } catch (e) { BB.fail(e); } };
+    const cvm = $('[data-fcvmail]', el); if (cvm) cvm.onclick = () => F.composeMail([a.client.id], 'cv', 'Email CV to client', a.id);
   };
 
   // ---------- bill: Accounts' invoice and payment follow-ups ----------
