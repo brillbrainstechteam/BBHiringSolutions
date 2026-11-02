@@ -1122,7 +1122,7 @@ function appRows(q, u) {
 // Each application's fit with its job: the AI's score when it has read them, otherwise the matching rules. Best first.
 function scoreApps(rows, q) {
   const flow = require('./flow'); const cands = new Map(all('SELECT * FROM candidates').map((c) => [c.id, c])); const jobs = new Map(all('SELECT * FROM jobs').map((j) => [j.id, j]));
-  const out = rows.map((a) => { const c = cands.get(a.candidate_id); const j = jobs.get(a.job_id); if (!c || !j) return { ...a, score: 0, good: [], gaps: [] }; const f = flow.rowFor(j, c, L.matchScore(c, j, L.ratingOf(c.id)), {}); return { ...a, score: f.score, good: f.points || [], gaps: f.gaps || [] }; })
+  const out = rows.map((a) => { const c = cands.get(a.candidate_id); const j = jobs.get(a.job_id); if (!c || !j) return { ...a, score: 0, good: [], gaps: [] }; const f = flow.rowFor(j, c, L.matchScore(c, j, L.ratingOf(c.id)), {}); return { ...a, cv_file: c.cv_file || null, score: f.score, good: f.points || [], gaps: f.gaps || [] }; })
     .filter((a) => (q.score_min === undefined || q.score_min === '' || a.score >= Number(q.score_min)) && (q.score_max === undefined || q.score_max === '' || a.score <= Number(q.score_max)));
   return q.sort ? sortBy(out, q, ['score', 'candidate_name', 'job_title', 'step', 'days_in_step']) : [...out].sort((x, y) => y.score - x.score);
 }
@@ -1159,7 +1159,7 @@ route('GET', '/api/applications/:id', T, (ctx) => {
   const job = get('SELECT * FROM jobs WHERE id=?', a.job_id); const cand = get('SELECT * FROM candidates WHERE id=?', a.candidate_id); const client = get('SELECT * FROM clients WHERE id=?', job.client_id);
   const bill = get('SELECT * FROM bills WHERE app_id=? AND credit_of IS NULL ORDER BY created_at DESC', a.id);
   return {
-    ...v, candidate: candidateOut(ctx.user, cand), job: V.jobView(job), client: { id: client.id, company: client.company, contact: client.contact },
+    ...v, candidate: candidateOut(ctx.user, cand), cv_name: cand.cv_file ? (get('SELECT name FROM files WHERE id=?', cand.cv_file) || {}).name || '' : '', job: V.jobView(job), client: { id: client.id, company: client.company, contact: client.contact },
     history: all('SELECT * FROM app_history WHERE app_id=? ORDER BY at DESC, id DESC', a.id), messages: all('SELECT * FROM messages WHERE ap=? ORDER BY at DESC', a.id),
     score: (() => { const m = L.matchScore(cand, job, L.ratingOf(cand.id)); const f = require('./flow').rowFor(job, cand, m, {}); return { ...m, score: f.score, reasons: f.points, gaps: f.gaps }; })(), bill: bill ? L.billView(bill) : null, suggest: suggestFor(a), steps: L.STEPS, selected: !!get("SELECT 1 FROM interviews WHERE app_id=? AND result='Selected'", a.id), next: require('./flow').nextStep(a, bill), client_cv: cand.short_cv_file || null,
     files: all('SELECT * FROM files WHERE record_id=? AND replaced=0 ORDER BY at DESC', a.id), notes: all('SELECT * FROM notes WHERE record_id=? ORDER BY at DESC', a.id),

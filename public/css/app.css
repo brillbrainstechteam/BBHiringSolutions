@@ -1694,3 +1694,22 @@ button.rs-step:hover { background: var(--surface-2); }
 .vn-box { padding: 14px 16px; border: 1px solid var(--border); border-radius: 14px; background: var(--surface-2); }
 .vn-box .vn-top { margin-bottom: 10px; }
 .vn-box .vn-mic { width: 52px; height: 52px; }
+/* Record views: one height for every button, dropdown and field. */
+.panel .btn:not(.icon), .panel .btn.sm:not(.icon) { height: 36px; min-height: 36px; padding: 0 14px; font-size: 13px; }
+.panel select, .panel .sec-act select, .panel .rs-own, .panel .field input:not([type=checkbox]):not([type=radio]), .panel .rs-link input, .panel .rs-done input { height: 36px; min-height: 36px; font-size: 13px; }
+.panel select, .panel .sec-act select, .panel .rs-own { padding: 0 32px 0 14px; border-radius: 999px; background-position: right 12px center; }
+.panel .row { align-items: center; }
+/* Move to step */
+.step-menu { position: relative; }
+.step-menu > summary { list-style: none; cursor: pointer; }
+.step-menu > summary::-webkit-details-marker { display: none; }
+.step-menu > summary::after { content: ''; width: 7px; height: 7px; margin: -3px 0 0 4px; border-right: 2px solid currentColor; border-bottom: 2px solid currentColor; transform: rotate(45deg); }
+.step-menu[open] > summary { border-color: var(--mustard); }
+.step-pop { position: absolute; z-index: 30; top: calc(100% + 6px); left: 0; width: 200px; padding: 4px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow-lg); }
+.step-pop button { display: block; width: 100%; padding: 8px 10px; border: 0; border-radius: 8px; background: none; font: 500 13px var(--font); color: var(--ink); text-align: left; cursor: pointer; }
+.step-pop button:hover:not(:disabled) { background: var(--surface-2); }
+.step-pop button.on { color: var(--muted); font-weight: 600; cursor: default; }
+.step-pop button.on::after { content: ' · now'; font-weight: 400; }
+/* Resume, first in a record */
+.cv-bar { display: flex; align-items: center; gap: 12px; padding: 12px 14px; margin-bottom: 12px; background: var(--surface); border: 1px solid var(--border); border-radius: 14px; box-shadow: var(--shadow-sm); }
+.cv-bar .file-main { flex: 1; }
