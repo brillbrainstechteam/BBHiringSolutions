@@ -1124,7 +1124,7 @@ function scoreApps(rows, q) {
   const flow = require('./flow'); const cands = new Map(all('SELECT * FROM candidates').map((c) => [c.id, c])); const jobs = new Map(all('SELECT * FROM jobs').map((j) => [j.id, j]));
   const out = rows.map((a) => { const c = cands.get(a.candidate_id); const j = jobs.get(a.job_id); if (!c || !j) return { ...a, score: 0, good: [], gaps: [] }; const f = flow.rowFor(j, c, L.matchScore(c, j, L.ratingOf(c.id)), {}); return { ...a, cv_file: c.cv_file || null, score: f.score, good: f.points || [], gaps: f.gaps || [] }; })
     .filter((a) => (q.score_min === undefined || q.score_min === '' || a.score >= Number(q.score_min)) && (q.score_max === undefined || q.score_max === '' || a.score <= Number(q.score_max)));
-  return q.sort ? sortBy(out, q, ['score', 'candidate_name', 'job_title', 'step', 'days_in_step']) : [...out].sort((x, y) => y.score - x.score);
+  return q.sort ? sortBy(out, q, ['score', 'candidate_name', 'source', 'job_title', 'step', 'days_in_step']) : [...out].sort((x, y) => y.score - x.score);
 }
 route('POST', '/api/applications/reject-below', T, (ctx) => {
   const b = ctx.body || {}; const n = Number(b.score); if (!(n > 0 && n <= 100)) throw httpError(400, 'Enter a score from 1 to 100', 'score');
