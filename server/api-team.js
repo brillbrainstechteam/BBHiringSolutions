@@ -963,6 +963,7 @@ route('GET', '/api/candidates/:id', T, (ctx) => {
     track: apps.map((a) => ({ id: a.id, job_id: a.job_id, job_title: a.job_title, client_name: a.client_name, step: a.step, result: a.result, created_at: a.created_at, screen: a.screen, screen_note: a.screen_note, screen_by: a.screen_by, screen_at: a.screen_at, offer_ctc: a.offer_ctc, joining_date: a.joining_date,
       interviews: (a.interviews || []).map((i) => ({ id: i.id, name: i.name, round: i.round, mode: i.mode, mode_label: i.mode_label, at: i.at, status: i.status, result: i.result, rating: i.rating, remark: i.remark, interviewer: i.interviewer, notes: all('SELECT author, author_kind, text, at FROM iv_notes WHERE iv_id=? ORDER BY at', i.id) })),
       calls: all("SELECT * FROM calls WHERE app_id=? AND status='Done' ORDER BY at", a.id), steps: all("SELECT at, step, by, note, kind FROM app_history WHERE app_id=? ORDER BY at, id", a.id) })),
+    story: L.candidateStory(c.id), known: L.candidateKnown(c), eval_criteria: D.settings().eval_criteria || [],
     notes: all('SELECT * FROM notes WHERE record_id=? ORDER BY at DESC', c.id), calls: all("SELECT * FROM calls WHERE candidate_id=? AND status='Done' ORDER BY at DESC LIMIT 200", c.id), call_outcomes: L.CALL_OUTCOMES,
     iv_notes: all('SELECT n.*, i.name iv_name, i.mode, i.at iv_at FROM iv_notes n JOIN interviews i ON i.id=n.iv_id WHERE n.candidate_id=? ORDER BY n.at DESC', c.id), consents: all("SELECT * FROM consents WHERE person_type='candidate' AND person_id=? ORDER BY at DESC", c.id),
     tieup: c.tieup_id ? get('SELECT * FROM tieups WHERE id=?', c.tieup_id) : null, referral_link: L.link('apply', `?ref=${c.id}`), agency_name: V.agencyName(c.agency_id), recruiter_name: V.userName(c.recruiter_id),
@@ -980,6 +981,14 @@ route('PATCH', '/api/candidates/:id', T, (ctx) => {
   patch.last_updated = now();
   if (isSuper(ctx.user) && ctx.body.agency_id !== undefined) patch.agency_id = ctx.body.agency_id;
   return D.edit('candidates', c.id, patch, ctx.actor.label, ctx.ip);
+});
+// A structured view of the candidate, saved each time so earlier ones stay. The last one opens ready to update.
+route('POST', '/api/candidates/:id/evaluation', T, (ctx) => {
+  const c = get('SELECT * FROM candidates WHERE id=?', ctx.params.id); if (!c) throw httpError(404, 'Candidate not found'); const b = ctx.body || {}; const known = D.settings().eval_criteria || [];
+  const scores = Object.fromEntries(Object.entries(b.scores || {}).filter(([k, v]) => known.includes(k) && ['Strong', 'OK', 'Weak'].includes(v))); const note = String(b.note || '').trim();
+  if (!Object.keys(scores).length) throw httpError(400, 'Mark at least one point', 'scores');
+  const a = b.app_id ? get('SELECT * FROM applications WHERE id=? AND candidate_id=?', b.app_id, c.id) : null;
+  insert('evaluations', { candidate_id: c.id, app_id: a ? a.id : null, scores, note, by: ctx.actor.label, at: now() }); return { ok: true };
 });
 // The copy with phone and email taken out, for reading or sharing inside the team.
 route('POST', '/api/candidates/:id/hidden-cv', T, (ctx) => {
@@ -1170,7 +1179,7 @@ route('GET', '/api/applications/:id', T, (ctx) => {
   const job = get('SELECT * FROM jobs WHERE id=?', a.job_id); const cand = get('SELECT * FROM candidates WHERE id=?', a.candidate_id); const client = get('SELECT * FROM clients WHERE id=?', job.client_id);
   const bill = get('SELECT * FROM bills WHERE app_id=? AND credit_of IS NULL ORDER BY created_at DESC', a.id);
   return {
-    ...v, candidate: candidateOut(ctx.user, cand), cv_name: cand.cv_file ? (get('SELECT name FROM files WHERE id=?', cand.cv_file) || {}).name || '' : '', rounds: L.roundsOf(a), other_apps: all('SELECT * FROM applications WHERE candidate_id=? AND id<>? ORDER BY created_at DESC', a.candidate_id, a.id).filter((x) => R.seeApp(ctx.user, x)).map(V.appView).map((x) => ({ id: x.id, job_title: x.job_title, client_name: x.client_name, step: x.step, result: x.result })), slot_ask: get("SELECT * FROM slot_asks WHERE app_id=? AND status<>'Cancelled' ORDER BY id DESC LIMIT 1", a.id) || null, questions: get('SELECT * FROM app_questions WHERE app_id=?', a.id) || null, job: V.jobView(job), client: { id: client.id, company: client.company, contact: client.contact },
+    ...v, candidate: candidateOut(ctx.user, cand), cv_name: cand.cv_file ? (get('SELECT name FROM files WHERE id=?', cand.cv_file) || {}).name || '' : '', story: L.candidateStory(a.candidate_id), known: L.candidateKnown(cand), eval_criteria: D.settings().eval_criteria || [], rounds: L.roundsOf(a), other_apps: all('SELECT * FROM applications WHERE candidate_id=? AND id<>? ORDER BY created_at DESC', a.candidate_id, a.id).filter((x) => R.seeApp(ctx.user, x)).map(V.appView).map((x) => ({ id: x.id, job_title: x.job_title, client_name: x.client_name, step: x.step, result: x.result })), slot_ask: get("SELECT * FROM slot_asks WHERE app_id=? AND status<>'Cancelled' ORDER BY id DESC LIMIT 1", a.id) || null, questions: get('SELECT * FROM app_questions WHERE app_id=?', a.id) || null, job: V.jobView(job), client: { id: client.id, company: client.company, contact: client.contact },
     history: all('SELECT * FROM app_history WHERE app_id=? ORDER BY at DESC, id DESC', a.id), messages: all('SELECT * FROM messages WHERE ap=? ORDER BY at DESC', a.id),
     score: (() => { const m = L.matchScore(cand, job, L.ratingOf(cand.id)); const f = require('./flow').rowFor(job, cand, m, {}); return { ...m, score: f.score, reasons: f.points, gaps: f.gaps }; })(), bill: bill ? L.billView(bill) : null, suggest: suggestFor(a), steps: L.STEPS, selected: !!get("SELECT 1 FROM interviews WHERE app_id=? AND result='Selected'", a.id), next: require('./flow').nextStep(a, bill), client_cv: cand.short_cv_file || null,
     files: all('SELECT * FROM files WHERE record_id=? AND replaced=0 ORDER BY at DESC', a.id), notes: all('SELECT * FROM notes WHERE record_id=? ORDER BY at DESC', a.id),
@@ -1770,7 +1779,7 @@ route('POST', '/api/roles/role', T, (ctx) => {
 });
 
 // ---------- settings (super admin) ----------
-const EDITABLE = ['call_gate', 'accounts_email', 'resume_alert_pct', 'expense_tree', 'expense_accounts', 'revenue_kinds', 'call_script', 'email_templates', 'creative_template', 'hiring_channels', 'landing_roles', 'wa_pause', 'business', 'industries', 'default_industry', 'hidden_jobs', 'departments', 'cities', 'skills', 'client_stages', 'closing_reasons', 'job_close_reasons', 'reopen_reasons', 'lead_sources', 'src_tags', 'fee', 'agency_share_pct', 'gst', 'replacement_days', 'payment_days', 'targets', 'log_deadline', 'quiet', 'daily_limit', 'bulk_budget', 'match', 'languages', 'id_start', 'bill_prefix', 'retention_years', 'team_idle_hours', 'formats', 'auto_rules', 'crm', 'posting_channels', 'gap_targets', 'templates', 'jd_template', 'jd_templates'];
+const EDITABLE = ['eval_criteria', 'call_topics', 'call_gate', 'accounts_email', 'resume_alert_pct', 'expense_tree', 'expense_accounts', 'revenue_kinds', 'call_script', 'email_templates', 'creative_template', 'hiring_channels', 'landing_roles', 'wa_pause', 'business', 'industries', 'default_industry', 'hidden_jobs', 'departments', 'cities', 'skills', 'client_stages', 'closing_reasons', 'job_close_reasons', 'reopen_reasons', 'lead_sources', 'src_tags', 'fee', 'agency_share_pct', 'gst', 'replacement_days', 'payment_days', 'targets', 'log_deadline', 'quiet', 'daily_limit', 'bulk_budget', 'match', 'languages', 'id_start', 'bill_prefix', 'retention_years', 'team_idle_hours', 'formats', 'auto_rules', 'crm', 'posting_channels', 'gap_targets', 'templates', 'jd_template', 'jd_templates'];
 // Everyone in the team can set up what goes out. Connection secrets and the checks on the team's own activity stay with the super admin.
 const SUPER_ONLY = ['crm', 'resume_alert_pct', 'call_gate'];
 route('GET', '/api/settings', T, (ctx) => { const s = { ...D.settings() }; if (!isSuper(ctx.user)) { for (const k of SUPER_ONLY) delete s[k]; return s; } s.crm = { ...s.crm, token: s.crm.token ? '••••••••' : '', webhook_secret: s.crm.from_env && s.crm.from_env.webhook_secret ? '••••••••' : s.crm.webhook_secret }; return s; });

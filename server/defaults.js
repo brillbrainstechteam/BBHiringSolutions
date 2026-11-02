@@ -155,6 +155,14 @@ module.exports.defaultSettings = () => ({
   wa_pause: { candidates: true, everyone: true, email: true, allow: ['9093400666', '9986950695', '8368372836'] },
   accounts_email: '',
   resume_alert_pct: 30,
+  // Group | Criterion. Edited in Settings → Lists.
+  eval_criteria: ['Communication | Spoken communication', 'Communication | English', 'Communication | Hindi or local language', 'Communication | Listening and clarity',
+    'Education | Highest qualification', 'Education | Relevant certifications',
+    'Experience | Relevant experience', 'Experience | Job stability', 'Experience | Genuine reason for leaving',
+    'Industry | Jewellery or industry knowledge', 'Industry | Product knowledge',
+    'Role fit | Skills for this role', 'Role fit | Customer handling', 'Role fit | Team handling',
+    'Attitude | Confidence', 'Attitude | Motivation for the role', 'Attitude | Professional conduct',
+    'Practical | Salary fit', 'Practical | Notice period', 'Practical | Location or relocation', 'Practical | Documents available', 'Practical | References'],
   call_topics: ['Introduction', 'Hiring requirement', 'Job description', 'Agreement and KYC', 'CV shared', 'Interview scheduling', 'Interview feedback', 'Salary discussion', 'Offer', 'Joining', 'Replacement', 'Invoice and payment', 'Follow-up', 'Other'],
   // The standing work of the team. Each gets an owner on the Tasks page.
   task_list: [

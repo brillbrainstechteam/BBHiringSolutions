@@ -12,7 +12,7 @@ const DB_FILE = path.join(DATA_DIR, 'bbhs.db');
 const db = new DatabaseSync(DB_FILE);
 db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;'); // wait up to 5 s if another write is in progress
 
-const JSON_COLS = new Set(['topics', 'also_roles', 'slots', 'questions', 'call_roles', 'wa_group', 'exp_business', 'kyc', 'extra', 'perms', 'jd', 'qa', 'buttons', 'checklist', 'onboarding', 'work_cities', 'skills', 'rounds', 'screening_qs', 'value', 'map', 'vars', 'joining_docs', 'social', 'resume_check', 'ad_match']);
+const JSON_COLS = new Set(['scores', 'topics', 'also_roles', 'slots', 'questions', 'call_roles', 'wa_group', 'exp_business', 'kyc', 'extra', 'perms', 'jd', 'qa', 'buttons', 'checklist', 'onboarding', 'work_cities', 'skills', 'rounds', 'screening_qs', 'value', 'map', 'vars', 'joining_docs', 'social', 'resume_check', 'ad_match']);
 
 db.exec(`
 CREATE TABLE IF NOT EXISTS counters (name TEXT PRIMARY KEY, next INTEGER NOT NULL);
@@ -48,6 +48,7 @@ CREATE TABLE IF NOT EXISTS resume_alerts (user_id TEXT PRIMARY KEY, at TEXT);
 CREATE TABLE IF NOT EXISTS round_skips (app_id TEXT, mode TEXT, reason TEXT, by TEXT, at TEXT, PRIMARY KEY (app_id, mode));
 CREATE TABLE IF NOT EXISTS tasks (id TEXT PRIMARY KEY, title TEXT, detail TEXT, area TEXT, owner_id TEXT, agency_id TEXT, due_date TEXT, status TEXT DEFAULT 'Pending', done_at TEXT, done_by TEXT, by TEXT, at TEXT, removed INTEGER DEFAULT 0);
 CREATE TABLE IF NOT EXISTS extra_rounds (id INTEGER PRIMARY KEY AUTOINCREMENT, app_id TEXT, mode TEXT, name TEXT, reason TEXT, by TEXT, at TEXT);
+CREATE TABLE IF NOT EXISTS evaluations (id INTEGER PRIMARY KEY AUTOINCREMENT, candidate_id TEXT, app_id TEXT, scores TEXT DEFAULT '{}', note TEXT, by TEXT, at TEXT);
 CREATE TABLE IF NOT EXISTS app_questions (app_id TEXT PRIMARY KEY, questions TEXT DEFAULT '[]', by TEXT, at TEXT);
 CREATE TABLE IF NOT EXISTS followups (id INTEGER PRIMARY KEY AUTOINCREMENT, record_id TEXT, at TEXT, note TEXT, for_user TEXT, done INTEGER DEFAULT 0, alerted INTEGER DEFAULT 0, created_by TEXT);
 CREATE TABLE IF NOT EXISTS postings (id INTEGER PRIMARY KEY AUTOINCREMENT, job_id TEXT, channel TEXT, owner TEXT, tag TEXT, done_date TEXT, post_link TEXT);

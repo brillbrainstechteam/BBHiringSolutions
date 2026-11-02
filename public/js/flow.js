@@ -234,6 +234,29 @@
     return `${tpl}<div class="sec card pad"><h3 style="margin-bottom:6px">Offer steps</h3>${st.map(([k, l, at]) => `<label class="row small"><input type="checkbox" data-ostage="${k}" ${at ? 'checked' : ''} ${a.result === 'open' ? '' : 'disabled'}> ${l}${at ? ` <span class="faint">${fmtDT(at)}</span>` : ''}</label>`).join('')}
       ${canAdmin() && a.offer_ctc ? `<div class="row" style="margin-top:8px">${asked ? `<span class="small muted">Accounts asked ${fmtDT(asked)}</span>` : ''}<button class="btn sm ${asked ? '' : 'primary'}" data-faccounts>${asked ? 'Ask again' : 'Ask Accounts for the invoice'}</button>${a.bill ? `<a href="#" class="small" data-open="bill:${a.bill.id}">Open bill</a>` : ''}</div>` : ''}</div>`;
   };
+  // ---------- What we already know: read this before calling or assessing again ----------
+  const daysAgo = (n) => (n === 0 ? 'today' : n === 1 ? 'yesterday' : `${n} days ago`);
+  F.known = (k, c, next) => {
+    const call = k.last_call; const ev = k.evaluation; const d = k.decision; const pm = (y) => (y ? inr(y / 12) : ''); const facts = [c.exp_total != null && `${c.exp_total} yrs experience`, c.cur_salary && `now ${pm(c.cur_salary)}/mo`, c.exp_salary && `expects ${pm(c.exp_salary)}/mo`, c.notice_days != null && `${c.notice_days} days notice`, c.city].filter(Boolean);
+    const line = (label, body) => `<div class="kn-row"><span>${label}</span><div>${body}</div></div>`;
+    return `<div class="sec card pad known"><h3>What we already know</h3>
+      ${call && call.days <= 3 ? `<div class="notice gold">Spoken to ${daysAgo(call.days)} by ${esc(call.by)}. Read this before calling again.</div>` : ''}
+      ${line('Last contact', call ? `<b>${esc(call.outcome)}</b> · ${fmtD(call.at)} · ${esc(call.by)}${call.job ? ` · ${esc(call.job)}` : ''}${call.note ? `<div class="small muted">${esc(call.note)}</div>` : ''}` : '<span class="faint">No call on record</span>')}
+      ${line('Evaluation', ev ? `<b>${ev.percent === null ? 'Saved' : `${ev.percent}%`}</b> · ${ev.marked} points · ${fmtD(ev.at)} · ${esc(ev.by)}${ev.weak.length ? `<div class="small muted">Weak: ${esc(ev.weak.join(', '))}</div>` : ''}` : '<span class="faint">Not evaluated yet</span>')}
+      ${line('Last decision', d ? `${esc(d.note)} · ${fmtD(d.at)} · ${esc(d.by)}${d.job ? ` · ${esc(d.job)}` : ''}` : '<span class="faint">None yet</span>')}
+      ${facts.length ? line('On file', esc(facts.join(' · '))) : ''}${next ? line('Next', esc(next)) : ''}</div>`;
+  };
+  F.story = (rows) => (rows.length ? `<div class="story">${rows.map((r) => `<div class="story-row"><span class="story-when">${fmtD(r.at)}</span><div class="grow"><b>${esc(r.title)}</b>${r.job ? ` <span class="faint small">· ${esc(r.job)}</span>` : ''}${r.detail ? `<div class="small muted">${esc(r.detail)}</div>` : ''}${r.by ? `<div class="tiny faint">${esc(r.by)}</div>` : ''}</div></div>`).join('')}</div>` : '<div class="faint small">Nothing yet.</div>');
+  // ---------- Evaluation: the same points for every candidate ----------
+  const EVAL_OPTS = ['Strong', 'OK', 'Weak'];
+  F.evalBlock = (rec) => { const e = rec.known.evaluation; return `<div class="sec card pad stack-sm"><div class="row between"><h3 style="margin:0">Evaluation</h3><button class="btn sm ${e ? '' : 'primary'}" data-evalopen>${e ? 'Update' : 'Evaluate'}</button></div>${e ? `<div class="eval-grid">${Object.entries(e.scores).map(([k, v]) => `<div class="eval-row"><span>${esc(k.split('|').pop().trim())}</span><span class="badge ${v === 'Strong' ? 'b-green' : v === 'Weak' ? 'b-red' : 'b-outline'}">${esc(v)}</span></div>`).join('')}</div>${e.note ? `<div class="small">${esc(e.note)}</div>` : ''}<div class="tiny faint">${esc(e.by)} · ${fmtDT(e.at)}</div>` : '<div class="faint small">Not evaluated yet.</div>'}</div>`; };
+  F.evalOpen = async (cid, app, rec) => {
+    const was = (rec.known.evaluation || {}).scores || {}; const groups = {}; for (const x of rec.eval_criteria) { const g = x.includes('|') ? x.split('|')[0].trim() : 'General'; (groups[g] = groups[g] || []).push(x); }
+    const body = Object.entries(groups).map(([g, list]) => `<div class="eval-group"><h4>${esc(g)}</h4>${list.map((k) => `<div class="eval-row"><span>${esc(k.split('|').pop().trim())}</span><span class="eval-pick">${EVAL_OPTS.map((o) => `<label><input type="radio" name="${esc(k)}" data-ev="${esc(k)}" value="${o}" ${was[k] === o ? 'checked' : ''}> ${o}</label>`).join('')}</span></div>`).join('')}</div>`).join('');
+    const v = await BB.ask({ title: 'Evaluate candidate', note: 'Mark only what you have checked. The rest stays Not checked.', wide: true, fields: [`<div class="eval-form">${body}</div>`, { name: 'note', label: 'Overall comment', type: 'textarea', opt: true }], ok: 'Save evaluation', submit: (x) => { const scores = {}; $$('.modal [data-ev]:checked').forEach((i) => (scores[i.dataset.ev] = i.value)); return BB.post(`/api/candidates/${cid}/evaluation`, { scores, note: x.note, app_id: app }); } });
+    if (v) done('Evaluation saved');
+  };
+
   // ---------- Interview rounds: one line each, one action each ----------
   const RND_CLS = { 'To do': 'b-outline', Scheduled: 'b-primary', 'Result pending': 'b-amber', Cleared: 'b-green', 'Not cleared': 'b-red', 'On hold': 'b-amber', 'No-show': 'b-red', 'Not needed': 'b-outline' };
   const ROUND_TYPES = [['phone', 'Telephonic'], ['video', 'Virtual'], ['in_person', 'In person']];

@@ -754,6 +754,29 @@ function needsCall(app, step, u) {
   return !get("SELECT 1 FROM calls WHERE app_id=? AND status='Done' AND at>=?", app.id, app.step_since || app.created_at);
 }
 
+// ---------- what we already know about a candidate, in one place ----------
+const EVAL_POINTS = { Strong: 2, OK: 1, Weak: 0 };
+const evalView = (e) => { if (!e) return null; const marks = Object.entries(e.scores || {}).filter(([, v]) => v in EVAL_POINTS); const max = marks.length * 2; return { ...e, marked: marks.length, percent: max ? Math.round((marks.reduce((t, [, v]) => t + EVAL_POINTS[v], 0) / max) * 100) : null, weak: marks.filter(([, v]) => v === 'Weak').map(([k]) => k.split('|').pop().trim()) }; };
+const jobOf = (appId) => { const r = appId ? get('SELECT j.title t FROM applications a JOIN jobs j ON j.id=a.job_id WHERE a.id=?', appId) : null; return r ? r.t : ''; };
+// One line per event, each from where it is really held, so nothing shows twice.
+function candidateStory(candidateId) {
+  const apps = all('SELECT id FROM applications WHERE candidate_id=?', candidateId).map((a) => a.id); const inApps = apps.length ? `(${apps.map(() => '?').join(',')})` : "('')"; const row = (at, kind, title, detail, by, app) => ({ at, kind, title, detail: detail || '', by: by || '', job: jobOf(app), app_id: app || null });
+  return [
+    ...all("SELECT * FROM files WHERE record_id=? AND type='cv'", candidateId).map((f) => row(f.at, 'Resume', 'Resume added', f.name, f.by)),
+    ...all(`SELECT * FROM app_history WHERE kind IN ('screen','close') AND app_id IN ${inApps}`, ...apps).map((h) => row(h.at, h.kind === 'close' ? 'Closed' : 'Screening', h.note.split(' — ')[0].replace(/^Screening: /, ''), h.note.split(' — ').slice(1).join(' — '), h.by, h.app_id)),
+    ...all("SELECT * FROM calls WHERE candidate_id=? AND status='Done'", candidateId).map((k) => row(k.at, 'Call', `${k.party === 'client' ? 'Client call' : 'Call'}: ${k.outcome}`, [(k.topics || []).join(', '), k.note].filter(Boolean).join('. '), k.by, k.app_id)),
+    ...all('SELECT * FROM evaluations WHERE candidate_id=?', candidateId).map(evalView).map((e) => row(e.at, 'Evaluation', `Evaluation${e.percent === null ? '' : `: ${e.percent}%`}`, [e.weak.length ? `Weak: ${e.weak.join(', ')}` : '', e.note].filter(Boolean).join('. '), e.by, e.app_id)),
+    ...all(`SELECT * FROM interviews WHERE status IN ('Completed','No-show') AND app_id IN ${inApps}`, ...apps).map((i) => row(i.at, 'Round', `${i.name}: ${i.status === 'Completed' ? i.result || 'Done' : i.status}`, i.remark, i.interviewer, i.app_id)),
+    ...all(`SELECT * FROM round_skips WHERE app_id IN ${inApps}`, ...apps).map((x) => row(x.at, 'Round', `${IV_MODES[x.mode] || 'Round'}: Not needed`, x.reason, x.by, x.app_id)),
+    ...all("SELECT * FROM notes WHERE record_id=? AND text LIKE 'Role changed%'", candidateId).map((n) => row(n.at, 'Role', n.text.split(':')[0], n.text.split(':').slice(1).join(':').trim(), n.author)),
+  ].sort((a, b) => (a.at < b.at ? 1 : -1));
+}
+function candidateKnown(c) {
+  const call = get("SELECT * FROM calls WHERE candidate_id=? AND status='Done' ORDER BY at DESC LIMIT 1", c.id); const ev = evalView(get('SELECT * FROM evaluations WHERE candidate_id=? ORDER BY id DESC LIMIT 1', c.id));
+  const decision = get("SELECT h.* FROM app_history h JOIN applications a ON a.id=h.app_id WHERE a.candidate_id=? AND h.kind IN ('screen','close') ORDER BY h.at DESC LIMIT 1", c.id);
+  return { last_call: call ? { ...call, job: jobOf(call.app_id), days: daysBetween(call.at) } : null, evaluation: ev ? { ...ev, job: jobOf(ev.app_id) } : null, decision: decision ? { note: decision.note, by: decision.by, at: decision.at, job: jobOf(decision.app_id) } : null };
+}
+
 // ---------- offers ----------
 function recordOffer(appId, o, by) {
   const app = get('SELECT * FROM applications WHERE id=?', appId);
@@ -1118,4 +1141,4 @@ function resumeUse(user, candidateId) {
 }
 const accountsUsers = () => all("SELECT * FROM users WHERE level='sub' AND team='Accounts' AND status='On'");
 const openTasksOf = (userId) => all("SELECT * FROM tasks WHERE owner_id=? AND removed=0 AND status<>'Done' ORDER BY COALESCE(due_date, '9999'), at", userId);
-Object.assign(module.exports, { startCall, openCall, needsCall, callGateOn, roundsOf, skipRounds, passRounds, openTasksOf, accountsUsers, fixAsk, openAsks, OPEN_ASK, resumeUse, RESUME_DAYS });
+Object.assign(module.exports, { evalView, candidateStory, candidateKnown, startCall, openCall, needsCall, callGateOn, roundsOf, skipRounds, passRounds, openTasksOf, accountsUsers, fixAsk, openAsks, OPEN_ASK, resumeUse, RESUME_DAYS });

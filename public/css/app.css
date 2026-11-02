@@ -1764,3 +1764,14 @@ button.fin-tile.on { border-color: var(--mustard); box-shadow: 0 0 0 1px var(--m
 .chip.topic:has(input:checked) { background: var(--navy); border-color: var(--navy); color: #fff; }
 .call-bar { position: fixed; z-index: 900; left: 50%; bottom: 16px; transform: translateX(-50%); display: flex; align-items: center; gap: 12px; width: min(720px, calc(100vw - 32px)); padding: 12px 16px; border-radius: 14px; background: var(--surface); border: 1px solid var(--mustard); box-shadow: var(--shadow-lg); font-size: 14px; }
 @media (max-width: 760px) { .call-bar { flex-wrap: wrap; } }
+/* What we already know, history, evaluation */
+.known h3 { margin: 0 0 8px; } .known .notice { margin-bottom: 8px; }
+.kn-row { display: grid; grid-template-columns: 110px minmax(0, 1fr); gap: 10px; padding: 6px 0; border-top: 1px solid var(--border); font-size: 14px; }
+.kn-row > span { color: var(--muted); font-size: 13px; }
+.story-row { display: flex; gap: 12px; padding: 8px 0; border-top: 1px solid var(--border); font-size: 14px; }
+.story-row:first-child { border-top: 0; } .story-when { flex: none; width: 92px; color: var(--muted); font-size: 13px; }
+.eval-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 4px 18px; }
+.eval-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 5px 0; font-size: 14px; }
+.eval-group h4 { margin: 12px 0 4px; font-size: 13px; color: var(--muted); }
+.eval-pick { display: inline-flex; gap: 14px; flex: none; } .eval-pick label { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; }
+@media (max-width: 760px) { .eval-row { flex-wrap: wrap; } .kn-row { grid-template-columns: 1fr; gap: 2px; } }
