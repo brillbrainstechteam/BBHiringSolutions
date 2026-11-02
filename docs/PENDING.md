@@ -9,7 +9,6 @@ Last updated 2 Nov 2026. The live list of messages is in the portal: Settings â†
 | 1 | Add credit to the OpenAI account | The key has run out. Until then Find online and Rank with AI show an error, Paste notes uses simple rules, and new CVs are read by rules only. |
 | 2 | Set `SMTP_HOST` in the server `.env` (`smtp.gmail.com`, the mailbox is on Google) and check the saved password is an app password | It is blank, so no email can leave, including the Recruitment Agreement. Emails will go from `tech@brillbrainsconsultants.com`. |
 | 2a | Make client replies reach the portal: forward `tech@brillbrainsconsultants.com` to the `Hiring Resume` label of `transform@dgtrainings.com`, or use one mailbox for both | The portal reads only that label, so a signed agreement sent to `tech@` is not seen until this is done. Until then, upload it by hand with Upload signed agreement. |
-| 2b | Decide: should KYC and other emails written in the portal also go now? | Only the Recruitment Agreement goes while messages are off. The others are saved for later. |
 | 3 | Add the Accounts email: Settings â†’ Fees & limits | Invoice requests have nowhere to go without it. |
 | 4 | Decide: should Vaibhav Kanpur earn a share on the clients with no agency? | Today those bills carry no agency share. |
 | 5 | Upload signed contracts for the 17 clients marked Lead | Each one becomes an active client as soon as its contract is uploaded. The team can work on them in the meantime. |
@@ -23,7 +22,7 @@ Last updated 2 Nov 2026. The live list of messages is in the portal: Settings â†
 
 ## Messages to switch on later
 
-Everything automatic is held. Held messages are not sent later; only new ones go after switching on. Login codes, team passwords and replies typed by hand still go. On live: 644 old emails and 68 WhatsApp messages are held.
+Everything automatic is held. Held messages are not sent later; only new ones go after switching on. Login codes, team passwords, replies typed by hand and the Recruitment Agreement still go. Decided 2 Nov 2026: KYC and other emails written in the portal stay held. On live: 644 old emails and 68 WhatsApp messages are held.
 
 **Before switching on:** items 2 and 3 above, and Meta approval for these templates: `bbhs_client_thanks` (new), `bbhs_jd_approval`, `bbhs_team_login`.
 
