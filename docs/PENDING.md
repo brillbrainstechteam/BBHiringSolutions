@@ -65,7 +65,8 @@ Everything automatic is held. Held messages are not sent later; only new ones go
 - Settings is open to the team. Kept for the super admin: WhatsApp connection, Deleted items, Data requests, Health, the resume alert, Daily logs, WhatsApp clicks and Resume access reports, agencies, and downloads.
 - Daily logs are no longer asked for: no form, reminder or "log missing" alert. Tasks on the Tasks page replace them.
 - An Accounts login is a Sub admin in the team Accounts: Invoicing, Clients, Candidates with an offer, and Profit & Loss. The invoice email to Accounts, Send invoice and Payment reminder go even while messages are off, because a person or a recorded offer letter starts them. Automatic payment reminders stay held.
-- Interview rounds can be marked No need with a reason on the application. Booking that round later takes the No need away.
+- Interview rounds live in one card on the application. Each can be scheduled or marked Not needed with a reason, and extra rounds can be added. Going past our rounds to the client asks why any left at To do are not needed.
+- Change role on a candidate or application moves them to a new role, with the old one kept if they are still open to it. Filters, search and fit scores use both.
 - Closing a job closes its open applications with the reason Job closed and cancels interviews ahead, with no message to anyone. Reopening the job brings those applications back, but not the interviews or a cancelled draft bill.
 - A Short CV added by hand must be a readable PDF or Word file with no phone, email or link, or the upload is refused. Candidates cannot add one.
 - The CV for clients is rebuilt as a clean BrillBrains PDF, so it does not keep the candidate's own layout. A scanned or photo CV gives a profile summary only, with no resume text.

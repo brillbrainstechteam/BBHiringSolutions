@@ -602,10 +602,10 @@ function nextStep(a, bill) {
   }
   if (a.result !== 'open') return 'Closed. Look for more candidates on the job: its top matches are on the job page.';
   if (live) return `Record the result of ${live.name} once it is done.`;
-  const skipped = all('SELECT mode FROM round_skips WHERE app_id=?', a.id).map((x) => x.mode); const passed = (m) => skipped.includes(m) || ivs.some((i) => i.round === 'ours' && i.mode === m && i.result === 'Move ahead');
+  const rows = L.roundsOf(a); const passed = (m) => (rows.find((r) => r.key === m) || {}).status !== 'To do';
   switch (a.step) {
     case 'Applied': case 'Screening': return 'Screen the CV: accept to call them, or mark it not suitable.';
-    case 'Our interview': return !passed('phone') ? 'Schedule the telephonic round, or mark it No need with the reason.' : !passed('video') ? 'Schedule the virtual round, or mark it No need with the reason.' : 'Rounds done. Send the CV to the client.';
+    case 'Our interview': return !passed('phone') ? 'Schedule the telephonic round, or mark it Not needed.' : !passed('video') ? 'Schedule the virtual round, or mark it Not needed.' : 'Rounds done. Send the CV to the client.';
     case 'Sent to client': return 'Use Email CV to client: it goes without phone and email. When the client replies, schedule their interview.';
     case 'Client interview': return ivs.some((i) => i.result === 'Selected') ? 'Selected. Download the offer letter template below, fill it in, then record the offer.' : 'Record the client\'s decision. Selected goes to the offer; rejected goes back to searching.';
     case 'Offer made': return !a.verbal_at ? 'Note the client\'s verbal offer.' : !a.verbal_ok_at ? 'Note whether the candidate accepted verbally.' : !a.letter_at ? 'Note when the client shares the offer letter.' : bill && bill.accounts_asked_at ? 'Mark the offer accepted once the candidate accepts it.' : 'Ask Accounts to prepare the invoice.';

@@ -256,8 +256,9 @@ function candMatch(q) {
   return (c) => {
     // Each of these takes one value or several ("a,b"): a candidate matching any of them stays.
     const list = (k) => many(q[k]);
-    if (q.dept && !list('dept').includes(c.department)) return false;
-    if (q.job && c.job_wanted !== q.job && !list('job').includes(c.job_wanted)) return false; // a typed role may hold a comma
+    const also = Array.isArray(c.also_roles) ? c.also_roles : [];
+    if (q.dept && !list('dept').includes(c.department) && !also.some((x) => list('dept').includes(L.deptOf(x)))) return false;
+    if (q.job && c.job_wanted !== q.job && !list('job').includes(c.job_wanted) && !also.some((x) => x === q.job || list('job').includes(x))) return false; // a typed role may hold a comma
     if (q.source && !list('source').includes(c.source)) return false;
     if (q.domain && !list('domain').includes(c.domain || 'Not read yet')) return false;
     if (q.biz && !(c.exp_business || []).some((x) => (q.biz === 'B2C' ? x === 'Retailer' : x !== 'Retailer'))) return false;
@@ -836,7 +837,7 @@ function candRows(q, u) {
     .filter((c) => (q.archived ? c.archived : !c.archived) && inInd(c) && match(c) && (!q.notice || (c.notice_days ?? 999) <= Number(q.notice))
       && (!q.looking || c.looking === q.looking) && (!q.tieup || String(c.tieup_id) === String(q.tieup)) && (!q.agency || (q.agency === 'none' ? !c.agency_id : c.agency_id === q.agency)) && (!q.new || c.is_new)
       && (!fresh || L.daysBetween(c.last_updated || c.created_at) <= fresh) && (!q.stale || L.daysBetween(c.last_updated || c.created_at) > 90)
-      && like(q.q, c.id, c.name, R.phoneVisible(u, c) ? c.whatsapp : '', c.job_wanted, c.city, c.current_company, c.old_code, c.domain, (c.skills || []).join(' ')))
+      && like(q.q, c.id, c.name, R.phoneVisible(u, c) ? c.whatsapp : '', c.job_wanted, (c.also_roles || []).join(' '), c.city, c.current_company, c.old_code, c.domain, (c.skills || []).join(' ')))
     .map((c) => ({ ...candidateOut(u, c), status: V.candStatus(c.id) }))
     .filter((c) => !q.status || c.status.startsWith(q.status));
 }
@@ -863,7 +864,7 @@ route('GET', '/api/candidates', T, (ctx) => {
   // Skills to filter by: the ones candidates really have, most common first.
   const tally = {}; for (const c of open) for (const s of c.skills || []) { const k = String(s).trim(); if (k) tally[k] = (tally[k] || 0) + 1; }
   ctx.quick = { new: open.filter((c) => c.is_new && !c.agency_id).length, unassigned: open.filter((c) => !c.agency_id).length, check: open.filter((c) => c.needs_check || c.possible_repeat_of).length, skills: Object.entries(tally).sort((a, b) => b[1] - a[1]).slice(0, 300).map(([k]) => k) };
-  ctx.designations = [...new Set(all('SELECT industry, job_wanted FROM candidates WHERE merged_into IS NULL AND removed=0 AND junk=0').filter(inInd).map((c) => c.job_wanted).filter(Boolean))].sort();
+  ctx.designations = [...new Set(all('SELECT industry, job_wanted, also_roles FROM candidates WHERE merged_into IS NULL AND removed=0 AND junk=0').filter(inInd).flatMap((c) => [c.job_wanted, ...(c.also_roles || [])]).filter(Boolean))].sort();
   // Only the super admin downloads candidates (as filtered on screen); agencies and recruiters work in the portal.
   if (['csv', 'xlsx'].includes(ctx.query.format) && !isSuper(u)) throw httpError(403, 'Only the super admin can download candidates.');
   return { ...page(ctx, rows, 'candidates', [...CAND_EXPORT, [(r) => L.adLabel(r), 'ad'], 'status']), designations: ctx.designations, ads: adOptions('candidates'), quick: ctx.quick };
@@ -978,6 +979,18 @@ route('PATCH', '/api/candidates/:id', T, (ctx) => {
   patch.last_updated = now();
   if (isSuper(ctx.user) && ctx.body.agency_id !== undefined) patch.agency_id = ctx.body.agency_id;
   return D.edit('candidates', c.id, patch, ctx.actor.label, ctx.ip);
+});
+// Someone in Sales who now wants HR: the role they want changes, their past work stays, and HR searches find them.
+route('POST', '/api/candidates/:id/map-role', T, (ctx) => {
+  const c = get('SELECT * FROM candidates WHERE id=?', ctx.params.id); if (!c) throw httpError(404, 'Candidate not found'); const b = ctx.body || {}; const u = ctx.user;
+  if (!(isSuper(u) || (c.agency_id && c.agency_id === u.agency_id) || all('SELECT * FROM applications WHERE candidate_id=?', c.id).some((a) => seeApp(u, a)))) throw httpError(404, 'Candidate not found');
+  const role = String(b.role === 'Other' ? b.other || '' : b.role || '').trim(); const note = String(b.note || '').trim(); if (!role) throw httpError(400, 'Pick the new role', 'role'); if (!note) throw httpError(400, 'Say why the role is changing', 'note');
+  const same = (x, y) => String(x || '').toLowerCase() === String(y || '').toLowerCase(); if (same(role, c.job_wanted)) throw httpError(400, 'This is already their role', 'role');
+  const also = (c.also_roles || []).filter((x) => !same(x, role)); if (b.keep && c.job_wanted && !also.some((x) => same(x, c.job_wanted))) also.push(c.job_wanted);
+  D.edit('candidates', c.id, { job_wanted: role, department: L.deptOf(role), also_roles: also, last_updated: now() }, ctx.actor.label, ctx.ip);
+  const line = `Role changed from ${c.job_wanted || 'none'} to ${role}${b.keep ? ` (still open to ${c.job_wanted})` : ''}: ${note}`; insert('notes', { record_id: c.id, text: line, author: ctx.actor.label, at: now() });
+  const a = b.app ? get('SELECT * FROM applications WHERE id=? AND candidate_id=?', b.app, c.id) : null; if (a) L.appHist(a.id, a.step, ctx.actor, line, 'interview');
+  const fresh = get('SELECT * FROM candidates WHERE id=?', c.id); return { ok: true, jobs: L.jobsForRole(role, {}).filter((j) => seeJob(u, j)).slice(0, 5).map((j) => ({ id: j.id, title: j.title, city: j.city })), also_roles: fresh.also_roles };
 });
 route('POST', '/api/candidates/bulk', T, (ctx) => {
   const { ids, action, job_id } = ctx.body; const out = { done: 0, errors: [] };
@@ -1151,7 +1164,7 @@ route('GET', '/api/applications/:id', T, (ctx) => {
   const job = get('SELECT * FROM jobs WHERE id=?', a.job_id); const cand = get('SELECT * FROM candidates WHERE id=?', a.candidate_id); const client = get('SELECT * FROM clients WHERE id=?', job.client_id);
   const bill = get('SELECT * FROM bills WHERE app_id=? AND credit_of IS NULL ORDER BY created_at DESC', a.id);
   return {
-    ...v, candidate: candidateOut(ctx.user, cand), cv_name: cand.cv_file ? (get('SELECT name FROM files WHERE id=?', cand.cv_file) || {}).name || '' : '', round_skips: all('SELECT * FROM round_skips WHERE app_id=? ORDER BY at', a.id), other_apps: all('SELECT * FROM applications WHERE candidate_id=? AND id<>? ORDER BY created_at DESC', a.candidate_id, a.id).filter((x) => R.seeApp(ctx.user, x)).map(V.appView).map((x) => ({ id: x.id, job_title: x.job_title, client_name: x.client_name, step: x.step, result: x.result })), slot_ask: get("SELECT * FROM slot_asks WHERE app_id=? AND status<>'Cancelled' ORDER BY id DESC LIMIT 1", a.id) || null, questions: get('SELECT * FROM app_questions WHERE app_id=?', a.id) || null, job: V.jobView(job), client: { id: client.id, company: client.company, contact: client.contact },
+    ...v, candidate: candidateOut(ctx.user, cand), cv_name: cand.cv_file ? (get('SELECT name FROM files WHERE id=?', cand.cv_file) || {}).name || '' : '', rounds: L.roundsOf(a), other_apps: all('SELECT * FROM applications WHERE candidate_id=? AND id<>? ORDER BY created_at DESC', a.candidate_id, a.id).filter((x) => R.seeApp(ctx.user, x)).map(V.appView).map((x) => ({ id: x.id, job_title: x.job_title, client_name: x.client_name, step: x.step, result: x.result })), slot_ask: get("SELECT * FROM slot_asks WHERE app_id=? AND status<>'Cancelled' ORDER BY id DESC LIMIT 1", a.id) || null, questions: get('SELECT * FROM app_questions WHERE app_id=?', a.id) || null, job: V.jobView(job), client: { id: client.id, company: client.company, contact: client.contact },
     history: all('SELECT * FROM app_history WHERE app_id=? ORDER BY at DESC, id DESC', a.id), messages: all('SELECT * FROM messages WHERE ap=? ORDER BY at DESC', a.id),
     score: (() => { const m = L.matchScore(cand, job, L.ratingOf(cand.id)); const f = require('./flow').rowFor(job, cand, m, {}); return { ...m, score: f.score, reasons: f.points, gaps: f.gaps }; })(), bill: bill ? L.billView(bill) : null, suggest: suggestFor(a), steps: L.STEPS, selected: !!get("SELECT 1 FROM interviews WHERE app_id=? AND result='Selected'", a.id), next: require('./flow').nextStep(a, bill), client_cv: cand.short_cv_file || null,
     files: all('SELECT * FROM files WHERE record_id=? AND replaced=0 ORDER BY at DESC', a.id), notes: all('SELECT * FROM notes WHERE record_id=? ORDER BY at DESC', a.id),
@@ -1180,19 +1193,28 @@ route('POST', '/api/applications/:id/step', T, (ctx) => {
   const a = loadApp(ctx);
   const step = ctx.body.next ? L.STEPS[Math.min(L.STEPS.length - 1, L.stepIdx(a.step) + 1)] : ctx.body.step;
   if (step === 'Joined' && a.step !== 'Offer accepted' && !ctx.body.force) throw httpError(400, 'Mark Joined after the offer is accepted.');
+  if (!ctx.body.force || ctx.body.rounds) L.passRounds(a.id, step, ctx.body.skip_reason, ctx.actor);
   return L.moveStep(a.id, step, ctx.actor, ctx.body.note || (ctx.body.next ? 'Move to next step' : 'Step set by hand'));
 });
-// A round can be skipped on the recruiter's judgement, with the reason kept. The other rounds are not affected.
+// Rounds are never compulsory. Skipping one, or adding one, keeps the reason.
+const roundOf = (a, key) => { const r = L.roundsOf(a).find((x) => x.key === key); if (!r) throw httpError(400, 'Pick the round'); return r; };
 route('POST', '/api/applications/:id/skip-round', T, (ctx) => {
-  const a = loadApp(ctx); const { mode } = ctx.body || {}; const reason = String((ctx.body || {}).reason || '').trim(); const label = L.IV_MODES[mode];
-  if (!label) throw httpError(400, 'Pick the round'); if (a.result !== 'open') throw httpError(400, 'This application is closed.'); if (!reason) throw httpError(400, 'Give the reason for skipping this round', 'reason');
-  if (get("SELECT 1 FROM interviews WHERE app_id=? AND mode=? AND status IN ('Scheduled','Rescheduled')", a.id, mode)) throw httpError(400, 'This round is booked. Record or cancel it first.');
-  D.run('INSERT OR REPLACE INTO round_skips (app_id, mode, reason, by, at) VALUES (?, ?, ?, ?, ?)', a.id, mode, reason, ctx.actor.label, now());
-  L.appHist(a.id, a.step, ctx.actor, `${label}: No need. ${reason}`, 'interview'); return { ok: true };
+  const a = loadApp(ctx); if (a.result !== 'open') throw httpError(400, 'This application is closed.'); const r = roundOf(a, (ctx.body || {}).key);
+  if (['Scheduled', 'Result pending'].includes(r.status)) throw httpError(400, 'This round is booked. Record or cancel it first.');
+  if (!String((ctx.body || {}).reason || '').trim()) throw httpError(400, 'Give the reason for skipping this round', 'reason');
+  L.skipRounds(a, [r], ctx.body.reason, ctx.actor); return { ok: true };
 });
 route('POST', '/api/applications/:id/skip-round/undo', T, (ctx) => {
-  const a = loadApp(ctx); const label = L.IV_MODES[(ctx.body || {}).mode]; if (!label) throw httpError(400, 'Pick the round');
-  D.run('DELETE FROM round_skips WHERE app_id=? AND mode=?', a.id, ctx.body.mode); L.appHist(a.id, a.step, ctx.actor, `${label}: No need taken back`, 'interview'); return { ok: true };
+  const a = loadApp(ctx); const r = roundOf(a, (ctx.body || {}).key); D.run('DELETE FROM round_skips WHERE app_id=? AND mode=?', a.id, r.key); L.appHist(a.id, a.step, ctx.actor, `${r.name}: Not needed taken back`, 'interview'); return { ok: true };
+});
+route('POST', '/api/applications/:id/rounds', T, (ctx) => {
+  const a = loadApp(ctx); const b = ctx.body || {}; const name = String(b.name || '').trim(); const reason = String(b.reason || '').trim();
+  if (a.result !== 'open') throw httpError(400, 'This application is closed.'); if (!name) throw httpError(400, 'Name the round', 'name'); if (!L.IV_MODES[b.mode]) throw httpError(400, 'Pick the type', 'mode'); if (!reason) throw httpError(400, 'Give the reason for this round', 'reason');
+  insert('extra_rounds', { app_id: a.id, mode: b.mode, name, reason, by: ctx.actor.label, at: now() }); L.appHist(a.id, a.step, ctx.actor, `Round added: ${name}. ${reason}`, 'interview'); return { ok: true };
+});
+route('POST', '/api/applications/:id/rounds/:rid/delete', T, (ctx) => {
+  const a = loadApp(ctx); const r = L.roundsOf(a).find((x) => x.extra_id === Number(ctx.params.rid)); if (!r) throw httpError(404, 'Round not found'); if (r.interview_ids.length) throw httpError(400, 'This round has an interview on it.');
+  D.run('DELETE FROM extra_rounds WHERE id=?', r.extra_id); D.run('DELETE FROM round_skips WHERE app_id=? AND mode=?', a.id, r.key); L.appHist(a.id, a.step, ctx.actor, `Round removed: ${r.name}`, 'interview'); return { ok: true };
 });
 route('POST', '/api/applications/:id/close', T, (ctx) => { const a = loadApp(ctx); return L.closeApplication(a.id, ctx.body.reason, ctx.actor, ctx.body.note); });
 // Match candidates to jobs: every candidate (that this login can see) gets an application on each open job their ad
@@ -1265,7 +1287,7 @@ route('POST', '/api/applications/bulk', T, (ctx) => {
   for (const id of ids || []) {
     try {
       const a = get('SELECT * FROM applications WHERE id=?', id); mustSee(a && seeApp(ctx.user, a), 'application');
-      if (action === 'step') L.moveStep(id, step, ctx.actor, 'Bulk move'); else if (action === 'close') L.closeApplication(id, reason, ctx.actor, 'Bulk close');
+      if (action === 'step') { L.passRounds(id, step, ctx.body.skip_reason, ctx.actor); L.moveStep(id, step, ctx.actor, 'Bulk move'); } else if (action === 'close') L.closeApplication(id, reason, ctx.actor, 'Bulk close');
       else if (action === 'screen') L.screenApplication(id, ctx.body.verdict, ctx.actor, ctx.body.note || 'Bulk');
       else if (action === 'wa') {
         const ptype = ctx.body.to === 'client' ? 'client' : 'candidate'; const job = get('SELECT * FROM jobs WHERE id=?', a.job_id);

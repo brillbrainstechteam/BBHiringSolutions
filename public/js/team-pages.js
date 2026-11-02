@@ -552,7 +552,7 @@
     BB.wireSelect(el, onASel); $$('[data-sel]', el).forEach((x) => x.addEventListener('change', onASel));
     $('[data-closed]', el).onchange = (e) => BB.setQ({ closed: e.target.checked ? '1' : '' });
     const bulk = async (body) => { const ids = BB.selected(el); if (!ids.length) return BB.toast('Select some rows first', true); const res = await BB.post('/api/applications/bulk', { ids, ...body }).catch(BB.fail); if (res) { BB.toast(`${res.done} done${res.errors.length ? `, ${res.errors.length} failed: ${res.errors[0]}` : ''}`); BB.refreshPage(); } };
-    $('[data-bstep]', el).onchange = (e) => e.target.value && bulk({ action: 'step', step: e.target.value });
+    $('[data-bstep]', el).onchange = async (e) => { const step = e.target.value; if (!step) return; const st = BB.boot.steps; let skip_reason; if (st.indexOf(step) >= st.indexOf('Sent to client')) { const v = await BB.ask({ title: `Move to ${step}`, fields: [{ name: 'reason', label: 'If any of our rounds are not done, why are they not needed?', type: 'textarea' }], ok: 'Move' }); if (!v) { e.target.value = ''; return; } skip_reason = v.reason; } bulk({ action: 'step', step, skip_reason }); };
     $('[data-bclose]', el).onchange = (e) => e.target.value && bulk({ action: 'close', reason: e.target.value });
     $('[data-bscreen]', el).onchange = (e) => e.target.value && bulk({ action: 'screen', verdict: e.target.value });
     const bd = $('[data-bdel]', el); if (bd) bd.onclick = () => { const ids = BB.selected(el); if (!ids.length) return BB.toast('Select some rows first', true); BB.deleteRecords('application', ids); };

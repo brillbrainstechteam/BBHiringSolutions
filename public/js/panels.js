@@ -274,12 +274,10 @@
     const btns = []; const L = s.steps;
     if (open) {
       if (a.step !== 'Offer accepted' && a.step !== 'Offer made' && a.step !== 'Joined') btns.push(`<button class="btn sm primary" data-next>→ ${esc(s.steps[s.steps.indexOf(a.step) + 1])}</button>`);
-      if (!['Offer made', 'Offer accepted', 'Joined'].includes(a.step)) btns.push('<button class="btn sm" data-sched="phone">📞 Telephonic round</button><button class="btn sm" data-sched="video">Virtual round</button><button class="btn sm" data-sched="in_person">Final round (in person)</button>');
       if (['Client interview', 'Sent to client'].includes(a.step)) btns.push('<button class="btn sm gold" data-offer>Record the offer</button>');
       if (a.step === 'Offer made') btns.push('<button class="btn sm gold" data-offer>Change offer</button><button class="btn sm primary" data-accept>Offer accepted</button><button class="btn sm danger" data-decline>Offer declined</button>');
       if (a.step === 'Offer accepted') btns.push('<button class="btn sm primary" data-joined>Mark joined</button><button class="btn sm danger" data-nojoin>Did not join</button>');
       if (L.indexOf(a.step) >= 2) btns.push(BB.flow.appCv(a));
-      if (!['Offer made', 'Offer accepted', 'Joined'].includes(a.step)) btns.push(BB.flow.appSkipBtn(a));
       btns.push(BB.flow.appSlotBtn(a));
       if (a.offer_ctc) btns.push(`<button class="btn sm" data-letter>${a.offer_letter ? 'Remake' : 'Make'} offer letter</button>`);
       btns.push(`<button class="btn sm" data-hold>${a.on_hold ? 'Remove hold' : 'On hold'}</button><button class="btn sm danger" data-close>Close</button>`);
@@ -304,7 +302,7 @@
         ${a.screen_note ? `<div class="small muted">${esc(a.screen_note)} · ${esc(a.screen_by || '')} ${a.screen_at ? fmtDT(a.screen_at) : ''}</div>` : ''}
         <div class="row">${['Under consideration', 'Requirement not met', 'Rejected', 'Accepted'].map((v) => `<button class="btn sm ${a.screen === v ? 'primary' : ''}" data-screen="${v}">${v}</button>`).join('')}</div>
         <div class="tbl-wrap"><table class="tbl"><thead><tr><th></th><th>Candidate</th><th>Job needs</th></tr></thead><tbody>
-          ${line('Role', esc(c.job_wanted || '—'), esc(j.title || '—'))}
+          ${line('Role', `${esc(c.job_wanted || '—')}${(c.also_roles || []).length ? `<div class="tiny muted">Also open to ${esc(c.also_roles.join(', '))}</div>` : ''}${a.result === 'open' ? ' <button type="button" class="btn sm ghost" data-chrole>Change role</button>' : ''}`, esc(j.title || '—'))}
           ${line('City', esc([c.city, ...(c.work_cities || []).filter((x) => x !== c.city)].filter(Boolean).join(', ') || '—'), esc(j.city || '—'))}
           ${line('Experience', yrs(c.exp_total), j.exp_from !== null && j.exp_from !== undefined ? `${j.exp_from}–${j.exp_to ?? '+'} yrs` : '—')}
           ${line('In jewellery', c.exp_jewellery === 0 ? 'None' : yrs(c.exp_jewellery), '—')}
@@ -331,7 +329,7 @@
         ${BB.flow.appOffer(a)}
         ${a.offer_ctc ? `<div class="sec card pad"><h3 style="margin-bottom:6px">Offer</h3><dl class="kv"><dt>Yearly CTC</dt><dd><b>${inr(a.offer_ctc)}</b></dd><dt>Joining date</dt><dd>${fmtD(a.joining_date)}</dd><dt>Reporting to</dt><dd>${esc(a.reporting_to || '—')}</dd><dt>Offer letter</dt><dd>${a.offer_letter ? `<button class="btn sm" data-file="${a.offer_letter}">Open PDF</button> ${a.offer_sent ? '<span class="badge b-green">sent</span>' : '<span class="badge b-outline">client to check</span>'}` : '—'}</dd>${a.bill ? `<dt>Bill</dt><dd><a href="#" data-open="bill:${a.bill.id}">${esc(a.bill.bill_no || a.bill.id)}</a> · ${inr(a.bill.total)} · ${esc(a.bill.view_status)}</dd>` : ''}</dl></div>` : ''}
         ${a.step === 'Offer accepted' || a.result === 'Hired' ? `<div class="sec"><h3>Joining checklist</h3><div class="card pad">${items.map((it) => `<label class="row small"><input type="checkbox" data-ck="${esc(it)}" ${a.checklist && a.checklist[it] ? 'checked' : ''}> ${esc(it)} <span class="faint tiny">${a.checklist && a.checklist[it] ? esc(a.checklist[it].by) : ''}</span></label>`).join('')}${(a.joining_docs || []).length ? `<div class="row" style="margin-top:6px">${a.joining_docs.map((d) => `<button class="btn sm" data-file="${d.file}">${esc(d.label)}</button>`).join('')}</div>` : '<div class="faint small">No joining documents uploaded yet.</div>'}</div></div>` : ''}
-        <div class="sec"><h3>Interviews</h3><div class="stack-sm">${BB.flow.appSkips(a)}${a.interviews.map(iv).join('') || (a.round_skips.length ? '' : '<div class="faint small">No interviews yet. Usual order: telephonic → virtual → final in person with the client.</div>')}</div></div>
+        ${BB.flow.appRounds(a, iv)}
         ${callsBlock(a.candidate_id, a.id, a.calls)}
         <div class="sec"><h3>Why it matches</h3><div class="small">${a.score.reasons.map(esc).join(' · ') || '—'}</div></div>
         <div class="sec"><h3>WhatsApp on this application</h3>${msgList(a.messages)}</div>
@@ -341,13 +339,12 @@
       mount: (el) => {
         wireCommon(el); BB.flow.appMount(el, a);
         const on = (sel, fn) => { const b = $(sel, el); if (b) b.onclick = fn; };
-        on('[data-next]', () => run(() => BB.post(`/api/applications/${a.id}/step`, { next: true }), 'Moved'));
+        on('[data-next]', () => BB.flow.moveTo(a, { next: true }));
         $$('[data-screen]', el).forEach((b) => (b.onclick = async () => {
           const v = b.dataset.screen; const closes = v === 'Requirement not met' || v === 'Rejected';
           const x = await BB.ask({ title: `Screening: ${v}`, fields: [{ name: 'note', label: closes ? 'Why (kept on the application)' : 'Note', type: 'textarea', opt: !closes }], ok: v, note: closes ? 'This closes the application. You can change the decision later.' : v === 'Accepted' ? 'The application moves to Our interview.' : '' });
           if (x) run(() => BB.post(`/api/applications/${a.id}/screen`, { verdict: v, note: x.note }), `Marked ${v}`);
         }));
-        $$('[data-sched]', el).forEach((b) => (b.onclick = () => BB.schedule(a, b.dataset.sched)));
         BB.callOutcomes = a.call_outcomes;
         on('[data-offer]', () => BB.recordOffer(a));
         on('[data-accept]', () => run(() => BB.post(`/api/applications/${a.id}/accept`), 'Offer accepted'));
@@ -360,7 +357,7 @@
         on('[data-reopen]', () => run(() => BB.post(`/api/applications/${a.id}/reopen`), 'Reopened'));
         on('[data-left]', () => BB.ask({ title: 'Left the job', note: `Free replacement applies if they left on their own or absconded within ${a.replacement_window} days of joining.`, fields: [{ name: 'date', label: 'Last working day', type: 'date' }, { name: 'reason', label: 'Reason', type: 'select', options: ['Left on their own', 'Removed by client', 'Absconded', 'Other'] }, { name: 'note', label: 'Note', type: 'textarea', opt: true }], ok: 'Save', submit: (v) => BB.post(`/api/applications/${a.id}/left`, v) }).then((x) => x && (BB.toast(x.outcome), after())));
         on('[data-risk]', () => run(() => BB.post(`/api/applications/${a.id}/risk`, { on: !a.at_risk })));
-        $$('[data-setstep]', el).forEach((b) => (b.onclick = () => run(() => BB.post(`/api/applications/${a.id}/step`, { step: b.dataset.setstep, note: 'Set by hand', force: true }), 'Step set')));
+        $$('[data-setstep]', el).forEach((b) => (b.onclick = () => BB.flow.moveTo(a, { step: b.dataset.setstep, note: 'Set by hand', force: true })));
         const sm = $('.step-menu', el); if (sm) el.addEventListener('click', (e) => { if (!e.target.closest('.step-menu')) sm.open = false; });
         $$('[data-result]', el).forEach((b) => (b.onclick = () => BB.recordResult(a.interviews.find((i) => i.id === b.dataset.result), a)));
         $$('[data-confirm]', el).forEach((b) => (b.onclick = () => run(() => BB.post(`/api/interviews/${b.dataset.confirm}/confirm`), 'Confirmed')));
@@ -369,12 +366,12 @@
     };
   };
   // Three rounds: telephonic (us), virtual (us, the client can join), final in person (the client).
-  BB.schedule = (a, mode) => BB.ask({ title: `Schedule: ${BB.ivModes[mode] || 'interview'}`, note: mode === 'phone' ? 'Log each call to the candidate under Calls.' : mode === 'video' ? 'Tick "Client joins" if the client is on this call — it then shows in the client\'s account.' : 'The client meets the candidate. It shows in the client\'s account.', fields: [
-    { name: 'name', label: 'Round name', value: BB.ivModes[mode] }, { name: 'at', label: 'Date and time', type: 'datetime-local' },
+  BB.schedule = (a, mode, row) => BB.ask({ title: `Schedule: ${(row && row.name) || BB.ivModes[mode] || 'interview'}`, note: mode === 'phone' ? 'Log each call to the candidate under Calls.' : mode === 'video' ? 'Tick "Client joins" if the client is on this call — it then shows in the client\'s account.' : 'The client meets the candidate. It shows in the client\'s account.', fields: [
+    { name: 'name', label: 'Round name', value: (row && row.name) || BB.ivModes[mode] }, { name: 'at', label: 'Date and time', type: 'datetime-local' },
     ...(mode === 'video' ? [{ name: 'link', label: 'Meeting link (Google Meet / Zoom)', placeholder: 'https://meet.google.com/…', opt: true, voice: false }, { name: 'client_joins', label: 'Client joins this round', type: 'check', value: false }] : []),
     ...(mode === 'in_person' ? [{ name: 'place', label: 'Address', value: a.client_city || '', placeholder: 'Showroom / office address' }] : []),
     { name: 'interviewer', label: 'Interviewer', value: mode === 'in_person' ? (a.client && a.client.contact) || '' : me().name },
-  ], ok: 'Schedule', submit: (v) => BB.post('/api/interviews', { app_id: a.id, mode, round: mode === 'in_person' ? 'client' : 'ours', ...v, at: BB.fromLocalInput(v.at) }) })
+  ], ok: 'Schedule', submit: (v) => BB.post('/api/interviews', { app_id: a.id, mode, round: mode === 'in_person' ? 'client' : 'ours', round_key: row && row.extra_id ? row.key : undefined, ...v, at: BB.fromLocalInput(v.at) }) })
     .then((x) => { if (x) { BB.toast(x.clash && x.clash.length ? `Scheduled — clash warning with ${x.clash.join(', ')}` : 'Scheduled'); after(); } });
   BB.recordOffer = (a) => BB.ask({ title: 'Record the offer', note: 'The candidate gets the offer with Accept / Decline.', fields: [
     { name: 'ctc', label: 'Yearly CTC (₹)', type: 'number', value: a.offer_ctc || '' }, { name: 'joining_date', label: 'Joining date', type: 'date', value: a.joining_date || '' }, { name: 'reporting_to', label: 'Reporting to', value: a.reporting_to || '', opt: true },
@@ -383,32 +380,34 @@
   BB.recordResult = (i, a) => {
     const ours = i.round === 'ours';
     const results = ours ? ['Move ahead', 'On hold', 'Not selected'] : ['Selected', 'Another round', 'On hold', 'Not selected'];
-    const nextText = { 'Move ahead': `This moves ${a.id} to Sent to client.`, 'Not selected': `This closes ${a.id} (${ours ? 'Not suitable' : 'Client rejected'}).`, 'On hold': `This puts ${a.id} on hold.`, Selected: 'Next you record the offer.', 'Another round': 'Schedule the next round after saving.' };
+    const choices = ours ? BB.flow.nextChoices(a, i) : []; const nextText = { 'Move ahead': '', 'Not selected': `This closes ${a.id} (${ours ? 'Not suitable' : 'Client rejected'}).`, 'On hold': `This puts ${a.id} on hold.`, Selected: 'Next you record the offer.', 'Another round': 'Schedule the next round after saving.' };
     let qa = (i.qa || []).length ? i.qa.slice() : [{ q: '', a: '' }]; let rating = i.rating || 0;
     const m = BB.modal({ title: `Interview record · ${esc(i.id)}`, wide: true, body: '<div data-b></div>', foot: '<button class="btn" data-c>Cancel</button><button class="btn primary" data-s>Save</button>' });
-    const el = m.el; const st = { status: 'Completed', result: '' };
+    const el = m.el; const st = { status: 'Completed', result: '', next: choices.length ? choices[0][0] : '' };
+    const jumps = () => (st.result === 'Move ahead' && st.next ? BB.flow.skipsFor(a, st.next, i) : []);
     const draw = () => {
       $('[data-b]', el).innerHTML = `<div class="stack"><div class="small muted">${esc(a.candidate_name)} · ${esc(a.job_title)} · ${fmtDT(i.at)}</div>
         <label class="field" data-f="status"><span class="lab">What happened</span><div class="choice">${['Completed', 'No-show', 'Cancelled', 'Rescheduled'].map((x) => `<label><input type="radio" name="status" value="${x}" ${st.status === x ? 'checked' : ''}> ${x}</label>`).join('')}</div></label>
         ${st.status === 'Rescheduled' ? `<label class="field" data-f="new_at"><span class="lab">New time</span><input type="datetime-local" name="new_at"></label>` : ''}
-        ${st.status === 'Completed' ? `<label class="field" data-f="result"><span class="lab">Result</span><div class="choice">${results.map((x) => `<label><input type="radio" name="result" value="${x}" ${st.result === x ? 'checked' : ''}> ${x}</label>`).join('')}</div></label>${st.result ? `<div class="notice small">${nextText[st.result]}</div>` : ''}
+        ${st.status === 'Completed' ? `<label class="field" data-f="result"><span class="lab">Result</span><div class="choice">${results.map((x) => `<label><input type="radio" name="result" value="${x}" ${st.result === x ? 'checked' : ''}> ${x}</label>`).join('')}</div></label>${st.result === 'Move ahead' && choices.length ? `<label class="field" data-f="next"><span class="lab">Where next?</span><select name="next">${choices.map(([v, l]) => `<option value="${esc(v)}" ${st.next === v ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select></label>${jumps().length ? `<label class="field" data-f="skip_reason"><span class="lab">Why skip ${esc(jumps().map((r) => r.name).join(' and '))}?</span><div class="inp-wrap"><textarea name="skip_reason">${esc(st.skip_reason || '')}</textarea></div></label>` : ''}` : ''}${st.result ? `<div class="notice small">${nextText[st.result]}</div>` : ''}
         <div><div class="row between"><b class="small">Questions and answers</b><button type="button" class="btn sm" data-addq>+ Add a question</button></div><div class="stack-sm" style="margin-top:6px">${qa.map((x, k) => `<div class="qa-row grid g2"><div class="inp-wrap"><input data-q="${k}" value="${esc(x.q)}" placeholder="Question" data-voice></div><div class="inp-wrap"><input data-a="${k}" value="${esc(x.a)}" placeholder="Answer" data-voice></div></div>`).join('')}</div></div>
         <div><b class="small">Rating</b> <span class="faint small">(optional, used in matching)</span><div class="stars">${[1, 2, 3, 4, 5].map((n) => `<button type="button" data-star="${n}" class="${n <= rating ? 'on' : ''}">★</button>`).join('')}</div></div>` : ''}
         <label class="field" data-f="remark"><span class="lab">Remark</span><div class="inp-wrap"><textarea name="remark" data-voice>${esc(st.remark || '')}</textarea></div></label></div>`;
       BB.attachMics(el);
       $$('[name=status]', el).forEach((r) => (r.onchange = () => { keep(); st.status = r.value; draw(); }));
       $$('[name=result]', el).forEach((r) => (r.onchange = () => { keep(); st.result = r.value; draw(); }));
+      const nx = $('[name=next]', el); if (nx) nx.onchange = () => { keep(); st.next = nx.value; draw(); };
       const aq = $('[data-addq]', el); if (aq) aq.onclick = () => { keep(); qa.push({ q: '', a: '' }); draw(); };
       $$('[data-star]', el).forEach((b) => (b.onclick = () => { keep(); rating = Number(b.dataset.star) === rating ? 0 : Number(b.dataset.star); draw(); }));
     };
-    const keep = () => { qa = qa.map((x, k) => ({ q: ($(`[data-q="${k}"]`, el) || {}).value ?? x.q, a: ($(`[data-a="${k}"]`, el) || {}).value ?? x.a })); const r = $('[name=remark]', el); if (r) st.remark = r.value; };
+    const keep = () => { qa = qa.map((x, k) => ({ q: ($(`[data-q="${k}"]`, el) || {}).value ?? x.q, a: ($(`[data-a="${k}"]`, el) || {}).value ?? x.a })); const r = $('[name=remark]', el); if (r) st.remark = r.value; const sr = $('[name=skip_reason]', el); if (sr) st.skip_reason = sr.value; };
     draw();
     $('[data-c]', el).onclick = m.close;
     $('[data-s]', el).onclick = async () => {
       keep(); const na = $('[name=new_at]', el);
       try {
-        const r = await BB.post(`/api/interviews/${i.id}/result`, { status: st.status, result: st.result, remark: st.remark, rating: rating || null, qa: qa.filter((x) => x.q || x.a), new_at: na ? BB.fromLocalInput(na.value) : undefined });
-        m.close(); BB.toast(r.next === 'OPEN_OFFER' ? 'Selected — record the offer' : r.next); after();
+        const r = await BB.post(`/api/interviews/${i.id}/result`, { status: st.status, result: st.result, remark: st.remark, next: st.result === 'Move ahead' ? st.next : undefined, skip_reason: st.skip_reason, rating: rating || null, qa: qa.filter((x) => x.q || x.a), new_at: na ? BB.fromLocalInput(na.value) : undefined });
+        m.close(); const go = String(r.next || '').startsWith('SCHEDULE:') ? a.rounds.find((x) => x.key === r.next.slice(9)) : null; BB.toast(r.next === 'OPEN_OFFER' ? 'Selected — record the offer' : go ? 'Saved' : r.next); after(); if (go) BB.schedule(a, go.mode, go);
         if (r.next === 'OPEN_OFFER') BB.recordOffer(a);
       } catch (e) { BB.showErr(el, e); }
     };
@@ -435,7 +434,7 @@
     const c = await BB.api(`/api/candidates/${id}`);
     return {
       head: `<div class="row"><h2>${esc(c.name)}</h2><span class="mono faint">${esc(c.id)}</span><span class="badge ${c.status === 'Hired' ? 'b-green' : c.status.startsWith('In process') ? 'b-primary' : 'b-outline'}">${esc(c.status)}</span><span class="badge b-outline">${esc(c.looking)}</span>${c.opted_out ? '<span class="badge b-red">Opted out</span>' : ''}${c.is_new ? '<span class="badge b-gold">new</span>' : ''}${c.possible_repeat_of ? `<span class="badge b-amber">Possible repeat of ${esc(c.possible_repeat_of)}</span>` : ''}${c.needs_check ? `<span class="badge b-amber">${esc(c.needs_check)}</span>` : ''}</div><div class="small muted">${esc(c.job_wanted || '')} · ${esc(c.city || '')} · source ${esc(c.source || '—')}${c.ad_campaign || c.ad_set || c.ad_name ? ` · ad <b>${esc([c.ad_campaign, c.ad_set, c.ad_name].filter(Boolean).join(' › '))}</b>` : ''}${c.tieup ? ` · tie-up ${esc(c.tieup.name)}` : ''}</div>`,
-      body: `${cvBar(c.cv_file, ((c.files || []).find((f) => String(f.id) === String(c.cv_file)) || {}).name, c.phone_hidden ? '' : c.id)}<div class="seg panel-tabs"><button data-ctab="profile" class="on">Profile</button><button data-ctab="history">History · ${(c.track || []).length} application${(c.track || []).length === 1 ? '' : 's'}</button></div><div data-cpane="profile"><div class="row" style="margin-bottom:12px">${c.can_message || !c.phone_hidden ? waBtn({ ptype: 'candidate', pid: c.id }) : waBtn({ ptype: 'candidate', pid: c.id }, 'WhatsApp (number hidden)')}<button class="btn sm" data-chat>Open chat</button><button class="btn sm" data-profilepdf>Download profile</button>${canDelete() ? `<button class="btn sm danger" data-delrec="candidate" data-id="${c.id}">Delete</button>` : ''}<button class="btn sm primary" data-addjob>Add to a job</button>${!c.phone_hidden ? '<button class="btn sm" data-edit>Edit</button>' : ''}<button class="btn sm" data-shortcv>Make short CV</button>${c.possible_repeat_of ? '<button class="btn sm" data-merge>Merge…</button>' : ''}</div>
+      body: `${cvBar(c.cv_file, ((c.files || []).find((f) => String(f.id) === String(c.cv_file)) || {}).name, c.phone_hidden ? '' : c.id)}<div class="seg panel-tabs"><button data-ctab="profile" class="on">Profile</button><button data-ctab="history">History · ${(c.track || []).length} application${(c.track || []).length === 1 ? '' : 's'}</button></div><div data-cpane="profile"><div class="row" style="margin-bottom:12px">${c.can_message || !c.phone_hidden ? waBtn({ ptype: 'candidate', pid: c.id }) : waBtn({ ptype: 'candidate', pid: c.id }, 'WhatsApp (number hidden)')}<button class="btn sm" data-chat>Open chat</button><button class="btn sm" data-profilepdf>Download profile</button><button class="btn sm" data-chrole>Change role</button>${canDelete() ? `<button class="btn sm danger" data-delrec="candidate" data-id="${c.id}">Delete</button>` : ''}<button class="btn sm primary" data-addjob>Add to a job</button>${!c.phone_hidden ? '<button class="btn sm" data-edit>Edit</button>' : ''}<button class="btn sm" data-shortcv>Make short CV</button>${c.possible_repeat_of ? '<button class="btn sm" data-merge>Merge…</button>' : ''}</div>
         <div class="card pad sec"><dl class="kv"><dt>WhatsApp</dt><dd>${esc(c.whatsapp)} ${c.phone_hidden ? '<span class="badge b-outline tiny">hidden: another agency\'s candidate</span>' : ''}</dd><dt>Email</dt><dd>${esc(c.email || '—')}</dd><dt>Will work in</dt><dd>${esc((c.work_cities || []).join(', ') || c.city || '—')}</dd><dt>Experience</dt><dd>${c.exp_total ?? '—'} years (jewellery ${c.exp_jewellery ?? '—'})</dd><dt>Worked in</dt><dd>${esc((c.exp_business || []).join(', ') || '—')}</dd><dt>Salary</dt><dd>now ${c.cur_salary ? inr(c.cur_salary / 12) + '/mo' : '—'} · expects ${c.exp_salary ? inr(c.exp_salary / 12) + '/mo' : '—'}</dd><dt>Notice</dt><dd>${c.notice_days ?? '—'} days</dd><dt>Current company</dt><dd>${esc(c.current_company || '—')}</dd><dt>Domain</dt><dd>${esc(c.domain || 'Not read yet')}</dd><dt>Skills</dt><dd>${(c.skills || []).map((x) => `<span class="badge b-outline">${esc(x)}</span>`).join(' ') || '—'}</dd><dt>Interview rating</dt><dd>${c.rating ? `${'★'.repeat(Math.round(c.rating))} ${c.rating.toFixed(1)}` : '—'}</dd><dt>Agency / recruiter</dt><dd>${esc(c.agency_name || '—')} · ${esc(c.recruiter_name || '—')}</dd><dt>Last updated</dt><dd>${BB.daysAgo(c.last_updated || c.created_at)}</dd><dt>Referral link</dt><dd class="mono tiny">${esc(c.referral_link)}</dd></dl></div>
         <div class="sec"><h3>Applications on all jobs (${c.apps.length})</h3><div class="card tbl-wrap"><table class="tbl"><tbody>${c.apps.map((a) => `<tr class="click" data-open="application:${a.id}"><td class="mono">${a.id}</td><td>${esc(a.job_title)}<div class="tiny muted">${esc(a.client_name)}</div></td><td><span class="badge b-primary">${esc(a.step)}</span></td><td>${resultBadge(a.result)}</td></tr>`).join('') || '<tr><td class="empty">Not on any job yet.</td></tr>'}</tbody></table></div></div>
         <div class="sec"><h3>Matching open jobs <span class="faint small">· found automatically</span></h3><div class="card tbl-wrap"><table class="tbl"><tbody>${(c.job_matches || []).map((m) => `<tr><td>${scoreBadge(m.score)}</td><td><a href="#" data-open="job:${m.id}">${esc(m.title)}</a> <span class="mono faint">${esc(m.id)}</span><div class="tiny muted">${esc(m.client_name || '')} · ${esc(m.city || '')}</div>${whyMatch(m)}</td><td><button class="btn sm" data-addto="${m.id}">Add</button></td></tr>`).join('') || '<tr><td class="empty">No open job fits well right now.</td></tr>'}</tbody></table></div></div>

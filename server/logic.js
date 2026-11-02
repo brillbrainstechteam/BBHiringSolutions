@@ -302,11 +302,12 @@ function matchScore(c, j, rating) {
   const total = Object.values(w).reduce((a, b) => a + Number(b), 0) || 100;
   const part = (k, frac, why, gap) => { score += (Number(w[k]) || 0) * frac; if (why && frac >= 0.5) reasons.push(why); if (gap && frac < 0.5) gaps.push(gap); };
   // Role: same title, a close title, the same field of work, or the same department.
-  const close = titleCloseness(c.job_wanted, j.title); const cg = groupOf(c.job_wanted); const jg = groupOf(j.title);
-  if (c.job_wanted && c.job_wanted.toLowerCase() === String(j.title).toLowerCase()) part('role', 1, `Wants ${j.title}`);
-  else if (close >= 0.99) part('role', 0.9, `Wants ${c.job_wanted}`);
-  else if (close >= 0.5) part('role', 0.75, `Wants ${c.job_wanted} (close)`);
-  else if (cg && cg === jg) part('role', 0.5, `Same field: ${cg}`);
+  // Someone remapped to a new role can stay open to the old one: the role that fits this job best counts.
+  const jg = groupOf(j.title); const fits = [c.job_wanted, ...(Array.isArray(c.also_roles) ? c.also_roles : [])].filter(Boolean).map((r) => {
+    const close = titleCloseness(r, j.title); const cg = groupOf(r);
+    if (r.toLowerCase() === String(j.title).toLowerCase()) return [1, `Wants ${j.title}`]; if (close >= 0.99) return [0.9, `Wants ${r}`]; if (close >= 0.5) return [0.75, `Wants ${r} (close)`]; if (cg && cg === jg) return [0.5, `Same field: ${cg}`]; return [0, null];
+  }).sort((x, y) => y[0] - x[0]);
+  if (fits[0] && fits[0][0]) part('role', fits[0][0], fits[0][1]);
   else if (c.department && c.department === j.department) part('role', 0.4, null, `${j.department} background, other role`);
   else part('role', 0, null, c.job_wanted ? `Wants ${c.job_wanted}` : 'Job wanted not given');
   // Place: the job's city, or a city they will work in; the same state counts a little.
@@ -635,7 +636,8 @@ function scheduleInterview(appId, o, by) {
   insert('interviews', { id, app_id: appId, round, mode, link: mode === 'video' ? String(o.link || '').trim() : '', client_joins: clientJoins, name: o.name || (mode ? IV_MODES[mode] : (round === 'ours' ? 'Round 1' : 'Client round')), at: new Date(o.at).toISOString(), place, interviewer: o.interviewer || '', status: 'Scheduled', qa: [], confirmed: 0, created_by: by && by.uid, created_at: now() });
   history(actorName(by), 'create', id, null, null, `${round} interview on ${appId}`);
   if (o.from_ask) update('interviews', id, { from_ask: o.from_ask });
-  if (mode) D.run('DELETE FROM round_skips WHERE app_id=? AND mode=?', appId, mode); // booked after all: "No need" no longer stands
+  if (o.round_key) update('interviews', id, { round_key: String(o.round_key) });
+  if (mode) D.run('DELETE FROM round_skips WHERE app_id=? AND mode=?', appId, o.round_key || mode); // booked after all: "Not needed" no longer stands
   if (round === 'client') D.run(`UPDATE slot_asks SET status='Scheduled', iv_id=? WHERE app_id=? AND status IN (${OPEN_ASK})`, id, appId);
   const target = round === 'ours' ? 'Our interview' : 'Client interview';
   if (stepIdx(app.step) < stepIdx(target)) moveStep(appId, target, by, `${id} scheduled`);
@@ -658,6 +660,11 @@ function recordInterview(ivId, o, by) {
   if (!iv) throw httpError(404, 'Interview not found');
   if (!o.status) throw httpError(400, 'Say what happened', 'status');
   if (!o.remark || !String(o.remark).trim()) throw httpError(400, 'A remark is required', 'remark');
+  if (o.status === 'Completed' && o.result === 'Move ahead' && o.next && !String(o.skip_reason || '').trim()) { // asked before anything is saved
+    const appNow = get('SELECT * FROM applications WHERE id=?', iv.app_id); const rows = roundsOf(appNow).filter((r) => !r.interview_ids.includes(ivId)); const at = rows.findIndex((r) => r.key === o.next);
+    const left = o.next === 'client' ? rows.filter((r) => r.status === 'To do' && r.mode !== 'in_person') : rows.slice(0, Math.max(0, at)).filter((r) => r.status === 'To do');
+    if (left.length) throw httpError(400, `Give the reason for skipping: ${left.map((r) => r.name).join(', ')}`, 'skip_reason');
+  }
   const patch = { status: o.status, remark: o.remark, qa: o.qa || iv.qa || [], rating: o.rating ? Number(o.rating) : null };
   if (o.status === 'Rescheduled') {
     if (!o.new_at) throw httpError(400, 'Pick the new time', 'new_at');
@@ -673,7 +680,11 @@ function recordInterview(ivId, o, by) {
   let next = 'Saved';
   if (o.status === 'Completed' && app.result === 'open') {
     if (iv.round === 'ours') {
-      if (o.result === 'Move ahead' && iv.mode === 'phone') { appHist(app.id, app.step, by, `${ivId} (telephonic) cleared: ${o.remark}`, 'interview'); next = 'Schedule the virtual round'; }
+      if (o.result === 'Move ahead' && o.next) {
+        appHist(app.id, app.step, by, `${ivId} cleared: ${o.remark}`, 'interview');
+        if (o.next === 'client') { passRounds(app.id, 'Sent to client', o.skip_reason, by); if (stepIdx(app.step) < stepIdx('Sent to client')) moveStep(app.id, 'Sent to client', by, `${ivId}: ${o.remark}`); next = `${app.id} moved to Sent to client`; }
+        else { const rows = roundsOf(app); const at = rows.findIndex((r) => r.key === o.next); if (at < 0) throw httpError(400, 'Pick where next'); skipRounds(app, rows.slice(0, at).filter((r) => r.status === 'To do'), o.skip_reason, by); next = `SCHEDULE:${o.next}`; }
+      } else if (o.result === 'Move ahead' && iv.mode === 'phone') { appHist(app.id, app.step, by, `${ivId} (telephonic) cleared: ${o.remark}`, 'interview'); next = 'Schedule the virtual round'; }
       else if (o.result === 'Move ahead') { moveStep(app.id, 'Sent to client', by, `${ivId}: ${o.remark}`); next = `${app.id} moved to Sent to client`; }
       else if (o.result === 'Not selected') { closeApplication(app.id, 'Not suitable', by, `${ivId}: ${o.remark}`); next = `${app.id} closed (Not suitable)`; }
       else if (o.result === 'On hold') { update('applications', app.id, { on_hold: 1, hold_reason: o.remark }); appHist(app.id, app.step, by, `On hold after ${ivId}`, 'hold'); next = `${app.id} put on hold`; }
@@ -756,6 +767,27 @@ function leftJob(appId, o, by) {
   }
   alertUser(job.recruiter_id, `${appId} left the job (${o.reason})`, appId, 'candidate');
   return { outcome };
+}
+
+// ---------- interview rounds: one line each, none of them compulsory ----------
+const BASE_ROUNDS = [['phone', IV_MODES.phone], ['video', IV_MODES.video], ['in_person', IV_MODES.in_person]];
+function roundsOf(app) {
+  const ivs = all('SELECT * FROM interviews WHERE app_id=? ORDER BY at', app.id).map(interviewView); const skips = all('SELECT * FROM round_skips WHERE app_id=?', app.id);
+  const rows = [...BASE_ROUNDS.map(([key, name]) => ({ key, mode: key, name })), ...all('SELECT * FROM extra_rounds WHERE app_id=? ORDER BY id', app.id).map((x) => ({ key: `x${x.id}`, extra_id: x.id, mode: x.mode, name: x.name, added_reason: x.reason, added_by: x.by, added_at: x.at }))];
+  return rows.map((r) => {
+    const own = ivs.filter((i) => (i.round_key || i.mode || (i.round === 'client' ? 'in_person' : 'phone')) === r.key); const last = own.find((i) => ['Scheduled', 'Rescheduled'].includes(i.status)) || own.filter((i) => i.status !== 'Cancelled').pop() || own[own.length - 1]; const skip = skips.find((x) => x.mode === r.key);
+    const status = skip ? 'Not needed' : !last || last.status === 'Cancelled' ? 'To do' : ['Scheduled', 'Rescheduled'].includes(last.status) ? (last.view_status === 'Result pending' ? 'Result pending' : 'Scheduled') : last.status === 'No-show' ? 'No-show' : last.result === 'Not selected' ? 'Not cleared' : last.result === 'On hold' ? 'On hold' : 'Cleared';
+    return { ...r, status, interview_ids: own.map((i) => i.id), at: last ? last.at : null, skip_reason: skip ? skip.reason : '', skip_by: skip ? skip.by : '', skip_at: skip ? skip.at : null };
+  });
+}
+function skipRounds(app, rows, reason, by) {
+  if (!rows.length) return; const why = String(reason || '').trim(); if (!why) throw httpError(400, `Give the reason for skipping: ${rows.map((r) => r.name).join(', ')}`, 'skip_reason');
+  for (const r of rows) { D.run('INSERT OR REPLACE INTO round_skips (app_id, mode, reason, by, at) VALUES (?, ?, ?, ?, ?)', app.id, r.key, why, actorName(by), now()); appHist(app.id, get('SELECT step FROM applications WHERE id=?', app.id).step, by, `${r.name}: Not needed. ${why}`, 'interview'); }
+}
+// Going past our own rounds to the client: a round left at To do needs its reason.
+function passRounds(appId, step, reason, by) {
+  const app = get('SELECT * FROM applications WHERE id=?', appId); if (stepIdx(step) < stepIdx('Sent to client') || stepIdx(app.step) >= stepIdx('Sent to client')) return;
+  skipRounds(app, roundsOf(app).filter((r) => r.status === 'To do' && r.mode !== 'in_person'), reason, by);
 }
 
 // ---------- job actions ----------
@@ -1060,4 +1092,4 @@ function resumeUse(user, candidateId) {
 }
 const accountsUsers = () => all("SELECT * FROM users WHERE level='sub' AND team='Accounts' AND status='On'");
 const openTasksOf = (userId) => all("SELECT * FROM tasks WHERE owner_id=? AND removed=0 AND status<>'Done' ORDER BY COALESCE(due_date, '9999'), at", userId);
-Object.assign(module.exports, { openTasksOf, accountsUsers, fixAsk, openAsks, OPEN_ASK, resumeUse, RESUME_DAYS });
+Object.assign(module.exports, { roundsOf, skipRounds, passRounds, openTasksOf, accountsUsers, fixAsk, openAsks, OPEN_ASK, resumeUse, RESUME_DAYS });

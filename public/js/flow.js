@@ -233,18 +233,46 @@
     return `${tpl}<div class="sec card pad"><h3 style="margin-bottom:6px">Offer steps</h3>${st.map(([k, l, at]) => `<label class="row small"><input type="checkbox" data-ostage="${k}" ${at ? 'checked' : ''} ${a.result === 'open' ? '' : 'disabled'}> ${l}${at ? ` <span class="faint">${fmtDT(at)}</span>` : ''}</label>`).join('')}
       ${canAdmin() && a.offer_ctc ? `<div class="row" style="margin-top:8px">${asked ? `<span class="small muted">Accounts asked ${fmtDT(asked)}</span>` : ''}<button class="btn sm ${asked ? '' : 'primary'}" data-faccounts>${asked ? 'Ask again' : 'Ask Accounts for the invoice'}</button>${a.bill ? `<a href="#" class="small" data-open="bill:${a.bill.id}">Open bill</a>` : ''}</div>` : ''}</div>`;
   };
-  // ---------- Skipping a round, with the reason ----------
-  const ROUNDS = { phone: 'Telephonic round', video: 'Virtual round', in_person: 'Final round (in person)' };
-  F.appSkipBtn = (a) => { const left = Object.keys(ROUNDS).filter((k) => !a.round_skips.some((x) => x.mode === k)); return left.length ? `<details class="step-menu"><summary class="btn sm">No need</summary><div class="step-pop" role="menu">${left.map((k) => `<button type="button" role="menuitem" data-skip="${k}">${ROUNDS[k]}</button>`).join('')}</div></details>` : ''; };
-  F.appSkips = (a) => a.round_skips.map((x) => `<div class="skip-row"><div class="grow"><b>${esc(ROUNDS[x.mode] || x.mode)}</b> <span class="badge b-outline">No need</span><div class="small">${esc(x.reason)}</div><div class="tiny muted">${esc(x.by)} · ${fmtDT(x.at)}</div></div><button class="btn sm ghost" data-unskip="${x.mode}">Undo</button></div>`).join('');
+  // ---------- Interview rounds: one line each, one action each ----------
+  const RND_CLS = { 'To do': 'b-outline', Scheduled: 'b-primary', 'Result pending': 'b-amber', Cleared: 'b-green', 'Not cleared': 'b-red', 'On hold': 'b-amber', 'No-show': 'b-red', 'Not needed': 'b-outline' };
+  const ROUND_TYPES = [['phone', 'Telephonic'], ['video', 'Virtual'], ['in_person', 'In person']];
+  F.appRounds = (a, ivCard) => {
+    const open = a.result === 'open'; const ivOf = (r) => r.interview_ids.map((id) => a.interviews.find((i) => i.id === id)).filter(Boolean);
+    const row = (r) => {
+      const free = open && ['To do', 'No-show'].includes(r.status); const live = ['Scheduled', 'Result pending'].includes(r.status); const cards = ivOf(r).map(ivCard).join('');
+      return `<div class="rnd"><div class="rnd-top"><div class="grow"><b>${esc(r.name)}</b> <span class="badge ${RND_CLS[r.status] || 'b-outline'}">${esc(r.status)}</span>${r.at && r.status !== 'To do' ? ` <span class="small muted">${fmtDT(r.at)}</span>` : ''}${r.added_reason ? `<div class="tiny muted">Added by ${esc(r.added_by)}: ${esc(r.added_reason)}</div>` : ''}${r.status === 'Not needed' ? `<div class="small">${esc(r.skip_reason)}</div><div class="tiny muted">${esc(r.skip_by)} · ${fmtDT(r.skip_at)}</div>` : ''}</div>
+        ${free ? `<details class="step-menu"><summary class="btn sm">Choose</summary><div class="step-pop right" role="menu"><button type="button" role="menuitem" data-rsched="${esc(r.key)}">Schedule</button><button type="button" role="menuitem" data-rskip="${esc(r.key)}">Not needed</button>${r.extra_id && !r.interview_ids.length ? `<button type="button" role="menuitem" data-rdel="${r.extra_id}">Remove round</button>` : ''}</div></details>` : ''}${open && r.status === 'Not needed' ? `<button class="btn sm ghost" data-runskip="${esc(r.key)}">Undo</button>` : ''}</div>
+        ${cards ? (live ? `<div class="rnd-iv">${cards}</div>` : `<details class="rnd-iv"><summary class="small">Details</summary>${cards}</details>`) : ''}</div>`;
+    };
+    return `<div class="sec card pad stack-sm"><div class="row between"><h3 style="margin:0">Interview rounds</h3>${open ? '<button class="btn sm" data-radd>+ Add round</button>' : ''}</div>${a.rounds.map(row).join('')}</div>`;
+  };
+  // Moving past our own rounds to the client asks once why those left at To do are not needed.
+  const toDo = (a) => a.rounds.filter((r) => r.status === 'To do' && r.mode !== 'in_person');
+  F.moveTo = async (a, body) => {
+    const s = BB.boot.steps; const to = body.next ? s[s.indexOf(a.step) + 1] : body.step; const idx = (x) => s.indexOf(x); const left = idx(a.step) < idx('Sent to client') && idx(to) >= idx('Sent to client') ? toDo(a) : [];
+    let skip_reason; if (left.length) { const v = await BB.ask({ title: `Skip ${left.map((r) => r.name).join(' and ')}?`, fields: [{ name: 'reason', label: 'Why are they not needed?', type: 'textarea' }], ok: 'Skip and move' }); if (!v) return; skip_reason = v.reason; }
+    act(() => BB.post(`/api/applications/${a.id}/step`, { ...body, rounds: true, skip_reason }), 'Moved');
+  };
+  F.nextChoices = (a, i) => { const mine = a.rounds.findIndex((r) => r.interview_ids.includes(i.id)); const list = a.rounds.map((r, k) => ({ ...r, k })).filter((r) => r.status === 'To do' && r.k !== mine).map((r) => [r.key, `Schedule ${r.name}`]); return BB.boot.steps.indexOf(a.step) < BB.boot.steps.indexOf('Sent to client') ? [...list, ['client', 'Send to client']] : list; };
+  F.skipsFor = (a, target, i) => { const rows = a.rounds.filter((r) => !r.interview_ids.includes(i.id)); if (target === 'client') return rows.filter((r) => r.status === 'To do' && r.mode !== 'in_person'); const at = rows.findIndex((r) => r.key === target); return rows.slice(0, Math.max(0, at)).filter((r) => r.status === 'To do'); };
+  // Same person, a new direction: found under the new role from now on.
+  F.changeRole = async (cid, current, app) => {
+    const v = await BB.ask({ title: 'Change role', fields: [`<div class="small muted">Now: <b>${esc(current || 'Not given')}</b></div><label class="field" data-f="role"><span class="lab">New role</span><select name="role">${BB.jobOptions('')}</select></label>`, { name: 'other', label: 'If Other, type the role', opt: true, voice: false }, ...(current ? [{ name: 'keep', label: `Still open to ${current}`, type: 'check' }] : []), { name: 'note', label: 'Why? What did you learn from the candidate?', type: 'textarea' }], ok: 'Change role', submit: (x) => BB.post(`/api/candidates/${cid}/map-role`, { ...x, app }) });
+    if (v) done(`Role changed${v.jobs.length ? `. ${v.jobs.length} open job${v.jobs.length === 1 ? '' : 's'} match: ${v.jobs.map((j) => j.title).join(', ')}` : ''}`);
+  };
   F.appCv = (a) => `<button class="btn sm" data-fcv>CV for client</button>${a.step === 'Our interview' ? '' : '<button class="btn sm" data-fcvmail>Email CV to client</button>'}`;
   F.appMount = (el, a) => {
     $$('[data-ostage]', el).forEach((c) => (c.onchange = () => act(() => BB.post(`/api/applications/${a.id}/offer-stage`, { stage: c.dataset.ostage, on: c.checked }), (r) => (r.needs_offer ? 'Saved. Record the offer so Accounts can be asked for the invoice' : r.asked ? (r.asked.email === 'no address' ? 'Saved. Accounts see it in Invoicing; no Accounts email is set' : 'Saved. Accounts asked for the invoice') : 'Saved'))));
     const tp = $('[data-ftpl]', el); if (tp) tp.onclick = () => BB.download('/api/offer-template/file');
     const ac = $('[data-faccounts]', el); if (ac) ac.onclick = () => act(() => BB.post(`/api/applications/${a.id}/ask-invoice`), (r) => (r.email === 'no address' ? 'Draft bill made. Add the Accounts email in Settings → Fees & limits' : r.email === 'held' ? 'Draft bill made. The email is saved: messages are off' : 'Accounts asked'));
     const cv = $('[data-fcv]', el); if (cv) cv.onclick = async () => { try { const f = await BB.post(`/api/applications/${a.id}/client-cv`); BB.openFile(f.id); BB.toast('CV made without phone and email'); } catch (e) { BB.fail(e); } };
-    $$('[data-skip]', el).forEach((b) => (b.onclick = async () => { const m = b.dataset.skip; const v = await BB.ask({ title: `No need: ${ROUNDS[m]}`, fields: [{ name: 'reason', label: 'Why is this round not needed?', type: 'textarea' }], ok: 'Save', submit: (x) => BB.post(`/api/applications/${a.id}/skip-round`, { mode: m, reason: x.reason }) }); if (v) done('Saved with the reason'); }));
-    $$('[data-unskip]', el).forEach((b) => (b.onclick = () => act(() => BB.post(`/api/applications/${a.id}/skip-round/undo`, { mode: b.dataset.unskip }), 'Undone')));
+    const roundBy = (k) => a.rounds.find((r) => r.key === k);
+    $$('[data-rsched]', el).forEach((b) => (b.onclick = () => { const r = roundBy(b.dataset.rsched); BB.schedule(a, r.mode, r); }));
+    $$('[data-rskip]', el).forEach((b) => (b.onclick = async () => { const r = roundBy(b.dataset.rskip); const v = await BB.ask({ title: `Not needed: ${r.name}`, fields: [{ name: 'reason', label: 'Why is this round not needed?', type: 'textarea' }], ok: 'Save', submit: (x) => BB.post(`/api/applications/${a.id}/skip-round`, { key: r.key, reason: x.reason }) }); if (v) done('Saved with the reason'); }));
+    $$('[data-runskip]', el).forEach((b) => (b.onclick = () => act(() => BB.post(`/api/applications/${a.id}/skip-round/undo`, { key: b.dataset.runskip }), 'Undone')));
+    $$('[data-rdel]', el).forEach((b) => (b.onclick = () => act(() => BB.post(`/api/applications/${a.id}/rounds/${b.dataset.rdel}/delete`), 'Round removed')));
+    const ra = $('[data-radd]', el); if (ra) ra.onclick = async () => { const v = await BB.ask({ title: 'Add round', fields: [`<div class="grid g2">${field({ name: 'name', label: 'Round name', voice: false, placeholder: 'e.g. Second client round' })}${field({ name: 'mode', label: 'Type', type: 'select', options: ROUND_TYPES, placeholder: false })}</div>`, { name: 'reason', label: 'Why is this round needed?', type: 'textarea' }], ok: 'Add round', submit: (x) => BB.post(`/api/applications/${a.id}/rounds`, x) }); if (v) done('Round added'); };
+    const cr = $('[data-chrole]', el); if (cr) cr.onclick = () => F.changeRole(a.candidate_id, (a.candidate || {}).job_wanted, a.id);
     const sl = $('[data-fslots]', el); if (sl) sl.onclick = () => askSlots(a).then((x) => x && done('Sent to the client'));
     $$('[data-sfix]', el).forEach((b) => (b.onclick = () => act(() => BB.post(`/api/slot-asks/${b.dataset.sfix}/schedule`), (r) => r.effect)));
     $$('[data-scancel]', el).forEach((b) => (b.onclick = () => act(() => BB.post(`/api/slot-asks/${b.dataset.scancel}/cancel`), 'Request cancelled')));
