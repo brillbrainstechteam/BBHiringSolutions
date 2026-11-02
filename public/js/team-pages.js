@@ -94,7 +94,6 @@
         ${d.can_allocate ? `<select class="mini" data-lb-ag><option value="">Assign to agency…</option>${agencyOpts}</select>` : ''}
         ${tab === 'client' ? `<select class="mini" data-lb-stage><option value="">Move to stage…</option>${(d.stages || []).map((x) => `<option>${esc(x)}</option>`).join('')}</select>` : '<button class="btn sm" data-lb="add_to_job">Add to a job</button>'}
         <button class="btn sm" data-lb="welcome">${BB.icon('chat')} Send account link</button>
-        <button class="btn sm" data-lb="seen">Mark as seen</button>
 </div>` : ''}
       <div class="card" data-list></div>`;
     const list = $('[data-list]', el);
@@ -122,7 +121,6 @@
         if (a === 'download') { if (!ids().length) return; return BB.download(`/api/leads?${BB.qs(q, { tab, ids: v.join(','), format: 'xlsx' })}`); }
         if (a === 'add_to_job') { if (!ids().length) return; return BB.pickJob((jid) => run('add_to_job', jid, 'Added to the job')); }
         if (a === 'welcome') { if (!ids().length) return; if (await BB.confirm('Send account link on WhatsApp', `${many(v.length)} get their welcome message with the link to their ${tab === 'client' ? 'client account' : 'profile'}. People who said STOP are skipped.`, 'Send')) run('welcome', null, 'Sent'); return; }
-        if (a === 'seen') return run('seen', null, 'Marked as seen');
       }));
       const ag = $('[data-lb-ag]', bar); if (ag) ag.onchange = async () => { const v = ids(); if (!v.length || !ag.value) { ag.value = ''; return; } try { await BB.post('/api/leads/assign', { type: tab, ids: v, agency_id: ag.value }); BB.toast(`${many(v.length)} assigned — the agency admin got a task alert`); BB.refreshPage(); } catch (e) { BB.fail(e); } };
       const st = $('[data-lb-stage]', bar); if (st) st.onchange = () => { const val = st.value; st.value = ''; if (val) run('stage', val, `Moved to ${val}`); };
@@ -411,14 +409,13 @@
     </section>`;
     el.innerHTML = `${head}
     <div class="row small bulkbar cand-bulk" data-bulkbar><span class="sel-count" data-selcount>Select the checkboxes to take actions</span>
-      ${bulkBtn('add_to_job', 'Add to a job')}${me.level !== 'sub' ? bulkBtn('alert', 'Send job alert', 'gold') : ''}${bulkBtn('set_looking', 'Set job status')}${bulkBtn('note', 'Add note')}${bulkBtn('followup', 'Follow-up')}${me.level !== 'sub' ? `${bulkBtn('assign', 'Assign recruiter')}${bulkBtn(q.archived ? 'unarchive' : 'archive', q.archived ? 'Unarchive' : 'Archive')}` : ''}${superAdmin ? `${bulkBtn('agency', 'Assign to agency')}${bulkBtn('welcome', 'Send account link')}${bulkBtn('seen', 'Mark as seen')}${bulkBtn('download', 'Download selected')}${bulkBtn('junk', 'Mark as junk')}` : ''}${me.level !== 'sub' ? bulkBtn('delete', 'Delete', 'danger') : ''}<button class="btn sm ghost" data-unsel hidden>Clear selection</button></div>
+      ${bulkBtn('add_to_job', 'Add to a job')}${me.level !== 'sub' ? bulkBtn('alert', 'Send job alert', 'gold') : ''}${bulkBtn('set_looking', 'Set job status')}${bulkBtn('note', 'Add note')}${bulkBtn('followup', 'Follow-up')}${me.level !== 'sub' ? `${bulkBtn('assign', 'Assign recruiter')}${bulkBtn(q.archived ? 'unarchive' : 'archive', q.archived ? 'Unarchive' : 'Archive')}` : ''}${superAdmin ? `${bulkBtn('agency', 'Assign to agency')}${bulkBtn('welcome', 'Send account link')}${bulkBtn('download', 'Download selected')}` : ''}${me.level !== 'sub' ? bulkBtn('delete', 'Delete', 'danger') : ''}<button class="btn sm ghost" data-unsel hidden>Clear selection</button></div>
     <div class="card cand-table">${BB.table([
       { t: 'Candidate', cls: 'name-col', f: (c) => `<b>${esc(c.name)}</b>${c.is_new ? ' <span class="dot new" title="New"></span>' : ''}${c.opted_out ? ' <span class="badge b-red tiny">STOP</span>' : ''}<div class="mono tiny ${c.phone_hidden ? 'faint' : 'muted'}">${esc(c.whatsapp)}</div><div class="mono tiny faint">${c.id}</div>` },
       { t: 'Role and domain', cls: 'wrap', f: (c) => `${esc(c.job_wanted) || '<span class="faint">—</span>'}<div class="tiny muted">${c.domain && c.domain !== 'Not clear' ? esc(c.domain) : ''}</div>` },
       { t: 'Skills', cls: 'skills-col', f: (c) => { const sk = c.skills || []; return sk.length ? `<div class="sk-wrap">${sk.slice(0, 5).map((x) => `<span class="sk">${esc(x)}</span>`).join('')}${sk.length > 5 ? `<span class="sk more" title="${esc(sk.slice(5).join(', '))}">+${sk.length - 5}</span>` : ''}</div>` : '<span class="faint">—</span>'; } },
-      { t: 'Experience', f: (c) => `${c.exp_total === null || c.exp_total === undefined ? '—' : `${c.exp_total} yrs`}<div class="tiny muted">Jewellery: ${jewYrs(c.exp_jewellery)}</div>` },
+      { t: 'Experience', f: (c) => `${c.exp_total === null || c.exp_total === undefined ? '—' : `${c.exp_total} yrs`}<div class="tiny muted">Jewellery: ${jewYrs(c.exp_jewellery)}</div>${c.exp_salary ? `<div class="tiny muted">Expects ${inr(c.exp_salary / 12)}/mo</div>` : ''}` },
       { t: 'City', cls: 'city-col', f: (c) => esc(c.city) },
-      { t: 'Expects /mo', num: 1, f: (c) => (c.exp_salary ? inr(c.exp_salary / 12) : '—'), hideSm: 1 },
       { t: 'Status', cls: 'stack-col', f: (c) => `<span class="badge ${c.status === 'Hired' ? 'b-green' : c.status.startsWith('In process') ? 'b-primary' : 'b-outline'}">${esc(c.status)}</span>${c.looking && c.status === 'Available' ? `<div class="tiny muted">${esc(c.looking)}</div>` : ''}` },
       { t: 'Applied', f: (c) => `${fmtD(c.created_at)}<div class="tiny muted src-cut" title="${esc(c.ad_name || c.ad_set || c.ad_campaign || c.source || '')}">${esc(c.source || '')}</div>`, hideSm: 1 },
     ], r.rows, { open: (c) => `candidate:${c.id}`, select: true, scroll: true, empty: filtered ? 'No candidates match these filters.' : 'No candidates yet.' })}${BB.pager(r)}</div>`;
@@ -455,8 +452,6 @@
       const report = (res) => { if (!res) return; BB.toast(`${res.done} done${res.errors.length ? `, ${res.errors.length} skipped` : ''}`); if (res.errors.length) BB.modal({ title: `${res.errors.length} skipped`, body: `<div class="stack-sm small">${res.errors.slice(0, 30).map((x) => `<div>${esc(x)}</div>`).join('')}${res.errors.length > 30 ? `<div class="faint">…and ${res.errors.length - 30} more</div>` : ''}</div>` }); BB.refreshPage(); };
       const send = (extra) => BB.post('/api/candidates/bulk', { ids, action: act, ...extra });
       const lead = (action) => BB.post('/api/leads/bulk', { type: 'candidate', ids, action }).then((x) => ({ done: x.done, errors: x.skipped })).then(report).catch(BB.fail);
-      if (act === 'seen') return lead('seen');
-      if (act === 'junk') return BB.confirm('Mark as junk', `${n} will be hidden from all lists (not deleted).`, 'Mark as junk').then((ok) => ok && lead('junk'));
       if (act === 'welcome') return BB.confirm('Send account link on WhatsApp', `${n} get their welcome message with the link to their profile. People who said STOP are skipped.`, 'Send').then((ok) => ok && lead('welcome'));
       if (act === 'agency') return BB.api('/api/users').then((d) => BB.ask({ title: `Assign to agency · ${n}`, note: 'The agency admin gets a task alert.', fields: [{ name: 'agency_id', label: 'Agency', type: 'select', options: d.agencies.filter((a) => a.status === 'Active').map((a) => [a.id, a.name]) }], ok: 'Assign', submit: (v) => BB.post('/api/leads/assign', { type: 'candidate', ids, agency_id: v.agency_id }) })).then((x) => { if (x) { BB.toast(`${x.count} assigned`); BB.refreshPage(); } });
       if (act === 'set_looking') return BB.ask({ title: `Set job status · ${n}`, fields: [{ name: 'looking', label: 'Current job status', type: 'select', options: BB.boot.looking, placeholder: false }], ok: 'Update', submit: send }).then(report);

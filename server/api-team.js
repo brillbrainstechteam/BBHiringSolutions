@@ -886,6 +886,7 @@ route('GET', '/api/candidates/:id', T, (ctx) => {
   const u = ctx.user; const show = R.phoneVisible(u, c);
   const apps = all('SELECT * FROM applications WHERE candidate_id=? ORDER BY created_at DESC', c.id).map(V.appView);
   const msgs = seeThread(u, 'candidate', c.id) ? all("SELECT * FROM messages WHERE person_type='candidate' AND person_id=? ORDER BY at DESC LIMIT 30", c.id) : [];
+  if (c.is_new) update('candidates', c.id, { is_new: 0 }); // opened, so no longer new
   return {
     ...candidateOut(u, c), status: V.candStatus(c.id), apps, messages: msgs, rating: L.ratingOf(c.id), can_message: seeThread(u, 'candidate', c.id) || isSuper(u),
     job_matches: L.jobsFor(c, 20).filter((m) => seeJob(u, m.j)).slice(0, 6).map((m) => ({ id: m.j.id, title: m.j.title, city: m.j.city, client_name: (get('SELECT company FROM clients WHERE id=?', m.j.client_id) || {}).company, score: m.score, reasons: m.reasons, gaps: m.gaps })),

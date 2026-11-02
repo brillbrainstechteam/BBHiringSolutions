@@ -50,6 +50,7 @@ async function api(path, opts = {}) {
   const headers = { 'Content-Type': 'application/json' };
   const t = BB.token(kind); if (t) headers['x-session'] = t;
   const res = await fetch(path, { method: opts.method || (opts.body ? 'POST' : 'GET'), headers, body: opts.body ? JSON.stringify(opts.body) : undefined });
+  const ver = res.headers.get('x-app-version'); if (ver) { BB.appVer = BB.appVer || ver; if (ver !== BB.appVer) BB.stale = true; }
   const ct = res.headers.get('content-type') || '';
   if (!res.ok) {
     const j = ct.includes('json') ? await res.json() : { error: await res.text() };
@@ -417,7 +418,13 @@ BB.parseHash = () => {
   const parts = route.split('/');
   return { name: parts[0] || '', sub: parts.slice(1), q: Object.fromEntries(new URLSearchParams(qs || location.search.replace(/^\?/, ''))) };
 };
-BB.go = (to) => { const url = '/' + String(to || '').replace(/^[#/]+/, ''); if (location.pathname + location.search !== url) history.pushState(null, '', url); BB.route(); };
+BB.go = (to) => { const url = '/' + String(to || '').replace(/^[#/]+/, ''); if (BB.stale && BB.portal === 'team' && !$('.modal-back')) { location.href = url; return; } if (location.pathname + location.search !== url) history.pushState(null, '', url); BB.route(); };
+// Back on the tab after a release: load the new screens, unless something is open or being typed.
+addEventListener('focus', async () => {
+  if (BB.portal !== 'team') return;
+  try { await api('/api/version', { kind: 'none' }); } catch { return; }
+  if (BB.stale && !BB.stack.length && !$('.modal-back') && !/^(INPUT|TEXTAREA|SELECT)$/.test((document.activeElement || {}).tagName || '')) location.reload();
+});
 BB.setUrl = (to) => history.replaceState(null, '', '/' + String(to || '').replace(/^[#/]+/, ''));
 const fromHash = () => { const h = location.hash.replace(/^#/, ''); if (h) { BB.setUrl(h); return true; } return false; };
 // Where a WhatsApp chat started: the first message names the page and button (and the ad or link source, ?src=),

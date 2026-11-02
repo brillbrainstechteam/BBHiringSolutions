@@ -1316,7 +1316,7 @@ html[lang="hi"] .ss-g { letter-spacing: 0; }
 .tbl-scroll::-webkit-scrollbar-track { background: var(--surface-2); }
 .tbl-scroll::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 999px; border: 3px solid var(--surface-2); }
 .tbl-scroll::-webkit-scrollbar-thumb:hover { background: var(--faint); }
-.tbl-scroll .tbl { width: 100%; min-width: 960px; border-collapse: separate; border-spacing: 0; }
+.tbl-scroll .tbl { width: 100%; min-width: 900px; border-collapse: separate; border-spacing: 0; }
 .tbl-scroll thead th { background: var(--surface-2); box-shadow: inset 0 -1px 0 var(--border); border-bottom: 0; }
 .tbl-scroll td { white-space: nowrap; padding: 9px 10px; background: var(--surface); }
 .tbl-scroll th { padding: 9px 10px; }
@@ -1333,9 +1333,6 @@ html[lang="hi"] .ss-g { letter-spacing: 0; }
 .tbl-scroll .sel-col input { width: 16px; height: 16px; cursor: pointer; }
 .tbl-scroll td.act-col, .tbl-scroll th.act-col { text-align: right; width: 64px; }
 .tbl-scroll .badge { white-space: nowrap; }
-/* A soft fade at the right edge while there are more columns to scroll to. */
-.cand-table { position: relative; }
-.cand-table:has(.tbl-scroll.more-x)::after { content: ""; position: absolute; top: 0; right: 12px; bottom: 52px; width: 28px; pointer-events: none; background: linear-gradient(to right, transparent, color-mix(in srgb, var(--ink) 8%, transparent)); }
 @media (max-width: 760px) {
   .cand-panel { padding: 12px; }
   .cand-result { flex-direction: column; align-items: stretch; } .cand-seg { justify-content: space-between; }
@@ -1416,7 +1413,7 @@ html[lang="hi"] .ss-g { letter-spacing: 0; }
 .own-row select, .own-sec select { width: auto; max-width: 210px; }
 
 /* Candidates: skills as wrapped tags, quick views, find box in long multi-selects. */
-.tbl-scroll td.skills-col { white-space: normal; min-width: 210px; max-width: 280px; width: auto; }
+.tbl-scroll td.skills-col { white-space: normal; min-width: 170px; max-width: 230px; width: auto; }
 .sk-wrap { display: flex; flex-wrap: wrap; gap: 3px; }
 .sk { font-size: 11px; line-height: 1.5; padding: 0 7px; border-radius: 999px; background: var(--sky-50); color: var(--ink); white-space: nowrap; max-width: 170px; overflow: hidden; text-overflow: ellipsis; }
 .sk.more { background: var(--surface-2); color: var(--muted); }

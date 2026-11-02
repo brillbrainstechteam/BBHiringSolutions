@@ -14,6 +14,8 @@ const timer = require('./timer');
 const PORT = D.ENV.port;
 const { devAlert } = require('./alerts');
 const PUBLIC = path.join(__dirname, '..', 'public');
+// Changes with every release of the screens; open tabs compare it and reload.
+const APP_VER = (() => { const h = require('crypto').createHash('sha1'); for (const d of ['js', 'css']) for (const f of fs.readdirSync(path.join(PUBLIC, d)).sort()) h.update(fs.readFileSync(path.join(PUBLIC, d, f))); return h.digest('hex').slice(0, 12); })();
 const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.json': 'application/json' };
 // The five web addresses each open the one page; the page shows only that part.
 const PAGES = ['/', '/hire', '/apply', '/partners', '/my-account', '/my-profile', '/team'];
@@ -77,6 +79,7 @@ function readBody(req) {
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
   try {
+    if (url.pathname === '/api/version') return send(res, 200, JSON.stringify({ v: APP_VER }), { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'X-App-Version': APP_VER });
     if (url.pathname.startsWith('/api/')) {
       const body = ['POST', 'PUT', 'PATCH'].includes(req.method) ? await readBody(req) : {};
       const out = await R.dispatch(req, res, url, body);
@@ -84,7 +87,7 @@ const server = http.createServer(async (req, res) => {
         const f = out.__file;
         return send(res, 200, f.buf, { 'Content-Type': f.mime, 'Content-Disposition': `${f.inline ? 'inline' : 'attachment'}; filename="${String(f.name).replace(/"/g, '')}"`, 'Cache-Control': 'no-store' });
       }
-      return send(res, 200, JSON.stringify(out === undefined ? { ok: true } : out), { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
+      return send(res, 200, JSON.stringify(out === undefined ? { ok: true } : out), { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'X-App-Version': APP_VER });
     }
     let p = url.pathname;
     // The team portal is internal: reachable by its address, but kept out of search engines.
