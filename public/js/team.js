@@ -169,8 +169,8 @@
   BB.sortHead = (c, q) => { const on = q.sort === c.sort; const next = on ? (q.dir === 'desc' ? 'asc' : 'desc') : c.desc ? 'desc' : 'asc'; return `<button type="button" class="th-sort ${on ? 'on' : ''}" data-sort="${c.sort}" data-dir="${next}" aria-label="Sort by ${esc(c.t)}">${esc(c.t)}<span class="th-arrow" aria-hidden="true">${on ? (q.dir === 'desc' ? '↓' : '↑') : '↕'}</span></button>`; };
   document.addEventListener('click', (e) => { const b = e.target.closest('[data-sort]'); if (b) BB.setQ({ sort: b.dataset.sort, dir: b.dataset.dir, page: 1 }); });
   // The heading of a bulk actions card, the same on every table. noun: what the table lists.
-  BB.bulkHead = (noun, attr) => `<div class="bulk-head"><span class="bulk-ico">${BB.icon('layers')}</span><div class="grow"><div class="row"><b class="bulk-t">Bulk actions</b><span class="bulk-sep"></span><span class="bulk-count" ${attr}>0 ${noun}s selected</span></div><div class="small muted">Bulk actions become available after selecting one or more ${noun}s.</div></div></div>`;
-  BB.bulkCount = (noun, n) => `${n} ${noun}${n === 1 ? '' : 's'} selected`;
+  BB.bulkHead = (noun, attr) => `<div class="bulk-head"><span class="bulk-ico">${BB.icon('layers')}</span><b class="bulk-t">Bulk actions</b><span class="bulk-count" ${attr}></span></div>`;
+  BB.bulkCount = (noun, n) => (n ? `${n} ${noun}${n === 1 ? '' : 's'} selected` : '');
   BB.pager = (r, onPage) => `<div class="pager"><span>${r.total} total · page ${r.page} of ${r.pages}</span><button class="btn sm" data-pg="${r.page - 1}" ${r.page <= 1 ? 'disabled' : ''}>‹ Prev</button><button class="btn sm" data-pg="${r.page + 1}" ${r.page >= r.pages ? 'disabled' : ''}>Next ›</button></div>`;
   BB.wirePager = (el) => $$('[data-pg]', el).forEach((b) => (b.onclick = () => BB.setQ({ page: b.dataset.pg })));
   BB.selected = (el) => $$('[data-sel]:checked', el).map((x) => x.dataset.sel);

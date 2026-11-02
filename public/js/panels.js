@@ -123,32 +123,40 @@
     // The ads this job runs under, and the links to paste: anyone applying from one of these ads becomes an application here.
     const adLinks = (j) => {
       const maps = j.ad_match || [];
-      const liLink = (m) => `${location.origin}/apply?${['src=linkedin', ...[['campaign', m.campaign], ['adset', m.adset], ['ad', m.ad]].filter(([, v]) => v).map(([k, v]) => `${k}=${encodeURIComponent(v)}`)].join('&')}`;
+      const liLink = (m) => `${location.origin}/apply?${[`job=${j.id}`, 'src=linkedin', ...[['campaign', m.campaign], ['adset', m.adset], ['ad', m.ad]].filter(([, v]) => v).map(([k, v]) => `${k}=${encodeURIComponent(v)}`)].join('&')}`;
       const mapTable = `<div class="card tbl-wrap"><table class="tbl"><thead><tr><th>Platform</th><th>Campaign</th><th>Ad set</th><th>Ad</th><th></th></tr></thead><tbody>${maps.map((m, i) => `<tr><td>${esc(m.platform)}</td><td>${esc(m.campaign || 'any')}</td><td>${esc(m.adset || 'any')}</td><td>${esc(m.ad || 'any')}</td><td class="nowrap">${m.platform === 'LinkedIn' ? `<button class="btn sm" data-copy="${esc(liLink(m))}">Copy apply link</button> ` : ''}<button class="btn sm ghost" data-admap-del="${i}" title="Remove">✕</button></td></tr>`).join('') || '<tr><td colspan="5" class="empty">No ads added yet. Add the Meta or LinkedIn names this job is advertised under.</td></tr>'}</tbody></table></div>
         <div class="row" style="margin-top:8px"><button class="btn sm" data-admap-add="Meta">+ Meta ad</button><button class="btn sm" data-admap-add="LinkedIn">+ LinkedIn job or ad</button></div>`;
       return `<div class="sec"><h3>Ads for this job</h3>${mapTable}</div>${adLinksOld(j)}`;
     };
     const adLinksOld = (j) => {
-      const base = `${location.origin}/apply`;
-      const meta = 'src={{site_source_name}}&campaign={{campaign.name}}&adset={{adset.name}}&ad={{ad.name}}';
+      const base = `${location.origin}/apply?job=${j.id}`;
       const row = (label, v, note) => `<div class="ad-link"><div class="small"><b>${label}</b>${note ? ` <span class="faint">· ${note}</span>` : ''}</div><div class="row"><code class="mono tiny grow">${esc(v)}</code><button class="btn sm" data-copy="${esc(v)}">Copy</button></div></div>`;
-      return `<div class="sec"><h3>Links to paste</h3><div class="card pad stack-sm">${j.jd_approved ? '' : '<div class="notice small">Approve the job description first. Until then applicants are saved as candidates but no application opens on this job.</div>'}
-        ${row('Meta · Website URL', base, 'the same for every ad')}${row('Meta · URL parameters', meta, 'the same for every ad')}<div class="small"><b>LinkedIn</b> <span class="faint">· add the LinkedIn job or ad above, then use its <b>Copy apply link</b> as the apply URL on LinkedIn</span></div></div></div>`;
+      return `<div class="sec"><h3>Links to paste</h3><div class="stack-sm">
+        ${row('Meta · Website URL', base, 'Facebook and Instagram ads')}${row('Meta · URL parameters', 'src={{site_source_name}}&campaign={{campaign.name}}&adset={{adset.name}}&ad={{ad.name}}', 'Tracking section of the ad')}
+        ${row('LinkedIn', `${base}&src=linkedin`, 'apply URL on the job or ad')}${row('Google Ads', `${base}&src=google-ad&campaign={campaignid}&adset={adgroupid}&ad={creative}`, 'final URL')}
+        ${row('Naukri', `${base}&src=naukri`)}${row('Indeed', `${base}&src=indeed`)}${row('Apna', `${base}&src=apna`)}${row('Work India', `${base}&src=workindia`)}</div></div>`;
+    };
+    const jdCard = (j) => {
+      const st = j.jd_approved ? 'Approved' : j.jd_status || 'Not written'; const made = st !== 'Not written'; const share = !j.internal && !j.client_tbc;
+      return `<div class="sec jd-card"><h3><span>Job description</span><span class="sec-act"><span class="badge ${j.jd_approved ? 'b-green' : st === 'Changes asked' ? 'b-red' : made ? 'b-amber' : 'b-outline'}">${esc(st)}</span></span></h3>
+        ${j.jd_note && !j.jd_approved ? `<div class="small" style="margin-bottom:6px">Client asked: ${esc(j.jd_note)}</div>` : ''}
+        ${j.jd_approved ? '' : '<div class="small muted" style="margin-bottom:8px">Until it is approved, applicants are saved as candidates but no application opens on this job.</div>'}
+        ${made ? `<div class="row"><button class="btn sm" data-jdpdf>Download PDF</button>${share ? '<button class="btn sm" data-jdsend>Send to client</button>' : ''}<button class="btn sm" data-copy="${esc(`${location.origin}/apply?job=${j.id}`)}">Copy link for candidates</button></div>` : ''}</div>`;
     };
     return {
       head: `<div class="row"><h2>${esc(j.title)}</h2><span class="mono faint">${esc(j.id)}</span>${statusBadge(j.status)}${j.reopened ? `<span class="badge b-gold">${esc(j.reopened)}</span>` : ''}<span class="badge b-outline">${esc(j.priority)}</span></div><div class="small muted">${j.internal ? '<span class="badge b-violet">Internal · BrillBrains hiring</span>' : j.client_tbc ? '<span class="badge b-amber">Client to be confirmed</span>' : `<a href="#" data-open="client:${j.client_id}">${esc(j.client_name)}</a>`} · ${esc(j.city)} · ${esc(j.reason)}</div>`,
       body: `<div class="row" style="margin-bottom:12px">
-          ${['On hold'].includes(j.status) ? '<button class="btn sm" data-act="resume">Resume</button>' : !['Closed', 'Filled'].includes(j.status) ? '<button class="btn sm" data-act="hold">Put on hold</button>' : ''}
-          ${!['Closed'].includes(j.status) ? '<button class="btn sm danger" data-act="close">Close</button>' : ''}
-          ${['Filled', 'Closed'].includes(j.status) ? '<button class="btn sm primary" data-act="reopen">Reopen</button>' : ''}
-          ${!j.jd_approved ? '<button class="btn sm" data-act="approve_jd">Job description approved</button>' : ''}
-          <button class="btn sm" data-jd>Write JD</button>
+          <button class="btn sm primary" data-jd>${j.jd_approved || (j.jd_status && j.jd_status !== 'Not written') ? 'Edit JD' : 'Create JD'}</button><button class="btn sm" data-fcreative>Digital Reach</button>
           ${waBtn({ ptype: 'client', pid: j.client_id, jb: j.id, format: 'bbhs_shortlist_ready' }, 'Send profiles to client')}
-          <button class="btn sm" data-addmatch>+ Add a match</button><button class="btn sm" data-fcreative>Digital Reach</button>
+          <button class="btn sm" data-addmatch>+ Add a match</button>
           ${canAdmin ? `<button class="btn sm gold" data-alert>Job alert to top matches</button>` : ''}
-          <button class="btn sm" data-editjob>Edit</button>${canDelete() ? `<button class="btn sm danger" data-delrec="job" data-id="${j.id}">Delete</button>` : ''}<button class="btn sm ${j.client_tbc ? 'primary' : ''}" data-setclient>${j.client_tbc ? 'Set the client' : 'Change client'}</button></div>
+          <button class="btn sm" data-editjob>Edit</button><button class="btn sm" data-clone>Clone</button><button class="btn sm ${j.client_tbc ? 'primary' : ''}" data-setclient>${j.client_tbc ? 'Set the client' : 'Change client'}</button>
+          ${['On hold'].includes(j.status) ? '<button class="btn sm" data-act="resume">Resume</button>' : !['Closed', 'Filled'].includes(j.status) ? '<button class="btn sm" data-act="hold">Put on hold</button>' : ''}
+          ${['Filled', 'Closed'].includes(j.status) ? '<button class="btn sm primary" data-act="reopen">Reopen</button>' : ''}
+          ${!['Closed'].includes(j.status) ? '<button class="btn sm danger" data-act="close">Close</button>' : ''}${canDelete() ? `<button class="btn sm danger" data-delrec="job" data-id="${j.id}">Delete</button>` : ''}</div>
+        ${jdCard(j)}
         <div class="card pad sec"><div class="row small"><span>Filled <b>${j.filled}</b> of <b>${j.openings}</b></span><div class="bar grow"><i style="width:${Math.min(100, (j.filled / j.openings) * 100)}%"></i></div></div><div class="seats" style="margin-top:8px">${(j.seats || []).map((s) => s.app_id ? `<span class="seat on" title="${esc(s.app_id)}">Seat ${s.n}: <b>${esc(s.candidate || '')}</b> · ${esc(s.state)}${s.joining_date ? ` ${fmtD(s.joining_date)}` : ''}</span>` : `<span class="seat">Seat ${s.n}: open</span>`).join('')}</div>
-          <dl class="kv" style="margin-top:10px"><dt>Business</dt><dd>${esc(j.market || '—')}${j.mass ? ' <span class="badge b-gold tiny">Mass hiring</span>' : ''}</dd><dt>Department</dt><dd>${esc(j.department || '—')}</dd><dt>Salary</dt><dd>${esc(j.salary_text)} <span class="faint">(${inr(j.sal_from)}–${inr(j.sal_to)} a year)</span></dd><dt>Experience</dt><dd>${j.exp_from ?? '—'}–${j.exp_to ?? '—'} years</dd><dt>Join within</dt><dd>${j.notice_days ?? '—'} days</dd><dt>Skills</dt><dd>${(j.skills || []).map((x) => `<span class="badge b-outline">${esc(x)}</span>`).join(' ') || '—'}</dd><dt>Rounds</dt><dd>${(j.rounds || []).join(' → ')}</dd><dt>JD</dt><dd>${esc(j.jd_status)}${j.jd_note ? ` — <i>${esc(j.jd_note)}</i>` : ''}${jd.file ? ` <button class="btn sm" data-file="${jd.file}">JD file</button>` : ''} <button class="btn sm ghost" data-jdpdf>PDF</button></dd><dt>Old code</dt><dd>${esc(j.old_code || '—')}</dd><dt>Days open</dt><dd>${j.days_open}</dd>
+          <dl class="kv" style="margin-top:10px"><dt>Business</dt><dd>${esc(j.market || '—')}${j.mass ? ' <span class="badge b-gold tiny">Mass hiring</span>' : ''}</dd><dt>Department</dt><dd>${esc(j.department || '—')}</dd><dt>Salary</dt><dd>${esc(j.salary_text)} <span class="faint">(${inr(j.sal_from)}–${inr(j.sal_to)} a year)</span></dd><dt>Experience</dt><dd>${j.exp_from ?? '—'}–${j.exp_to ?? '—'} years</dd><dt>Join within</dt><dd>${j.notice_days ?? '—'} days</dd><dt>Skills</dt><dd>${(j.skills || []).map((x) => `<span class="badge b-outline">${esc(x)}</span>`).join(' ') || '—'}</dd><dt>Rounds</dt><dd>${(j.rounds || []).join(' → ')}</dd><dt>Old code</dt><dd>${esc(j.old_code || '—')}</dd><dt>Days open</dt><dd>${j.days_open}</dd>
           <dt>Recruiter</dt><dd>${canAdmin ? `<select data-rec style="width:auto">${j.recruiters.map((u) => `<option value="${u.id}" ${u.id === j.recruiter_id ? 'selected' : ''}>${esc(u.name)}</option>`).join('')}<option value="" ${!j.recruiter_id ? 'selected' : ''}>— none —</option></select>` : esc(j.recruiter_name || '—')}</dd></dl>
           ${(j.screening_qs || []).length ? `<div class="small" style="margin-top:8px"><b>Screening questions:</b> ${j.screening_qs.map(esc).join(' · ')}</div>` : ''}${j.notes ? `<div class="small muted" style="margin-top:6px">${esc(j.notes)}</div>` : ''}</div>
         <div data-flow-screen><div class="sec faint small">Loading screening…</div></div>
@@ -175,7 +183,9 @@
         $$('[data-post]', el).forEach((cb) => (cb.onchange = () => { if (cb.checked) BB.ask({ title: 'Posting done', fields: [{ name: 'post_link', label: 'Link to the post', opt: true }], ok: 'Save', submit: (v) => BB.post(`/api/jobs/${j.id}/posting`, { id: cb.dataset.post, done: true, post_link: v.post_link }) }).then((x) => (x ? after('Saved') : (cb.checked = false))); else run(() => BB.post(`/api/jobs/${j.id}/posting`, { id: cb.dataset.post, done: false })); }));
         $$('[data-copy]', el).forEach((b) => (b.onclick = () => BB.copy(b.dataset.copy)));
         $('[data-jd]', el).onclick = () => writeJD(j);
-        $('[data-jdpdf]', el).onclick = () => BB.download(`/api/jobs/${j.id}/jd.pdf`, true);
+        const pdf = $('[data-jdpdf]', el); if (pdf) pdf.onclick = () => BB.download(`/api/jobs/${j.id}/jd.pdf`, true);
+        const jsend = $('[data-jdsend]', el); if (jsend) jsend.onclick = () => BB.flow.composeMail([j.client_id], 'jd', 'Send job description', j.id);
+        $('[data-clone]', el).onclick = () => BB.newJob(j.client_id, { heading: 'Clone job opening', clone_of: j.id, title: j.title, city: j.city, openings: j.openings, priority: j.priority, market: j.market, department: j.department, mass: j.mass, sal_from: j.sal_from ? Math.round(j.sal_from / 12) : '', sal_to: j.sal_to ? Math.round(j.sal_to / 12) : '', exp_from: j.exp_from, exp_to: j.exp_to, notice_days: j.notice_days, skills: j.skills, jewel_need: (j.jd || {}).jewel_need, notes: j.notes, jd_approved: j.jd_approved });
         $('[data-editjob]', el).onclick = () => editJob(j);
         // Ads for this job: add or remove the Meta / LinkedIn names applicants arrive with.
         const saveMaps = (list) => run(() => BB.patch(`/api/jobs/${j.id}`, { ad_match: list }), 'Saved');
@@ -220,11 +230,11 @@
   BB.fillJd = (form, jd) => { for (const [k, v] of Object.entries(jd || {})) { const x = form.querySelector(`[name="${k}"]`); if (x && v !== undefined && v !== null && String(v) !== '') x.value = v; } };
   function writeJD(j) {
     const jd = { ...j.jd_template, ...(j.jd || {}) }; const fillT = (t) => String(t || '').replace(/\{job\}/g, j.title).replace(/\{city\}/g, j.city);
-    BB.ask({ title: `Job description · ${j.id}`, wide: true, ok: 'Save draft', note: j.jd_note ? `Client asked: ${esc(j.jd_note)}` : `Starts from the JD pool for ${esc(j.title)} when there is one. <button type="button" class="btn sm" data-jdpool>Fill from JD pool</button> <button type="button" class="btn sm primary" data-jdai>✦ Write with AI</button>`,
-      fields: [...BB.jdFields(jd, fillT), { name: 'save_pool', label: `Also save this as the JD for every ${j.title} job (JD pool)`, type: 'check', value: false },
+    BB.ask({ title: `Job description · ${j.id}`, wide: true, ok: 'Save JD', note: j.jd_note ? `Client asked: ${esc(j.jd_note)}` : `Starts from the JD pool for ${esc(j.title)} when there is one. <button type="button" class="btn sm" data-jdpool>Fill from JD pool</button> <button type="button" class="btn sm primary" data-jdai>✦ Write with AI</button>`,
+      fields: [...BB.jdFields(jd, fillT), { name: 'save_pool', label: `Replace the JD pool copy for ${j.title}`, type: 'check', value: false },
         `<div class="grid g2">${field({ name: 'salary', label: 'Salary', value: jd.salary || j.salary_text })}${field({ name: 'location', label: 'Location', value: fillT(jd.location) })}</div>`,
-        { name: 'send', label: 'Send to client for approval (they see Approve / Ask for changes)', type: 'check', value: true }],
-      submit: async (v) => { const send = v.send; const pool = v.save_pool; delete v.send; delete v.save_pool; const r = await BB.post(`/api/jobs/${j.id}/jd`, { jd: v, send }); if (pool) await BB.post('/api/jd-pool', { title: j.title, jd: v }); return r; } }).then((x) => x && after('Job description saved'));
+        ...(j.jd_approved ? [] : [{ name: 'jd_state', label: 'Status', type: 'select', options: ['Draft', 'Send to client for approval', 'Approved'], value: 'Draft', placeholder: false }])],
+      submit: async (v) => { const state = v.jd_state; const pool = v.save_pool; delete v.jd_state; delete v.save_pool; const r = await BB.post(`/api/jobs/${j.id}/jd`, { jd: v, send: state === 'Send to client for approval' }); if (pool) await BB.post('/api/jd-pool', { title: j.title, jd: v }); if (state === 'Approved') await BB.post(`/api/jobs/${j.id}/action`, { action: 'approve_jd' }); return r; } }).then((x) => x && after('Job description saved'));
     // Buttons in the note: fill from the pool, or let AI write it from the job's facts.
     setTimeout(() => {
       const form = $('.modal form'); if (!form) return;
@@ -257,7 +267,6 @@
   // ---------- Application ----------
   BB.panels.application = async (id) => {
     const a = await BB.api(`/api/applications/${id}`); const s = BB.boot; const open = a.result === 'open';
-    const sug = a.suggest;
     const btns = []; const L = s.steps;
     if (open) {
       if (a.step !== 'Offer accepted' && a.step !== 'Offer made' && a.step !== 'Joined') btns.push(`<button class="btn sm primary" data-next>→ ${esc(s.steps[s.steps.indexOf(a.step) + 1])}</button>`);
@@ -305,7 +314,7 @@
       head: `<div class="row"><h2>${esc(a.candidate_name)}</h2><span class="mono faint">${esc(a.id)}</span>${resultBadge(a.result)}${a.on_hold ? `<span class="badge b-outline">On hold: ${esc(a.hold_reason)}</span>` : ''}${a.at_risk ? '<span class="badge b-red">At risk</span>' : ''}${a.left_date ? `<span class="badge b-red">Left on ${fmtD(a.left_date)}</span>` : ''}${scoreBadge(a.score.score)}</div>
         <div class="app-meta"><div><span>Job</span><a href="#" data-open="job:${a.job_id}">${esc(a.job_title)} <span class="mono faint">${esc(a.job_id)}</span></a></div><div><span>Client</span>${esc(a.client_name || '—')}</div><div><span>Owner</span>${esc(a.owner_name || '—')}</div><div><span>Source</span>${esc(a.source || '—')}</div><div><span>In this step</span>${a.days_in_step} day${a.days_in_step === 1 ? '' : 's'}</div>
         ${a.ad_campaign || a.ad_set || a.ad_name ? `<div class="wide"><span>Ad</span><span class="ad-path">${[['Campaign', a.ad_campaign], ['Ad set', a.ad_set], ['Ad', a.ad_name]].filter(([, v]) => v).map(([l, v]) => `<i title="${l}">${esc(v)}</i>`).join('<b>›</b>')}</span></div>` : ''}</div>`,
-      body: `${sug ? `<div class="notice small row" style="margin-bottom:12px">${waIcon}<span class="grow"><b>Suggested message:</b> ${esc(sug.label)} → ${sug.ptype}</span>${waBtn({ ptype: sug.ptype, pid: sug.ptype === 'client' ? a.client_id : a.candidate_id, ap: a.id, jb: a.job_id, iv: sug.iv, format: sug.format }, 'Send')}</div>` : ''}
+      body: `
         <div class="row" style="margin-bottom:6px">${waBtn({ ptype: 'candidate', pid: a.candidate_id, ap: a.id }, 'Candidate', 'btn sm')}${waBtn({ ptype: 'client', pid: a.client_id, ap: a.id, jb: a.job_id }, 'Client', 'btn sm')}<button class="btn sm ghost" data-open="candidate:${a.candidate_id}">Candidate profile</button></div>
         ${BB.tracker(a.step, a.result)}${BB.flow.appNext(a)}
         <div class="row" style="margin:10px 0 14px">${btns.join('')}${open ? `<select data-setstep style="width:auto;margin-left:auto" title="Set any step (corrections)"><option value="">Set step…</option>${s.steps.map((x) => `<option>${x}</option>`).join('')}</select>` : ''}</div>
@@ -514,7 +523,7 @@
   };
   // Job tags: who the job serves, its department, and whether it is a mass hiring drive.
   BB.jobTagFields = (j = {}) => { const depts = [...new Set([...(BB.boot.departments || []), ...BB.boot.jobs.map((x) => x.dept), j.department].filter(Boolean))]; return `<div class="grid g3">${field({ name: 'market', label: 'B2B or B2C', type: 'select', options: ['B2B', 'B2C', 'Both'], value: j.market || '', opt: true })}${field({ name: 'department', label: 'Department', type: 'select', options: depts, value: j.department || '', opt: true })}<div class="job-mass">${field({ name: 'mass', label: 'Mass hiring', type: 'check', value: !!j.mass })}</div></div>`; };
-  BB.newJob = (clientId, pre = {}) => BB.ask({ title: 'New job opening', wide: true, fields: [
+  BB.newJob = (clientId, pre = {}) => BB.ask({ title: pre.heading || 'New job opening', wide: true, fields: [
     `<div class="grid g2"><label class="field" data-f="client_id"><span class="lab">Client</span><select name="client_id" data-clients><option value="${esc(clientId || '')}">${esc(clientId || 'Loading…')}</option></select></label><label class="field" data-f="title"><span class="lab">Job</span><select name="title">${BB.jobOptions('')}</select></label></div>`,
     `<div class="grid g3">${field({ name: 'city', label: 'City', list: 'cities' })}${field({ name: 'openings', label: 'Openings', type: 'number', value: 1 })}${field({ name: 'priority', label: 'Priority', type: 'select', options: ['High', 'Medium', 'Low'], value: 'Medium', placeholder: false })}</div>`,
     `<div class="grid g4">${field({ name: 'sal_from', label: 'Salary from / month', type: 'number' })}${field({ name: 'sal_to', label: 'Salary to / month', type: 'number' })}${field({ name: 'exp_from', label: 'Exp from (yrs)', type: 'number' })}${field({ name: 'exp_to', label: 'Exp to (yrs)', type: 'number' })}</div>`,
@@ -522,7 +531,7 @@
     `<div class="grid g2">${field({ name: 'notice_days', label: 'Join within (days)', type: 'number' })}${field({ name: 'skills', label: 'Skills (comma separated)' })}</div>`,
     `<div class="grid g2">${field({ name: 'jewel_need', label: 'Jewellery experience', type: 'select', options: ['Required', 'Preferred', 'Not required'], value: pre.jewel_need || 'Preferred', placeholder: false })}${field({ name: 'notes', label: 'Notes', opt: true, value: pre.notes || '' })}</div>`,
     { name: 'jd_approved', label: 'Job description already approved (job goes Open; otherwise Draft)', type: 'check' },
-  ], ok: 'Create job opening', submit: (v) => BB.post('/api/jobs', { ...v, duties: pre.duties || '', call_id: pre.call_id, call_line: pre.call_line, salary_per: 'month', skills: v.skills.split(',').map((x) => x.trim()).filter(Boolean) }),
+  ], ok: pre.clone_of ? 'Create the clone' : 'Create job opening', submit: (v) => BB.post('/api/jobs', { ...v, duties: pre.duties || '', clone_of: pre.clone_of, call_id: pre.call_id, call_line: pre.call_line, salary_per: 'month', skills: v.skills.split(',').map((x) => x.trim()).filter(Boolean) }),
   extra: '' }).then((x) => { if (x) { BB.toast(`${x.id} made`); BB.refreshPage && BB.refreshPage(); BB.open('job', x.id); } }) && setTimeout(async () => {
     const sel = $('[data-clients]'); if (!sel) return; const r = await BB.api('/api/clients?all=1'); const all = r.rows;
     sel.innerHTML = `<option value="">Choose…</option><option value="INTERNAL">BrillBrains — internal hiring (our own team)</option><option value="TBC">Client not decided yet (fill in later)</option>${all.filter((c) => !c.placeholder).map((c) => `<option value="${c.id}" ${c.id === clientId ? 'selected' : ''}>${esc(c.company)}</option>`).join('')}`;

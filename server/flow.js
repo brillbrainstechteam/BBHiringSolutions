@@ -71,11 +71,12 @@ route('POST', '/api/agreement', SUPER, async (ctx) => {
 // The generic offer letter, ready once the client selects someone.
 const OFFER_TEMPLATE = path.join(__dirname, '..', 'assets', 'Generic_Offer_Letter_Montserrat_Clean.docx');
 route('GET', '/api/offer-template/file', T, () => { if (!fs.existsSync(OFFER_TEMPLATE)) throw httpError(404, 'The offer letter template has not been added yet.'); return { __file: { name: 'Offer Letter Template.docx', mime: DOCX, buf: fs.readFileSync(OFFER_TEMPLATE) } }; });
+const PITCH_DECK = path.join(__dirname, '..', 'assets', 'BrillBrains Hiring Solutions Pitch Deck.pptx');
 // Files to attach to an email, read when it goes out.
 function mailFiles(list) {
   const out = [];
   for (const a of list || []) {
-    if (a.agreement) { const f = agreementFile(); if (f) out.push({ name: f.name, mime: f.mime, buf: f.buf }); } else if (a.file_id) { const f = get('SELECT * FROM files WHERE id=?', a.file_id); if (f) out.push({ name: f.name, mime: f.mime, buf: F.readStored(f) }); }
+    if (a.pitch) { if (fs.existsSync(PITCH_DECK)) out.push({ name: path.basename(PITCH_DECK), mime: 'application/vnd.openxmlformats-officedocument.presentationml.presentation', buf: fs.readFileSync(PITCH_DECK) }); } else if (a.jd_job) { const j = get('SELECT * FROM jobs WHERE id=?', a.jd_job); if (j) out.push({ name: `${j.title} Job Description.pdf`, mime: 'application/pdf', buf: TEAM.jdPdf(j) }); } else if (a.agreement) { const f = agreementFile(); if (f) out.push({ name: f.name, mime: f.mime, buf: f.buf }); } else if (a.file_id) { const f = get('SELECT * FROM files WHERE id=?', a.file_id); if (f) out.push({ name: f.name, mime: f.mime, buf: F.readStored(f) }); }
   }
   return out;
 }
@@ -112,11 +113,6 @@ function saveCall(c, lines, notes, actor) {
   update('clients', c.id, { onboarding: ob, is_new: 0, ...(st.indexOf('Understanding needs') > st.indexOf(c.stage) ? { stage: 'Understanding needs' } : {}) });
   D.history(actor.label, 'client call', c.id);
 }
-route('POST', '/api/clients/:id/calls', T, (ctx) => {
-  const c = loadClient(ctx); const { lines, loose } = callRoles((ctx.body || {}).call_roles);
-  if (!lines.length && !loose.length) throw httpError(400, 'Fill in what the client told you', 'call_roles');
-  saveCall(c, lines, loose.join('\n'), ctx.actor); return { ok: true };
-});
 const S = (d) => ({ type: 'string', description: d });
 // What a recruiter said or typed on a call. The roles in it wait on the client until someone opens jobs from them.
 const VOICE_PROMPT = 'You read a recruiter\'s spoken notes from a call with a client in India\'s jewellery trade. The notes may be in English, Hindi or both. List each role the client wants to hire for. Use only what the notes say and leave anything else empty. Write everything in English.';
@@ -127,10 +123,17 @@ async function rolesFrom(text, c) {
   if (!list.length) { const n = ruleNotes(text); if (n.title) list = [{ role: n.title, openings: n.openings || 1, location: n.city, skills: (n.skills || []).join(', '), duties: n.duties }]; }
   return callRoles(list.filter((x) => String(x.role || '').trim()).map((x) => ({ ...x, openings: Math.max(1, Number(x.openings) || 1), location: x.location || c.city || '' }))).lines;
 }
-route('POST', '/api/clients/:id/voice-note', { auth: 'team', rate: { key: 'jobnotes', max: 40, minutes: 60 } }, async (ctx) => {
+// Notes in, roles out, for checking before they are saved.
+route('POST', '/api/clients/:id/read-notes', { auth: 'team', rate: { key: 'jobnotes', max: 40, minutes: 60 } }, async (ctx) => {
   const c = loadClient(ctx); const text = String((ctx.body || {}).text || '').trim(); if (text.length < 10) throw httpError(400, 'Say or type the notes first');
-  const lines = await rolesFrom(text, c); saveCall(c, lines, text, ctx.actor);
-  return { roles: lines.length };
+  return { roles: await rolesFrom(text, c) };
+});
+// Roles typed in the cards win; with none, the roles are read from the notes.
+route('POST', '/api/clients/:id/calls', { auth: 'team', rate: { key: 'jobnotes', max: 40, minutes: 60 } }, async (ctx) => {
+  const c = loadClient(ctx); const b = ctx.body || {}; const notes = String(b.notes || '').trim(); const { lines, loose } = callRoles(b.call_roles);
+  if (!lines.length && !loose.length && !notes) throw httpError(400, 'Fill in what the client told you', 'call_roles');
+  const list = lines.length || !notes ? lines : await rolesFrom(notes, c);
+  saveCall(c, list, [notes, ...loose].filter(Boolean).join('\n'), ctx.actor); return { ok: true, roles: list.length };
 });
 // Every role not opened yet becomes a draft job. Salary and experience are filled on each job.
 route('POST', '/api/clients/:id/calls/:call/jobs', T, (ctx) => {
@@ -166,19 +169,20 @@ route('POST', '/api/clients/email', T, (ctx) => {
   if (!ids.length) throw httpError(400, 'Pick at least one client');
   if (!String(b.subject || '').trim()) throw httpError(400, 'Write the subject', 'subject');
   if (!String(b.body || '').trim()) throw httpError(400, 'Write the message', 'body');
-  const out = { done: 0, held: 0, skipped: [] }; const isContract = b.kind === 'contract';
-  // The agreement is sent by a person, so it goes even while automatic messages are held.
-  if (isContract && !M.configured()) throw httpError(400, 'Email is not set up on the server yet, so the agreement cannot go. Nothing was sent.');
+  const out = { done: 0, held: 0, skipped: [] }; const isContract = b.kind === 'contract'; const isDoc = ['contract', 'pitch', 'jd'].includes(b.kind);
+  // These documents are sent by a person, so they go even while automatic messages are held.
+  if (isDoc && !M.configured()) throw httpError(400, 'Email is not set up on the server yet, so this cannot go. Nothing was sent.');
+  const jdJob = b.kind === 'jd' ? get('SELECT * FROM jobs WHERE id=?', b.job) : null; if (b.kind === 'jd' && (!jdJob || !(seeJob(ctx.user, jdJob) || R.sameAgency(ctx.user, jdJob)))) throw httpError(404, 'Job not found');
   const typed = ids.length === 1 ? String(b.to || '').trim() : '';
   if (typed && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(typed)) throw httpError(400, 'Enter a valid email', 'to');
   for (const id of ids) {
     const c = get('SELECT * FROM clients WHERE id=? AND removed=0', id); if (!c || !seeClient(ctx.user, c)) { out.skipped.push(`${id}: not found`); continue; }
     const to = typed || clientEmail(c); if (!to) { if (ids.length === 1) throw httpError(400, 'Enter the client\'s email', 'to'); out.skipped.push(`${c.company}: no email`); continue; }
     if (typed && !clientEmail(c)) update('clients', c.id, { email: typed });
-    const fill = (t) => String(t).replace(/\{(company|contact|sender)\}/g, (m, k) => ({ company: c.company, contact: c.contact || 'Sir/Madam', sender }[k]));
+    const fill = (t) => String(t).replace(/\{(company|contact|sender|job)\}/g, (m, k) => ({ company: c.company, contact: c.contact || 'Sir/Madam', sender, job: jdJob ? jdJob.title : '' }[k]));
     const subject = fill(b.subject); const text = fill(b.body);
     const html = M.layout(subject, text.split(/\n{2,}/).map((p) => `<p style="font-size:14px;line-height:1.65;margin:0 0 12px">${p.split('\n').map((x) => x.replace(/[&<>]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[ch]))).join('<br>')}</p>`).join(''));
-    const eid = M.queue({ to, subject, text, html, kind: b.kind || 'client_mail', recordId: c.id, attachments: isContract || b.attach_agreement ? [editedAgreement(c.id) ? { file_id: editedAgreement(c.id).id } : { agreement: true }] : [], force: isContract, person: true });
+    const eid = M.queue({ to, subject, text, html, kind: b.kind || 'client_mail', recordId: c.id, attachments: b.kind === 'pitch' ? [{ pitch: true }] : jdJob ? [{ jd_job: jdJob.id }] : isContract || b.attach_agreement ? [editedAgreement(c.id) ? { file_id: editedAgreement(c.id).id } : { agreement: true }] : [], force: isDoc, person: true });
     if (!eid) { out.skipped.push(`${c.company}: not a valid email`); continue; }
     if (isContract) {
       const st = D.settings().client_stages;

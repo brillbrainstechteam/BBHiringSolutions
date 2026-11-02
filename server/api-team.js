@@ -509,6 +509,7 @@ route('POST', '/api/jobs', T, (ctx) => {
   const b = ctx.body; const c = b.client_id === 'TBC' ? placeholderClient(ctx.user.agency_id) : b.client_id === 'INTERNAL' ? internalClient(ctx.user.agency_id) : get('SELECT * FROM clients WHERE id=?', b.client_id); mustSee(seeClient(ctx.user, c), 'client');
   if (ctx.user.level === 'sub') b.recruiter_id = ctx.user.id;
   const made = createJob(c, b, ctx.actor, false);
+  if (b.clone_of) { const o = get('SELECT * FROM jobs WHERE id=?', b.clone_of); if (o && (seeJob(ctx.user, o) || R.sameAgency(ctx.user, o))) { update('jobs', made.id, { jd: o.jd || {}, jd_status: o.jd && Object.keys(o.jd).length ? 'Draft' : 'Not written', rounds: o.rounds, screening_qs: o.screening_qs }); D.history(ctx.actor.label, 'clone job', made.id, null, o.id, null); } }
   if (b.jewel_need) { const j = get('SELECT jd FROM jobs WHERE id=?', made.id); update('jobs', made.id, { jd: { ...(j.jd || {}), jewel_need: b.jewel_need, ...(b.duties ? { duties: b.duties } : {}) } }); }
   if (b.call_id) { const k = get('SELECT * FROM client_calls WHERE id=? AND client_id=?', b.call_id, c.id); const r = k && k.call_roles; if (r && r[b.call_line]) { r[b.call_line].job_id = made.id; update('client_calls', k.id, { call_roles: r }); } }
   return made;
@@ -746,6 +747,7 @@ route('POST', '/api/jobs/:id/action', T, (ctx) => {
 route('POST', '/api/jobs/:id/jd', T, (ctx) => {
   const j = get('SELECT * FROM jobs WHERE id=?', ctx.params.id); mustSee(seeJob(ctx.user, j), 'job opening');
   const jd = { ...(j.jd || {}), ...(ctx.body.jd || {}) };
+  const pool = D.settings().jd_templates || {}; if (!pool[j.title]) D.setSetting('jd_templates', { ...pool, [j.title]: cleanJd(jd) }); // the first JD for a role joins the pool
   const patch = { jd, jd_status: ctx.body.send ? 'Waiting for client' : (j.jd_status === 'Not written' ? 'Draft' : j.jd_status) };
   D.edit('jobs', j.id, patch, ctx.actor.label, ctx.ip);
   if (ctx.body.send) {
@@ -765,6 +767,21 @@ route('POST', '/api/jd-pool', ADMINS, (ctx) => {
   D.setSetting('jd_templates', pool); D.history(ctx.actor.label, ctx.body.remove ? 'remove JD' : 'save JD', null, 'jd_pool', null, title);
   return { ok: true };
 });
+// JDs already written, as Word or PDF files: the text is sorted into the pool's sections, one role per file name.
+route('POST', '/api/jd-pool/upload', { ...ADMINS, rate: { key: 'jdwrite', max: 60, minutes: 60 } }, async (ctx) => {
+  const b = ctx.body || {}; const name = String(b.name || ''); if (!/\.(pdf|docx)$/i.test(name)) throw httpError(400, 'Upload a PDF or Word file');
+  const buf = Buffer.from(String(b.base64 || '').replace(/^data:[^,]*,/, ''), 'base64'); if (!buf.length) throw httpError(400, 'The file is empty.');
+  const title = String(b.title || name.replace(/\.[^.]+$/, '').replace(/\b(jd|job description|profile|final|new|copy)\b|[_\-()\d]+/gi, ' ').replace(/\s+/g, ' ')).trim() || name;
+  let text = ''; try { text = require('./cvparse').cvText(name, buf) || ''; } catch { /* a scan: the AI reads the file */ }
+  const LLM = require('./llm'); let jd = { summary: text.trim().slice(0, 4000) };
+  if (LLM.available()) {
+    const keys = ['summary', 'duties', 'must', 'good', 'education', 'languages', 'timings', 'benefits', 'incentives', 'location'];
+    const r = await LLM.json({ system: 'You sort a job description into sections for a recruitment firm. Keep the words of the document. Leave a section empty if the document does not cover it.', user: text.trim().length > 80 ? text.slice(0, 12000) : `File: ${name}`, files: text.trim().length > 80 ? [] : [{ name, buf }], schema: { type: 'object', additionalProperties: false, required: keys, properties: Object.fromEntries(keys.map((k) => [k, { type: 'string' }])) }, name: 'jd', maxTokens: 1800 });
+    jd = r.answer || r;
+  } else if (!text.trim()) throw httpError(424, 'This file has no readable text.');
+  D.setSetting('jd_templates', { ...(D.settings().jd_templates || {}), [title]: cleanJd(jd) }); D.history(ctx.actor.label, 'upload JD', null, 'jd_pool', null, title);
+  return { title };
+});
 // AI: a JD from the role's facts. A few a minute per login is plenty (each one costs a little).
 route('POST', '/api/jd/write', { auth: 'team', rate: { key: 'jdwrite', max: 30, minutes: 60 } }, async (ctx) => {
   const b = ctx.body || {}; if (!b.title) throw httpError(400, 'Pick the role');
@@ -774,6 +791,7 @@ route('POST', '/api/jd/write', { auth: 'team', rate: { key: 'jdwrite', max: 30, 
 // The jewellery line of a JD ("Required · 2+ years · diamond retail"), for the PDF and the client.
 const jewelLine = (jd) => (jd && jd.jewel_need ? [jd.jewel_need, jd.jewel_years ? `${jd.jewel_years}+ years` : '', jd.jewel_note].filter(Boolean).join(' · ') : '');
 module.exports.jewelLine = jewelLine;
+module.exports.jdPdf = (j) => jdPdf(j);
 route('GET', '/api/jobs/:id/jd.pdf', T, (ctx) => {
   const j = get('SELECT * FROM jobs WHERE id=?', ctx.params.id); mustSee(seeJob(ctx.user, j), 'job opening');
   return { __file: { name: `${j.id}-JD.pdf`, mime: 'application/pdf', buf: jdPdf(j) } };
