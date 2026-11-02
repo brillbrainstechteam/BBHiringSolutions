@@ -31,7 +31,7 @@
   };
   F.client = (c) => {
     const a = c.activation || {};
-    return `      <div class="row" style="margin-bottom:14px"><button class="btn sm primary" data-fcall>Call notes</button><button class="btn sm" data-fmail="contract">Send agreement</button>${a.contract ? '' : '<button class="btn sm" data-fsigned>Upload signed agreement</button>'}<button class="btn sm" data-fmail="kyc">Ask for KYC</button><button class="btn sm" data-fmail="general">Email</button><button class="btn sm" data-fthanks>Thank-you message</button><button class="btn sm" data-fagree>Agreement</button><button class="btn sm" data-flook>Find online</button><button class="btn sm" data-fgroup>WhatsApp group</button></div>`;
+    return `      <div class="row" style="margin-bottom:14px"><button class="btn sm primary" data-fcall>Call notes</button><button class="btn sm" data-fagree>Agreement${a.contract ? ' <span class="badge b-green tiny">Signed</span>' : ''}</button><button class="btn sm" data-fmail="kyc">Ask for KYC</button><button class="btn sm" data-fmail="general">Email</button><button class="btn sm" data-fthanks>Thank-you message</button><button class="btn sm" data-flook>Find online</button><button class="btn sm" data-fgroup>WhatsApp group</button></div>`;
   };
   F.clientMore = (c) => {
     const g = c.wa_group || {}; const o = (c.extra || {}).online;
@@ -40,15 +40,32 @@
       ${g.name ? `<div class="sec"><h3>WhatsApp group</h3><div class="small"><b>${esc(g.name)}</b> ${g.created ? '<span class="badge b-green">Created</span>' : '<span class="badge b-outline">To create</span>'}${g.link ? ` · <a href="${esc(g.link)}" target="_blank" rel="noopener">invite link</a>` : ''}</div></div>` : ''}
       ${(c.mails || []).length ? `<div class="sec"><h3>Emails</h3>${c.mails.map((m) => `<div class="small">${fmtDT(m.at)} · ${esc(m.subject)} <span class="badge b-outline">${esc(m.status)}</span></div>`).join('')}</div>` : ''}`;
   };
-  const agreementView = async () => {
-    const a = await BB.api('/api/agreement');
-    BB.ask({ title: 'Recruitment Agreement', wide: true, fields: [`<div class="flow-doc">${esc(a.text || 'Open the file to read it.')}</div>`], ok: 'Download', submit: async () => BB.download('/api/agreement/file') });
+  // Everything about one client's agreement in one place: get it, edit it, send it, file the signed copy.
+  const agreementBox = (c) => {
+    const own = (c.files || []).find((f) => f.type === 'agreement_client'); const signed = (c.files || []).find((f) => f.type === 'contract_signed');
+    const row = (t, s, btns) => `<div class="agr-row"><div class="grow"><b>${t}</b><div class="small muted">${s}</div></div><div class="row agr-btns">${btns}</div></div>`;
+    BB.modal({ title: `Agreement · ${esc(c.company)}`, wide: true,
+      body: row('Agreement for this client', own ? `Edited copy: ${esc(own.name)}, ${fmtD(own.at)}, ${esc(own.uploaded_by || '')}` : 'Standard Recruitment Agreement', '<button class="btn sm" data-agdl>Download</button>')
+        + row('Edit and re-upload', 'Download it, make the changes in Word, then upload it here. Only this client gets your edited copy.', `<button class="btn sm" data-agup>${own ? 'Replace edited copy' : 'Upload edited copy'}</button>${own ? '<button class="btn sm" data-agstd>Use standard</button>' : ''}`)
+        + row('Send to the client', c.email || (c.extra || {}).hr_email ? `Goes to ${esc(c.email || c.extra.hr_email)} with the agreement above attached.` : 'Add the client\'s email in the next step.', '<button class="btn sm primary" data-agsend>Send agreement</button>')
+        + row('Signed agreement', signed ? `${esc(signed.name)}, ${fmtD(signed.at)}` : (c.activation || {}).contract ? 'Signed, no file on record' : 'Not received yet. Upload it here when it comes in, and the client becomes active.', `${signed ? `<button class="btn sm" data-agsee="${signed.id}">Open</button>` : ''}<button class="btn sm" data-agsigned>${signed ? 'Replace signed copy' : 'Upload signed copy'}</button>`),
+      foot: '<button class="btn" data-cancel>Close</button>',
+      onMount: (el, close) => {
+        const q = (s) => $(s, el); q('[data-cancel]').onclick = close;
+        q('[data-agdl]').onclick = () => BB.download(own ? `/api/files/${own.id}` : '/api/agreement/file');
+        q('[data-agsend]').onclick = () => { close(); F.composeMail([c.id], 'contract', 'Send agreement'); };
+        const put = async (type, accept, msg) => { const f = await BB.pickFile(accept); if (f) { close(); act(() => BB.post('/api/files', { record_id: c.id, type, ...f }), msg); } };
+        q('[data-agup]').onclick = () => put('agreement_client', '.docx,.pdf', 'Edited agreement saved for this client');
+        q('[data-agsigned]').onclick = () => put('contract_signed', undefined, 'Signed agreement saved');
+        const std = q('[data-agstd]'); if (std) std.onclick = () => { close(); act(() => BB.post(`/api/files/${own.id}/remove`), 'Back to the standard agreement'); };
+        const see = q('[data-agsee]'); if (see) see.onclick = () => BB.openFile(see.dataset.agsee);
+      } });
   };
   F.composeMail = async (ids, kind, label) => {
     const t = await BB.api(`/api/email-templates?ids=${ids.join(',')}`); const tp = t.templates[kind] || t.templates.general;
     const contract = kind === 'contract'; const held = t.held && !contract; const one = t.recipients.length === 1 ? t.recipients[0] : null; const none = t.recipients.filter((x) => !x.email);
     const who = `<div class="small muted">${t.from ? `From: <b>${esc(t.from)}</b>` : ''}${one ? '' : `<div>To: each client's saved email (${t.recipients.length - none.length} of ${t.recipients.length})${none.length ? `. No email for ${none.slice(0, 3).map((x) => esc(x.company)).join(', ')}${none.length > 3 ? ` and ${none.length - 3} more` : ''}` : ''}</div>`}</div>`;
-    const v = await BB.ask({ title: label, wide: true, fields: [who, ...(one ? [{ name: 'to', label: 'To', type: 'email', value: one.email }] : []), { name: 'subject', label: 'Subject', value: tp.subject }, { name: 'body', label: 'Message', type: 'textarea', value: tp.body, voice: false }, contract ? '<div class="small muted">Attached: Recruitment Agreement</div>' : { name: 'attach_agreement', label: 'Attach the Recruitment Agreement', type: 'check' }], ok: held ? 'Save for later' : 'Send', submit: (x) => BB.post('/api/clients/email', { ids, kind, ...x }) });
+    const v = await BB.ask({ title: label, wide: true, fields: [who, ...(one ? [{ name: 'to', label: 'To', type: 'email', value: one.email }] : []), { name: 'subject', label: 'Subject', value: tp.subject }, { name: 'body', label: 'Message', type: 'textarea', value: tp.body, voice: false }, contract ? `<div class="small muted">Attached: ${one ? esc(one.agreement || 'Recruitment Agreement') : 'Recruitment Agreement, or the client\'s edited copy'}</div>` : { name: 'attach_agreement', label: 'Attach the Recruitment Agreement', type: 'check' }], ok: held ? 'Save for later' : 'Send', submit: (x) => BB.post('/api/clients/email', { ids, kind, ...x }) });
     if (v) done(`${v.done} of ${ids.length} ${v.held ? 'saved' : 'sent'}${v.skipped.length ? ` · ${v.skipped[0]}` : ''}`);
   };
   F.clientMount = (el, c) => {
@@ -63,8 +80,7 @@
     });
     $$('[data-fmail]', el).forEach((b) => (b.onclick = () => F.composeMail([c.id], b.dataset.fmail, b.textContent)));
     on('[data-fthanks]', () => act(() => BB.post(`/api/clients/${c.id}/thanks`), (r) => (r.held ? 'Saved: messages are off for now' : 'Sent')));
-    on('[data-fagree]', agreementView);
-    on('[data-fsigned]', async () => { const f = await BB.pickFile(); if (f) act(() => BB.post('/api/files', { record_id: c.id, type: 'contract_signed', ...f }), 'Signed agreement saved'); });
+    on('[data-fagree]', () => agreementBox(c));
     on('[data-flook]', async () => {
       const v = await BB.ask({ title: 'Find this business online', note: 'Optional. Searches the web and fills what it finds for you to check. Each search costs a few rupees.', fields: [{ name: 'name', label: 'Business name', value: c.company }, { name: 'city', label: 'City', value: c.city || '', opt: true }, { name: 'address', label: 'Address', opt: true }], ok: 'Search', submit: (x) => BB.post(`/api/clients/${c.id}/lookup`, x) });
       if (v) done('Details found: check them below');
@@ -193,18 +209,18 @@
   // ---------- clients page: lead or active, email in bulk ----------
   F.clientsMount = (el) => {
     const bar = $('[data-cbar]', el); if (!bar) return;
-    const n = () => { const k = BB.selected(el).length; $('[data-ccount]', bar).textContent = k ? `${k} selected` : 'Tick clients to email them'; bar.classList.toggle('has-sel', k > 0); };
+    const n = () => { const k = BB.selected(el).length; $('[data-ccount]', bar).textContent = k ? `${k} selected` : 'Select Multiple'; bar.classList.toggle('has-sel', k > 0); };
     BB.wireSelect(el, n); $$('[data-sel]', el).forEach((x) => x.addEventListener('change', n));
-    $$('[data-cm]', bar).forEach((b) => (b.onclick = () => { const ids = BB.selected(el); if (!ids.length) return BB.toast('Tick some clients first', true); F.composeMail(ids, b.dataset.cm, b.textContent); }));
+    $$('[data-cm]', bar).forEach((b) => (b.onclick = () => { const ids = BB.selected(el); if (!ids.length) return BB.toast('Select some clients first', true); F.composeMail(ids, b.dataset.cm, b.textContent); }));
   };
 
   // ---------- hiring channels: creatives and many jobs at once ----------
-  F.trackerTop = (d, chs) => `<div class="row small bulkbar" data-tbar><span class="muted" data-tcount>Tick jobs to update them together:</span><select class="mini" data-tcr><option value="">Creative step…</option>${d.creative_steps.filter((s) => s !== 'Approved' || !me().channel_only).map((s) => `<option>${s}</option>`).join('')}</select><select class="mini" data-tch><option value="">Channel…</option>${chs.map((c) => `<option value="${c.key}">${esc(c.channel)}</option>`).join('')}</select><select class="mini" data-tst><option value="">Mark as…</option>${['Pending', 'Done', 'Not needed'].map((s) => `<option>${s}</option>`).join('')}</select></div>`;
+  F.trackerTop = (d, chs) => `<div class="row small bulkbar" data-tbar><span class="muted" data-tcount>Select Multiple</span><select class="mini" data-tcr><option value="">Creative step…</option>${d.creative_steps.filter((s) => s !== 'Approved' || !me().channel_only).map((s) => `<option>${s}</option>`).join('')}</select><select class="mini" data-tch><option value="">Channel…</option>${chs.map((c) => `<option value="${c.key}">${esc(c.channel)}</option>`).join('')}</select><select class="mini" data-tst><option value="">Mark as…</option>${['Pending', 'Done', 'Not needed'].map((s) => `<option>${s}</option>`).join('')}</select></div>`;
   F.trackerMount = (el, d) => {
     const ids = () => $$('[data-tj]:checked', el).map((x) => x.dataset.tj); const bar = $('[data-tbar]', el); if (!bar) return;
-    $$('[data-tj]', el).forEach((x) => (x.onchange = () => { const n = ids().length; $('[data-tcount]', bar).textContent = n ? `${n} selected:` : 'Tick jobs to update them together:'; bar.classList.toggle('has-sel', n > 0); }));
+    $$('[data-tj]', el).forEach((x) => (x.onchange = () => { const n = ids().length; $('[data-tcount]', bar).textContent = n ? `${n} selected:` : 'Select Multiple'; bar.classList.toggle('has-sel', n > 0); }));
     $$('[data-tcreative]', el).forEach((b) => (b.onclick = () => F.creative(b.dataset.tcreative)));
-    const need = () => { const v = ids(); if (!v.length) BB.toast('Tick some jobs first', true); return v; };
+    const need = () => { const v = ids(); if (!v.length) BB.toast('Select some jobs first', true); return v; };
     const cr = $('[data-tcr]', bar); cr.onchange = () => { const v = need(); const s = cr.value; cr.value = ''; if (v.length && s) act(() => BB.post('/api/creatives', { ids: v, status: s }), (r) => `${r.done} updated`); };
     const st = $('[data-tst]', bar); st.onchange = () => { const v = need(); const ch = $('[data-tch]', bar).value; const s = st.value; st.value = ''; if (!ch) return BB.toast('Pick the channel first', true); if (v.length && s) act(() => BB.post('/api/postings/tracker/bulk', { job_ids: v, ckey: ch, status: s }), (r) => `${r.done} updated`); };
   };

@@ -1702,7 +1702,8 @@ route('POST', '/api/followups', T, (ctx) => {
 route('POST', '/api/followups/:id/done', T, (ctx) => { D.run('UPDATE followups SET done=1 WHERE id=? AND for_user=?', ctx.params.id, ctx.user.id); return { ok: true }; });
 route('GET', '/api/history/:id', T, (ctx) => all('SELECT * FROM history WHERE record_id=? ORDER BY id DESC LIMIT 200', ctx.params.id));
 route('POST', '/api/files', T, async (ctx) => {
-  const b = ctx.body; const f = await F.saveFile({ recordId: b.record_id, type: b.type || 'file', name: b.name, base64: b.base64, by: ctx.actor.label });
+  const b = ctx.body; if (b.type === 'agreement_client' && !/\.(docx|pdf)$/i.test(b.name || '')) throw httpError(400, 'Upload the agreement as a Word or PDF file');
+  const f = await F.saveFile({ recordId: b.record_id, type: b.type || 'file', name: b.name, base64: b.base64, by: ctx.actor.label });
   if (b.type === 'cv') { update('candidates', b.record_id, { cv_file: String(f.id), last_updated: now() }); f.filled = require('./cvparse').fillCandidate(b.record_id, b.name, b.base64, ctx.actor.label); }
   if (b.type === 'short_cv') update('candidates', b.record_id, { short_cv_file: String(f.id) });
   if (['gst', 'pan', 'owner_id'].includes(b.type)) { const c = get('SELECT * FROM clients WHERE id=?', b.record_id); update('clients', c.id, { kyc: { ...(c.kyc || {}), [b.type]: f.id } }); L.checkActivation(c.id, ctx.actor); }

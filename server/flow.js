@@ -40,26 +40,30 @@ const money = (y) => (y ? L.inr(y) : '');
 // ---------- Recruitment Agreement: the standard copy for every login ----------
 const BUNDLED = path.join(__dirname, '..', 'assets', 'Recruitment Agreement.docx');
 const DOCX = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
-function agreementFile() {
+// A client's own edited copy, when one was uploaded, stands in for the standard agreement.
+const editedAgreement = (clientId) => get("SELECT * FROM files WHERE record_id=? AND type='agreement_client' AND replaced=0 ORDER BY id DESC LIMIT 1", clientId);
+function agreementFile(clientId) {
+  const own = clientId && editedAgreement(clientId);
+  if (own) return { name: own.name, mime: own.mime, buf: F.readStored(own), at: own.at };
   const f = get("SELECT * FROM files WHERE record_id='AGREEMENT' AND type='agreement' AND replaced=0 ORDER BY id DESC LIMIT 1");
   if (f) return { name: f.name, mime: f.mime || DOCX, buf: F.readStored(f), at: f.at };
   if (!fs.existsSync(BUNDLED)) return null;
   return { name: 'Recruitment Agreement.docx', mime: DOCX, buf: fs.readFileSync(BUNDLED), at: null };
 }
-function agreementView() {
-  const f = agreementFile(); if (!f) return { name: '', text: '', at: null };
+function agreementView(clientId) {
+  const f = agreementFile(clientId); if (!f) return { name: '', text: '', at: null };
   let text = '';
   if (/\.docx$/i.test(f.name)) {
-    const xml = (F.unzip(f.buf)['word/document.xml'] || Buffer.alloc(0)).toString('utf8');
+    let xml = ''; try { xml = (F.unzip(f.buf)['word/document.xml'] || Buffer.alloc(0)).toString('utf8'); } catch { /* opened as a file instead */ }
     text = xml.split(/<\/w:p>/).map((p) => p.replace(/<w:tab\/>/g, ' ').replace(/<[^>]+>/g, '').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'")).join('\n').replace(/\n{3,}/g, '\n\n').trim();
   }
   return { name: f.name, text, at: f.at };
 }
-const agreementDownload = () => { const f = agreementFile(); if (!f) throw httpError(404, 'The agreement has not been added yet.'); return { __file: { name: f.name, mime: f.mime, buf: f.buf } }; };
+const agreementDownload = (clientId) => { const f = agreementFile(clientId); if (!f) throw httpError(404, 'The agreement has not been added yet.'); return { __file: { name: f.name, mime: f.mime, buf: f.buf } }; };
 route('GET', '/api/agreement', CH, () => agreementView());
 route('GET', '/api/agreement/file', CH, () => agreementDownload());
-route('GET', '/api/client/agreement', C, () => agreementView());
-route('GET', '/api/client/agreement/file', C, () => agreementDownload());
+route('GET', '/api/client/agreement', C, (ctx) => agreementView(ctx.client.id));
+route('GET', '/api/client/agreement/file', C, (ctx) => agreementDownload(ctx.client.id));
 route('POST', '/api/agreement', SUPER, async (ctx) => {
   if (!/\.(docx|pdf)$/i.test(ctx.body.name || '')) throw httpError(400, 'Upload the agreement as a Word or PDF file');
   return F.saveFile({ recordId: 'AGREEMENT', type: 'agreement', name: ctx.body.name, base64: ctx.body.base64, by: ctx.actor.label });
@@ -124,7 +128,7 @@ route('POST', '/api/clients/:id/group', T, (ctx) => {
 // ---------- email from the portal: one client or many ----------
 const clientEmail = (c) => c.email || (c.extra || {}).hr_email || '';
 route('GET', '/api/email-templates', T, (ctx) => ({ templates: D.settings().email_templates, held: !!(D.settings().wa_pause || {}).email, can_send: M.configured(), from: D.ENV.smtp.from || '',
-  recipients: String(ctx.query.ids || '').split(',').filter(Boolean).slice(0, 200).map((id) => get('SELECT * FROM clients WHERE id=? AND removed=0', id)).filter((c) => c && seeClient(ctx.user, c)).map((c) => ({ id: c.id, company: c.company, email: clientEmail(c) })) }));
+  recipients: String(ctx.query.ids || '').split(',').filter(Boolean).slice(0, 200).map((id) => get('SELECT * FROM clients WHERE id=? AND removed=0', id)).filter((c) => c && seeClient(ctx.user, c)).map((c) => ({ id: c.id, company: c.company, email: clientEmail(c), agreement: (editedAgreement(c.id) || {}).name || '' })) }));
 route('POST', '/api/clients/email', T, (ctx) => {
   const b = ctx.body || {}; const ids = (b.ids || []).map(String).slice(0, 200); const sender = ctx.user.name;
   if (!ids.length) throw httpError(400, 'Pick at least one client');
@@ -142,7 +146,7 @@ route('POST', '/api/clients/email', T, (ctx) => {
     const fill = (t) => String(t).replace(/\{(company|contact|sender)\}/g, (m, k) => ({ company: c.company, contact: c.contact || 'Sir/Madam', sender }[k]));
     const subject = fill(b.subject); const text = fill(b.body);
     const html = M.layout(subject, text.split(/\n{2,}/).map((p) => `<p style="font-size:14px;line-height:1.65;margin:0 0 12px">${p.split('\n').map((x) => x.replace(/[&<>]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[ch]))).join('<br>')}</p>`).join(''));
-    const eid = M.queue({ to, subject, text, html, kind: b.kind || 'client_mail', recordId: c.id, attachments: isContract || b.attach_agreement ? [{ agreement: true }] : [], force: isContract });
+    const eid = M.queue({ to, subject, text, html, kind: b.kind || 'client_mail', recordId: c.id, attachments: isContract || b.attach_agreement ? [editedAgreement(c.id) ? { file_id: editedAgreement(c.id).id } : { agreement: true }] : [], force: isContract });
     if (!eid) { out.skipped.push(`${c.company}: not a valid email`); continue; }
     if (isContract) {
       const st = D.settings().client_stages;
@@ -433,4 +437,4 @@ route('GET', '/api/holds', SUPER, () => {
   return { wa: !!w.everyone, email: !!w.email, allow: w.allow || [], rows, mails, smtp: M.configured(), crm: !!s.crm.enabled, accounts_email: s.accounts_email || '', unapproved: Object.entries(fm).filter(([, f]) => !f.approved).map(([k]) => k) };
 });
 
-module.exports = { clientMail, clientByEmail, mailFiles, clientCvFor, makeClientCv, nextStep, cleanText };
+module.exports = { agreementFile, clientMail, clientByEmail, mailFiles, clientCvFor, makeClientCv, nextStep, cleanText };
