@@ -28,7 +28,7 @@ CREATE TABLE IF NOT EXISTS bill_followups (id INTEGER PRIMARY KEY AUTOINCREMENT,
 const T = { auth: 'team' };
 const CH = { auth: 'team', channels: true };
 const C = { auth: 'client' };
-const ADMINS = { auth: 'team', levels: ['super', 'admin'] };
+const ADMINS = { auth: 'team' }; // invoices, expenses and the books are open to the whole team; money received is checked where it is recorded
 const SUPER = { auth: 'team', levels: ['super'] };
 const mustSee = (ok, what) => { if (!ok) throw httpError(403, `You cannot see this ${what}.`); };
 const loadClient = (ctx) => { const c = get('SELECT * FROM clients WHERE id=?', ctx.params.id); mustSee(seeClient(ctx.user, c), 'client'); return c; };
@@ -64,7 +64,7 @@ route('GET', '/api/agreement', CH, () => agreementView());
 route('GET', '/api/agreement/file', CH, () => agreementDownload());
 route('GET', '/api/client/agreement', C, (ctx) => agreementView(ctx.client.id));
 route('GET', '/api/client/agreement/file', C, (ctx) => agreementDownload(ctx.client.id));
-route('POST', '/api/agreement', SUPER, async (ctx) => {
+route('POST', '/api/agreement', T, async (ctx) => {
   if (!/\.(docx|pdf)$/i.test(ctx.body.name || '')) throw httpError(400, 'Upload the agreement as a Word or PDF file');
   return F.saveFile({ recordId: 'AGREEMENT', type: 'agreement', name: ctx.body.name, base64: ctx.body.base64, by: ctx.actor.label });
 });
@@ -482,26 +482,26 @@ route('POST', '/api/applications/:id/questions', T, async (ctx) => {
 });
 
 // ---------- the Accounts desk: invoices to raise, to send, and payments to follow up ----------
-const ACC = { auth: 'team', levels: ['super'], accounts: true };
+const ACC = { auth: 'team', accounts: true };
 const billFacts = (b) => { const c = get('SELECT * FROM clients WHERE id=?', b.client_id) || {}; const a = b.app_id ? V.appView(get('SELECT * FROM applications WHERE id=?', b.app_id)) : { candidate_name: b.person_name || '', job_title: b.job_name || '' }; return { id: b.id, bill_no: b.bill_no, client_id: b.client_id, client_name: c.company, gstin: (c.kyc || {}).gstin || '', client_email: clientEmail(c), client_phone: c.whatsapp || '', candidate_name: a.candidate_name, job_title: a.job_title, joining_date: a.joining_date || null, ctc: b.ctc, fee: b.fee, gst: b.gst, total: b.total, asked_at: b.accounts_asked_at, invoice_file: b.invoice_file, sent_at: b.sent_at, sent_via: b.sent_via, due_date: b.due_date, balance: b.balance, stage: b.stage }; };
-route('GET', '/api/accounts/home', ACC, () => {
-  const bills = all("SELECT * FROM bills WHERE credit_of IS NULL AND status IN ('Draft','Issued')").map(L.billView); const today = L.istDay();
+route('GET', '/api/accounts/home', ACC, (ctx) => {
+  const bills = all("SELECT * FROM bills WHERE credit_of IS NULL AND status IN ('Draft','Issued')").filter((b) => R.seeBill(ctx.user, b)).map(L.billView); const today = L.istDay();
   const to_raise = bills.filter((b) => b.status === 'Draft').map(billFacts);
   const to_send = bills.filter((b) => b.status === 'Issued' && !b.sent_at && b.balance > 0).map(billFacts);
   const followups = bills.filter((b) => b.status === 'Issued' && b.sent_at && b.balance > 0).map((b) => { const f = get('SELECT * FROM bill_followups WHERE bill_id=? ORDER BY id DESC LIMIT 1', b.id) || {}; return { ...billFacts(b), last_note: f.note || '', last_at: f.at || null, next_at: f.next_at || null, days_overdue: b.due_date && b.due_date < today ? Math.round((Date.parse(today) - Date.parse(b.due_date)) / 86400000) : 0 }; }).sort((x, y) => String(x.next_at || x.due_date).localeCompare(String(y.next_at || y.due_date)));
-  const offers = all("SELECT * FROM applications WHERE offer_ctc IS NOT NULL AND result IN ('open','Hired') ORDER BY created_at DESC").map((a) => { const v = V.appView(a); const job = get('SELECT * FROM jobs WHERE id=?', a.job_id); const c = get('SELECT * FROM clients WHERE id=?', job.client_id); const b = get("SELECT * FROM bills WHERE app_id=? AND credit_of IS NULL AND status!='Cancelled'", a.id); const est = L.feeFor(c, job.agency_id || D.soleAgency(), a.offer_ctc); const g = L.gstFor(c.state || L.stateOf(c.city), est.fee); return { id: a.id, candidate_name: v.candidate_name, job_title: v.job_title, client_name: c.company, ctc: a.offer_ctc, joining_date: a.joining_date, step: a.step, letter_at: a.letter_at, bill_id: b ? b.id : null, bill_status: b ? b.status : '', fee: b ? b.fee : est.fee, total: b ? b.total : est.fee + g.gst }; });
+  const offers = all("SELECT * FROM applications WHERE offer_ctc IS NOT NULL AND result IN ('open','Hired') ORDER BY created_at DESC").filter((a) => R.seeApp(ctx.user, a) || R.accountsOnly(ctx.user)).map((a) => { const v = V.appView(a); const job = get('SELECT * FROM jobs WHERE id=?', a.job_id); const c = get('SELECT * FROM clients WHERE id=?', job.client_id); const b = get("SELECT * FROM bills WHERE app_id=? AND credit_of IS NULL AND status!='Cancelled'", a.id); const est = L.feeFor(c, job.agency_id || D.soleAgency(), a.offer_ctc); const g = L.gstFor(c.state || L.stateOf(c.city), est.fee); return { id: a.id, candidate_name: v.candidate_name, job_title: v.job_title, client_name: c.company, ctc: a.offer_ctc, joining_date: a.joining_date, step: a.step, letter_at: a.letter_at, bill_id: b ? b.id : null, bill_status: b ? b.status : '', fee: b ? b.fee : est.fee, total: b ? b.total : est.fee + g.gst }; });
   return { to_raise, to_send, followups, offers, due: followups.reduce((t, b) => t + b.balance, 0) };
 });
 const q_ = (v) => String(v || '').trim().toLowerCase();
-route('GET', '/api/accounts/clients', ACC, (ctx) => {
+route('GET', '/api/accounts/clients', { ...ACC, levels: ['super'] }, (ctx) => {
   const f = q_(ctx.query.q); const bills = all("SELECT * FROM bills WHERE credit_of IS NULL AND status IN ('Issued','Paid')").map(L.billView);
   return all('SELECT * FROM clients WHERE removed=0 AND junk=0 AND placeholder=0 AND merged_into IS NULL ORDER BY company').filter((c) => !f || [c.company, c.contact, c.city, c.whatsapp, clientEmail(c)].join(' ').toLowerCase().includes(f)).slice(0, 300).map((c) => { const own = bills.filter((b) => b.client_id === c.id); return { id: c.id, company: c.company, contact: c.contact, city: c.city, whatsapp: c.whatsapp, email: clientEmail(c), gstin: (c.kyc || {}).gstin || '', billed: own.reduce((t, b) => t + b.total, 0), outstanding: own.reduce((t, b) => t + b.balance, 0) }; });
 });
-route('GET', '/api/accounts/clients/:id', ACC, (ctx) => {
+route('GET', '/api/accounts/clients/:id', { ...ACC, levels: ['super'] }, (ctx) => {
   const c = get('SELECT * FROM clients WHERE id=?', ctx.params.id); if (!c) throw httpError(404, 'Client not found');
   return { id: c.id, company: c.company, contact: c.contact, city: c.city, state: c.state, whatsapp: c.whatsapp, email: clientEmail(c), gstin: (c.kyc || {}).gstin || '', payment_days: c.payment_days || D.settings().payment_days, kyc: Object.entries({ gst: 'GST certificate', pan: 'Business PAN' }).filter(([k]) => (c.kyc || {})[k]).map(([k, l]) => ({ file: c.kyc[k], label: l })), bills: all("SELECT * FROM bills WHERE client_id=? AND credit_of IS NULL AND status!='Cancelled' ORDER BY created_at DESC", c.id).map(L.billView).map(billFacts) };
 });
-route('GET', '/api/accounts/candidates', ACC, (ctx) => {
+route('GET', '/api/accounts/candidates', { ...ACC, levels: ['super'] }, (ctx) => {
   const f = q_(ctx.query.q); const rows = all("SELECT a.*, c.name cname, c.city ccity FROM applications a JOIN candidates c ON c.id=a.candidate_id WHERE a.offer_ctc IS NOT NULL ORDER BY a.created_at DESC");
   return rows.map((a) => { const v = V.appView(a); return { id: a.id, name: a.cname, city: a.ccity, job_title: v.job_title, client_name: v.client_name, ctc: a.offer_ctc, joining_date: a.joining_date, step: a.step, result: a.result }; }).filter((x) => !f || [x.name, x.city, x.job_title, x.client_name].join(' ').toLowerCase().includes(f)).slice(0, 300);
 });
@@ -707,7 +707,7 @@ const MAIL_KINDS = {
   contract: ['Recruitment Agreement to a client', 'Email set-up'], kyc: ['KYC request to a client', 'Email set-up'], client_mail: ['Emails written to clients from the portal', 'Email set-up'], invoice_request: ['Invoice request to Accounts', 'Email set-up and the Accounts email in Settings'],
   new_client: ['New client alert to the team', 'Email set-up'], new_candidate: ['New candidate alert to the team', 'Email set-up'], client_confirmation: ['"We received your request" to clients', 'Email set-up'], candidate_confirmation: ['"Your application is in" to candidates', 'Email set-up'],
 };
-route('GET', '/api/holds', SUPER, () => {
+route('GET', '/api/holds', T, () => {
   const s = D.settings(); const w = s.wa_pause || {}; const fm = s.formats || {};
   const held = Object.fromEntries(all("SELECT format k, COUNT(*) n, MAX(at) last FROM messages WHERE status='held' GROUP BY format").map((r) => [r.k || 'typed', r]));
   const rows = s.auto_rules.filter((r) => r.format).map((r) => {

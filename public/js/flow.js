@@ -4,7 +4,7 @@
   const { $, $$, esc, inr, fmtD, fmtDT, field, scoreBadge } = BB;
   const P = BB.pages;
   const me = () => BB.me.user;
-  const canAdmin = () => me().level !== 'sub';
+  const canAdmin = () => !me().accounts_only;
   const done = (msg) => { if (msg) BB.toast(msg); if (BB.refreshPanel) BB.refreshPanel(); if (BB.refreshPage) BB.refreshPage(); };
   const act = async (fn, msg) => { try { const r = await fn(); done(typeof msg === 'function' ? msg(r) : msg); return r; } catch (e) { BB.fail(e); return null; } };
   // Several files at once, read one by one.
@@ -297,6 +297,33 @@
     el.innerHTML = `<div class="card pad flow-doc">${esc(a.text || 'Download the file to read it.')}</div>`;
     $('[data-adl]', actions).onclick = () => BB.download('/api/agreement/file');
     const up = $('[data-aup]', actions); if (up) up.onclick = async () => { const f = await BB.pickFile('.docx,.pdf'); if (f) act(() => BB.post('/api/agreement', f), 'Agreement replaced'); };
+  };
+
+  // ---------- Tasks: who owns what ----------
+  const TASK_CLS = { Pending: 'b-amber', 'In progress': 'b-primary', Done: 'b-green' };
+  const taskForm = (d, t) => BB.ask({ title: t ? 'Edit task' : 'Add task', fields: [{ name: 'title', label: 'Task', value: t ? t.title : '', voice: false }, `<div class="grid g3">${field({ name: 'area', label: 'Area', opt: true, value: t ? t.area : '' })}${field({ name: 'owner_id', label: 'Owner', type: 'select', options: d.owners.map((x) => [x.id, x.name]), opt: true, value: t ? t.owner_id : '' })}${field({ name: 'due_date', label: 'Due', type: 'date', opt: true, value: t ? t.due_date : '' })}</div>`, { name: 'detail', label: 'Details', type: 'textarea', opt: true, value: t ? t.detail : '' }], ok: 'Save', submit: (v) => (t ? BB.patch(`/api/tasks/${t.id}`, v) : BB.post('/api/tasks', v)) });
+  P.tasks = async ({ el, actions, q, me: u }) => {
+    const d = await BB.api(`/api/tasks?${BB.qs({ q: q.q, owner: q.owner, status: q.status, area: q.area })}`);
+    actions.innerHTML = `${u.agency_id ? '<button class="btn" data-tmember>+ Add team member</button>' : ''}<button class="btn primary" data-tadd>+ Add task</button>`;
+    el.innerHTML = `<div class="filters exp-filters"><input placeholder="Search tasks…" value="${esc(q.q || '')}" data-q data-xq><select data-tf="owner"><option value="">Everyone</option><option value="none" ${q.owner === 'none' ? 'selected' : ''}>No owner yet</option>${d.owners.map((x) => `<option value="${x.id}" ${q.owner === x.id ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select><select data-tf="area"><option value="">All areas</option>${d.areas.map((x) => `<option ${q.area === x ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select><select data-tf="status"><option value="">Any status</option>${d.statuses.map((x) => `<option ${q.status === x ? 'selected' : ''}>${x}</option>`).join('')}</select></div>
+      <div class="card">${BB.table([{ t: 'Task', f: (t) => `<a href="#" data-open="task:${t.id}"><b>${esc(t.title)}</b></a>${t.detail ? `<div class="tiny muted">${esc(t.detail)}</div>` : ''}` }, { t: 'Area', f: (t) => esc(t.area || '—') }, { t: 'Owner', f: (t) => `<select class="mini stage-sel" data-towner="${t.id}" aria-label="Owner"><option value="">No owner</option>${d.owners.map((x) => `<option value="${x.id}" ${t.owner_id === x.id ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select>` }, { t: 'Due', f: (t) => (t.due_date ? fmtD(t.due_date) : '—') }, { t: 'Status', f: (t) => `<select class="mini stage-sel" data-tstatus="${t.id}" aria-label="Status">${d.statuses.map((x) => `<option ${t.status === x ? 'selected' : ''}>${x}</option>`).join('')}</select>` }], d.rows, { empty: 'No tasks for these filters.' })}</div>
+      <div class="card" style="margin-top:14px"><div class="card-h"><h3>Team</h3></div>${BB.table([{ t: 'Person', f: (x) => `<b>${esc(x.name)}</b><div class="tiny muted">${BB.levelName(x.level)}</div>` }, { t: 'Open tasks', num: 1, f: (x) => x.open }, { t: 'Done', num: 1, f: (x) => x.done }, ...(d.can_perf ? [{ t: '', f: () => '<a href="/team/performance">Performance</a>' }] : [])], d.team, { empty: 'No team members yet.' })}</div>`;
+    let tt; $('[data-q]', el).oninput = (e) => { clearTimeout(tt); tt = setTimeout(() => BB.setQ({ q: e.target.value }), 350); };
+    $$('[data-tf]', el).forEach((f) => (f.onchange = () => BB.setQ({ [f.dataset.tf]: f.value })));
+    $$('[data-towner]', el).forEach((f) => (f.onchange = () => act(() => BB.patch(`/api/tasks/${f.dataset.towner}`, { owner_id: f.value }), 'Owner saved')));
+    $$('[data-tstatus]', el).forEach((f) => (f.onchange = () => act(() => BB.patch(`/api/tasks/${f.dataset.tstatus}`, { status: f.value }), 'Status saved')));
+    $('[data-tadd]', actions).onclick = () => taskForm(d).then((x) => x && done('Task added'));
+    const tm = $('[data-tmember]', actions); if (tm) tm.onclick = async () => { const v = await BB.ask({ title: 'Add team member', fields: [{ name: 'name', label: 'Name', voice: false }, field({ name: 'whatsapp', label: 'WhatsApp', type: 'tel', phone: true }), { name: 'email', label: 'Email', opt: true, voice: false }, { name: 'role', label: 'Role', opt: true, voice: false }], ok: 'Create login', submit: (x) => BB.post('/api/users', { ...x, level: 'sub', agency_id: u.agency_id }) }); if (v) { BB.modal({ title: 'Login created', foot: false, body: `<div class="stack"><div>Username: <b class="mono">${esc(v.username)}</b></div><div>Password: <b class="mono" style="font-size:18px">${esc(v.password)}</b></div><div class="small muted">Shown once.</div></div>` }); BB.refreshPage(); } };
+  };
+  BB.panels.task = async (id) => {
+    const t = await BB.api(`/api/tasks/${id}`); const d = await BB.api('/api/tasks?status=none');
+    return { head: `<div class="row"><h2>${esc(t.title)}</h2><span class="badge ${TASK_CLS[t.status] || 'b-outline'}">${esc(t.status)}</span></div>`, body: `<div class="card pad sec"><dl class="kv"><dt>Area</dt><dd>${esc(t.area || '—')}</dd><dt>Owner</dt><dd>${esc(t.owner_name || 'No owner yet')}</dd><dt>Due</dt><dd>${t.due_date ? fmtD(t.due_date) : '—'}</dd><dt>Details</dt><dd>${esc(t.detail || '—')}</dd><dt>Added by</dt><dd>${esc(t.by || '')}</dd></dl></div><div class="row">${t.status !== 'Done' ? '<button class="btn sm primary" data-tdone>Mark done</button>' : '<button class="btn sm" data-topen>Reopen</button>'}${t.status === 'Pending' ? '<button class="btn sm" data-tstart>Mark in progress</button>' : ''}<button class="btn sm" data-tedit>Edit</button><button class="btn sm danger" data-tdel>Remove</button></div>`,
+      mount: (el) => {
+        const set = (status, msg) => act(() => BB.patch(`/api/tasks/${t.id}`, { status }), msg); const on = (s, f) => { const x = $(s, el); if (x) x.onclick = f; };
+        on('[data-tdone]', () => set('Done', 'Task done')); on('[data-topen]', () => set('Pending', 'Reopened')); on('[data-tstart]', () => set('In progress', 'In progress'));
+        on('[data-tedit]', () => taskForm(d, t).then((x) => x && done('Saved')));
+        on('[data-tdel]', async () => { if (await BB.confirm('Remove this task', 'It comes off the list.', 'Remove')) { await act(() => BB.post(`/api/tasks/${t.id}/delete`), 'Removed'); BB.closePanels(); } });
+      } };
   };
 
   // ---------- The Accounts desk ----------

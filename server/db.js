@@ -46,6 +46,7 @@ CREATE TABLE IF NOT EXISTS slot_asks (id INTEGER PRIMARY KEY AUTOINCREMENT, app_
 CREATE TABLE IF NOT EXISTS resume_use (user_id TEXT, candidate_id TEXT, at TEXT, PRIMARY KEY (user_id, candidate_id));
 CREATE TABLE IF NOT EXISTS resume_alerts (user_id TEXT PRIMARY KEY, at TEXT);
 CREATE TABLE IF NOT EXISTS round_skips (app_id TEXT, mode TEXT, reason TEXT, by TEXT, at TEXT, PRIMARY KEY (app_id, mode));
+CREATE TABLE IF NOT EXISTS tasks (id TEXT PRIMARY KEY, title TEXT, detail TEXT, area TEXT, owner_id TEXT, agency_id TEXT, due_date TEXT, status TEXT DEFAULT 'Pending', done_at TEXT, done_by TEXT, by TEXT, at TEXT, removed INTEGER DEFAULT 0);
 CREATE TABLE IF NOT EXISTS app_questions (app_id TEXT PRIMARY KEY, questions TEXT DEFAULT '[]', by TEXT, at TEXT);
 CREATE TABLE IF NOT EXISTS followups (id INTEGER PRIMARY KEY AUTOINCREMENT, record_id TEXT, at TEXT, note TEXT, for_user TEXT, done INTEGER DEFAULT 0, alerted INTEGER DEFAULT 0, created_by TEXT);
 CREATE TABLE IF NOT EXISTS postings (id INTEGER PRIMARY KEY AUTOINCREMENT, job_id TEXT, channel TEXT, owner TEXT, tag TEXT, done_date TEXT, post_link TEXT);
@@ -245,6 +246,10 @@ function ensureSettings() {
     setSetting('email_templates', { cv: defs.email_templates.cv, ...(settings().email_templates || {}) });
     run('UPDATE candidates SET short_cv_for=NULL'); // made by the older cleaner: the next one is made afresh
     setSetting('done_once', [...(settings().done_once || []), 'client_cv_2026_11_02']);
+  }
+  if (!once.includes('tasks_list')) {
+    for (const [area, list] of defs.task_list) for (const title of list) insert('tasks', { id: nextId('TK'), title, area, status: 'Pending', by: 'Portal', at: now() });
+    setSetting('done_once', [...(settings().done_once || []), 'tasks_list']);
   }
   if (!once.includes('email_invoice')) {
     setSetting('email_templates', { invoice: defs.email_templates.invoice, payment_reminder: defs.email_templates.payment_reminder, ...(settings().email_templates || {}) });

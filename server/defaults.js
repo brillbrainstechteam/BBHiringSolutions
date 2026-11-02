@@ -155,6 +155,16 @@ module.exports.defaultSettings = () => ({
   wa_pause: { candidates: true, everyone: true, email: true, allow: ['9093400666', '9986950695', '8368372836'] },
   accounts_email: '',
   resume_alert_pct: 30,
+  // The standing work of the team. Each gets an owner on the Tasks page.
+  task_list: [
+    ['Clients', ['Call new client leads', 'Send the pitch deck', 'Send the Recruitment Agreement and get it signed', 'Collect KYC papers', 'Write the job description and get it approved']],
+    ['Sourcing', ['Post openings on job portals', 'Run Digital Reach posts and ads', 'Check resumes coming into the inbox', 'Add candidates from Excel and portals']],
+    ['Screening', ['Screen new applications', 'Take telephonic rounds', 'Take virtual rounds', 'Email CVs to clients']],
+    ['Interviews', ['Ask clients for interview slots', 'Confirm interviews with candidates', 'Collect interview feedback from clients']],
+    ['Offers', ['Record offers and offer letters', 'Follow up on joining', 'Check in after joining']],
+    ['Invoices', ['Raise invoices', 'Send invoices to clients', 'Follow up on payments', 'Record expenses and invoices']],
+    ['Team', ['Set up logins for new members', 'Check message formats and what goes out']],
+  ],
   expense_tree: [
     { name: 'Portal Subscription Fees', subs: ['Naukri', 'Indeed', 'Apna Jobs', 'LinkedIn Recruiter', 'WorkIndia', 'Shine', 'foundit', 'Resume database credits', 'Job posting credits'] },
     { name: 'Paid Ads', subs: ['Meta Ads', 'Google Ads', 'LinkedIn Ads', 'Ad creatives'] },

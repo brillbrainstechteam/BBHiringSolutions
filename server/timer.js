@@ -71,13 +71,7 @@ function runTimer() {
     if (!r.skipped) count('payment_reminder');
   }
   require('./flow').followupsDue();
-  // Daily log reminder 30 minutes before the deadline.
   const [dh, dm] = D.settings().log_deadline.split(':').map(Number); const h = L.istHour();
-  if (h >= dh + dm / 60 - 0.5 && h < dh + dm / 60) {
-    for (const u of all("SELECT * FROM users WHERE status='On' AND level!='super'")) {
-      if (!get('SELECT 1 FROM logs WHERE user_id=? AND day=?', u.id, L.istDay())) { const r = L.sendWA({ ptype: 'user', pid: u.id, format: 'bbhs_log_reminder', vars: { deadline: D.settings().log_deadline, link: L.link('team') }, auto: true, rule: 'log_reminder', dedupe: `log:${u.id}:${L.istDay()}` }); if (!r.skipped) count('log_reminder'); }
-    }
-  }
   // Evening summary to each admin and super admin (after the log deadline).
   if (h >= dh + dm / 60 + 1 && h < 21) {
     for (const u of all("SELECT * FROM users WHERE status='On' AND level IN ('admin','super')")) {

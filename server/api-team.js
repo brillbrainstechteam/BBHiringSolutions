@@ -117,7 +117,6 @@ function personStatus(u) {
   const last = [u.last_login, u.last_action].filter(Boolean).sort().pop();
   const idle = last ? L.daysBetween(last) : 99;
   if (idle >= 3) return `Inactive ${idle > 90 ? '90+' : idle} days`;
-  if (u.level !== 'super' && deadlinePassed() && !get('SELECT 1 FROM logs WHERE user_id=? AND day=?', u.id, L.istDay())) return 'Log missing today';
   return 'Active';
 }
 function activity7(userId) {
@@ -203,10 +202,7 @@ route('GET', '/api/dashboard', T, (ctx) => {
     if (strong.length) att.push({ kind: 'Strong matches', text: `${strong.length} strong match${strong.length > 1 ? 'es' : ''} for ${j.id} ${j.title} — top: ${strong[0].c.name} (${strong[0].score}%)`, open: { type: 'job', id: j.id } });
   }
   for (const j of jobs.filter((x) => x.status === 'Draft' && ['Not written', 'Changes asked'].includes(x.jd_status))) att.push({ kind: 'Write job description', text: `${j.id} ${j.title} — ${j.client_name}${j.jd_status === 'Changes asked' ? ' (client asked for changes)' : ''}`, open: { type: 'job', id: j.id }, wa: { ptype: 'user', pid: j.recruiter_id || u.id, format: 'bbhs_team_task_alert', jb: j.id, vars: { task: `Write the JD for ${j.id}`, record_id: j.id } } });
-  if (deadlinePassed() || true) {
-    const team = all("SELECT * FROM users WHERE status='On' AND level!='super'").filter((x) => (isSuper(u) && x.level === 'admin') || (u.level === 'admin' && x.agency_id === u.agency_id && x.level === 'sub') || x.id === u.id);
-    for (const x of team) if (!get('SELECT 1 FROM logs WHERE user_id=? AND day=?', x.id, L.istDay()) && deadlinePassed()) att.push({ kind: 'Log missing', text: `${x.name} has no daily log today`, open: { type: 'person', id: x.id }, wa: { ptype: 'user', pid: x.id, format: 'bbhs_log_reminder', vars: { deadline: D.settings().log_deadline, link: L.link('team') } } });
-  }
+  for (const t of L.openTasksOf(u.id)) att.push({ kind: t.due_date && t.due_date < L.istDay() ? 'Task overdue' : 'Task', text: `${t.title}${t.due_date ? ` · due ${L.istFmt(t.due_date, false)}` : ''}`, open: { type: 'task', id: t.id } });
   for (const b of bills.filter((x) => x.view_status === 'Overdue')) { const cl = get('SELECT company FROM clients WHERE id=?', b.client_id); att.push({ kind: 'Overdue bill', text: `${b.bill_no} ${cl.company} — ${L.inr(b.balance)}`, open: { type: 'bill', id: b.id }, wa: { ptype: 'client', pid: b.client_id, format: 'bbhs_payment_reminder', bl: b.id, vars: { bill_no: b.bill_no, amount: L.inr(b.balance), status: 'overdue', link: L.upiLink(b.balance, b.bill_no) } } }); }
   for (const b of bills.filter((x) => x.status === 'Draft')) { const cl = get('SELECT company FROM clients WHERE id=?', b.client_id); att.push({ kind: 'Bill to issue', text: `${b.id} draft for ${cl.company}`, open: { type: 'bill', id: b.id } }); }
   const leadsNew = leadCount(u);
@@ -242,7 +238,7 @@ route('GET', '/api/myday', T, (ctx) => {
     pending: ivs.filter((i) => i.view_status === 'Result pending').map((i) => ({ ...i, app: V.appView(apps.find((a) => a.id === i.app_id)) })),
     followups: all('SELECT * FROM followups WHERE for_user=? AND done=0 ORDER BY at', u.id),
     stuck: apps.filter((a) => a.result === 'open' && !a.on_hold && L.daysBetween(a.step_since || a.created_at) >= 7).map(V.appView),
-    log_due: !get('SELECT 1 FROM logs WHERE user_id=? AND day=?', u.id, today) && u.level !== 'super',
+    tasks: L.openTasksOf(u.id),
   };
 });
 
@@ -310,7 +306,7 @@ route('GET', '/api/leads', T, (ctx) => {
   }
   return { clients, candidates: cands, check, sources: srcCount, hires, stages: D.settings().client_stages, agencies: all("SELECT id, name FROM agencies WHERE status='Active'"), can_allocate: R.canAllocate(u), can_download: sup, shared: R.sharedWith(u) };
 });
-route('POST', '/api/leads/assign', ADMINS, (ctx) => {
+route('POST', '/api/leads/assign', T, (ctx) => {
   const { type, ids, agency_id } = ctx.body; const u = ctx.user;
   if (!R.canAllocate(u)) throw httpError(403, 'Clients are allocated once a second agency is active.');
   if (!isSuper(u)) {
@@ -402,7 +398,7 @@ route('POST', '/api/clients', T, (ctx) => {
 function clientPast(c, u) {
   const jobs = all('SELECT * FROM jobs WHERE client_id=? ORDER BY created_at DESC', c.id).map((j) => V.jobView(j));
   const apps = all('SELECT a.*, j.title job_title, x.name person FROM applications a JOIN jobs j ON j.id=a.job_id JOIN candidates x ON x.id=a.candidate_id WHERE j.client_id=?', c.id);
-  const hired = apps.filter((a) => a.result === 'Hired'); const money = u.level !== 'sub';
+  const hired = apps.filter((a) => a.result === 'Hired'); const money = true;
   const bills = all("SELECT * FROM bills WHERE client_id=? AND status NOT IN ('Draft','Cancelled') AND credit_of IS NULL", c.id);
   const uniq = (l) => [...new Set(l.filter(Boolean))];
   const line = [
@@ -702,7 +698,7 @@ route('PATCH', '/api/jobs/:id', T, (ctx) => {
   const j = get('SELECT * FROM jobs WHERE id=?', ctx.params.id); mustSee(seeJob(ctx.user, j), 'job opening');
   const allowed = ['title', 'city', 'openings', 'sal_from', 'sal_to', 'exp_from', 'exp_to', 'notice_days', 'skills', 'priority', 'rounds', 'screening_qs', 'notes', 'archived', 'market', 'department', 'mass'];
   if (ctx.body.mass !== undefined) ctx.body.mass = ctx.body.mass ? 1 : 0;
-  if (ctx.user.level !== 'sub') allowed.push('recruiter_id');
+  allowed.push('recruiter_id');
   const patch = {}; for (const k of allowed) if (ctx.body[k] !== undefined) patch[k] = ctx.body[k];
   // The ads this job runs under (Meta / LinkedIn campaign, ad set, ad names); applicants from those ads land on it.
   if (ctx.body.ad_match !== undefined) patch.ad_match = cleanAdMatch(ctx.body.ad_match);
@@ -727,7 +723,6 @@ route('POST', '/api/jobs/bulk', T, (ctx) => {
       if (['hold', 'resume', 'close', 'reopen', 'approve_jd'].includes(b.action)) L.jobAction(id, b.action, { reason: b.reason }, ctx.actor);
       else if (b.action === 'priority') { if (!['High', 'Medium', 'Low'].includes(b.priority)) throw httpError(400, 'Pick a priority'); D.edit('jobs', id, { priority: b.priority }, ctx.actor.label, ctx.ip); }
       else if (b.action === 'recruiter') {
-        if (ctx.user.level === 'sub') throw httpError(403, 'Admins assign recruiters.');
         D.edit('jobs', id, { recruiter_id: b.recruiter_id || null }, ctx.actor.label, ctx.ip);
         if (b.recruiter_id && b.recruiter_id !== j.recruiter_id) L.alertUser(b.recruiter_id, `You are now the recruiter on ${j.id}`, j.id, 'jobs');
       } else if (b.action === 'client') {
@@ -760,7 +755,7 @@ route('POST', '/api/jobs/:id/jd', T, (ctx) => {
 const JD_KEYS = ['summary', 'duties', 'must', 'good', 'education', 'languages', 'timings', 'benefits', 'incentives', 'location', 'jewel_need', 'jewel_years', 'jewel_note'];
 const cleanJd = (v) => Object.fromEntries(JD_KEYS.map((k) => [k, String((v || {})[k] ?? '').slice(0, 4000)]));
 route('GET', '/api/jd-pool', T, () => ({ pool: D.settings().jd_templates || {}, standard: D.settings().jd_template, ai: require('./jdwriter').available() }));
-route('POST', '/api/jd-pool', ADMINS, (ctx) => {
+route('POST', '/api/jd-pool', T, (ctx) => {
   const title = String(ctx.body.title || '').trim(); if (!title) throw httpError(400, 'Pick the role');
   const pool = { ...(D.settings().jd_templates || {}) };
   if (ctx.body.remove) delete pool[title]; else pool[title] = cleanJd(ctx.body.jd);
@@ -768,7 +763,7 @@ route('POST', '/api/jd-pool', ADMINS, (ctx) => {
   return { ok: true };
 });
 // JDs already written, as Word or PDF files: the text is sorted into the pool's sections, one role per file name.
-route('POST', '/api/jd-pool/upload', { ...ADMINS, rate: { key: 'jdwrite', max: 60, minutes: 60 } }, async (ctx) => {
+route('POST', '/api/jd-pool/upload', { ...T, rate: { key: 'jdwrite', max: 60, minutes: 60 } }, async (ctx) => {
   const b = ctx.body || {}; const name = String(b.name || ''); if (!/\.(pdf|docx)$/i.test(name)) throw httpError(400, 'Upload a PDF or Word file');
   const buf = Buffer.from(String(b.base64 || '').replace(/^data:[^,]*,/, ''), 'base64'); if (!buf.length) throw httpError(400, 'The file is empty.');
   const title = String(b.title || name.replace(/\.[^.]+$/, '').replace(/\b(jd|job description|profile|final|new|copy)\b|[_\-()\d]+/gi, ' ').replace(/\s+/g, ' ')).trim() || name;
@@ -813,7 +808,7 @@ route('POST', '/api/jobs/:id/posting', T, (ctx) => {
   setPosting(p, ctx.body.status !== undefined ? ctx.body.status : ctx.body.done ? 'Done' : '', ctx.body.post_link, ctx.actor);
   return { ok: true };
 });
-route('POST', '/api/jobs/:id/alert', ADMINS, (ctx) => {
+route('POST', '/api/jobs/:id/alert', T, (ctx) => {
   const j = get('SELECT * FROM jobs WHERE id=?', ctx.params.id); mustSee(seeJob(ctx.user, j), 'job opening');
   const targets = ctx.body.ids && ctx.body.ids.length ? ctx.body.ids : L.bestMatches(j, 30, true).filter((m) => m.score >= D.settings().match.strong).map((m) => m.c.id);
   const budget = D.settings().bulk_budget; let sent = 0; const skipped = [];
@@ -990,7 +985,6 @@ route('POST', '/api/candidates/bulk', T, (ctx) => {
     const j = get('SELECT * FROM jobs WHERE id=?', job_id); mustSee(seeJob(ctx.user, j) || R.sameAgency(ctx.user, j), 'job opening');
     for (const id of ids) { try { L.createApplication(id, job_id, ctx.actor, null, 'Added from resume bank'); out.done++; } catch (e) { out.errors.push(`${id}: ${e.message}`); } }
   } else if (action === 'alert') {
-    if (ctx.user.level === 'sub') throw httpError(403, 'Sub admins cannot send bulk job alerts.');
     const j = get('SELECT * FROM jobs WHERE id=?', job_id); if (!j) throw httpError(400, 'Pick a job');
     for (const id of ids.slice(0, D.settings().bulk_budget)) { const r = L.sendWA({ ptype: 'candidate', pid: id, format: 'bbhs_job_alert', vars: { job: j.title, city: j.city, salary: L.salaryText(j) }, jb: j.id, by: ctx.actor, bulk: true, dedupe: `alert:${j.id}:${id}` }); if (r.skipped) out.errors.push(`${id}: ${r.skipped}`); else out.done++; }
   } else return bulkUpdate(ctx, out);
@@ -1004,7 +998,6 @@ function bulkUpdate(ctx, out) {
   if (!ids.length) throw httpError(400, 'Tick some candidates first');
   const adminOnly = ['assign', 'archive', 'unarchive'];
   if (!['set_looking', 'note', 'followup', ...adminOnly].includes(b.action)) throw httpError(400, 'Unknown action');
-  if (adminOnly.includes(b.action) && u.level === 'sub') throw httpError(403, 'Only admins can assign or archive candidates.');
   if (b.action === 'set_looking' && !L.LOOKING.includes(b.looking)) throw httpError(400, 'Pick a looking status', 'looking');
   if (b.action === 'note' && !String(b.text || '').trim()) throw httpError(400, 'Write the note', 'text');
   let when = null; if (b.action === 'followup') { when = new Date(b.at); if (!b.at || Number.isNaN(when.getTime())) throw httpError(400, 'Pick the date and time', 'at'); }
@@ -1039,7 +1032,7 @@ route('GET', '/api/gap', T, (ctx) => {
   return { cities, depts, grid, targets: s.gap_targets || {} };
 });
 // Target count for one city × department box of the gap view (empty clears it).
-route('POST', '/api/gap/target', ADMINS, (ctx) => {
+route('POST', '/api/gap/target', T, (ctx) => {
   const { cell, target } = ctx.body; if (!cell || !cell.includes('|')) throw httpError(400, 'Pick a box');
   const t = { ...(D.settings().gap_targets || {}) }; const n = Number(target);
   if (!target || !n) delete t[cell]; else t[cell] = Math.round(n);
@@ -1104,7 +1097,6 @@ route('POST', '/api/import/preview', T, (ctx) => {
 });
 route('POST', '/api/import/run', T, (ctx) => {
   const { kind, name, base64, source, map, tieup_id } = ctx.body;
-  if (kind !== 'candidates' && ctx.user.level === 'sub') throw httpError(403, 'Only admins can import clients and jobs.');
   const rows = F.readSpreadsheet(name, base64).slice(1);
   D.run('INSERT INTO column_maps (source,map) VALUES (?,?) ON CONFLICT(source) DO UPDATE SET map=excluded.map', `${kind}:${source || ''}`, JSON.stringify(map));
   const res = I.runImport(kind, rows, map, { source, by: ctx.actor, tieup_id });
@@ -1213,7 +1205,7 @@ route('POST', '/api/applications/auto-map', T, (ctx) => {
     if (b.ids && !b.ids.includes(c.id)) continue;
     const m = L.jobsForPerson(c, b.same_city ? { cities: [c.city, ...(c.work_cities || [])].filter(Boolean) } : {});
     for (const j of m.jobs) {
-      if (!seeJob(u, j) && !(u.level !== 'sub' && j.agency_id === u.agency_id)) continue;
+      if (!seeJob(u, j) && j.agency_id !== u.agency_id) continue;
       if (get('SELECT 1 FROM applications WHERE candidate_id=? AND job_id=?', c.id, j.id)) continue;
       plan.push({ cand: c, job: j, by: m.by });
     }
@@ -1412,7 +1404,7 @@ route('POST', '/api/wa/tick/:id', T, (ctx) => {
 });
 
 // ---------- daily logs (9.3) ----------
-route('GET', '/api/logs', T, (ctx) => {
+route('GET', '/api/logs', SUPER, (ctx) => {
   const u = ctx.user; const today = L.istDay();
   const mine = get('SELECT * FROM logs WHERE user_id=? AND day=?', u.id, today);
   const from = new Date(new Date(today + 'T00:00:00+05:30')).toISOString();
@@ -1421,7 +1413,7 @@ route('GET', '/api/logs', T, (ctx) => {
   const recent = all('SELECT * FROM logs ORDER BY day DESC, at DESC LIMIT 200').filter((l) => team.some((t) => t.id === l.user_id) || l.user_id === u.id).map((l) => ({ ...l, name: V.userName(l.user_id) }));
   return { mine, counts: perfOf(u.id, from), deadline: D.settings().log_deadline, team, recent, my_dots: logDots(u.id) };
 });
-route('POST', '/api/logs', T, (ctx) => {
+route('POST', '/api/logs', SUPER, (ctx) => {
   const u = ctx.user; if (u.level === 'super') throw httpError(400, 'Super admin does not fill a daily log.');
   const b = ctx.body; if (!b.tasks || !String(b.tasks).trim()) throw httpError(400, 'Write what you did today', 'tasks');
   const today = L.istDay(); const id = `LG-${u.id}-${today}`;
@@ -1432,7 +1424,7 @@ route('POST', '/api/logs', T, (ctx) => {
   if (existing) update('logs', id, row); else insert('logs', row);
   D.history(ctx.actor.label, 'log submitted', id); return row;
 });
-route('POST', '/api/logs/:id/approve', ADMINS, (ctx) => {
+route('POST', '/api/logs/:id/approve', SUPER, (ctx) => {
   const lg = get('SELECT * FROM logs WHERE id=?', ctx.params.id); if (!lg) throw httpError(404, 'Log not found');
   const owner = get('SELECT * FROM users WHERE id=?', lg.user_id);
   if (!((isSuper(ctx.user) && owner.level === 'admin') || (ctx.user.level === 'admin' && owner.level === 'sub' && owner.agency_id === ctx.user.agency_id) || isSuper(ctx.user))) throw httpError(403, 'You cannot approve this log.');
@@ -1444,7 +1436,6 @@ route('POST', '/api/logs/:id/approve', ADMINS, (ctx) => {
 const billApp = (b) => (b.app_id ? V.appView(get('SELECT * FROM applications WHERE id=?', b.app_id)) : { candidate_name: b.person_name || '', job_title: b.job_name || '', joining_date: null });
 const billDay = (b) => String(b.issued_at || b.date || b.created_at || '').slice(0, 10);
 route('GET', '/api/bills', { ...T, accounts: true }, (ctx) => {
-  if (ctx.user.level === 'sub' && !R.accountsOnly(ctx.user)) throw httpError(403, 'Sub admins do not see bills.');
   const q = ctx.query;
   const seen = all('SELECT * FROM bills ORDER BY created_at DESC').filter((b) => seeBill(ctx.user, b)).map(L.billView).map((b) => {
     const a = billApp(b); return { ...b, bill_day: billDay(b), client_name: (get('SELECT company FROM clients WHERE id=?', b.client_id) || {}).company, candidate_name: a.candidate_name, job_title: a.job_title, joining_date: a.joining_date, agency_name: V.agencyName(b.agency_id), bb_share: b.fee - (b.agency_share || 0) };
@@ -1459,8 +1450,9 @@ route('GET', '/api/bills', { ...T, accounts: true }, (ctx) => {
 });
 const STAGES = ['Billed', 'Received', 'Outstanding'];
 const receiveBill = (b, actor) => { const v = L.billView(b); if (v.balance > 0) insert('payments', { bill_id: b.id, date: L.istDay(), amount: v.balance, mode: 'Marked received', ref: '', tds: 0, by: actor.label, created_at: now() }); return L.refreshBill(b.id, actor.label); };
-const noMoneyMarks = (ctx, stage) => { if (stage === 'Received' && !isSuper(ctx.user) && !R.accountsOnly(ctx.user)) throw httpError(403, 'Only the super admin records money received.'); };
-route('POST', '/api/bills', { ...ADMINS, accounts: true }, async (ctx) => {
+const mustMoney = (ctx) => { if (!R.canMoney(ctx.user)) throw httpError(403, 'Only an admin records money received.'); };
+const noMoneyMarks = (ctx, stage) => { if (stage === 'Received') mustMoney(ctx); };
+route('POST', '/api/bills', { ...T, accounts: true }, async (ctx) => {
   const b = ctx.body || {}; const c = get('SELECT * FROM clients WHERE id=?', b.client_id); if (!c || !seeClient(ctx.user, c)) throw httpError(400, 'Pick the client', 'client_id');
   const total = Math.round(Number(b.amount) || 0); if (total <= 0) throw httpError(400, 'Enter the invoice amount', 'amount');
   const gst = Math.round(Number(b.gst) || 0); if (gst < 0 || gst >= total) throw httpError(400, 'GST must be less than the amount', 'gst');
@@ -1474,7 +1466,7 @@ route('POST', '/api/bills', { ...ADMINS, accounts: true }, async (ctx) => {
   if (stage === 'Received') receiveBill(get('SELECT * FROM bills WHERE id=?', id), ctx.actor);
   return { ok: true, id };
 });
-route('POST', '/api/bills/stage', { ...ADMINS, accounts: true }, (ctx) => {
+route('POST', '/api/bills/stage', { ...T, accounts: true }, (ctx) => {
   const { ids, stage } = ctx.body || {}; if (!STAGES.includes(stage)) throw httpError(400, 'Pick a stage'); noMoneyMarks(ctx, stage); const out = { done: 0, skipped: 0 };
   for (const id of (ids || []).slice(0, 200)) {
     const b = get('SELECT * FROM bills WHERE id=?', id); if (!b || !seeBill(ctx.user, b) || !['Issued', 'Paid'].includes(b.status)) { out.skipped++; continue; }
@@ -1489,7 +1481,7 @@ route('GET', '/api/bills/:id', { ...T, accounts: true }, (ctx) => {
   const b = loadBill(ctx); const v = L.billView(b); const a = billApp(b);
   return { ...v, app: a, client: get('SELECT * FROM clients WHERE id=?', b.client_id), payments: all('SELECT * FROM payments WHERE bill_id=? ORDER BY date', b.id), credits: all('SELECT * FROM credit_notes WHERE bill_id=?', b.id), upi: L.upiLink(v.balance || v.total, b.bill_no), agency_name: V.agencyName(b.agency_id) };
 });
-route('PATCH', '/api/bills/:id', { ...ADMINS, accounts: true }, (ctx) => {
+route('PATCH', '/api/bills/:id', { ...T, accounts: true }, (ctx) => {
   const b = loadBill(ctx); if (b.status !== 'Draft') throw httpError(400, 'Issued bills cannot be edited. Use a credit note.');
   const ctc = Number(ctx.body.ctc ?? b.ctc); const client = get('SELECT * FROM clients WHERE id=?', b.client_id);
   const f = b.is_replacement ? { fee: 0, share: 0 } : feeOverride(client, b.agency_id, ctc, ctx.body.fee);
@@ -1501,16 +1493,16 @@ function feeOverride(client, agencyId, ctc, fee) {
   if (fee !== undefined && fee !== null && fee !== '') { const v = Math.round(Number(fee)); return { fee: v, share: Math.floor((v * f.sharePct) / 100) }; }
   return f;
 }
-route('POST', '/api/bills/:id/issue', { ...ADMINS, accounts: true }, (ctx) => { const b = loadBill(ctx); return L.issueBill(b.id, ctx.actor); });
-route('POST', '/api/bills/:id/payment', { ...SUPER, accounts: true }, (ctx) => {
-  const b = loadBill(ctx); if (!['Issued'].includes(b.status)) throw httpError(400, 'Payments can be recorded only on an issued bill.');
+route('POST', '/api/bills/:id/issue', { ...T, accounts: true }, (ctx) => { const b = loadBill(ctx); return L.issueBill(b.id, ctx.actor); });
+route('POST', '/api/bills/:id/payment', { ...T, accounts: true }, (ctx) => {
+  mustMoney(ctx); const b = loadBill(ctx); if (!['Issued'].includes(b.status)) throw httpError(400, 'Payments can be recorded only on an issued bill.');
   const amt = Number(ctx.body.amount) || 0; const tds = Number(ctx.body.tds) || 0;
   if (amt <= 0 && tds <= 0) throw httpError(400, 'Enter the amount received', 'amount');
   insert('payments', { bill_id: b.id, date: ctx.body.date || L.istDay(), amount: amt, mode: ctx.body.mode || 'UPI', ref: ctx.body.ref || '', tds, by: ctx.actor.label, created_at: now() });
   D.history(ctx.actor.label, 'payment', b.id, null, null, `${L.inr(amt)} ${ctx.body.mode || ''} ${ctx.body.ref || ''}${tds ? ' TDS ' + L.inr(tds) : ''}`);
   return L.refreshBill(b.id, ctx.actor.label);
 });
-route('POST', '/api/bills/:id/credit', SUPER, (ctx) => {
+route('POST', '/api/bills/:id/credit', ADMINS, (ctx) => {
   const b = loadBill(ctx); if (b.status === 'Draft') throw httpError(400, 'Edit the draft instead.');
   const amt = Number(ctx.body.amount); if (!amt) throw httpError(400, 'Enter the amount', 'amount'); if (!ctx.body.reason) throw httpError(400, 'Give the reason', 'reason');
   insert('credit_notes', { bill_id: b.id, amount: amt, reason: ctx.body.reason, by: ctx.actor.label, at: now() });
@@ -1523,7 +1515,7 @@ route('POST', '/api/bills/:id/credit', SUPER, (ctx) => {
   }
   return { ok: true, new_bill: newBill && newBill.id };
 });
-route('POST', '/api/bills/payouts', SUPER, (ctx) => {
+route('POST', '/api/bills/payouts', ADMINS, (ctx) => {
   const ids = ctx.body.ids || []; let n = 0;
   for (const id of ids) { const b = get('SELECT * FROM bills WHERE id=?', id); if (b && b.payout_status === 'Due') { update('bills', id, { payout_status: 'Paid', payout_paid_at: now(), payout_ref: ctx.body.ref || '' }); D.history(ctx.actor.label, 'payout paid', id, 'payout_status', 'Due', 'Paid'); n++; } }
   return { paid: n };
@@ -1559,7 +1551,7 @@ function amountWords(n) {
   return parts.join(' ');
 }
 module.exports.invoicePdf = invoicePdf;
-route('GET', '/api/earnings', ADMINS, (ctx) => {
+route('GET', '/api/earnings', T, (ctx) => {
   const ag = ctx.query.agency && isSuper(ctx.user) ? ctx.query.agency : ctx.user.agency_id;
   const bills = all("SELECT * FROM bills WHERE agency_id=? AND status NOT IN ('Draft','Cancelled')", ag).map(L.billView);
   const months = {};
@@ -1570,19 +1562,19 @@ route('GET', '/api/earnings', ADMINS, (ctx) => {
 });
 
 // ---------- logins & team ----------
-route('GET', '/api/users', ADMINS, (ctx) => {
+route('GET', '/api/users', T, (ctx) => {
   const u = ctx.user;
   const users = all('SELECT * FROM users ORDER BY id').filter((x) => isSuper(u) || x.agency_id === u.agency_id).map((x) => ({ id: x.id, name: x.name, whatsapp: x.whatsapp, email: x.email || '', level: x.level, team: x.team || 'Recruitment', agency_id: x.agency_id, agency_name: V.agencyName(x.agency_id), role: x.role, username: x.username, status: x.status, last_login: x.last_login, locked: x.locked_until && x.locked_until > now(), created_by: x.created_by, view_status: personStatus(x) }));
   if (ctx.query.format) return page(ctx, users, 'logins', ['id', 'name', 'username', 'level', 'team', 'agency_name', 'role', 'status', 'view_status', 'last_login', 'created_by']);
   return { users, agencies: isSuper(u) ? all('SELECT * FROM agencies ORDER BY id').map((a) => ({ ...a, view_status: agencyStatus(a), people: all('SELECT 1 FROM users WHERE agency_id=?', a.id).length })) : [] };
 });
 const usernameFrom = (name) => String(name).trim().toLowerCase().replace(/[^a-z0-9]+/g, '.').replace(/^\.|\.$/g, '');
-route('GET', '/api/users/suggest', ADMINS, (ctx) => {
+route('GET', '/api/users/suggest', T, (ctx) => {
   let base = usernameFrom(ctx.query.name || ''); let n = base; let i = 2;
   while (get('SELECT 1 FROM users WHERE username=?', n)) n = `${base}${i++}`;
   return { username: n };
 });
-route('POST', '/api/users', ADMINS, (ctx) => {
+route('POST', '/api/users', T, (ctx) => {
   const u = ctx.user; const b = ctx.body;
   if (!b.name) throw httpError(400, 'Enter the name', 'name');
   const level = isSuper(u) ? (b.level || 'sub') : 'sub';
@@ -1679,6 +1671,30 @@ route('POST', '/api/agencies/:id/delete', SUPER, (ctx) => {
   return { ok: true, ...use };
 });
 
+// ---------- tasks: who owns what ----------
+const canTask = (u, t) => isSuper(u) || !t.agency_id || t.agency_id === u.agency_id;
+const taskOwners = (u) => all("SELECT id, name, level, agency_id, team FROM users WHERE status='On'").filter((x) => isSuper(u) || !u.agency_id || x.agency_id === u.agency_id || x.id === u.id);
+const taskRow = (t) => ({ ...t, owner_name: t.owner_id ? (get('SELECT name FROM users WHERE id=?', t.owner_id) || {}).name || '' : '' });
+const loadTask = (ctx) => { const t = get('SELECT * FROM tasks WHERE id=? AND removed=0', ctx.params.id); if (!t || !canTask(ctx.user, t)) throw httpError(404, 'Task not found'); return t; };
+const TASK_STATUS = ['Pending', 'In progress', 'Done'];
+route('GET', '/api/tasks', T, (ctx) => {
+  const u = ctx.user; const q = ctx.query; const rows = all('SELECT * FROM tasks WHERE removed=0 ORDER BY status=\'Done\', COALESCE(due_date, \'9999\'), area, at').filter((t) => canTask(u, t)); const owners = taskOwners(u);
+  const list = rows.filter((t) => (!q.owner || (q.owner === 'none' ? !t.owner_id : t.owner_id === q.owner)) && (!q.status || t.status === q.status) && (!q.area || t.area === q.area) && like(q.q, t.title, t.detail, t.area)).map(taskRow);
+  const team = owners.map((x) => ({ ...x, open: rows.filter((t) => t.owner_id === x.id && t.status !== 'Done').length, done: rows.filter((t) => t.owner_id === x.id && t.status === 'Done').length }));
+  return { rows: list, owners, team, areas: [...new Set(rows.map((t) => t.area).filter(Boolean))], statuses: TASK_STATUS, can_perf: u.level !== 'sub' };
+});
+route('GET', '/api/tasks/:id', T, (ctx) => taskRow(loadTask(ctx)));
+const taskFields = (ctx, b, t) => {
+  const title = String(b.title ?? (t || {}).title ?? '').trim(); if (!title) throw httpError(400, 'Write the task', 'title');
+  const owner = b.owner_id === undefined ? (t || {}).owner_id || null : b.owner_id || null; if (owner && !taskOwners(ctx.user).some((x) => x.id === owner)) throw httpError(400, 'Pick someone from your team', 'owner_id');
+  const status = TASK_STATUS.includes(b.status) ? b.status : (t || {}).status || 'Pending';
+  return { title, detail: String(b.detail ?? (t || {}).detail ?? '').trim(), area: String(b.area ?? (t || {}).area ?? '').trim(), owner_id: owner, due_date: b.due_date === undefined ? (t || {}).due_date || null : b.due_date || null, status, done_at: status === 'Done' ? (t && t.done_at) || now() : null, done_by: status === 'Done' ? (t && t.done_by) || ctx.actor.label : null };
+};
+const tellOwner = (ctx, t) => { if (t.owner_id && t.owner_id !== ctx.user.id) L.alertUser(t.owner_id, `New task: ${t.title}`, t.id, true); };
+route('POST', '/api/tasks', T, (ctx) => { const id = D.nextId('TK'); const r = { id, ...taskFields(ctx, ctx.body || {}), agency_id: ctx.user.agency_id || null, by: ctx.actor.label, at: now() }; insert('tasks', r); D.history(ctx.actor.label, 'create', id, null, null, r.title); tellOwner(ctx, r); return taskRow(get('SELECT * FROM tasks WHERE id=?', id)); });
+route('PATCH', '/api/tasks/:id', T, (ctx) => { const t = loadTask(ctx); const r = taskFields(ctx, ctx.body || {}, t); update('tasks', t.id, r); D.history(ctx.actor.label, 'task', t.id, 'status', t.status, r.status); if (r.owner_id !== t.owner_id) tellOwner(ctx, { ...t, ...r }); return taskRow(get('SELECT * FROM tasks WHERE id=?', t.id)); });
+route('POST', '/api/tasks/:id/delete', T, (ctx) => { const t = loadTask(ctx); update('tasks', t.id, { removed: 1 }); D.history(ctx.actor.label, 'task removed', t.id); return { ok: true }; });
+
 // ---------- departments & roles (every team level) ----------
 // The same lists Settings edits (departments, and each industry's groups of jobs), so job openings, the job-seeker
 // form and the candidate filters pick up a new role at once. Anyone in the team can add; hiding or renaming stays in Settings.
@@ -1723,7 +1739,9 @@ route('POST', '/api/roles/role', T, (ctx) => {
 
 // ---------- settings (super admin) ----------
 const EDITABLE = ['accounts_email', 'resume_alert_pct', 'expense_tree', 'expense_accounts', 'revenue_kinds', 'call_script', 'email_templates', 'creative_template', 'hiring_channels', 'landing_roles', 'wa_pause', 'business', 'industries', 'default_industry', 'hidden_jobs', 'departments', 'cities', 'skills', 'client_stages', 'closing_reasons', 'job_close_reasons', 'reopen_reasons', 'lead_sources', 'src_tags', 'fee', 'agency_share_pct', 'gst', 'replacement_days', 'payment_days', 'targets', 'log_deadline', 'quiet', 'daily_limit', 'bulk_budget', 'match', 'languages', 'id_start', 'bill_prefix', 'retention_years', 'team_idle_hours', 'formats', 'auto_rules', 'crm', 'posting_channels', 'gap_targets', 'templates', 'jd_template', 'jd_templates'];
-route('GET', '/api/settings', SUPER, () => { const s = { ...D.settings() }; s.crm = { ...s.crm, token: s.crm.token ? '••••••••' : '', webhook_secret: s.crm.from_env && s.crm.from_env.webhook_secret ? '••••••••' : s.crm.webhook_secret }; return s; });
+// Everyone in the team can set up what goes out. Connection secrets and the checks on the team's own activity stay with the super admin.
+const SUPER_ONLY = ['crm', 'resume_alert_pct'];
+route('GET', '/api/settings', T, (ctx) => { const s = { ...D.settings() }; if (!isSuper(ctx.user)) { for (const k of SUPER_ONLY) delete s[k]; return s; } s.crm = { ...s.crm, token: s.crm.token ? '••••••••' : '', webhook_secret: s.crm.from_env && s.crm.from_env.webhook_secret ? '••••••••' : s.crm.webhook_secret }; return s; });
 route('POST', '/api/health/mail', SUPER, async () => require('./mailbox').check());
 route('POST', '/api/health/email', SUPER, (ctx) => {
   const M = require('./mailer'); if (!M.configured()) throw httpError(400, 'Outgoing email is not set up yet (SMTP_HOST and SMTP_FROM in .env).');
@@ -1732,7 +1750,8 @@ route('POST', '/api/health/email', SUPER, (ctx) => {
   return { id, to };
 });
 route('GET', '/api/health/emails', SUPER, () => all('SELECT id, to_addr, subject, kind, status, tries, error, at, sent_at FROM emails ORDER BY id DESC LIMIT 50'));
-route('PUT', '/api/settings/:key', SUPER, (ctx) => {
+route('PUT', '/api/settings/:key', T, (ctx) => {
+  if (!isSuper(ctx.user) && SUPER_ONLY.includes(ctx.params.key)) throw httpError(403, 'This setting is for the super admin.');
   const k = ctx.params.key; if (!EDITABLE.includes(k)) throw httpError(400, 'This setting cannot be changed here.');
   const old = D.settings()[k]; let v = ctx.body.value;
   if (k === 'crm') { const raw = JSON.parse(D.db.prepare('SELECT value FROM settings WHERE key=?').get('crm').value); if (v.token === '••••••••') v = { ...v, token: raw.token }; if (v.webhook_secret === '••••••••') v = { ...v, webhook_secret: raw.webhook_secret }; delete v.from_env; }
@@ -1759,7 +1778,7 @@ function metaBody(text) {
   if (/\}\}\s*$/.test(body)) body = body.replace(/\s*$/, '.');
   return { body, order };
 }
-route('POST', '/api/settings/formats/push', SUPER, async (ctx) => {
+route('POST', '/api/settings/formats/push', T, async (ctx) => {
   const s = D.settings(); const names = (ctx.body.names || []).filter((k) => s.formats[k]);
   if (!names.length) throw httpError(400, 'Select the formats to send.');
   const templates = [];
@@ -1771,7 +1790,7 @@ route('POST', '/api/settings/formats/push', SUPER, async (ctx) => {
   D.history(ctx.actor.label, 'templates sent to Meta', null, null, null, `${templates.length} templates`);
   return out;
 });
-route('POST', '/api/settings/formats/sync', SUPER, async (ctx) => {
+route('POST', '/api/settings/formats/sync', T, async (ctx) => {
   const out = await crmCall('/templates', 'GET');
   const s = D.settings(); const formats = JSON.parse(JSON.stringify(s.formats)); const seen = {};
   for (const t of out.templates || []) {
@@ -1919,10 +1938,11 @@ route('GET', '/api/candidates/:id/profile.pdf', T, (ctx) => {
 // ---------- reports (17) ----------
 // Reports by level: the super admin sees everything; an admin sees their agency; a sub admin only their own
 // performance and daily logs.
-const SUB_REPORTS = ['performance', 'logs'];
+const SUB_REPORTS = ['performance'];
 const seePerson = (u, x) => isSuper(u) || x.id === u.id || (u.level === 'admin' && x.agency_id === u.agency_id);
 route('GET', '/api/reports/:name', T, (ctx) => {
   const u = ctx.user; const q = ctx.query; const name = ctx.params.name;
+  if (name === 'logs' && !isSuper(u)) throw httpError(403, 'This report is for the super admin.');
   if (u.level === 'sub' && !SUB_REPORTS.includes(name)) throw httpError(403, 'Sub admins see their own performance and daily logs only.');
   const from = q.from ? new Date(q.from).toISOString() : new Date(Date.now() - 30 * 86400000).toISOString();
   const to = q.to ? new Date(new Date(q.to).getTime() + 86399000).toISOString() : now();

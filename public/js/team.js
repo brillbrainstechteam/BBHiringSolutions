@@ -31,10 +31,10 @@
     ['myday', 'My day', 'sun', ['sub']], ['dashboard', 'Dashboard', 'grid'], ['leads', 'Leads', 'inbox', null, 'leads'],
     ['clients', 'Clients', 'building'], ['candidates', 'Candidates', 'users', null, 'cand_new'], ['jobs', 'Job openings', 'brief'], ['channels', 'Digital Reach', 'flow'], ['applications', 'Applications', 'flow'],
     ['interviews', 'Interviews', 'cal', null, 'pending'], ['whatsapp', 'WhatsApp', 'chat', null, 'unread'],
-    ['performance', 'Performance', 'chart'], ['logs', 'Daily logs', 'note'], ['accounts', 'Invoicing', 'note', ['super']], ['acclients', 'Clients', 'building'], ['accandidates', 'Candidates', 'users'], ['bills', 'Profit & Loss', 'rupee', ['super', 'admin']],
+    ['performance', 'Performance', 'chart'], ['tasks', 'Tasks', 'note'], ['logs', 'Daily logs', 'note', ['super']], ['accounts', 'Invoicing', 'note'], ['acclients', 'Clients', 'building'], ['accandidates', 'Candidates', 'users'], ['bills', 'Profit & Loss', 'rupee'],
     ['reports', 'Reports', 'report'], ['agreement', 'Recruitment Agreement', 'note'], ['logins', 'Logins & team', 'key'], ['settings', 'Settings', 'cog'],
   ];
-  const GROUP = { agreement: 'Admin', channels: 'Hiring', myday: 'Overview', dashboard: 'Overview', leads: 'Hiring', clients: 'Hiring', jobs: 'Hiring', candidates: 'Hiring', applications: 'Hiring', interviews: 'Hiring', whatsapp: 'Messages', performance: 'Team', logs: 'Team', accounts: 'Financials', acclients: 'Financials', accandidates: 'Financials', bills: 'Financials', reports: 'Financials', logins: 'Admin', settings: 'Admin' };
+  const GROUP = { agreement: 'Admin', channels: 'Hiring', myday: 'Overview', dashboard: 'Overview', leads: 'Hiring', clients: 'Hiring', jobs: 'Hiring', candidates: 'Hiring', applications: 'Hiring', interviews: 'Hiring', whatsapp: 'Messages', performance: 'Team', tasks: 'Team', logs: 'Team', accounts: 'Financials', acclients: 'Financials', accandidates: 'Financials', bills: 'Financials', reports: 'Financials', logins: 'Admin', settings: 'Admin' };
   const HELP = {
     agreement: 'The standard Recruitment Agreement. Clients see the same copy in their account.',
     channels: 'Every channel for every open job. Change the owner in the Owner column. Copy a job\'s link, post it, then click the cell to update it. Everyone sees the same page.',

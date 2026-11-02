@@ -61,6 +61,9 @@ Everything automatic is held. Held messages are not sent later; only new ones go
 
 ## Good to know
 
+- Sub admins can do the same work as admins in their agency, except: record money received, credit notes, payouts, managing other logins, and seeing other people's performance.
+- Settings is open to the team. Kept for the super admin: WhatsApp connection, Deleted items, Data requests, Health, the resume alert, Daily logs, WhatsApp clicks and Resume access reports, agencies, and downloads.
+- Daily logs are no longer asked for: no form, reminder or "log missing" alert. Tasks on the Tasks page replace them.
 - An Accounts login is a Sub admin in the team Accounts: Invoicing, Clients, Candidates with an offer, and Profit & Loss. The invoice email to Accounts, Send invoice and Payment reminder go even while messages are off, because a person or a recorded offer letter starts them. Automatic payment reminders stay held.
 - Interview rounds can be marked No need with a reason on the application. Booking that round later takes the No need away.
 - Closing a job closes its open applications with the reason Job closed and cancels interviews ahead, with no message to anyone. Reopening the job brings those applications back, but not the interviews or a cancelled draft bill.
