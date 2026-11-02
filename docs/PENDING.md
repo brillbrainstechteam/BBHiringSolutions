@@ -6,31 +6,28 @@ Last updated 2 Nov 2026. The live list of messages is in the portal: Settings �
 
 | # | What | Why it matters |
 |---|---|---|
-| 1 | Add credit to the OpenAI account | The key has run out. Until then Find online and Rank with AI show an error, Paste notes uses simple rules, and new CVs are read by rules only. |
-| 2 | In the `transform@dgtrainings.com` Gmail: add `hiringsolutions@brillbrainsconsultants.com` under Settings > Accounts > Send mail as | Sending is set up through this account. Until the alias is added, Gmail shows the sender as `transform@dgtrainings.com`. |
-| 2a | In the same Gmail: add a filter so mail to `hiringsolutions@brillbrainsconsultants.com` with subject `Recruitment Agreement` gets the `Hiring Resume` label | The portal reads only that label, and only some mail to the group gets it today. Until then, upload signed agreements by hand. |
+| 1 | In the `transform@dgtrainings.com` Gmail: add `hiringsolutions@brillbrainsconsultants.com` under Settings → Accounts → Send mail as | Until then, Gmail is likely to show the sender as `transform@dgtrainings.com`. |
+| 2 | In the same Gmail: add a filter so mail to `hiringsolutions@brillbrainsconsultants.com` with subject `Recruitment Agreement` gets the `Hiring Resume` label | The portal reads only that label. Until then, upload signed agreements by hand. |
 | 3 | Add the Accounts email: Settings → Fees & limits | Invoice requests have nowhere to go without it. |
-| 4 | Decide: should Vaibhav Kanpur earn a share on the clients with no agency? | Today those bills carry no agency share. |
-| 5 | Upload signed contracts for the 17 clients marked Lead | Each one becomes an active client as soon as its contract is uploaded. The team can work on them in the meantime. |
-| 6 | Fill "Date & Location" in the Recruitment Agreement, then replace it from the Recruitment Agreement page | It is still a blank in the standard copy that clients read. |
-| 7 | Create Dhanvi's login in Logins & team (team: Social media) | They run the creative and channel steps. |
-| 8 | Name owners for the channels marked "To be decided" | Colleges, institutes, agencies and job fairs have no owner. |
-| 9 | Share the Google Drive folder link and access | Needed to import resumes (see below). |
-| 10 | Give the Meta ad account ID and a Marketing API token | Needed to fetch ad spend by itself. Report upload works today. |
-| 11 | Confirm the two numbers still allowed | `9093400666` and `9986950695` still get automatic messages. `8368372836` is no longer on the list; it was not removed by this work. |
-| 12 | Finish your last sentence | "admin will be able to add expenses ... see their performance and" was cut off. |
+| 4 | Create Dhanvi's login: Logins & team → + Add login (team: Social media) | They run the creative and channel steps. Needs their WhatsApp number. |
+| 5 | Name owners for the 6 channels marked "To be decided" | College Placement Cell, Training Institutes, Training Institutes (partnership), College Placement Cell (tie-up), Local Hiring Agencies, Job Fairs. |
+| 6 | Settings → Message formats: press Send all formats to Meta for approval, then Check approval status after a day | `bbhs_client_thanks`, `bbhs_jd_approval` and `bbhs_team_login` are not approved. |
+| 7 | Check WhatsApp Manager → Account tools → Phone numbers | Shows whether `9093400444`, `9093400222` and any new number are on this account. It decides the two WhatsApp items below. |
+| 8 | Copy the resumes off the phones with `9093400444` and `9093400222` | See "Old WhatsApp resumes". |
+| 9 | Give the Meta ad account ID and a Marketing API token | Needed to fetch ad spend by itself. Upload works today. Paste the token on the server, never in chat. |
+| 10 | Confirm the two numbers still allowed | `9093400666` and `9986950695` still get automatic messages while everything else is held. |
 
 ## Messages to switch on later
 
-Everything automatic is held. Held messages are not sent later; only new ones go after switching on. Login codes, team passwords, replies typed by hand and the Recruitment Agreement still go. Decided 2 Nov 2026: KYC and other emails written in the portal stay held. On live: 644 old emails and 68 WhatsApp messages are held.
+Everything automatic is held. Held messages are not sent later; only new ones go after switching on. Login codes, team passwords, replies typed by hand and the Recruitment Agreement still go. Decided 2 Nov 2026: KYC and other emails written in the portal stay held. On live: 644 old emails are held.
 
-**Before switching on:** items 2 and 3 above, and Meta approval for these templates: `bbhs_client_thanks` (new), `bbhs_jd_approval`, `bbhs_team_login`.
+**Clients from before the portal (28):** they get no automatic WhatsApp or email, even after messages are switched on, until a new job opening is added for them. Added clients get messages as usual.
 
 | Message | To | Goes by |
 |---|---|---|
-| Thank-you after the first call (new) | Client | WhatsApp |
-| KYC request and other portal emails (new). The Recruitment Agreement is not held. | Client | Email |
-| Invoice request (new) | Accounts | Email |
+| Thank-you after the first call | Client | WhatsApp |
+| KYC request and other portal emails | Client | Email |
+| Invoice request | Accounts | Email |
 | Welcome with account link | Client, candidate | WhatsApp, email |
 | "We received your request", "Your application is in" | Client, candidate | Email |
 | Job description for approval | Client | WhatsApp, email |
@@ -48,12 +45,18 @@ Everything automatic is held. Held messages are not sent later; only new ones go
 
 | What | State | What it needs |
 |---|---|---|
-| WhatsApp group created automatically, and all client messages through it | The portal records the group and makes the picture. Creating it is manual. | Changes to the separate WhatsApp CRM, your OK to deploy it, and Meta group API access. |
-| Old resumes from WhatsApp | New CVs sent on WhatsApp save automatically. Old ones are not imported. | Same CRM work: it would have to fetch past files from Meta, which keeps media only for a limited time. |
-| Resumes from Google Drive | Upload CVs works for files you download. Direct import is not built. | Item 9, plus: resumes only or sub-folders, what to do when a CV has no phone number, and the source label. |
-| Ad spend fetched by itself | Upload from Meta and LinkedIn works, with spend per job, for the super admin. | Item 10. |
-| Invoice number read from the CC email | Typed in on the bill. | Tell us the Accounts sender and invoice format. |
-| Online lookup cost | Could not be measured with no credit. Estimated ₹1 to ₹3 per lookup. | Item 1, then one test. |
+| WhatsApp group created automatically | The portal records the group and makes the picture. Creating it is manual. | Official Business Account (blue tick) on the number. Meta's groups hold at most 8 people. Then changes to the WhatsApp CRM and your OK to deploy them. |
+| A second number sending messages | The CRM runs one number only. | Which number, and what it sends. It must be added to the Meta account and registered, then the CRM needs changes and your OK to deploy them. |
+| Old WhatsApp resumes | New CVs sent on the connected number save automatically. | Item 8. Meta has no way to list past chats on a number. |
+| Ad spend fetched by itself | Upload from Meta and LinkedIn works, with spend per job, for the super admin. | Item 9. |
+
+## Done on 2 Nov 2026
+
+- OpenAI credit works. One Find online lookup used 8,906 tokens in, 133 out and one web search, roughly ₹1.
+- Historical import: 97 resumes from the Drive folder (source Google Drive) and 473 from three Naukri exports (source Naukri). No message went to anyone. 14 have no phone and show "No phone found". A copy of the database from before the import is at `/var/lib/bbhs-live/before-import-2026-11-02.db`, and the new IDs are in `/var/lib/bbhs-live/imported-ids-2026-11-02.txt`.
+- Invoice number stays typed in by hand, by decision.
+- Vaibhav Kanpur's share is 35%, and a client with no agency now bills through the one active agency.
+- The "Date & Location" blank stays in the standard agreement: fill it per client in the Agreement box.
 
 ## Good to know
 
@@ -61,3 +64,4 @@ Everything automatic is held. Held messages are not sent later; only new ones go
 - AI ranking runs when someone presses Rank with AI on a job. It does not run by itself, to control cost.
 - Client emails reach the client's record only if they land in the inbox label the portal reads.
 - Candidate phone numbers keep their existing protection.
+- Imported candidates gave no consent to messages from the portal, so job alerts do not go to them.
