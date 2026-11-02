@@ -475,11 +475,13 @@ module.exports.addMember = addMember;
 // ---------- job openings ----------
 route('GET', '/api/jobs', T, (ctx) => {
   const q = ctx.query; const u = ctx.user;
-  let rows = visibleJobs(u).map((j) => V.jobView(j));
+  const reach = new Map(all("SELECT job_id, SUM(CASE WHEN status='Done' THEN 1 ELSE 0 END) d, SUM(CASE WHEN status='Not needed' THEN 0 ELSE 1 END) n FROM postings WHERE ckey IS NOT NULL GROUP BY job_id").map((r) => [r.job_id, r]));
+  const creative = new Map(all('SELECT job_id, status FROM creatives').map((r) => [r.job_id, r.status]));
+  let rows = visibleJobs(u).map((j) => ({ ...V.jobView(j), reach_done: (reach.get(j.id) || {}).d || 0, reach_total: (reach.get(j.id) || {}).n || 0, creative: creative.get(j.id) || '' }));
   const counts = { All: rows.length, Active: rows.filter((j) => ['Open', 'Sourcing', 'Interviewing', 'Offer stage'].includes(j.status)).length };
   for (const s of ['Draft', 'Open', 'Sourcing', 'Interviewing', 'Offer stage', 'Filled', 'On hold', 'Closed']) counts[s] = rows.filter((j) => j.status === s).length;
   rows = rows.filter((j) => (!q.status || q.status === 'All' || (q.status === 'Active' ? ['Open', 'Sourcing', 'Interviewing', 'Offer stage'].includes(j.status) : j.status === q.status)) && (!q.client || j.client_id === q.client) && like(q.q, j.id, j.title, j.client_name, j.city, j.old_code, j.recruiter_name));
-  const p = page(ctx, sortBy(rows, q, ['title', 'client_name', 'filled', 'apps_total', 'status', 'recruiter_name', 'days_open']), 'job-openings', ['id', 'title', 'client_name', 'city', 'openings', 'filled', 'apps_total', 'status', 'recruiter_name', 'days_open', 'old_code']);
+  const p = page(ctx, sortBy(rows, q, ['title', 'client_name', 'filled', 'apps_total', 'reach_done', 'status', 'recruiter_name', 'days_open']), 'job-openings', ['id', 'title', 'client_name', 'city', 'openings', 'filled', 'apps_total', 'status', 'recruiter_name', 'days_open', 'old_code']);
   return p.__file ? p : { ...p, counts };
 });
 // One "Client to be confirmed" per agency (the super admin's has no agency), made the first time it is needed. No
@@ -546,10 +548,16 @@ function setPosting(p, status, link, actor) {
 }
 function postingRows(j, apps) {
   syncPostings(j.id); const tags = D.settings().src_tags || {}; const byKey = new Map(channels().map((c) => [c.key, c]));
-  return all('SELECT * FROM postings WHERE job_id=? AND ckey IS NOT NULL', j.id).filter((p) => byKey.has(p.ckey)).map((p) => { const ch = byKey.get(p.ckey); return { ...p, group: ch.group, section: ch.section, how: ch.how, owner: ch.owner, status: p.status || (p.done_date ? 'Done' : ''), apply_link: L.link('apply', `?job=${j.id}&src=${p.tag}`), apps: apps.filter((a) => a.source === (tags[p.tag] || p.tag)).length }; })
+  return all('SELECT * FROM postings WHERE job_id=? AND ckey IS NOT NULL', j.id).filter((p) => byKey.has(p.ckey)).map((p) => { const ch = byKey.get(p.ckey); return { ...p, group: ch.group, section: ch.section, how: ch.how, owner: ch.owner, owner_id: ch.owner_id, status: p.status || (p.done_date ? 'Done' : ''), apply_link: L.link('apply', `?job=${j.id}&src=${p.tag}`), apps: apps.filter((a) => a.source === (tags[p.tag] || p.tag)).length }; })
     .sort((a, b) => channels().findIndex((c) => c.key === a.ckey) - channels().findIndex((c) => c.key === b.ckey));
 }
-// The tracker: active jobs as columns, channels as rows, each cell a status.
+// One job in Digital Reach: its channels, for the social media person as well as the team.
+route('GET', '/api/reach/:id', { ...T, channels: true }, (ctx) => {
+  const j = get('SELECT * FROM jobs WHERE id=?', ctx.params.id); const limited = R.channelOnly(ctx.user); mustSee(limited ? !!j : seeJob(ctx.user, j) || R.sameAgency(ctx.user, j), 'job opening');
+  const v = V.jobView(j);
+  return { job: { id: j.id, title: j.title, city: j.city, openings: j.openings, client: limited ? '' : v.client_name }, rows: postingRows(j, all('SELECT * FROM applications WHERE job_id=?', j.id)), people: limited ? [] : all("SELECT id, name FROM users WHERE status='On' AND level IN ('super','admin','sub') ORDER BY name") };
+});
+// Digital Reach: every active job, every channel.
 route('GET', '/api/postings/tracker', { ...T, channels: true }, (ctx) => {
   const limited = R.channelOnly(ctx.user);
   const jobs = all('SELECT * FROM jobs WHERE archived=0 ORDER BY created_at DESC').filter((j) => limited || seeJob(ctx.user, j) || R.sameAgency(ctx.user, j)).map((j) => V.jobView(j)).filter((j) => ctx.query.all || !['Closed', 'Filled'].includes(j.status));
@@ -560,7 +568,7 @@ route('GET', '/api/postings/tracker', { ...T, channels: true }, (ctx) => {
   const names = new Map(jobs.map((j) => [j.id, `${j.title}${j.city ? `, ${j.city}` : ''}`]));
   const recent = all('SELECT job_id, channel, status, updated_by, updated_at FROM postings WHERE updated_at IS NOT NULL ORDER BY updated_at DESC LIMIT 60').filter((p) => names.has(p.job_id)).slice(0, 12).map((p) => ({ ...p, job: names.get(p.job_id) }));
   const people = limited ? [] : all("SELECT id, name FROM users WHERE status='On' AND level IN ('super','admin','sub') ORDER BY name");
-  return { recent, people, channels: channels(), link_base: L.link('apply', '?'), tags, jobs: jobs.map((j) => ({ id: j.id, code: j.old_code || j.id, title: j.title, city: j.city, client: limited ? '' : j.client_name, status: j.status })), cells };
+  return { recent, people, channels: channels(), link_base: L.link('apply', '?'), tags, jobs: jobs.map((j) => ({ id: j.id, title: j.title, city: j.city, client: limited ? '' : j.client_name, status: j.status, priority: j.priority })), cells };
 });
 // Who owns a channel: any login, or a shared label. Applies to every job.
 route('POST', '/api/channels/owner', T, (ctx) => {
@@ -684,7 +692,7 @@ route('GET', '/api/jobs/:id', T, (ctx) => {
   return {
     ...V.jobView(j, apps), client, apps: apps.map(V.appView).map((a) => ({ ...a, score: L.matchScore(get('SELECT * FROM candidates WHERE id=?', a.candidate_id), j, L.ratingOf(a.candidate_id)).score })),
     matches: L.bestMatches(j, 10).map((m) => ({ ...candidateOut(ctx.user, m.c), score: m.score, reasons: m.reasons, gaps: m.gaps, status: V.candStatus(m.c.id) })),
-    history: all('SELECT * FROM job_history WHERE job_id=? ORDER BY at DESC, id DESC', j.id), postings: postingRows(j, apps),
+    history: all('SELECT * FROM job_history WHERE job_id=? ORDER BY at DESC, id DESC', j.id), postings: postingRows(j, apps), creative: get('SELECT status, link, by, at FROM creatives WHERE job_id=?', j.id) || null,
     recruiters: all("SELECT id, name FROM users WHERE agency_id=? AND status='On'", j.agency_id), files: all('SELECT * FROM files WHERE record_id=? AND replaced=0', j.id),
     notes: all('SELECT * FROM notes WHERE record_id=? ORDER BY at DESC', j.id), jd_template: (D.settings().jd_templates || {})[j.title] || D.settings().jd_template, salary_text: L.salaryText(j),
   };
@@ -1087,11 +1095,31 @@ route('POST', '/api/import/run', T, (ctx) => {
 });
 
 // ---------- applications ----------
-route('GET', '/api/applications', T, (ctx) => {
-  const q = ctx.query;
-  const rows = visibleApps(ctx.user).map(V.appView)
+// Applications matching the list's filters.
+function appRows(q, u) {
+  const rows = visibleApps(u).map(V.appView)
     .filter((a) => (!q.job || a.job_id === q.job) && (!q.title || a.job_title === q.title || many(q.title).includes(a.job_title)) && (!q.client || a.client_id === q.client) && (!q.owner || a.owner_id === q.owner) && (!q.source || a.source === q.source) && (!q.from || L.istDay(a.created_at) >= q.from) && (!q.to || L.istDay(a.created_at) <= q.to) && (q.closed || q.screen ? true : a.result === 'open') && (!q.step || a.step === q.step) && (!q.screen || (q.screen === 'none' ? !a.screen : a.screen === q.screen)) && (!q.ad || [a.ad_campaign, a.ad_set, a.ad_name].includes(q.ad)) && like(q.q, a.id, a.candidate_name, a.job_title, a.client_name, a.ad));
-  return { ...page(ctx, rows, 'applications', ['id', 'candidate_name', 'job_id', 'job_title', 'client_name', 'step', 'result', 'days_in_step', 'owner_name', 'source', 'ad', 'screen', 'screen_note']), ads: adOptions('applications'), screens: L.SCREEN,
+  return rows;
+}
+// Each application's fit with its job: the AI's score when it has read them, otherwise the matching rules. Best first.
+function scoreApps(rows, q) {
+  const flow = require('./flow'); const cands = new Map(all('SELECT * FROM candidates').map((c) => [c.id, c])); const jobs = new Map(all('SELECT * FROM jobs').map((j) => [j.id, j]));
+  const out = rows.map((a) => { const c = cands.get(a.candidate_id); const j = jobs.get(a.job_id); if (!c || !j) return { ...a, score: 0, good: [], gaps: [] }; const f = flow.rowFor(j, c, L.matchScore(c, j, L.ratingOf(c.id)), {}); return { ...a, score: f.score, good: f.points || [], gaps: f.gaps || [] }; })
+    .filter((a) => (q.score_min === undefined || q.score_min === '' || a.score >= Number(q.score_min)) && (q.score_max === undefined || q.score_max === '' || a.score <= Number(q.score_max)));
+  return q.sort ? sortBy(out, q, ['score', 'candidate_name', 'job_title', 'step', 'days_in_step']) : [...out].sort((x, y) => y.score - x.score);
+}
+route('POST', '/api/applications/reject-below', T, (ctx) => {
+  const b = ctx.body || {}; const n = Number(b.score); if (!(n > 0 && n <= 100)) throw httpError(400, 'Enter a score from 1 to 100', 'score');
+  const f = { ...(b.filters || {}) }; delete f.sort;
+  const list = scoreApps(appRows(f, ctx.user), f).filter((a) => a.result === 'open' && !a.on_hold && ['Applied', 'Screening'].includes(a.step) && a.score < n);
+  if (b.dry) return { count: list.length };
+  let done = 0; for (const a of list.slice(0, 500)) { try { L.screenApplication(a.id, 'Rejected', ctx.actor, `Score ${a.score}, below ${n}`); done++; } catch { /* moved on since */ } }
+  D.history(ctx.actor.label, 'reject below score', null, 'score', null, `${done} below ${n}`);
+  return { done };
+});
+route('GET', '/api/applications', T, (ctx) => {
+  const q = ctx.query; const rows = scoreApps(appRows(q, ctx.user), q);
+  return { ...page(ctx, rows, 'applications', ['id', 'candidate_name', 'score', 'job_id', 'job_title', 'client_name', 'step', 'result', 'days_in_step', 'owner_name', 'source', 'ad', 'screen', 'screen_note']), ads: adOptions('applications'), screens: L.SCREEN,
     // Choices for the filters: the jobs, clients, owners and sources these applications have.
     options: (() => { const vis = visibleApps(ctx.user).map(V.appView); const uniq = (f) => [...new Map(vis.map(f).filter((x) => x && x[0]).map((x) => [x[0], x])).values()].sort((a, b) => String(a[1]).localeCompare(String(b[1])));
       return { titles: [...new Set(vis.map((a) => a.job_title).filter(Boolean))].sort(), jobs: uniq((a) => [a.job_id, `${a.job_title} · ${a.client_name || ''}${a.job_city ? ` · ${a.job_city}` : ''}`]), clients: uniq((a) => [a.client_id, a.client_name]), owners: uniq((a) => [a.owner_id, a.owner_name]), sources: [...new Set(vis.map((a) => a.source).filter(Boolean))].sort() }; })() };
@@ -1115,7 +1143,7 @@ route('GET', '/api/applications/:id', T, (ctx) => {
   return {
     ...v, candidate: candidateOut(ctx.user, cand), job: V.jobView(job), client: { id: client.id, company: client.company, contact: client.contact },
     history: all('SELECT * FROM app_history WHERE app_id=? ORDER BY at DESC, id DESC', a.id), messages: all('SELECT * FROM messages WHERE ap=? ORDER BY at DESC', a.id),
-    score: L.matchScore(cand, job, L.ratingOf(cand.id)), bill: bill ? L.billView(bill) : null, suggest: suggestFor(a), steps: L.STEPS, selected: !!get("SELECT 1 FROM interviews WHERE app_id=? AND result='Selected'", a.id), next: require('./flow').nextStep(a, bill), client_cv: cand.short_cv_file || null,
+    score: (() => { const m = L.matchScore(cand, job, L.ratingOf(cand.id)); const f = require('./flow').rowFor(job, cand, m, {}); return { ...m, score: f.score, reasons: f.points, gaps: f.gaps }; })(), bill: bill ? L.billView(bill) : null, suggest: suggestFor(a), steps: L.STEPS, selected: !!get("SELECT 1 FROM interviews WHERE app_id=? AND result='Selected'", a.id), next: require('./flow').nextStep(a, bill), client_cv: cand.short_cv_file || null,
     files: all('SELECT * FROM files WHERE record_id=? AND replaced=0 ORDER BY at DESC', a.id), notes: all('SELECT * FROM notes WHERE record_id=? ORDER BY at DESC', a.id),
     calls: all('SELECT * FROM calls WHERE candidate_id=? ORDER BY at DESC LIMIT 50', a.candidate_id), call_outcomes: L.CALL_OUTCOMES, client_city: client.city,
     checklist_items: D.settings().templates.joining_checklist.split('\n').filter(Boolean),

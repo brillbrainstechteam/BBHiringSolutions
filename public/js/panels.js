@@ -144,7 +144,7 @@
           ${!j.jd_approved ? '<button class="btn sm" data-act="approve_jd">Job description approved</button>' : ''}
           <button class="btn sm" data-jd>Write JD</button>
           ${waBtn({ ptype: 'client', pid: j.client_id, jb: j.id, format: 'bbhs_shortlist_ready' }, 'Send profiles to client')}
-          <button class="btn sm" data-addmatch>+ Add a match</button><button class="btn sm" data-fcreative>Creative</button>
+          <button class="btn sm" data-addmatch>+ Add a match</button><button class="btn sm" data-fcreative>Digital Reach</button>
           ${canAdmin ? `<button class="btn sm gold" data-alert>Job alert to top matches</button>` : ''}
           <button class="btn sm" data-editjob>Edit</button>${canDelete() ? `<button class="btn sm danger" data-delrec="job" data-id="${j.id}">Delete</button>` : ''}<button class="btn sm ${j.client_tbc ? 'primary' : ''}" data-setclient>${j.client_tbc ? 'Set the client' : 'Change client'}</button></div>
         <div class="card pad sec"><div class="row small"><span>Filled <b>${j.filled}</b> of <b>${j.openings}</b></span><div class="bar grow"><i style="width:${Math.min(100, (j.filled / j.openings) * 100)}%"></i></div></div><div class="seats" style="margin-top:8px">${(j.seats || []).map((s) => s.app_id ? `<span class="seat on" title="${esc(s.app_id)}">Seat ${s.n}: <b>${esc(s.candidate || '')}</b> · ${esc(s.state)}${s.joining_date ? ` ${fmtD(s.joining_date)}` : ''}</span>` : `<span class="seat">Seat ${s.n}: open</span>`).join('')}</div>
@@ -206,18 +206,7 @@
     return run(() => BB.post(`/api/jobs/${j.id}/action`, { action }), action === 'approve_jd' ? 'Job description approved — job is live' : 'Done');
   }
   // Hiring channels for this job, grouped as in the sheet (Free / Paid / B2B / Offline), each with its status.
-  const POST_CLS = { Done: 'b-green', Pending: 'b-amber', 'Not needed': 'b-outline' };
-  function postingChecklist(j) {
-    const rows = j.postings || []; const done = rows.filter((p) => p.status === 'Done').length; const needed = rows.filter((p) => p.status !== 'Not needed').length;
-    let html = ''; let g = null; let sec = null;
-    for (const p of rows) {
-      if (p.group !== g) { if (g !== null) html += '</tbody></table></div>'; g = p.group; sec = null; html += `<div class="post-group"><div class="post-gh">${esc(g)}</div><table class="tbl post-tbl"><tbody>`; }
-      if (p.section !== sec && p.section !== p.group) { sec = p.section; html += `<tr class="post-sec"><td colspan="5">${esc(sec)}</td></tr>`; }
-      html += `<tr><td><b>${esc(p.channel)}</b><div class="tiny muted">${esc(p.how || '')}</div></td><td class="small nowrap">${esc(p.owner || '')}</td><td><select data-pstat="${p.id}" class="mini">${['', 'Pending', 'Done', 'Not needed'].map((v) => `<option value="${v}" ${(p.status || '') === v ? 'selected' : ''}>${v || '—'}</option>`).join('')}</select>${p.status === 'Done' ? `<div class="tiny faint">${fmtD(p.done_date)}${p.done_by ? ` · ${esc(p.done_by)}` : ''}${p.post_link ? ` · <a href="${esc(p.post_link)}" target="_blank" rel="noopener">post ↗</a>` : ''}</div>` : ''}</td><td class="nowrap"><button class="btn sm" data-copy="${esc(p.apply_link)}" title="Apply link that marks people as coming from ${esc(p.channel)}">Copy link</button></td><td class="num small" title="Applications from this channel">${p.apps || ''}</td></tr>`;
-    }
-    if (g !== null) html += '</tbody></table></div>';
-    return `<div class="sec"><h3>Digital Reach <span class="badge b-primary">${done} of ${needed} done</span> <a href="#" class="small" data-go-tracker>All jobs ›</a></h3>${html || '<div class="faint small">No channels set.</div>'}`;
-  }
+  const postingChecklist = (j) => BB.reachSummary(j);
   // The JD sections, shared by a job's JD and the JD pool. Jewellery industry experience is its own section.
   BB.jdFields = (jd, fillT = (t) => t || '') => [
     { name: 'summary', label: 'Role summary', type: 'textarea', value: fillT(jd.summary) },
@@ -309,7 +298,7 @@
           ${line('Worked with', esc((c.exp_business || []).join(', ') || '—'), '—')}
           ${line('Skills', esc((c.skills || []).join(', ') || '—'), esc((j.skills || []).join(', ') || '—'))}
         </tbody></table></div>
-        <div class="row small">${sc.score !== undefined ? scoreBadge(sc.score) : ''}${(sc.reasons || []).map((r) => `<span class="badge b-green">✓ ${esc(r)}</span>`).join('')}${(sc.gaps || []).map((g) => `<span class="badge b-outline">✗ ${esc(g)}</span>`).join('')}${c.cv_file ? `<button class="btn sm" data-file="${esc(c.cv_file)}">Open CV</button>` : '<span class="faint">No CV uploaded</span>'}</div></div>`;
+        ${sc.score !== undefined ? `<div class="fit-card"><div class="fit-score"><div class="fit-n">${sc.score}</div><div class="tiny muted">Fit score</div></div><div class="fit-col"><b>Good for this job</b>${(sc.reasons || []).map((r) => `<div class="fit-good">✓ ${esc(r)}</div>`).join('') || '<div class="faint small">Nothing stands out yet.</div>'}</div><div class="fit-col"><b>Not aligned</b>${(sc.gaps || []).map((g) => `<div class="fit-gap">✗ ${esc(g)}</div>`).join('') || '<div class="faint small">No gaps found.</div>'}</div></div>` : ''}<div class="row small">${c.cv_file ? `<button class="btn sm" data-file="${esc(c.cv_file)}">Open CV</button>` : '<span class="faint">No CV uploaded</span>'}</div></div>`;
     };
     const items = a.checklist_items;
     return {

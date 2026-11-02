@@ -203,12 +203,7 @@
     }
     BB.toast(`${ok} of ${files.length} added${bad.length ? ` · ${bad[0]}` : ''}`, !!bad.length); done();
   };
-  F.jobMount = (el, j) => { loadScreen(el, j); const c = $('[data-fcreative]', el); if (c) c.onclick = () => F.creative(j.id); };
-  F.creative = async (id) => {
-    const c = await BB.api(`/api/creatives/${id}`);
-    const v = await BB.ask({ title: `Creative: ${c.title}`, wide: true, fields: [{ name: 'status', label: 'Step', type: 'select', options: c.steps.filter((s) => s !== 'Approved' || !me().channel_only), value: c.status || 'Brief shared', placeholder: false }, { name: 'brief', label: 'Creative requirement', type: 'textarea', value: c.brief, voice: false }, { name: 'link', label: 'Link to the creative', value: c.link || '', opt: true, voice: false }, { name: 'note', label: 'Note', opt: true, value: c.note || '' }], ok: 'Save' });
-    if (v) act(() => BB.post('/api/creatives', { ids: [id], ...v }), 'Saved');
-  };
+  F.jobMount = (el, j) => { loadScreen(el, j); const c = $('[data-fcreative]', el); if (c) c.onclick = () => BB.open('reach', j.id); };
 
   // ---------- application: what next, and the offer stages ----------
   F.appNext = (a) => (a.next ? `<div class="flow-next"><b>Next:</b> ${esc(a.next)}</div>` : '');
@@ -269,15 +264,6 @@
   };
 
   // ---------- hiring channels: creatives and many jobs at once ----------
-  F.trackerTop = (d, chs) => `<div class="row small bulkbar" data-tbar><span class="muted" data-tcount>Select Multiple</span><select class="mini" data-tcr><option value="">Creative step…</option>${d.creative_steps.filter((s) => s !== 'Approved' || !me().channel_only).map((s) => `<option>${s}</option>`).join('')}</select><select class="mini" data-tch><option value="">Channel…</option>${chs.map((c) => `<option value="${c.key}">${esc(c.channel)}</option>`).join('')}</select><select class="mini" data-tst><option value="">Mark as…</option>${['Pending', 'Done', 'Not needed'].map((s) => `<option>${s}</option>`).join('')}</select></div>`;
-  F.trackerMount = (el, d) => {
-    const ids = () => $$('[data-tj]:checked', el).map((x) => x.dataset.tj); const bar = $('[data-tbar]', el); if (!bar) return;
-    $$('[data-tj]', el).forEach((x) => (x.onchange = () => { const n = ids().length; $('[data-tcount]', bar).textContent = n ? `${n} selected:` : 'Select Multiple'; bar.classList.toggle('has-sel', n > 0); }));
-    $$('[data-tcreative]', el).forEach((b) => (b.onclick = () => F.creative(b.dataset.tcreative)));
-    const need = () => { const v = ids(); if (!v.length) BB.toast('Select some jobs first', true); return v; };
-    const cr = $('[data-tcr]', bar); cr.onchange = () => { const v = need(); const s = cr.value; cr.value = ''; if (v.length && s) act(() => BB.post('/api/creatives', { ids: v, status: s }), (r) => `${r.done} updated`); };
-    const st = $('[data-tst]', bar); st.onchange = () => { const v = need(); const ch = $('[data-tch]', bar).value; const s = st.value; st.value = ''; if (!ch) return BB.toast('Pick the channel first', true); if (v.length && s) act(() => BB.post('/api/postings/tracker/bulk', { job_ids: v, ckey: ch, status: s }), (r) => `${r.done} updated`); };
-  };
 
   // ---------- Recruitment Agreement page ----------
   P.agreement = async ({ el, actions }) => {

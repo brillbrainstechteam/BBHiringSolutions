@@ -502,4 +502,4 @@ route('GET', '/api/holds', SUPER, () => {
   return { wa: !!w.everyone, email: !!w.email, allow: w.allow || [], rows, mails, smtp: M.configured(), crm: !!s.crm.enabled, accounts_email: s.accounts_email || '', unapproved: Object.entries(fm).filter(([, f]) => !f.approved).map(([k]) => k) };
 });
 
-module.exports = { LOOK_SYSTEM, LOOK_SCHEMA, agreementFile, clientMail, clientByEmail, mailFiles, clientCvFor, makeClientCv, nextStep, cleanText };
+module.exports = { rowFor, LOOK_SYSTEM, LOOK_SCHEMA, agreementFile, clientMail, clientByEmail, mailFiles, clientCvFor, makeClientCv, nextStep, cleanText };

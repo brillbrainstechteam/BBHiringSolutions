@@ -98,7 +98,7 @@
   async function renderPage() {
     const el = $('[data-page]'); const page = BB.pages[pageName];
     const m = MENU.find((x) => x[0] === pageName);
-    el.innerHTML = `<div class="page-h"><div class="grow"><span class="eyebrow">${GROUP[pageName]}</span><div class="row"><h1>${m[1]}</h1><button class="help-btn" data-help title="What is this page?">?</button></div><div class="help hidden" data-help-t>${HELP[pageName] || ''}</div></div><div class="row" data-actions></div></div><div data-content><div class="empty">Loading…</div></div>`;
+    el.innerHTML = `<div class="page-h ${pageName === 'jobs' ? 'stacked' : ''}"><div class="grow"><span class="eyebrow">${GROUP[pageName]}</span><div class="row"><h1>${m[1]}</h1><button class="help-btn" data-help title="What is this page?">?</button></div><div class="help hidden" data-help-t>${HELP[pageName] || ''}</div></div><div class="row" data-actions></div></div><div data-content><div class="empty">Loading…</div></div>`;
     $('[data-help]').onclick = () => $('[data-help-t]').classList.toggle('hidden');
     // A redraw while someone is typing in a list's search box keeps what they typed since (the old box still holds
     // it), the cursor in the box, and searches again for the newer text.
