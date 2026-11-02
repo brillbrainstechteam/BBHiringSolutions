@@ -60,11 +60,24 @@
     const phones = String(o.phone || '').split(/[;,/]/).map((x) => x.trim()).filter(Boolean);
     const tile = (l, v) => (v ? `<div class="ci-tile"><div class="ci-lab">${l}</div><div class="ci-val">${v}</div></div>` : '');
     const links = [['Website', o.website], ['LinkedIn', o.linkedin], ['Instagram', o.instagram], ['Facebook', o.facebook]].filter(([, v]) => /^https?:\/\//i.test(v || ''));
+    const talk = Array.isArray(o.talk_points) ? o.talk_points.filter(Boolean) : [];
     return `<details class="sec ci" open><summary><span class="ci-ico">${BB.icon('search')}</span><span class="grow"><b>Client info</b><span class="small muted"> · found ${fmtD(o.at)}, please check before using</span></span><span class="ci-chev" aria-hidden="true"></span></summary>
       ${o.about ? `<p class="ci-about">${esc(o.about)}</p>` : ''}
+      ${talk.length ? `<div class="ci-talk"><div class="ci-lab">Talk about on the call</div><ul>${talk.map((x) => `<li>${esc(x)}</li>`).join('')}</ul></div>` : ''}
+      ${o.hiring ? `<div class="ci-hire"><div class="ci-lab">Signs they are hiring</div><div class="ci-val">${esc(o.hiring)}</div></div>` : ''}
       ${links.length ? `<div class="ci-links">${links.map(([l, u]) => `<a class="btn sm" href="${esc(u)}" target="_blank" rel="noopener">${l} ↗</a>`).join('')}</div>` : ''}
-      <div class="ci-grid">${tile('Phone', phones.map((p) => `<a href="tel:${esc(p.replace(/[^\d+]/g, ''))}">${esc(p)}</a>`).join('<br>'))}${tile('Email', o.email ? `<a href="mailto:${esc(o.email)}">${esc(o.email)}</a>` : '')}${tile('Address', esc(o.address || ''))}${tile('Business', esc(o.kind || ''))}${tile('Started', esc(o.est_year || ''))}${tile('Branches', esc(o.branches || ''))}${tile('Owners', esc(o.owners || ''))}</div>
+      <div class="ci-grid">${tile('Sells to', esc(o.customers || ''))}${tile('Products', esc(o.products || ''))}${tile('Locations', esc(o.branches || ''))}${tile('Team size', esc(o.team_size || ''))}${tile('Owners', esc(o.owners || ''))}${tile('Started', esc(o.est_year || ''))}${tile('Recent news', esc(o.news || ''))}${tile('Phone', phones.map((p) => `<a href="tel:${esc(p.replace(/[^\d+]/g, ''))}">${esc(p)}</a>`).join('<br>'))}${tile('Email', o.email ? `<a href="mailto:${esc(o.email)}">${esc(o.email)}</a>` : '')}${tile('Address', esc(o.address || ''))}${tile('Business', esc(o.kind || ''))}</div>
       <div class="ci-foot"><span class="ci-cost">About ₹${o.cost_inr || 1} charged for this search</span><span class="row"><button class="btn sm" data-flook>Search again · about ₹${o.cost_inr || 1}</button><button class="btn sm primary" data-fuse>Use these details</button></span></div></details>`;
+  };
+  // The client's past with us: counts first, then roles, hires and every interaction.
+  F.clientHistory = (c) => {
+    const p = c.past || {}; const tile = (l, v) => `<div class="ci-tile"><div class="ci-lab">${l}</div><div class="hist-num">${v}</div></div>`;
+    const chips = (l) => (l || []).map((x) => `<span class="badge b-outline">${esc(x)}</span>`).join('') || '<span class="faint small">None yet.</span>';
+    return `<div class="sec"><h3>Summary</h3><div class="hist-grid">${tile('Job openings', p.jobs || 0)}${tile('Open now', p.open || 0)}${tile('Candidates sent', p.sent || 0)}${tile('Candidates hired', p.hires || 0)}${p.fees === null || p.fees === undefined ? '' : tile('Fees billed', inr(p.fees))}</div></div>
+      <div class="sec"><h3>Roles hired for</h3><div class="row">${chips(p.roles_hired)}</div></div>
+      <div class="sec"><h3>Roles asked for</h3><div class="row">${chips(p.roles_asked)}</div></div>
+      ${(p.hired || []).length ? `<div class="sec"><h3>Candidates hired</h3>${p.hired.map((x) => `<div class="hist-row"><span class="grow"><b>${esc(x.name)}</b> · ${esc(x.role)}</span><span class="small muted">${fmtD(x.date)}</span></div>`).join('')}</div>` : ''}
+      <div class="sec"><h3>Past interactions</h3>${(p.timeline || []).map((x) => `<div class="hist-row"><span class="badge b-outline">${esc(x.kind)}</span><span class="grow small">${esc(x.text)}${x.by ? ` <span class="faint">· ${esc(x.by)}</span>` : ''}</span><span class="small muted nw">${fmtD(x.at)}</span></div>`).join('') || '<div class="faint small">Nothing yet.</div>'}</div>`;
   };
   F.client = (c) => {
     const a = c.activation || {};
@@ -123,11 +136,11 @@
       const v = await BB.ask({ title: 'Client info', fields: [{ name: 'name', label: 'Business name', value: c.company }, { name: 'city', label: 'City', value: c.city || '', opt: true }, { name: 'address', label: 'Address', opt: true }], ok: 'Search', submit: (x) => BB.post(`/api/clients/${c.id}/lookup`, x) });
       if (v) done('Client info is ready below');
     }));
-    on('[data-fuse]', () => { const o = c.extra.online; const ex = { ...c.extra }; for (const [k, s] of [['website', o.website], ['branches', o.branches], ['est_year', o.est_year], ['owner_name', o.owners], ['address', o.address]]) if (s && !ex[k]) ex[k] = s; act(() => BB.patch(`/api/clients/${c.id}`, { extra: ex, ...(!c.email && o.email ? { email: o.email } : {}) }), 'Saved on the client'); });
+    on('[data-fuse]', () => { const o = c.extra.online; const ex = { ...c.extra }; for (const [k, s] of [['website', o.website], ['branches', o.branches], ['est_year', o.est_year], ['owner_name', o.owners], ['address', o.address], ['team_size', o.team_size]]) if (s && !ex[k]) ex[k] = s; act(() => BB.patch(`/api/clients/${c.id}`, { extra: ex, ...(!c.email && o.email ? { email: o.email } : {}) }), 'Saved on the client'); });
     on('[data-fgroup]', () => groupDialog(c));
     $$('[data-fopen]', el).forEach((b) => (b.onclick = () => BB.open('job', b.dataset.fopen)));
     $$('[data-fjobs]', el).forEach((b) => (b.onclick = () => act(() => BB.post(`/api/clients/${c.id}/calls/${b.dataset.fjobs}/jobs`), (r) => `${r.jobs.length} draft ${r.jobs.length === 1 ? 'job' : 'jobs'} opened: add the salary on each`)));
-    $$('[data-fline]', el).forEach((b) => (b.onclick = () => { const [id, i] = b.dataset.fline.split(':'); const x = c.calls.find((k) => String(k.id) === id); const l = x.call_roles[i]; BB.newJob(c.id, { title: l.role, city: l.location, openings: l.openings, skills: String(l.skills || x.skills || '').split(',').map((s) => s.trim()).filter(Boolean), duties: l.duties || x.duties, notes: [l.department && `Department: ${l.department}`, l.notes, x.notes].filter(Boolean).join(' · '), call_id: x.id, call_line: Number(i) }); }));
+    $$('[data-fline]', el).forEach((b) => (b.onclick = () => { const [id, i] = b.dataset.fline.split(':'); const x = c.calls.find((k) => String(k.id) === id); const l = x.call_roles[i]; BB.newJob(c.id, { title: l.role, city: l.location, openings: l.openings, skills: String(l.skills || x.skills || '').split(',').map((s) => s.trim()).filter(Boolean), duties: l.duties || x.duties, department: l.department, notes: [l.notes, x.notes].filter(Boolean).join(' · '), call_id: x.id, call_line: Number(i) }); }));
     $$('[data-fjob]', el).forEach((b) => (b.onclick = () => { const x = c.calls.find((k) => String(k.id) === b.dataset.fjob); BB.newJob(c.id, { title: String(x.roles || '').split(/[,\n]/)[0].trim(), city: x.location, openings: parseInt(x.openings, 10) || 1, skills: String(x.skills || '').split(',').map((s) => s.trim()).filter(Boolean), duties: x.duties, notes: x.notes }); }));
   };
   // The group's picture: the client's logo in a ring, 640 × 640, ready to set on WhatsApp.
@@ -251,6 +264,7 @@
     const bar = $('[data-cbar]', el); if (!bar) return;
     const n = () => { const k = BB.selected(el).length; $('[data-ccount]', bar).textContent = k ? `${k} selected` : 'Select Multiple'; bar.classList.toggle('has-sel', k > 0); };
     BB.wireSelect(el, n); $$('[data-sel]', el).forEach((x) => x.addEventListener('change', n));
+    const stg = $('[data-cstage]', bar); stg.onchange = async () => { const v = stg.value; const ids = BB.selected(el); stg.value = ''; if (!v) return; if (!ids.length) return BB.toast('Select some clients first', true); await act(() => BB.post('/api/leads/bulk', { type: 'client', ids, action: 'stage', value: v }), (r) => `${r.done} of ${ids.length} updated${r.skipped.length ? ` · ${r.skipped[0].split(': ').pop()}` : ''}`); };
     $$('[data-cm]', bar).forEach((b) => (b.onclick = () => { const ids = BB.selected(el); if (!ids.length) return BB.toast('Select some clients first', true); F.composeMail(ids, b.dataset.cm, b.textContent); }));
   };
 
@@ -284,11 +298,23 @@
       <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr));margin-bottom:14px">${tile('Billed (fees)', m.billed)}${tile('Other revenue', m.other)}${tile('Received', m.received)}${tile('Expenses', m.expenses)}${tile('Net', m.net)}${tile('Yet to collect', d.dues)}</div>
       <div class="card" style="margin-bottom:14px"><div class="card-h"><h3>Month by month</h3></div>${BB.table([{ t: 'Month', f: (r) => esc(r.month) }, { t: 'Billed', num: 1, f: (r) => inr(r.billed) }, { t: 'Other revenue', num: 1, f: (r) => inr(r.other) }, { t: 'Received', num: 1, f: (r) => inr(r.received) }, { t: 'Expenses', num: 1, f: (r) => inr(r.expenses) }, { t: 'Net', num: 1, f: (r) => `<b>${inr(r.net)}</b>` }], d.months)}</div>
       <div class="card" style="margin-bottom:14px"><div class="card-h"><h3>Team performance</h3></div>${BB.table([{ t: 'Person', f: (r) => esc(r.name) }, { t: 'Applications', num: 1, f: (r) => r.applications }, { t: 'Sent to client', num: 1, f: (r) => r.sent }, { t: 'Hires', num: 1, f: (r) => r.hires }, { t: 'Fees billed', num: 1, f: (r) => inr(r.fee) }], d.people)}</div>
-      <div class="grid g2" style="align-items:start"><div class="card"><div class="card-h"><h3>Expenses</h3></div>${BB.table([{ t: 'Date', f: (r) => fmtD(r.date) }, { t: 'For', f: (r) => `${esc(r.category)}<div class="tiny muted">${esc(r.note)}</div>` }, { t: 'Amount', num: 1, f: (r) => inr(r.amount) }, { t: '', f: (r) => `<button class="btn sm ghost" data-delx="${r.id}">Remove</button>` }], d.expenses)}</div>
+      <div class="stack" style="align-items:stretch"><div class="card"><div class="card-h"><h3>Expenses</h3></div>${BB.table([{ t: 'Date', f: (r) => fmtD(r.date) }, { t: 'For', f: (r) => `<b>${esc(r.vendor || r.category)}</b>${r.vendor ? ` <span class="badge b-outline tiny">${esc(r.category)}</span>` : ''}<div class="tiny muted">${[r.invoice_no && `Invoice ${r.invoice_no}`, r.client_name, r.job_name, r.note].filter(Boolean).map(esc).join(' · ')}</div>` }, { t: 'Amount', num: 1, f: (r) => inr(r.amount) }, { t: '', f: (r) => `<span class="row nowrap">${r.file_id ? `<button class="btn sm" data-xopen="${r.file_id}">Invoice</button>` : `<button class="btn sm" data-xup="${r.id}">Add invoice</button>`}<button class="btn sm ghost" data-delx="${r.id}">Remove</button></span>` }], d.expenses, { empty: 'No expenses yet.' })}</div>
         <div class="card"><div class="card-h"><h3>Revenue logged</h3></div>${BB.table([{ t: 'Date', f: (r) => fmtD(r.date) }, { t: 'What', f: (r) => `${esc(r.kind)}<div class="tiny muted">${esc(r.note)}</div>` }, { t: 'Amount', num: 1, f: (r) => inr(r.amount) }, { t: '', f: (r) => `<button class="btn sm ghost" data-delr="${r.id}">Remove</button>` }], d.revenue)}</div></div>`;
     const ag = $('[data-bag]', el); if (ag) ag.onchange = () => BB.setQ({ agency: ag.value });
     const add = (title, url, extra, ok) => BB.ask({ title, fields: [`<div class="grid g2">${field({ name: 'date', label: 'Date', type: 'date', value: BB.istDay() })}${field({ name: 'amount', label: 'Amount (₹)', type: 'number' })}</div>`, extra, { name: 'note', label: 'Note', opt: true }], ok: 'Save', submit: (v) => BB.post(url, { ...v, agency_id: q.agency || undefined }) }).then((x) => x && done(ok));
-    $('[data-bexp]', actions).onclick = () => add('Add expense', '/api/expenses', { name: 'category', label: 'Category', type: 'select', options: d.categories, placeholder: false }, 'Expense added');
+    $('[data-bexp]', actions).onclick = () => {
+      let file = null; const opts = (l) => l.map((x) => [x.id, x.name]);
+      setTimeout(() => { const b = $('.modal [data-xfile]'); if (b) b.onclick = async () => { const f = await BB.pickFile('.pdf,.jpg,.jpeg,.png,.doc,.docx'); if (f) { file = f; $('.modal [data-xname]').textContent = f.name; } }; }, 0);
+      BB.ask({ title: 'Add expense', wide: true, fields: [
+        `<div class="grid g3">${field({ name: 'date', label: 'Date', type: 'date', value: BB.istDay() })}${field({ name: 'amount', label: 'Amount (₹)', type: 'number' })}${field({ name: 'category', label: 'Category', type: 'select', options: d.categories, placeholder: false })}</div>`,
+        `<div class="grid g2">${field({ name: 'vendor', label: 'Paid to', opt: true, placeholder: 'Meta, LinkedIn, Naukri…' })}${field({ name: 'invoice_no', label: 'Invoice number', opt: true })}</div>`,
+        `<div class="grid g2">${field({ name: 'client_id', label: 'For client', type: 'select', options: opts(d.tags.clients), opt: true })}${field({ name: 'job_id', label: 'For job opening', type: 'select', options: opts(d.tags.jobs), opt: true })}</div>`,
+        { name: 'note', label: 'Note', opt: true },
+        '<div class="row"><button type="button" class="btn sm" data-xfile>Attach invoice</button><span class="small muted" data-xname>PDF, Word or image</span></div>',
+      ], ok: 'Save expense', submit: (v) => BB.post('/api/expenses', { ...v, file, agency_id: q.agency || undefined }) }).then((x) => x && done('Expense added'));
+    };
+    $$('[data-xopen]', el).forEach((b) => (b.onclick = () => BB.openFile(b.dataset.xopen)));
+    $$('[data-xup]', el).forEach((b) => (b.onclick = async () => { const f = await BB.pickFile('.pdf,.jpg,.jpeg,.png,.doc,.docx'); if (f) act(() => BB.post(`/api/expenses/${b.dataset.xup}/invoice`, f), 'Invoice saved'); }));
     $('[data-brev]', actions).onclick = () => add('Log revenue', '/api/revenue', { name: 'kind', label: 'Kind', type: 'select', options: d.kinds, placeholder: false }, 'Revenue logged');
     $$('[data-delx]', el).forEach((b) => (b.onclick = async () => { if (await BB.confirm('Remove this expense', 'It comes off the totals.', 'Remove')) act(() => BB.post(`/api/expenses/${b.dataset.delx}/delete`), 'Removed'); }));
     $$('[data-delr]', el).forEach((b) => (b.onclick = async () => { if (await BB.confirm('Remove this entry', 'It comes off the totals.', 'Remove')) act(() => BB.post(`/api/revenue/${b.dataset.delr}/delete`), 'Removed'); }));

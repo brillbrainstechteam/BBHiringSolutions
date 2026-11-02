@@ -119,7 +119,7 @@ route('POST', '/api/clients/:id/calls/:call/jobs', T, (ctx) => {
   const c = loadClient(ctx); const k = get('SELECT * FROM client_calls WHERE id=? AND client_id=?', ctx.params.call, c.id); if (!k) throw httpError(404, 'Call not found');
   const lines = k.call_roles || []; const jobs = [];
   for (const x of lines.filter((l) => !l.job_id)) {
-    const j = TEAM.createJob(c, { title: x.role, city: x.location, openings: x.openings, skills: String(x.skills || k.skills || '').split(',').map((s) => s.trim()).filter(Boolean), notes: [x.department && `Department: ${x.department}`, x.notes, k.notes].filter(Boolean).join('\n'), recruiter_id: ctx.user.level === 'sub' ? ctx.user.id : undefined }, ctx.actor, false);
+    const j = TEAM.createJob(c, { title: x.role, city: x.location, openings: x.openings, skills: String(x.skills || k.skills || '').split(',').map((s) => s.trim()).filter(Boolean), department: x.department || undefined, notes: [x.notes, k.notes].filter(Boolean).join('\n'), recruiter_id: ctx.user.level === 'sub' ? ctx.user.id : undefined }, ctx.actor, false);
     if (x.duties || k.duties) update('jobs', j.id, { jd: { ...(j.jd || {}), duties: x.duties || k.duties } });
     x.job_id = j.id; jobs.push(j.id);
   }
@@ -215,14 +215,29 @@ const clientByEmail = (addr) => { const e = String(addr || '').toLowerCase(); if
 
 // ---------- what the web says about a business (optional, paid per lookup) ----------
 const S = (d) => ({ type: 'string', description: d });
+// What a recruiter wants in front of them before calling a business about its hiring.
+const LOOK_SYSTEM = 'You prepare a recruiter for a phone call with an Indian business about its hiring needs. Search the web for this exact business and use only what you find on its own site, LinkedIn, Google listing or news. Leave a field empty rather than guess. If you cannot be sure it is the right business, say so in "about". Keep every field short and plain.';
+const LOOK_FIELDS = {
+  about: 'Two short lines: what the business does and for whom',
+  customers: 'Who they sell to: B2B, B2C or Both; empty if unknown',
+  products: 'Main products or services, in a few words',
+  branches: 'How many showrooms, offices or factories, and in which cities',
+  team_size: 'Number of employees if published',
+  est_year: 'Year started',
+  owners: 'Owners or directors, with their roles',
+  hiring: 'Signs they are hiring: open roles on their careers page or job sites, with the roles named',
+  news: 'New showrooms, expansion or other news from the last 12 months',
+  talk_points: '',
+  website: 'Official website link', linkedin: 'Company LinkedIn link', instagram: 'Instagram link', facebook: 'Facebook link', phone: 'Public business phone', email: 'Public business email', address: 'Main address', sources: '',
+};
 const LOOK_SCHEMA = {
-  type: 'object', additionalProperties: false, required: ['about', 'website', 'instagram', 'facebook', 'linkedin', 'phone', 'email', 'address', 'branches', 'est_year', 'owners', 'kind', 'sources'],
-  properties: { about: S('2-3 lines on what the business does'), website: S('Official website; empty if none'), instagram: S('Instagram link; empty if none'), facebook: S('Facebook link; empty if none'), linkedin: S('LinkedIn link; empty if none'), phone: S('Public business phone; empty if none'), email: S('Public business email; empty if none'), address: S('Main address; empty if unknown'), branches: S('Number or list of branches; empty if unknown'), est_year: S('Year started; empty if unknown'), owners: S('Owners or directors named publicly; empty if unknown'), kind: S('Retailer, manufacturer, wholesaler, exporter or online brand; empty if unknown'), sources: { type: 'array', items: { type: 'string' }, description: 'Links you used' } },
+  type: 'object', additionalProperties: false, required: Object.keys(LOOK_FIELDS),
+  properties: { ...Object.fromEntries(Object.entries(LOOK_FIELDS).map(([k, d]) => [k, S(`${d}; empty if not found`)])), talk_points: { type: 'array', items: { type: 'string' }, description: 'Up to 3 short things to mention on the call, each tied to a fact above and to their hiring' }, sources: { type: 'array', items: { type: 'string' }, description: 'Links used' } },
 };
 route('POST', '/api/clients/:id/lookup', { auth: 'team', rate: { key: 'lookup', max: 20, minutes: 60 } }, async (ctx) => {
   const c = loadClient(ctx); const b = ctx.body || {}; const ex = c.extra || {};
   const r = await LLM.webLookup({
-    system: 'You research Indian businesses for a recruitment agency. Search the web for the exact business named. Use only what you find, and leave a field empty rather than guess. If you cannot tell which business it is, say so in "about".',
+    system: LOOK_SYSTEM, maxTokens: 700,
     user: `Business: ${b.name || c.company}\nCity: ${b.city || c.city || ''}\nAddress: ${b.address || ex.address || ''}\nType: ${c.business_type || ''}`, schema: LOOK_SCHEMA, name: 'business',
   });
   // What this search cost, in rupees: the search fee plus the tokens, rounded up. An estimate at $1 = ₹88.
@@ -258,7 +273,7 @@ route('POST', '/api/jobs/mass', T, (ctx) => {
   if (!rows.length) throw httpError(400, 'Write one city per line, like Mumbai: 20', 'lines');
   const batch = `MH-${Date.now().toString(36).toUpperCase()}`; const jobs = [];
   for (const x of rows) {
-    const r = TEAM.createJob(c, { ...b, city: x.city, openings: x.openings, recruiter_id: ctx.user.level === 'sub' ? ctx.user.id : b.recruiter_id || undefined, priority: b.priority || 'High', notes: b.notes || '' }, ctx.actor, false);
+    const r = TEAM.createJob(c, { ...b, city: x.city, openings: x.openings, recruiter_id: ctx.user.level === 'sub' ? ctx.user.id : b.recruiter_id || undefined, priority: b.priority || 'High', notes: b.notes || '', mass: 1 }, ctx.actor, false);
     update('jobs', r.id, { mass_batch: batch }); jobs.push(r.id);
   }
   D.history(ctx.actor.label, 'mass hiring', c.id, null, null, `${rows.reduce((t, x) => t + x.openings, 0)} ${b.title} in ${rows.length} cities`);
@@ -429,6 +444,7 @@ function bookScope(ctx) {
   if (isSuper(u)) return { id: q.agency || null, has: (x) => !q.agency || x.agency_id === q.agency };
   const shared = R.sharedWith(u); return { id: u.agency_id, has: (x) => x.agency_id === u.agency_id || (shared && !x.agency_id) };
 }
+if (!all('PRAGMA table_info(expenses)').some((x) => x.name === 'vendor')) for (const col of ['vendor TEXT', 'invoice_no TEXT', 'client_id TEXT', 'job_id TEXT', 'file_id TEXT']) D.db.exec(`ALTER TABLE expenses ADD COLUMN ${col}`);
 route('GET', '/api/books', ADMINS, (ctx) => {
   const sc = bookScope(ctx); const s = D.settings(); const u = ctx.user;
   const bills = all("SELECT * FROM bills WHERE status NOT IN ('Draft','Cancelled') AND credit_of IS NULL").filter(sc.has);
@@ -446,14 +462,22 @@ route('GET', '/api/books', ADMINS, (ctx) => {
     return { id: x.id, name: x.name, level: x.level, applications: apps.length, sent: apps.filter((a) => L.stepIdx(a.step) >= 3).length, hires: apps.filter((a) => a.result === 'Hired').length, fee };
   });
   const dues = all("SELECT * FROM bills WHERE status='Issued' AND credit_of IS NULL").filter(sc.has).map(L.billView).reduce((t, b) => t + b.balance, 0);
-  return { months, expenses: exp.slice(0, 200), revenue: rev.slice(0, 200), people, dues, categories: s.expense_categories, kinds: s.revenue_kinds, clients: isSuper(u) ? [] : undefined, agency: sc.id ? get('SELECT id, name FROM agencies WHERE id=?', sc.id) : null, agencies: isSuper(u) ? all('SELECT id, name FROM agencies') : [] };
+  const nameOf = (t, col, id) => (id ? (get(`SELECT ${col} n FROM ${t} WHERE id=?`, id) || {}).n || '' : '');
+  const tags = { clients: all('SELECT * FROM clients WHERE removed=0 AND junk=0 AND placeholder=0 AND merged_into IS NULL ORDER BY company').filter((c) => seeClient(u, c)).map((c) => ({ id: c.id, name: c.company })), jobs: all('SELECT * FROM jobs WHERE archived=0 ORDER BY created_at DESC').filter((j) => seeJob(u, j)).map((j) => ({ id: j.id, name: `${j.title}${j.city ? `, ${j.city}` : ''}` })) };
+  return { tags, months, expenses: exp.slice(0, 200).map((x) => ({ ...x, client_name: nameOf('clients', 'company', x.client_id), job_name: nameOf('jobs', 'title', x.job_id) })), revenue: rev.slice(0, 200), people, dues, categories: s.expense_categories, kinds: s.revenue_kinds, clients: isSuper(u) ? [] : undefined, agency: sc.id ? get('SELECT id, name FROM agencies WHERE id=?', sc.id) : null, agencies: isSuper(u) ? all('SELECT id, name FROM agencies') : [] };
 });
 const amount = (v) => { const n = Number(v); if (!n || n <= 0) throw httpError(400, 'Enter the amount', 'amount'); return n; };
 const ownRow = (ctx, table) => { const r = get(`SELECT * FROM ${table} WHERE id=?`, ctx.params.id); if (!r || !bookScope(ctx).has(r)) throw httpError(404, 'Entry not found'); return r; };
-route('POST', '/api/expenses', ADMINS, (ctx) => {
-  const b = ctx.body || {}; const r = { agency_id: isSuper(ctx.user) ? b.agency_id || null : ctx.user.agency_id, date: b.date || L.istDay(), category: b.category || 'Other', amount: amount(b.amount), note: b.note || '', by: ctx.actor.label, at: now() };
-  insert('expenses', r); D.history(ctx.actor.label, 'expense', null, r.category, null, r.amount); return { ok: true };
+const saveInvoice = async (id, file, by) => {
+  if (!file || !file.base64) return null; if (!/\.(pdf|jpe?g|png|docx?)$/i.test(file.name || '')) throw httpError(400, 'Upload the invoice as a PDF, Word or image file');
+  const f = await F.saveFile({ recordId: `EX-${id}`, type: 'expense_invoice', name: file.name, base64: file.base64, by }); update('expenses', id, { file_id: String(f.id) }); return f;
+};
+route('POST', '/api/expenses', ADMINS, async (ctx) => {
+  const b = ctx.body || {}; const r = { agency_id: isSuper(ctx.user) ? b.agency_id || null : ctx.user.agency_id, date: b.date || L.istDay(), category: b.category || 'Other', amount: amount(b.amount), note: b.note || '', vendor: String(b.vendor || '').trim(), invoice_no: String(b.invoice_no || '').trim(), client_id: b.client_id || null, job_id: b.job_id || null, by: ctx.actor.label, at: now() };
+  insert('expenses', r); const id = get('SELECT MAX(id) id FROM expenses').id; await saveInvoice(id, b.file, ctx.actor.label);
+  D.history(ctx.actor.label, 'expense', null, r.category, null, r.amount); return { ok: true, id };
 });
+route('POST', '/api/expenses/:id/invoice', ADMINS, async (ctx) => { const r = ownRow(ctx, 'expenses'); const f = await saveInvoice(r.id, ctx.body, ctx.actor.label); if (!f) throw httpError(400, 'Pick the invoice file'); return { ok: true }; });
 route('POST', '/api/expenses/:id/delete', ADMINS, (ctx) => { const r = ownRow(ctx, 'expenses'); update('expenses', r.id, { removed: 1 }); D.history(ctx.actor.label, 'expense removed', null, r.category, r.amount, null); return { ok: true }; });
 route('POST', '/api/revenue', ADMINS, (ctx) => {
   const b = ctx.body || {}; const r = { agency_id: isSuper(ctx.user) ? b.agency_id || null : ctx.user.agency_id, date: b.date || L.istDay(), kind: b.kind || 'Other', client_id: b.client_id || null, amount: amount(b.amount), note: b.note || '', by: ctx.actor.label, at: now() };
@@ -478,4 +502,4 @@ route('GET', '/api/holds', SUPER, () => {
   return { wa: !!w.everyone, email: !!w.email, allow: w.allow || [], rows, mails, smtp: M.configured(), crm: !!s.crm.enabled, accounts_email: s.accounts_email || '', unapproved: Object.entries(fm).filter(([, f]) => !f.approved).map(([k]) => k) };
 });
 
-module.exports = { agreementFile, clientMail, clientByEmail, mailFiles, clientCvFor, makeClientCv, nextStep, cleanText };
+module.exports = { LOOK_SYSTEM, LOOK_SCHEMA, agreementFile, clientMail, clientByEmail, mailFiles, clientCvFor, makeClientCv, nextStep, cleanText };

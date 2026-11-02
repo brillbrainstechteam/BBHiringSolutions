@@ -335,7 +335,7 @@ function matchScore(c, j, rating) {
   else if (c.notice_days <= j.notice_days * 2) part('notice', 0.5, null, `Notice ${c.notice_days} days`);
   else part('notice', 0, null, `Notice ${c.notice_days} days`);
   if (c.exp_jewellery >= 1) reasons.push(`${c.exp_jewellery} yrs in jewellery`);
-  const kinds = BUSINESS_OF[(j.client_id && (get('SELECT business_type FROM clients WHERE id=?', j.client_id) || {}).business_type) || ''] || [];
+  const kinds = BUSINESS_OF[{ B2B: 'Manufacturer B2B', B2C: 'Showroom B2C', Both: 'Both' }[j.market] || (j.client_id && (get('SELECT business_type FROM clients WHERE id=?', j.client_id) || {}).business_type) || ''] || [];
   const same = (Array.isArray(c.exp_business) ? c.exp_business : []).filter((b) => kinds.includes(b));
   if (same.length) reasons.push(`${same.join(' / ')} experience`);
   if (rating) part('rating', rating / 5, rating >= 4 ? `Rated ${rating.toFixed(1)}/5 in interviews` : null); else part('rating', 0.6);

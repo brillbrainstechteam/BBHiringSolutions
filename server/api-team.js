@@ -13,6 +13,11 @@ const SUPER = { auth: 'team', levels: ['super'] };
 const ADMINS = { auth: 'team', levels: ['super', 'admin'] };
 
 // Lists: 50 rows a page; filters run on the full data. format=xlsx (or csv) downloads with filters on.
+// Sort a list by one of its allowed fields. Blanks stay last either way.
+function sortBy(rows, q, allowed) {
+  if (!allowed.includes(q.sort)) return rows; const k = q.sort; const dir = q.dir === 'desc' ? -1 : 1; const blank = (v) => v === null || v === undefined || v === '';
+  return [...rows].sort((a, b) => { const x = a[k]; const y = b[k]; if (blank(x) || blank(y)) return blank(x) - blank(y); return (typeof x === 'number' && typeof y === 'number' ? x - y : String(x).localeCompare(String(y), 'en', { sensitivity: 'base', numeric: true })) * dir; });
+}
 function page(ctx, rows, name, columns) {
   const fmt = ctx.query.format;
   // Lists leave the portal (Excel/CSV) only for the super admin; admins and sub admins work on screen.
@@ -330,7 +335,11 @@ route('POST', '/api/leads/bulk', T, (ctx) => {
       const r = get(`SELECT id FROM ${table} WHERE id=? AND merged_into IS NULL AND removed=0`, id); if (!r || (type === 'client' && !seeClient(ctx.user, get('SELECT * FROM clients WHERE id=?', id)))) { out.skipped.push(`${id}: not found`); continue; }
       if (action === 'seen') D.edit(table, id, { is_new: 0 }, ctx.actor.label, ctx.ip);
       else if (action === 'junk') D.edit(table, id, { junk: 1, is_new: 0 }, ctx.actor.label, ctx.ip);
-      else if (action === 'stage' && type === 'client') D.edit(table, id, { stage: value, is_new: 0 }, ctx.actor.label, ctx.ip);
+      else if (action === 'stage' && type === 'client') {
+        const c = get('SELECT * FROM clients WHERE id=?', id);
+        if (value === 'Client activated' && !c.activated_at && !L.activationState(c).ready) { out.skipped.push(`${c.company}: no signed contract yet`); continue; }
+        D.edit(table, id, { stage: value, is_new: 0 }, ctx.actor.label, ctx.ip);
+      }
       else if (action === 'add_to_job' && type === 'candidate') L.createApplication(id, value, ctx.actor, null, 'Added from Leads');
       else if (action === 'welcome') {
         const s = L.sendWA({ ptype: type, pid: id, format: type === 'client' ? 'bbhs_client_welcome' : 'bbhs_candidate_welcome', vars: { client_id: id, candidate_id: id, link: L.link(type === 'client' ? 'my-account' : 'my-profile') }, by: ctx.actor, bulk: true, dedupe: `welcome-again:${id}:${L.istDay()}` });
@@ -381,7 +390,7 @@ route('GET', '/api/clients', T, (ctx) => {
   const rows = all('SELECT * FROM clients WHERE merged_into IS NULL AND removed=0 AND junk=0 ORDER BY created_at DESC')
     .filter((c) => seeClient(u, c) && (q.archived ? c.archived : !c.archived) && (!q.stage || c.stage === q.stage) && (!q.lifecycle || (q.lifecycle === 'Active' ? !!c.activated_at : !c.activated_at)) && like(q.q, c.id, c.company, c.contact, c.city, c.whatsapp, c.old_code))
     .map(V.clientView);
-  return page(ctx, rows, 'clients', ['id', 'company', 'contact', 'whatsapp', 'city', 'business_type', 'stage', 'agency_name', 'owner_name', 'jobs_open', 'jobs_total', 'account_status', 'source']);
+  return page(ctx, sortBy(rows, q, ['company', 'city', 'lifecycle', 'stage', 'agency_name', 'jobs_open', 'account_status']), 'clients', ['id', 'company', 'contact', 'whatsapp', 'city', 'business_type', 'stage', 'agency_name', 'owner_name', 'jobs_open', 'jobs_total', 'account_status', 'source']);
 });
 route('POST', '/api/clients', T, (ctx) => {
   const b = ctx.body; const r = L.intakeClient(b, { source: b.source || `Created by ${ctx.actor.label}`, by: ctx.actor });
@@ -389,11 +398,30 @@ route('POST', '/api/clients', T, (ctx) => {
   if (r.isNew && ctx.user.level !== 'super') update('clients', r.client.id, { agency_id: ctx.user.agency_id, owner_id: ctx.user.id, is_new: 0 });
   return { id: r.client.id, isNew: r.isNew };
 });
+// A client's past with us at a glance: counts, roles, hires and every interaction, newest first.
+function clientPast(c, u) {
+  const jobs = all('SELECT * FROM jobs WHERE client_id=? ORDER BY created_at DESC', c.id).map((j) => V.jobView(j));
+  const apps = all('SELECT a.*, j.title job_title, x.name person FROM applications a JOIN jobs j ON j.id=a.job_id JOIN candidates x ON x.id=a.candidate_id WHERE j.client_id=?', c.id);
+  const hired = apps.filter((a) => a.result === 'Hired'); const money = u.level !== 'sub';
+  const bills = all("SELECT * FROM bills WHERE client_id=? AND status NOT IN ('Draft','Cancelled') AND credit_of IS NULL", c.id);
+  const uniq = (l) => [...new Set(l.filter(Boolean))];
+  const line = [
+    ...all('SELECT * FROM client_calls WHERE client_id=?', c.id).map((x) => ({ at: x.at, kind: 'Call', text: x.roles || x.notes || 'Call notes', by: x.by })),
+    ...all("SELECT subject, status, at FROM emails WHERE record_id=? AND status IN ('sent','received')", c.id).map((x) => ({ at: x.at, kind: x.status === 'received' ? 'Client replied' : 'Email sent', text: x.subject })),
+    ...all("SELECT format, text, at, sent_by, direction FROM messages WHERE person_type='client' AND person_id=? AND status NOT IN ('held','failed')", c.id).map((x) => ({ at: x.at, kind: x.direction === 'in' ? 'WhatsApp from client' : 'WhatsApp sent', text: String(x.text || '').slice(0, 90), by: x.sent_by })),
+    ...all("SELECT text, author, at FROM notes WHERE record_id=? AND author<>'Email inbox' AND text NOT LIKE 'Client call%' AND text NOT LIKE 'Email %'", c.id).map((x) => ({ at: x.at, kind: 'Note', text: String(x.text).slice(0, 120), by: x.author })),
+    ...jobs.map((j) => ({ at: j.created_at, kind: 'Job opening', text: `${j.title}${j.city ? `, ${j.city}` : ''} · ${j.openings} ${j.openings === 1 ? 'opening' : 'openings'}` })),
+    ...hired.map((a) => ({ at: a.joined_at || a.step_since, kind: 'Hired', text: `${a.person} as ${a.job_title}` })),
+    ...(money ? bills.map((b) => ({ at: b.issued_at || b.date, kind: 'Bill', text: `${b.bill_no || 'Bill'} · ₹${Math.round(b.fee).toLocaleString('en-IN')}` })) : []),
+  ].filter((x) => x.at).sort((a, b) => (a.at < b.at ? 1 : -1)).slice(0, 60);
+  return { jobs: jobs.length, open: jobs.filter((j) => !['Closed', 'Filled'].includes(j.status)).length, applications: apps.length, sent: apps.filter((a) => L.stepIdx(a.step) >= 3).length, hires: hired.length, fees: money ? bills.reduce((t, b) => t + (b.fee || 0), 0) : null,
+    roles_hired: uniq(hired.map((a) => a.job_title)), roles_asked: uniq(jobs.map((j) => j.title)), hired: hired.map((a) => ({ name: a.person, role: a.job_title, date: a.joined_at || a.step_since })), timeline: line };
+}
 route('GET', '/api/clients/:id', T, (ctx) => {
   const c = get('SELECT * FROM clients WHERE id=?', L.resolveId(ctx.params.id)); mustSee(seeClient(ctx.user, c), 'client');
   const jobs = all('SELECT * FROM jobs WHERE client_id=? ORDER BY created_at DESC', c.id).map((j) => V.jobView(j));
   return {
-    ...V.clientView(c), onboarding_items: V.onboardingView(c), jobs, members: all('SELECT * FROM client_members WHERE client_id=?', c.id),
+    ...V.clientView(c), past: clientPast(c, ctx.user), onboarding_items: V.onboardingView(c), jobs, members: all('SELECT * FROM client_members WHERE client_id=?', c.id),
     messages: all("SELECT * FROM messages WHERE person_type='client' AND person_id=? ORDER BY at DESC LIMIT 30", c.id),
     files: all('SELECT * FROM files WHERE record_id=? AND replaced=0 ORDER BY at DESC', c.id), notes: all('SELECT * FROM notes WHERE record_id=? ORDER BY at DESC', c.id),
     activation: L.activationState(c), calls: all('SELECT * FROM client_calls WHERE client_id=? ORDER BY at DESC', c.id), mails: all('SELECT id, subject, kind, status, at, to_addr FROM emails WHERE record_id=? ORDER BY id DESC LIMIT 20', c.id),
@@ -451,7 +479,7 @@ route('GET', '/api/jobs', T, (ctx) => {
   const counts = { All: rows.length, Active: rows.filter((j) => ['Open', 'Sourcing', 'Interviewing', 'Offer stage'].includes(j.status)).length };
   for (const s of ['Draft', 'Open', 'Sourcing', 'Interviewing', 'Offer stage', 'Filled', 'On hold', 'Closed']) counts[s] = rows.filter((j) => j.status === s).length;
   rows = rows.filter((j) => (!q.status || q.status === 'All' || (q.status === 'Active' ? ['Open', 'Sourcing', 'Interviewing', 'Offer stage'].includes(j.status) : j.status === q.status)) && (!q.client || j.client_id === q.client) && like(q.q, j.id, j.title, j.client_name, j.city, j.old_code, j.recruiter_name));
-  const p = page(ctx, rows, 'job-openings', ['id', 'title', 'client_name', 'city', 'openings', 'filled', 'apps_total', 'status', 'recruiter_name', 'days_open', 'old_code']);
+  const p = page(ctx, sortBy(rows, q, ['title', 'client_name', 'filled', 'apps_total', 'status', 'recruiter_name', 'days_open']), 'job-openings', ['id', 'title', 'client_name', 'city', 'openings', 'filled', 'apps_total', 'status', 'recruiter_name', 'days_open', 'old_code']);
   return p.__file ? p : { ...p, counts };
 });
 // One "Client to be confirmed" per agency (the super admin's has no agency), made the first time it is needed. No
@@ -490,7 +518,7 @@ function createJob(c, b, actor, byClient) {
   const recruiter = b.recruiter_id || (byClient ? (get("SELECT recruiter_id FROM jobs WHERE client_id=? AND recruiter_id IS NOT NULL ORDER BY created_at DESC", c.id) || {}).recruiter_id || c.owner_id : actor.uid);
   const toYear = (v) => (v === '' || v === null || v === undefined ? null : Number(v) * (b.salary_per === 'month' ? 12 : 1));
   insert('jobs', {
-    id, client_id: c.id, title: b.title === 'Other' ? (b.title_other || 'Other') : b.title, department: L.deptOf(b.title), city: b.city || c.city, openings: Math.max(1, Number(b.openings) || 1),
+    id, client_id: c.id, title: b.title === 'Other' ? (b.title_other || 'Other') : b.title, department: b.department || L.deptOf(b.title), city: b.city || c.city, openings: Math.max(1, Number(b.openings) || 1), market: b.market || '', mass: b.mass ? 1 : 0,
     sal_from: toYear(b.sal_from), sal_to: toYear(b.sal_to), exp_from: b.exp_from === '' ? null : b.exp_from ?? null, exp_to: b.exp_to === '' ? null : b.exp_to ?? null, notice_days: b.notice_days === '' ? null : b.notice_days ?? null,
     skills: b.skills || [], agency_id: c.agency_id, recruiter_id: recruiter || null, priority: b.priority || 'Medium', jd_approved: byClient ? 0 : (b.jd_approved ? 1 : 0), jd_status: b.jd_approved && !byClient ? 'Approved' : 'Not written',
     rounds: b.rounds || ['Telephonic round', 'Virtual round', 'Final round (in person)'], screening_qs: b.screening_qs || [], notes: b.notes || '', created_by: L.actorName(actor), created_at: now(), status: null,
@@ -663,7 +691,8 @@ route('GET', '/api/jobs/:id', T, (ctx) => {
 });
 route('PATCH', '/api/jobs/:id', T, (ctx) => {
   const j = get('SELECT * FROM jobs WHERE id=?', ctx.params.id); mustSee(seeJob(ctx.user, j), 'job opening');
-  const allowed = ['title', 'city', 'openings', 'sal_from', 'sal_to', 'exp_from', 'exp_to', 'notice_days', 'skills', 'priority', 'rounds', 'screening_qs', 'notes', 'archived'];
+  const allowed = ['title', 'city', 'openings', 'sal_from', 'sal_to', 'exp_from', 'exp_to', 'notice_days', 'skills', 'priority', 'rounds', 'screening_qs', 'notes', 'archived', 'market', 'department', 'mass'];
+  if (ctx.body.mass !== undefined) ctx.body.mass = ctx.body.mass ? 1 : 0;
   if (ctx.user.level !== 'sub') allowed.push('recruiter_id');
   const patch = {}; for (const k of allowed) if (ctx.body[k] !== undefined) patch[k] = ctx.body[k];
   // The ads this job runs under (Meta / LinkedIn campaign, ad set, ad names); applicants from those ads land on it.
@@ -808,7 +837,7 @@ route('GET', '/api/candidates/cvs.zip', { auth: 'team', levels: ['super'] }, (ct
 route('GET', '/api/candidates', T, (ctx) => {
   const q = ctx.query; const u = ctx.user;
   const ind = q.industry || 'all'; const inInd = (c) => ind === 'all' || (c.industry || 'Jewellery') === ind;
-  const rows = candRows(q, u);
+  const rows = sortBy(candRows(q, u), q, ['name', 'job_wanted', 'source', 'exp_total', 'city', 'status', 'created_at']);
   const open = all('SELECT is_new, agency_id, skills, needs_check, possible_repeat_of FROM candidates WHERE merged_into IS NULL AND removed=0 AND junk=0 AND archived=0');
   // Skills to filter by: the ones candidates really have, most common first.
   const tally = {}; for (const c of open) for (const s of c.skills || []) { const k = String(s).trim(); if (k) tally[k] = (tally[k] || 0) + 1; }

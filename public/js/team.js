@@ -28,7 +28,7 @@
   const menuFor = (u) => (u.channel_only ? MENU.filter((m) => ['channels', 'agreement', 'logins'].includes(m[0])) : MENU.filter((m) => (m[0] !== 'leads' || u.leads) && (!m[3] || m[3].includes(u.level))));
   const MENU = [
     ['myday', 'My day', 'sun', ['sub']], ['dashboard', 'Dashboard', 'grid'], ['leads', 'Leads', 'inbox', null, 'leads'],
-    ['clients', 'Clients', 'building'], ['jobs', 'Job openings', 'brief'], ['channels', 'Hiring channels', 'flow'], ['candidates', 'Candidates', 'users', null, 'cand_new'], ['applications', 'Applications', 'flow'],
+    ['clients', 'Clients', 'building'], ['candidates', 'Candidates', 'users', null, 'cand_new'], ['jobs', 'Job openings', 'brief'], ['channels', 'Digital Reach', 'flow'], ['applications', 'Applications', 'flow'],
     ['interviews', 'Interviews', 'cal', null, 'pending'], ['whatsapp', 'WhatsApp', 'chat', null, 'unread'],
     ['performance', 'Performance', 'chart'], ['logs', 'Daily logs', 'note'], ['bills', 'Bills', 'rupee', ['super', 'admin']], ['books', 'Books', 'chart', ['super', 'admin']], ['money', 'Money', 'money', ['super']],
     ['reports', 'Reports', 'report'], ['agreement', 'Recruitment Agreement', 'note'], ['logins', 'Logins & team', 'key'], ['settings', 'Settings', 'cog'],
@@ -37,7 +37,7 @@
   const HELP = {
     books: 'Revenue, expenses and how the team is doing, month by month.',
     agreement: 'The standard Recruitment Agreement. Clients see the same copy in their account.',
-    channels: 'Every hiring channel for every open job. Change the owner in the Owner column. Copy a job\'s link, post it, then click the cell to update it. Everyone sees the same page.',
+    channels: 'Every channel for every open job. Change the owner in the Owner column. Copy a job\'s link, post it, then click the cell to update it. Everyone sees the same page.',
     myday: 'Everything you need to do today: interviews, results to record, follow-ups and stuck applications.',
     dashboard: 'Counts and the Needs attention list. Every item has a WhatsApp button to nudge the right person.',
     leads: 'New clients from every door (forms, WhatsApp bot, email, Excel). With one active agency everyone sees them all; with more, an admin allocates each to an agency. New candidates go straight to Candidates.',
@@ -164,7 +164,10 @@
 
   // Shared list helpers for pages
   // opts.scroll: the table gets its own scroll box (header and the tick-box column stay put); c.cls adds classes to a column.
-  BB.table = (cols, rows, opts = {}) => `<div class="tbl-wrap${opts.scroll ? ' tbl-scroll' : ''}"><table class="tbl"><thead><tr>${opts.select ? `<th class="sel-col" style="width:28px"><input type="checkbox" data-all aria-label="Tick all"></th>` : ''}${cols.map((c) => `<th class="${c.num ? 'num' : ''} ${c.hideSm ? 'hide-sm' : ''} ${c.cls || ''}">${c.t}</th>`).join('')}</tr></thead><tbody>${rows.map((r) => `<tr class="${opts.open ? 'click' : ''}" ${opts.open ? `data-open="${opts.open(r)}"` : ''}>${opts.select ? `<td class="sel-col" onclick="event.stopPropagation()"><input type="checkbox" data-sel="${esc(r.id)}" aria-label="Tick ${esc(r.id)}"></td>` : ''}${cols.map((c) => `<td class="${c.num ? 'num' : ''} ${c.hideSm ? 'hide-sm' : ''} ${c.cls || ''}">${c.f(r)}</td>`).join('')}</tr>`).join('') || `<tr><td colspan="${cols.length + (opts.select ? 1 : 0)}" class="empty">${opts.empty || 'Nothing here yet.'}</td></tr>`}</tbody></table></div>`;
+  BB.table = (cols, rows, opts = {}) => `<div class="tbl-wrap${opts.scroll ? ' tbl-scroll' : ''}"><table class="tbl"><thead><tr>${opts.select ? `<th class="sel-col" style="width:28px"><input type="checkbox" data-all aria-label="Tick all"></th>` : ''}${cols.map((c) => `<th class="${c.num ? 'num' : ''} ${c.hideSm ? 'hide-sm' : ''} ${c.cls || ''}">${c.sort && opts.sorted ? BB.sortHead(c, opts.sorted) : c.t}</th>`).join('')}</tr></thead><tbody>${rows.map((r) => `<tr class="${opts.open ? 'click' : ''}" ${opts.open ? `data-open="${opts.open(r)}"` : ''}>${opts.select ? `<td class="sel-col" onclick="event.stopPropagation()"><input type="checkbox" data-sel="${esc(r.id)}" aria-label="Tick ${esc(r.id)}"></td>` : ''}${cols.map((c) => `<td class="${c.num ? 'num' : ''} ${c.hideSm ? 'hide-sm' : ''} ${c.cls || ''}">${c.f(r)}</td>`).join('')}</tr>`).join('') || `<tr><td colspan="${cols.length + (opts.select ? 1 : 0)}" class="empty">${opts.empty || 'Nothing here yet.'}</td></tr>`}</tbody></table></div>`;
+  // A column with sort: 'key' sorts on the server, so every page follows. Numbers and dates start highest first.
+  BB.sortHead = (c, q) => { const on = q.sort === c.sort; const next = on ? (q.dir === 'desc' ? 'asc' : 'desc') : c.desc ? 'desc' : 'asc'; return `<button type="button" class="th-sort ${on ? 'on' : ''}" data-sort="${c.sort}" data-dir="${next}" aria-label="Sort by ${esc(c.t)}">${esc(c.t)}<span class="th-arrow" aria-hidden="true">${on ? (q.dir === 'desc' ? '↓' : '↑') : '↕'}</span></button>`; };
+  document.addEventListener('click', (e) => { const b = e.target.closest('[data-sort]'); if (b) BB.setQ({ sort: b.dataset.sort, dir: b.dataset.dir, page: 1 }); });
   BB.pager = (r, onPage) => `<div class="pager"><span>${r.total} total · page ${r.page} of ${r.pages}</span><button class="btn sm" data-pg="${r.page - 1}" ${r.page <= 1 ? 'disabled' : ''}>‹ Prev</button><button class="btn sm" data-pg="${r.page + 1}" ${r.page >= r.pages ? 'disabled' : ''}>Next ›</button></div>`;
   BB.wirePager = (el) => $$('[data-pg]', el).forEach((b) => (b.onclick = () => BB.setQ({ page: b.dataset.pg })));
   BB.selected = (el) => $$('[data-sel]:checked', el).map((x) => x.dataset.sel);

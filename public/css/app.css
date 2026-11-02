@@ -1536,3 +1536,18 @@ html[lang="hi"] .ss-g { letter-spacing: 0; }
 .trk-by { margin-top: 3px; font-size: 11px; color: var(--muted); white-space: nowrap; }
 .trk-rec { padding: 7px 0; font-size: 13px; border-top: 1px solid var(--border); }
 .trk-rec:first-of-type { border-top: 0; }
+.cand-phone { font-size: 13px; }
+.th-sort { display: inline-flex; align-items: center; gap: 3px; padding: 0; border: 0; background: none; font: inherit; color: inherit; letter-spacing: inherit; text-transform: inherit; cursor: pointer; white-space: nowrap; }
+.th-sort:hover, .th-sort.on { color: var(--ink); }
+.th-arrow { font-size: 12px; opacity: .55; }
+.th-sort.on .th-arrow { opacity: 1; }
+@media (max-width: 1400px) { .th-sort:not(.on):not(:hover) .th-arrow { visibility: hidden; width: 0; } .cand-table .tbl-scroll th { letter-spacing: .04em; } .cand-table .tbl-scroll td.skills-col { min-width: 128px; max-width: 150px; } .cand-table .sk { max-width: 118px; } .tbl-scroll td.src-col { max-width: 76px; } }
+.num .th-sort { justify-content: flex-end; }
+.job-mass { display: flex; align-items: flex-end; padding-bottom: 12px; }
+.hist-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; }
+.hist-num { font: 700 20px var(--display, var(--font)); }
+.hist-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-top: 1px solid var(--border); }
+.hist-row:first-of-type { border-top: 0; }
+.ci-talk, .ci-hire { margin-top: 12px; padding: 10px 12px; border-radius: 10px; background: var(--mustard-50, var(--surface-2)); border: 1px solid var(--mustard-300, var(--border)); }
+.ci-talk ul { margin: 4px 0 0; padding-left: 18px; font-size: 13.5px; line-height: 1.5; }
+.ci-hire { background: var(--surface-2); border-color: var(--border); }

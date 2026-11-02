@@ -54,7 +54,7 @@ async function dispatch(req, res, url, body) {
         const ag = u.agency_id ? D.get('SELECT * FROM agencies WHERE id=?', u.agency_id) : null;
         if (ag && ag.status === 'Paused' && u.level !== 'super') throw D.httpError(401, 'This agency is paused.');
         if (r.opts.levels && !r.opts.levels.includes(u.level)) throw D.httpError(403, 'Your level cannot do this.');
-        if (channelOnly(u) && !r.opts.channels) throw D.httpError(403, 'Your login covers hiring channels only.');
+        if (channelOnly(u) && !r.opts.channels) throw D.httpError(403, 'Your login covers Digital Reach only.');
         ctx.user = u; ctx.agency = ag; ctx.actor = actorOf(u);
         D.update('users', u.id, { last_action: D.now() });
       } else if (need === 'client') {
