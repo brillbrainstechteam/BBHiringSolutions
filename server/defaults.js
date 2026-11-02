@@ -154,6 +154,7 @@ module.exports.defaultSettings = () => ({
   landing_roles: ['CAD Designer', 'B2B Sales Executive', 'Merchandiser', 'Purchase Manager', 'Admin Executive'],
   wa_pause: { candidates: true, everyone: true, email: true, allow: ['9093400666', '9986950695', '8368372836'] },
   accounts_email: '',
+  resume_alert_pct: 30,
   expense_tree: [
     { name: 'Portal Subscription Fees', subs: ['Naukri', 'Indeed', 'Apna Jobs', 'LinkedIn Recruiter', 'WorkIndia', 'Shine', 'foundit', 'Resume database credits', 'Job posting credits'] },
     { name: 'Paid Ads', subs: ['Meta Ads', 'Google Ads', 'LinkedIn Ads', 'Ad creatives'] },

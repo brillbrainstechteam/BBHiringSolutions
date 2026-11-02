@@ -462,7 +462,7 @@ route('GET', '/api/client/me', C, (ctx) => {
   const ivs = all("SELECT i.* FROM interviews i JOIN applications a ON a.id=i.app_id JOIN jobs j ON j.id=a.job_id WHERE j.client_id=? AND (i.round='client' OR i.client_joins=1) ORDER BY i.at DESC", c.id).map(L.interviewView)
     .map((i) => { const a = apps.find((x) => x.id === i.app_id); const cand = get('SELECT name FROM candidates WHERE id=?', a.candidate_id); return { ...i, candidate: cand.name, job: get('SELECT title FROM jobs WHERE id=?', a.job_id).title }; });
   const bills = perms.bills ? all("SELECT * FROM bills WHERE client_id=? AND status!='Draft' ORDER BY created_at DESC", c.id).map(L.billView).map((b) => {
-    const a = V.appView(get('SELECT * FROM applications WHERE id=?', b.app_id)); const ap = get('SELECT * FROM applications WHERE id=?', b.app_id);
+    const ap = b.app_id ? get('SELECT * FROM applications WHERE id=?', b.app_id) : {}; const a = b.app_id ? V.appView(ap) : { candidate_name: b.person_name || '', job_title: b.job_name || '' };
     const win = c.replacement_days || D.settings().replacement_days;
     return { ...b, candidate: a.candidate_name, job: a.job_title, joining_date: a.joining_date, upi: L.upiLink(b.balance, b.bill_no), can_replace: !!(ap.joined_at && L.daysBetween(ap.joined_at) <= win && !ap.replacement_used && !b.is_replacement && !b.replacement_requested), replacement_requested: b.replacement_requested, left_date: ap.left_date };
   }) : [];
@@ -586,6 +586,7 @@ route('POST', '/api/client/bills/:id/replacement', { auth: 'client', perm: 'bill
   const b = get('SELECT * FROM bills WHERE id=? AND client_id=?', ctx.params.id, ctx.client.id); if (!b) throw httpError(404, 'Bill not found');
   if (!ctx.body.reason) throw httpError(400, 'Tell us what happened', 'reason');
   update('bills', b.id, { replacement_requested: 1 });
+  if (!b.app_id) throw httpError(400, 'This bill is not linked to a hire. Please contact our team.');
   const a = get('SELECT * FROM applications WHERE id=?', b.app_id); const job = get('SELECT * FROM jobs WHERE id=?', a.job_id);
   insert('notes', { record_id: a.id, text: `Client asked for a free replacement: ${ctx.body.reason}${ctx.body.date ? ` (last day ${ctx.body.date})` : ''}`, author: ctx.actor.label, at: now() });
   L.alertUser(job.recruiter_id || a.owner_id, `${ctx.client.company} asked for a free replacement on ${a.id}. Check the reason and mark "Left the job".`, a.id, 'client');
@@ -809,7 +810,7 @@ route('GET', '/api/files/:id', {}, (ctx) => {
   if (s.kind === 'team') {
     const u = get('SELECT * FROM users WHERE id=?', s.subject_id);
     if (R.channelOnly(u)) throw httpError(403, 'Your login covers Digital Reach only.');
-    if (rid.startsWith('CA-')) { const c = get('SELECT * FROM candidates WHERE id=?', rid); ok = R.phoneVisible(u, c) || ['cv', 'short_cv'].includes(f.type); }
+    if (rid.startsWith('CA-')) { const c = get('SELECT * FROM candidates WHERE id=?', rid); ok = R.phoneVisible(u, c) || ['cv', 'short_cv'].includes(f.type); if (ok && ['cv', 'short_cv'].includes(f.type)) L.resumeUse(u, rid); }
     else if (rid.startsWith('CL-')) ok = R.seeClient(u, get('SELECT * FROM clients WHERE id=?', rid));
     else if (rid.startsWith('AP-')) ok = R.seeApp(u, get('SELECT * FROM applications WHERE id=?', rid));
     else if (rid.startsWith('JB-')) { const j = get('SELECT * FROM jobs WHERE id=?', rid); ok = R.seeJob(u, j) || R.sameAgency(u, j); }

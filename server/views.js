@@ -4,7 +4,7 @@ const L = require('./logic');
 const { get, all } = D;
 
 const userName = (id) => { if (!id) return ''; const u = get('SELECT name FROM users WHERE id=?', id); return u ? u.name : id; };
-const agencyName = (id) => { if (!id) return ''; const a = get('SELECT name FROM agencies WHERE id=?', id); return a ? a.name : id; };
+const agencyName = (id) => { if (!id) return ''; const a = get('SELECT name FROM agencies WHERE id=?', id); return a ? a.name : 'Deleted agency'; };
 
 function jobView(j, apps) {
   if (!j) return j;

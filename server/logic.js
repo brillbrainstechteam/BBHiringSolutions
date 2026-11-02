@@ -422,7 +422,9 @@ function billView(b) {
     else if (settled > 0) st = new Date(b.due_date) < new Date() ? 'Overdue' : 'Part paid';
     else st = new Date(b.due_date) < new Date() ? 'Overdue' : 'Due';
   }
-  return { ...b, ...p, balance: Math.max(0, b.total - settled), view_status: st };
+  // Billed, Received or Outstanding: the three a bill can stand at once it is raised.
+  const stage = ['Draft', 'Cancelled'].includes(st) ? st : st === 'Paid' ? 'Received' : st === 'Part paid' || st === 'Overdue' || b.stage === 'Outstanding' ? 'Outstanding' : 'Billed';
+  return { ...b, ...p, balance: Math.max(0, b.total - settled), view_status: st, stage };
 }
 function refreshBill(billId, by) {
   const b = billView(get('SELECT * FROM bills WHERE id=?', billId));
@@ -1041,4 +1043,17 @@ module.exports = { adLabel,
   appHist, createApplication, moveStep, closeApplication, reopenApplication, screenApplication, SCREEN, jobsForRole, jobsForPerson, roleTokens, scheduleInterview, recordInterview, interviewView, ivVars, recordOffer, leftJob, jobAction,
   CONSENT_WORDING, saveConsent, intakeClient, intakeCandidate, assignLead, mergeRecords, resolveId, receiveReply, actorName,
 };
-Object.assign(module.exports, { fixAsk, openAsks, OPEN_ASK });
+// ---------- many resumes opened by one person ----------
+const RESUME_DAYS = 30;
+function resumeUse(user, candidateId) {
+  if (user.level === 'super') return;
+  D.run('INSERT OR REPLACE INTO resume_use (user_id, candidate_id, at) VALUES (?, ?, ?)', user.id, candidateId, now());
+  const since = addDays(new Date(), -RESUME_DAYS); const used = get('SELECT COUNT(*) n FROM resume_use WHERE user_id=? AND at>=?', user.id, since).n;
+  const total = get("SELECT COUNT(*) n FROM candidates WHERE cv_file IS NOT NULL AND merged_into IS NULL AND removed=0").n;
+  const pct = Number(settings().resume_alert_pct) || 30; if (used < Math.max(10, Math.ceil((total * pct) / 100))) return;
+  if (get('SELECT 1 FROM resume_alerts WHERE user_id=? AND at>=?', user.id, since)) return;
+  D.run('INSERT OR REPLACE INTO resume_alerts (user_id, at) VALUES (?, ?)', user.id, now());
+  for (const s of superAdmins()) alertUser(s.id, `${user.name} opened or downloaded ${used} of ${total} resumes (${Math.round((used / total) * 100)}%) in the last ${RESUME_DAYS} days`, user.id, true);
+  history(user.name, 'resume alert', user.id, null, null, `${used} of ${total}`);
+}
+Object.assign(module.exports, { fixAsk, openAsks, OPEN_ASK, resumeUse, RESUME_DAYS });

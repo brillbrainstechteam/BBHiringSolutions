@@ -1736,3 +1736,20 @@ button.rs-step:hover { background: var(--surface-2); }
 .q-sec ol { margin: 6px 0 4px; padding-left: 20px; }
 .q-sec li { padding: 6px 0; font-size: 14px; } .q-sec li b { font-weight: 600; }
 .q-ref { color: var(--mustard-700, var(--muted)); }
+/* Profit & Loss */
+.period-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; margin: 12px 0 14px; }
+.period-bar select { width: 210px; height: 40px; margin: 0; }
+.period-bar label { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); }
+.period-bar input { height: 40px; width: 160px; margin: 0; }
+.inv-top { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 12px; padding: 12px 14px; border: 1px dashed var(--border-strong, var(--border)); border-radius: 12px; background: var(--surface-2); }
+button.fin-tile { display: block; width: 100%; text-align: left; font: inherit; color: inherit; cursor: pointer; }
+button.fin-tile.on { border-color: var(--mustard); box-shadow: 0 0 0 1px var(--mustard); }
+.fin-row { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 10px; margin: 0 0 14px; }
+.fin-seg { padding: 4px; } .fin-seg button { height: 34px; padding: 0 16px; font-size: 13px; }
+.bill-bulk { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 10px 14px; margin-bottom: 14px; }
+.stage-sel { width: 134px; height: 34px; margin: 0; }
+.fmt-filter { width: 170px; height: 40px; margin: 0; }
+/* Reports: columns sit close together */
+.rep-tbl .tbl-wrap { overflow-x: auto; }
+.rep-tbl .tbl { width: auto; min-width: 0; }
+.rep-tbl .tbl th, .rep-tbl .tbl td { padding-left: 10px; padding-right: 14px; white-space: nowrap; }

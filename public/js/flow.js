@@ -293,6 +293,29 @@
     const up = $('[data-aup]', actions); if (up) up.onclick = async () => { const f = await BB.pickFile('.docx,.pdf'); if (f) act(() => BB.post('/api/agreement', f), 'Agreement replaced'); };
   };
 
+  // ---------- Time period, shared by Expenses, Client bills and Summary ----------
+  const PERIODS = [['', 'All time'], ['month', 'This month'], ['last', 'Last month'], ['quarter', 'This quarter'], ['fy', 'This financial year'], ['lastfy', 'Last financial year'], ['custom', 'Custom dates']];
+  const periodDates = (k) => {
+    const [y, m] = BB.istDay().split('-').map(Number); const day = (a, b, c2) => new Date(Date.UTC(a, b - 1, c2)).toISOString().slice(0, 10); const fy = m >= 4 ? y : y - 1;
+    if (k === 'month') return [day(y, m, 1), day(y, m + 1, 0)]; if (k === 'last') return [day(y, m - 1, 1), day(y, m, 0)];
+    if (k === 'quarter') { const start = m - ((m + 8) % 3); return [day(y, start, 1), day(y, start + 3, 0)]; }
+    if (k === 'fy') return [day(fy, 4, 1), day(fy + 1, 3, 31)]; if (k === 'lastfy') return [day(fy - 1, 4, 1), day(fy, 3, 31)]; return ['', ''];
+  };
+  F.periodBar = (q) => `<div class="period-bar"><select data-period aria-label="Time period">${PERIODS.map(([k, l]) => `<option value="${k}" ${(q.period || '') === k ? 'selected' : ''}>${l}</option>`).join('')}</select><label class="small">From <input type="date" data-pf="from" value="${esc(q.from || '')}"></label><label class="small">To <input type="date" data-pf="to" value="${esc(q.to || '')}"></label></div>`;
+  F.wirePeriod = (el) => {
+    const p = $('[data-period]', el); p.onchange = () => { if (p.value === 'custom') return BB.setQ({ period: 'custom' }); const [from, to] = periodDates(p.value); BB.setQ({ period: p.value, from, to, page: 1 }); };
+    $$('[data-pf]', el).forEach((i) => (i.onchange = () => BB.setQ({ period: 'custom', [i.dataset.pf]: i.value, page: 1 })));
+  };
+  // An uploaded invoice is read like a CV: the form is filled and a person checks it before saving.
+  const invoiceTop = (has) => `<div class="inv-top"><button type="button" class="btn sm primary" data-xfile>${has ? 'Replace invoice' : 'Upload invoice'}</button><span class="small muted" data-xname>${has ? 'Invoice on file' : 'PDF, Word or image. The details below fill in by themselves.'}</span></div>`;
+  const wireInvoice = (m, kind, onFile, apply) => {
+    const note = $('[data-xname]', m); $('[data-xfile]', m).onclick = async () => {
+      const f = await BB.pickFile(INVOICE_TYPES); if (!f) return; onFile(f); note.textContent = `Reading ${f.name}…`;
+      try { apply(await BB.post('/api/read-invoice', { kind, name: f.name, base64: f.base64 })); note.textContent = `${f.name}: details filled in. Please check them.`; } catch (e) { note.textContent = `${f.name} attached. ${e.message}`; }
+    };
+  };
+  const fill = (m, name, v) => { const i = $(`[name="${name}"]`, m); if (i && v !== '' && v !== null && v !== undefined) i.value = v; };
+
   // ---------- Expenses ----------
   const INVOICE_TYPES = '.pdf,.jpg,.jpeg,.png,.doc,.docx';
   const PAY_BADGE = { Paid: 'b-green', 'Not paid': 'b-red', 'Part paid': 'b-amber' };
@@ -306,9 +329,13 @@
       const m = $('.modal'); if (!m) return; const q = (n) => $(`[name="${n}"]`, m); const show = (n, on) => $(`[data-f="${n}"]`, m).classList.toggle('hidden', !on);
       const refresh = () => { const isNew = q('category').value === NEW_OPT; show('sub', !isNew); show('category_new', isNew); show('sub_new', isNew || q('sub').value === NEW_OPT); const st = q('pay_status').value; show('paid_amount', st === 'Part paid'); show('paid_via', st !== 'Not paid'); };
       q('category').onchange = () => { q('sub').innerHTML = subOpts(q('category').value, ''); refresh(); }; q('sub').onchange = refresh; q('pay_status').onchange = refresh; refresh();
-      const b = $('[data-xfile]', m); b.onclick = async () => { const f = await BB.pickFile(INVOICE_TYPES); if (f) { file = f; $('[data-xname]', m).textContent = f.name; } };
+      wireInvoice(m, 'expense', (f) => { file = f; }, (r) => {
+        fill(m, 'date', r.date); fill(m, 'amount', r.amount); fill(m, 'vendor', r.party); fill(m, 'invoice_no', r.invoice_no); fill(m, 'note', r.description);
+        if (r.category) { q('category').value = r.category; q('sub').innerHTML = subOpts(r.category, r.sub); refresh(); }
+      });
     }, 0);
     return BB.ask({ title: x ? 'Edit expense' : 'Add expense', wide: true, fields: [
+      invoiceTop(!!r.file_id),
       `<div class="grid g3">${field({ name: 'date', label: 'Date', type: 'date', value: r.date ? String(r.date).slice(0, 10) : BB.istDay() })}${field({ name: 'amount', label: 'Amount (₹)', type: 'number', value: r.amount })}${field({ name: 'pay_status', label: 'Payment status', type: 'select', options: d.statuses, placeholder: false, value: r.pay_status || 'Paid' })}</div>`,
       `<div class="grid g2">${field({ name: 'category', label: 'Category', type: 'select', options: [...cats, [NEW_OPT, '+ Add a new category']], placeholder: false, value: first })}<label class="field" data-f="sub"><span class="lab">Subcategory <span class="opt">(optional)</span></span><select name="sub">${subOpts(first, r.sub)}</select></label></div>`,
       `<div class="grid g2">${field({ name: 'category_new', label: 'New category', opt: true, voice: false })}${field({ name: 'sub_new', label: 'New subcategory', opt: true, voice: false })}</div>`,
@@ -316,15 +343,25 @@
       `<div class="grid g2">${field({ name: 'paid_via', label: 'Paid from', type: 'select', options: d.accounts, opt: true, value: r.paid_via })}${field({ name: 'paid_amount', label: 'Paid so far (₹)', type: 'number', opt: true, value: r.paid_amount })}</div>`,
       { name: 'note', label: 'Description', opt: true, value: r.note },
       `<details class="exp-more"><summary>Link to a client or job</summary><div class="grid g2">${field({ name: 'client_id', label: 'Client', type: 'select', options: d.tags.clients, opt: true, value: r.client_id })}${field({ name: 'job_id', label: 'Job opening', type: 'select', options: d.tags.jobs, opt: true, value: r.job_id })}</div></details>`,
-      `<div class="row"><button type="button" class="btn sm" data-xfile>${r.file_id ? 'Replace invoice' : 'Attach invoice'}</button><span class="small muted" data-xname>${r.file_id ? 'Invoice on file' : 'PDF, Word or image'}</span></div>`,
     ], ok: 'Save expense', submit: (v) => BB.post(x ? `/api/expenses/${x.id}` : '/api/expenses', { ...v, file, agency_id: agency || undefined }) });
   };
+  F.billForm = (r) => {
+    let file = null;
+    setTimeout(() => { const m = $('.modal'); if (!m) return; wireInvoice(m, 'bill', (f) => { file = f; }, (x) => { fill(m, 'date', x.date); fill(m, 'amount', x.amount); fill(m, 'gst', x.tax); fill(m, 'bill_no', x.invoice_no); fill(m, 'person_name', x.person); fill(m, 'client_id', x.client_id); }); }, 0);
+    return BB.ask({ title: 'Add bill', wide: true, fields: [
+      invoiceTop(false),
+      `<div class="grid g2">${field({ name: 'client_id', label: 'Client', type: 'select', options: r.clients })}${field({ name: 'stage', label: 'Stage', type: 'select', options: ['Billed', 'Received', 'Outstanding'], placeholder: false, value: 'Billed' })}</div>`,
+      `<div class="grid g2">${field({ name: 'bill_no', label: 'Invoice number', opt: true, voice: false })}${field({ name: 'date', label: 'Invoice date', type: 'date', value: BB.istDay() })}</div>`,
+      `<div class="grid g2">${field({ name: 'amount', label: 'Invoice amount with GST (₹)', type: 'number' })}${field({ name: 'gst', label: 'GST in this amount (₹)', type: 'number', opt: true })}</div>`,
+      `<div class="grid g2">${field({ name: 'person_name', label: 'Candidate', opt: true })}${field({ name: 'job_name', label: 'Position', opt: true })}</div>`,
+    ], ok: 'Save bill', submit: (v) => BB.post('/api/bills', { ...v, file }) });
+  };
   F.expenses = async ({ el, actions, q }) => {
-    const d = await BB.api(`/api/expenses?${BB.qs({ q: q.q, category: q.category, status: q.status, month: q.month, agency: q.agency })}`); const t = d.totals;
+    const d = await BB.api(`/api/expenses?${BB.qs({ q: q.q, category: q.category, status: q.status, from: q.from, to: q.to, agency: q.agency })}`); const t = d.totals;
     actions.innerHTML = '<button class="btn primary" data-xadd>+ Add expense</button>';
     const opt = (list, val) => list.map((x) => `<option ${x === val ? 'selected' : ''}>${esc(x)}</option>`).join('');
     el.innerHTML = `<div class="grid exp-tiles">${[['Total expenses', t.total], ['Paid', t.paid], ['Yet to pay', t.due]].map(([l, v]) => `<div class="card stat"><div class="l">${l}</div><div class="v">${inr(v)}</div></div>`).join('')}</div>
-      <div class="filters exp-filters"><input placeholder="Search paid to, invoice, description…" value="${esc(q.q || '')}" data-xq><select data-xf="category"><option value="">All categories</option>${opt(d.tree.map((x) => x.name), q.category)}</select><select data-xf="status"><option value="">Any payment status</option>${opt(d.statuses, q.status)}</select><input type="month" aria-label="Month" value="${esc(q.month || '')}" data-xf="month">${d.agencies.length ? `<select data-xf="agency"><option value="">All agencies and BrillBrains</option>${d.agencies.map((a) => `<option value="${a.id}" ${q.agency === a.id ? 'selected' : ''}>${esc(a.name)}</option>`).join('')}</select>` : ''}</div>
+      <div class="filters exp-filters"><input placeholder="Search paid to, invoice, description…" value="${esc(q.q || '')}" data-xq><select data-xf="category"><option value="">All categories</option>${opt(d.tree.map((x) => x.name), q.category)}</select><select data-xf="status"><option value="">Any payment status</option>${opt(d.statuses, q.status)}</select>${d.agencies.length ? `<select data-xf="agency"><option value="">All agencies and BrillBrains</option>${d.agencies.map((a) => `<option value="${a.id}" ${q.agency === a.id ? 'selected' : ''}>${esc(a.name)}</option>`).join('')}</select>` : ''}</div>
       <div class="card">${BB.table([{ t: 'Date', f: (r) => fmtD(r.date) }, { t: 'Category', f: (r) => `<b>${esc(r.category)}</b>${r.sub ? `<div class="tiny muted">${esc(r.sub)}</div>` : ''}` }, { t: 'Paid to', f: (r) => `${esc(r.vendor || '—')}${[r.invoice_no && `Invoice ${r.invoice_no}`, r.note, r.client_name, r.job_name].filter(Boolean).length ? `<div class="tiny muted">${[r.invoice_no && `Invoice ${r.invoice_no}`, r.note, r.client_name, r.job_name].filter(Boolean).map(esc).join(' · ')}</div>` : ''}` }, { t: 'Amount', num: 1, f: (r) => `<b>${inr(r.amount)}</b>` }, { t: 'Payment', f: (r) => `<span class="badge ${PAY_BADGE[r.pay_status] || 'b-outline'}">${esc(r.pay_status)}</span><div class="tiny muted">${r.pay_status === 'Part paid' ? `${inr(r.balance)} left` : esc(r.paid_via || '')}</div>` }, { t: 'Invoice', f: (r) => (r.file_id ? `<button class="btn sm" data-xopen="${r.file_id}">Open</button>` : `<button class="btn sm" data-xup="${r.id}">Upload</button>`) }, { t: '', f: (r) => `<span class="row nowrap"><button class="btn sm ghost" data-xedit="${r.id}">Edit</button><button class="btn sm ghost" data-delx="${r.id}">Remove</button></span>` }], d.rows, { empty: 'No expenses yet.' })}</div>`;
     const qi = $('[data-xq]', el); qi.onchange = () => BB.setQ({ q: qi.value });
     $$('[data-xf]', el).forEach((f) => (f.onchange = () => BB.setQ({ [f.dataset.xf]: f.value })));
@@ -336,19 +373,17 @@
   };
   // ---------- Summary: income against expenses, month by month ----------
   F.summary = async ({ el, actions, q }) => {
-    const d = await BB.api(`/api/books?${BB.qs({ agency: q.agency })}`); const m = d.months[0] || { billed: 0, received: 0, other: 0, expenses: 0, net: 0 };
+    const d = await BB.api(`/api/books?${BB.qs({ agency: q.agency, from: q.from, to: q.to })}`); const sum = (k) => d.months.reduce((t, r) => t + r[k], 0);
     actions.innerHTML = '<button class="btn" data-brev>+ Log other income</button>';
     const tile = (l, v) => `<div class="card pad"><div class="small muted">${l}</div><div class="kpi">${inr(v)}</div></div>`;
     el.innerHTML = `${d.agencies.length ? `<div class="filters"><select data-bag><option value="">All agencies and BrillBrains</option>${d.agencies.map((a) => `<option value="${a.id}" ${q.agency === a.id ? 'selected' : ''}>${esc(a.name)}</option>`).join('')}</select></div>` : ''}
-      <div class="small muted" style="margin-bottom:8px">${esc(m.month || 'This month')}</div>
-      <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr));margin-bottom:14px">${tile('Income', m.billed + m.other)}${tile('Received', m.received)}${tile('Expenses', m.expenses)}${tile('Profit', m.net)}${tile('Yet to collect', d.dues)}</div>
-      <div class="card" style="margin-bottom:14px"><div class="card-h"><h3>Month by month</h3></div>${BB.table([{ t: 'Month', f: (r) => esc(r.month) }, { t: 'Income', num: 1, f: (r) => inr(r.billed + r.other) }, { t: 'Received', num: 1, f: (r) => inr(r.received) }, { t: 'Expenses', num: 1, f: (r) => inr(r.expenses) }, { t: 'Profit', num: 1, f: (r) => `<b>${inr(r.net)}</b>` }], d.months)}</div>
+      <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr));margin-bottom:14px">${tile('Income', sum('billed') + sum('other'))}${tile('Received', sum('received'))}${tile('Expenses', sum('expenses'))}${tile('Profit', sum('net'))}${tile('Yet to collect', d.dues)}</div>
+      <div class="card" style="margin-bottom:14px"><div class="card-h"><h3>Month by month</h3></div>${BB.table([{ t: 'Month', f: (r) => esc(r.month) }, { t: 'Income', num: 1, f: (r) => inr(r.billed + r.other) }, { t: 'GST', num: 1, f: (r) => inr(r.gst) }, { t: 'Received', num: 1, f: (r) => inr(r.received) }, { t: 'Expenses', num: 1, f: (r) => inr(r.expenses) }, { t: 'Profit', num: 1, f: (r) => `<b>${inr(r.net)}</b>` }], d.months)}</div>
       <div class="card"><div class="card-h"><h3>Other income</h3></div>${BB.table([{ t: 'Date', f: (r) => fmtD(r.date) }, { t: 'What', f: (r) => `${esc(r.kind)}<div class="tiny muted">${esc(r.note)}</div>` }, { t: 'Amount', num: 1, f: (r) => inr(r.amount) }, { t: '', f: (r) => `<button class="btn sm ghost" data-delr="${r.id}">Remove</button>` }], d.revenue, { empty: 'Nothing logged. Client bills are counted by themselves.' })}</div>`;
     const ag = $('[data-bag]', el); if (ag) ag.onchange = () => BB.setQ({ agency: ag.value });
     $('[data-brev]', actions).onclick = () => BB.ask({ title: 'Log other income', fields: [`<div class="grid g2">${field({ name: 'date', label: 'Date', type: 'date', value: BB.istDay() })}${field({ name: 'amount', label: 'Amount (₹)', type: 'number' })}</div>`, { name: 'kind', label: 'Kind', type: 'select', options: d.kinds, placeholder: false }, { name: 'note', label: 'Note', opt: true }], ok: 'Save', submit: (v) => BB.post('/api/revenue', { ...v, agency_id: q.agency || undefined }) }).then((x) => x && done('Income logged'));
     $$('[data-delr]', el).forEach((b) => (b.onclick = async () => { if (await BB.confirm('Remove this entry', 'It comes off the totals.', 'Remove')) act(() => BB.post(`/api/revenue/${b.dataset.delr}/delete`), 'Removed'); }));
   };
-  P.books = () => location.replace('/team/bills?tab=summary');
 
   // ---------- The candidate's other applications ----------
   F.appOthers = (a) => {

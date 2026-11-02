@@ -1428,20 +1428,53 @@ route('POST', '/api/logs/:id/approve', ADMINS, (ctx) => {
 });
 
 // ---------- bills, payments, payouts (16) ----------
+// A bill added by hand has no application behind it: its names are kept on the bill.
+const billApp = (b) => (b.app_id ? V.appView(get('SELECT * FROM applications WHERE id=?', b.app_id)) : { candidate_name: b.person_name || '', job_title: b.job_name || '', joining_date: null });
+const billDay = (b) => String(b.issued_at || b.date || b.created_at || '').slice(0, 10);
 route('GET', '/api/bills', T, (ctx) => {
   if (ctx.user.level === 'sub') throw httpError(403, 'Sub admins do not see bills.');
   const q = ctx.query;
-  const rows = all('SELECT * FROM bills ORDER BY created_at DESC').filter((b) => seeBill(ctx.user, b)).map(L.billView).map((b) => {
-    const a = V.appView(get('SELECT * FROM applications WHERE id=?', b.app_id)); return { ...b, client_name: (get('SELECT company FROM clients WHERE id=?', b.client_id) || {}).company, candidate_name: a.candidate_name, job_title: a.job_title, joining_date: a.joining_date, agency_name: V.agencyName(b.agency_id), bb_share: b.fee - b.agency_share };
-  }).filter((b) => (!q.status || b.view_status === q.status) && (!q.client || b.client_id === q.client) && (!q.agency || b.agency_id === q.agency) && like(q.q, b.id, b.bill_no, b.client_name, b.candidate_name));
-  const live = rows.filter((b) => !['Draft', 'Cancelled'].includes(b.view_status));
-  const totals = { billed: live.reduce((a, b) => a + b.total, 0), received: live.reduce((a, b) => a + b.paid + b.tds, 0), outstanding: live.reduce((a, b) => a + b.balance, 0), overdue: live.filter((b) => b.view_status === 'Overdue').reduce((a, b) => a + b.balance, 0), agency_due: live.filter((b) => b.payout_status === 'Due').reduce((a, b) => a + b.agency_share, 0) };
-  const p = page(ctx, rows, 'bills', ['id', 'bill_no', 'client_name', 'candidate_name', 'job_title', 'joining_date', 'ctc', 'fee', 'gst', 'total', 'paid', 'tds', 'balance', 'view_status', 'agency_name', 'agency_share', 'bb_share', 'payout_status']);
-  return p.__file ? p : { ...p, totals };
+  const seen = all('SELECT * FROM bills ORDER BY created_at DESC').filter((b) => seeBill(ctx.user, b)).map(L.billView).map((b) => {
+    const a = billApp(b); return { ...b, bill_day: billDay(b), client_name: (get('SELECT company FROM clients WHERE id=?', b.client_id) || {}).company, candidate_name: a.candidate_name, job_title: a.job_title, joining_date: a.joining_date, agency_name: V.agencyName(b.agency_id), bb_share: b.fee - (b.agency_share || 0) };
+  });
+  const scoped = seen.filter((b) => (!q.status || b.view_status === q.status) && (!q.client || b.client_id === q.client) && (!q.agency || b.agency_id === q.agency) && (!q.from || b.bill_day >= q.from) && (!q.to || b.bill_day <= q.to) && like(q.q, b.id, b.bill_no, b.client_name, b.candidate_name));
+  const rows = scoped.filter((b) => !q.stage || b.stage === q.stage);
+  const live = scoped.filter((b) => !['Draft', 'Cancelled'].includes(b.view_status));
+  const totals = { billed: live.reduce((a, b) => a + b.total, 0), received: live.reduce((a, b) => a + b.paid + b.tds, 0), outstanding: live.reduce((a, b) => a + b.balance, 0), overdue: live.filter((b) => b.view_status === 'Overdue').reduce((a, b) => a + b.balance, 0), agency_due: live.filter((b) => b.payout_status === 'Due').reduce((a, b) => a + (b.agency_share || 0), 0) };
+  const group = (key, name) => { const m = {}; for (const b of live) { const id = b[key] || ''; const r = (m[id] = m[id] || { id, name: b[name] || 'BrillBrains', bills: 0, billed: 0, received: 0, outstanding: 0 }); r.bills++; r.billed += b.total; r.received += b.paid + b.tds; r.outstanding += b.balance; } return Object.values(m).sort((x, y) => y.outstanding - x.outstanding); };
+  const p = page(ctx, sortBy(rows, q, ['bill_no', 'bill_day', 'client_name', 'candidate_name', 'total', 'stage']), 'bills', ['id', 'bill_no', 'bill_day', 'client_name', 'candidate_name', 'job_title', 'joining_date', 'ctc', 'fee', 'gst', 'total', 'paid', 'tds', 'balance', 'stage', 'view_status', 'agency_name', 'agency_share', 'bb_share', 'payout_status']);
+  return p.__file ? p : { ...p, totals, by_client: group('client_id', 'client_name'), by_agency: group('agency_id', 'agency_name'), clients: all('SELECT * FROM clients WHERE removed=0 AND junk=0 AND placeholder=0 AND merged_into IS NULL ORDER BY company').filter((c) => seeClient(ctx.user, c)).map((c) => [c.id, c.company]), agencies: isSuper(ctx.user) ? all('SELECT id, name FROM agencies').map((a) => [a.id, a.name]) : [] };
+});
+const STAGES = ['Billed', 'Received', 'Outstanding'];
+const receiveBill = (b, actor) => { const v = L.billView(b); if (v.balance > 0) insert('payments', { bill_id: b.id, date: L.istDay(), amount: v.balance, mode: 'Marked received', ref: '', tds: 0, by: actor.label, created_at: now() }); return L.refreshBill(b.id, actor.label); };
+const noMoneyMarks = (ctx, stage) => { if (stage === 'Received' && !isSuper(ctx.user)) throw httpError(403, 'Only the super admin records money received.'); };
+route('POST', '/api/bills', ADMINS, async (ctx) => {
+  const b = ctx.body || {}; const c = get('SELECT * FROM clients WHERE id=?', b.client_id); if (!c || !seeClient(ctx.user, c)) throw httpError(400, 'Pick the client', 'client_id');
+  const total = Math.round(Number(b.amount) || 0); if (total <= 0) throw httpError(400, 'Enter the invoice amount', 'amount');
+  const gst = Math.round(Number(b.gst) || 0); if (gst < 0 || gst >= total) throw httpError(400, 'GST must be less than the amount', 'gst');
+  const no = String(b.bill_no || '').trim(); if (no && get('SELECT 1 FROM bills WHERE bill_no=?', no)) throw httpError(400, 'This invoice number is already on another bill', 'bill_no');
+  const stage = STAGES.includes(b.stage) ? b.stage : 'Billed'; noMoneyMarks(ctx, stage);
+  const day = /^\d{4}-\d{2}-\d{2}$/.test(b.date || '') ? b.date : L.istDay(); const agency = c.agency_id || ctx.user.agency_id || D.soleAgency() || null; const fee = total - gst; const pct = agency ? L.feeFor(c, agency, 0).sharePct : 0;
+  const id = D.nextId('BL');
+  insert('bills', { id, app_id: null, client_id: c.id, agency_id: agency, bill_no: no || null, ctc: 0, fee, gst, cgst: 0, sgst: 0, igst: 0, total, fee_note: 'Added by hand', status: 'Issued', issued_at: new Date(`${day}T12:00:00+05:30`).toISOString(), date: day, due_date: b.due_date || new Date(Date.parse(day) + (c.payment_days || D.settings().payment_days) * 86400000).toISOString().slice(0, 10), share_pct: pct, agency_share: Math.floor((fee * pct) / 100), payout_status: 'Not due', person_name: String(b.person_name || '').trim(), job_name: String(b.job_name || '').trim(), stage: stage === 'Outstanding' ? 'Outstanding' : null, created_at: now() });
+  if (b.file && b.file.base64) { const f = await F.saveFile({ recordId: id, type: 'invoice', name: b.file.name, base64: b.file.base64, by: ctx.actor.label }); update('bills', id, { invoice_file: String(f.id) }); }
+  D.history(ctx.actor.label, 'create', id, null, null, `Bill added by hand: ${L.inr(total)}`);
+  if (stage === 'Received') receiveBill(get('SELECT * FROM bills WHERE id=?', id), ctx.actor);
+  return { ok: true, id };
+});
+route('POST', '/api/bills/stage', ADMINS, (ctx) => {
+  const { ids, stage } = ctx.body || {}; if (!STAGES.includes(stage)) throw httpError(400, 'Pick a stage'); noMoneyMarks(ctx, stage); const out = { done: 0, skipped: 0 };
+  for (const id of (ids || []).slice(0, 200)) {
+    const b = get('SELECT * FROM bills WHERE id=?', id); if (!b || !seeBill(ctx.user, b) || !['Issued', 'Paid'].includes(b.status)) { out.skipped++; continue; }
+    if (stage === 'Received') receiveBill(b, ctx.actor);
+    else { if (L.billView(b).view_status === 'Paid') { out.skipped++; continue; } update('bills', b.id, { stage: stage === 'Outstanding' ? 'Outstanding' : null }); }
+    D.history(ctx.actor.label, 'bill stage', b.id, 'stage', L.billView(b).stage, stage); out.done++;
+  }
+  return out;
 });
 function loadBill(ctx) { const b = get('SELECT * FROM bills WHERE id=?', ctx.params.id); mustSee(b && seeBill(ctx.user, b), 'bill'); return b; }
 route('GET', '/api/bills/:id', T, (ctx) => {
-  const b = loadBill(ctx); const v = L.billView(b); const a = V.appView(get('SELECT * FROM applications WHERE id=?', b.app_id));
+  const b = loadBill(ctx); const v = L.billView(b); const a = billApp(b);
   return { ...v, app: a, client: get('SELECT * FROM clients WHERE id=?', b.client_id), payments: all('SELECT * FROM payments WHERE bill_id=? ORDER BY date', b.id), credits: all('SELECT * FROM credit_notes WHERE bill_id=?', b.id), upi: L.upiLink(v.balance || v.total, b.bill_no), agency_name: V.agencyName(b.agency_id) };
 });
 route('PATCH', '/api/bills/:id', ADMINS, (ctx) => {
@@ -1486,7 +1519,7 @@ route('POST', '/api/bills/payouts', SUPER, (ctx) => {
 route('GET', '/api/bills/:id/pdf', T, (ctx) => { const b = loadBill(ctx); D.history(ctx.actor.label, 'download', b.id, 'invoice'); return { __file: { name: `${(b.bill_no || b.id).replace(/\//g, '-')}.pdf`, mime: 'application/pdf', buf: invoicePdf(b) } }; });
 function invoicePdf(b) {
   const s = D.settings(); const biz = s.business; const v = L.billView(b);
-  const c = get('SELECT * FROM clients WHERE id=?', b.client_id); const a = V.appView(get('SELECT * FROM applications WHERE id=?', b.app_id));
+  const c = get('SELECT * FROM clients WHERE id=?', b.client_id); const a = billApp(b);
   const words = amountWords(Math.round(b.total));
   const lines = [
     { text: b.status === 'Draft' ? 'DRAFT — not issued yet' : `Tax invoice ${b.bill_no}`, size: 12, bold: true },
@@ -1514,18 +1547,6 @@ function amountWords(n) {
   return parts.join(' ');
 }
 module.exports.invoicePdf = invoicePdf;
-route('GET', '/api/money', SUPER, () => {
-  const bills = all("SELECT * FROM bills WHERE status NOT IN ('Draft','Cancelled')").map(L.billView);
-  const pays = all('SELECT * FROM payments');
-  const bucket = (d, by) => { if (by === 'month') return String(d).slice(0, 7); const t = new Date(d); const day = (t.getUTCDay() + 6) % 7; return new Date(t.getTime() - day * 86400000).toISOString().slice(0, 10); };
-  const agg = (by) => {
-    const m = {};
-    for (const b of bills) { const k = bucket(b.issued_at || b.date, by); m[k] = m[k] || { billed: 0, received: 0, overdue: 0, gst: 0, shares_due: 0 }; m[k].billed += b.total; m[k].gst += b.gst; if (b.view_status === 'Overdue') m[k].overdue += b.balance; if (b.payout_status === 'Due') m[k].shares_due += b.agency_share; }
-    for (const p of pays) { const k = bucket(p.date, by); m[k] = m[k] || { billed: 0, received: 0, overdue: 0, gst: 0, shares_due: 0 }; m[k].received += p.amount; }
-    return Object.entries(m).sort((x, y) => (x[0] < y[0] ? 1 : -1)).map(([k, v]) => ({ period: k, ...v }));
-  };
-  return { months: agg('month'), weeks: agg('week').slice(0, 12), oldest: bills.filter((b) => b.balance > 0).sort((x, y) => (x.due_date < y.due_date ? -1 : 1)).slice(0, 20).map((b) => ({ ...b, client_name: get('SELECT company FROM clients WHERE id=?', b.client_id).company, days_overdue: b.due_date ? L.daysBetween(b.due_date) : 0 })), payouts_due: bills.filter((b) => b.payout_status === 'Due').map((b) => ({ ...b, agency_name: V.agencyName(b.agency_id) })) };
-});
 route('GET', '/api/earnings', ADMINS, (ctx) => {
   const ag = ctx.query.agency && isSuper(ctx.user) ? ctx.query.agency : ctx.user.agency_id;
   const bills = all("SELECT * FROM bills WHERE agency_id=? AND status NOT IN ('Draft','Cancelled')", ag).map(L.billView);
@@ -1631,6 +1652,21 @@ route('POST', '/api/agencies/:id/toggle', SUPER, (ctx) => {
   return { status: st };
 });
 
+// Deleting an agency: its people lose access, its work stays with BrillBrains, and nothing it is owed can be lost.
+const agencyUse = (id) => ({ logins: all('SELECT 1 FROM users WHERE agency_id=?', id).length, clients: all('SELECT 1 FROM clients WHERE agency_id=?', id).length, jobs: all('SELECT 1 FROM jobs WHERE agency_id=?', id).length, candidates: all('SELECT 1 FROM candidates WHERE agency_id=?', id).length, payouts_due: all("SELECT 1 FROM bills WHERE agency_id=? AND payout_status='Due'", id).length });
+route('GET', '/api/agencies/:id/use', SUPER, (ctx) => { if (!get('SELECT 1 FROM agencies WHERE id=?', ctx.params.id)) throw httpError(404, 'Agency not found'); return agencyUse(ctx.params.id); });
+route('POST', '/api/agencies/:id/delete', SUPER, (ctx) => {
+  const a = get('SELECT * FROM agencies WHERE id=?', ctx.params.id); if (!a) throw httpError(404, 'Agency not found');
+  if (String((ctx.body || {}).name || '').trim().toLowerCase() !== a.name.trim().toLowerCase()) throw httpError(400, 'Type the agency name exactly', 'name');
+  const use = agencyUse(a.id); if (use.payouts_due) throw httpError(400, `${use.payouts_due} payout(s) are still due to this agency. Pay them first.`);
+  D.run("UPDATE users SET status='Off' WHERE agency_id=?", a.id);
+  D.run("DELETE FROM sessions WHERE kind='team' AND subject_id IN (SELECT id FROM users WHERE agency_id=?)", a.id);
+  for (const t of ['clients', 'jobs', 'candidates', 'expenses', 'revenue_logs']) D.run(`UPDATE ${t} SET agency_id=NULL WHERE agency_id=?`, a.id);
+  D.run('DELETE FROM agencies WHERE id=?', a.id);
+  D.history(ctx.actor.label, 'agency deleted', a.id, 'name', a.name, null, null, ctx.ip);
+  return { ok: true, ...use };
+});
+
 // ---------- departments & roles (every team level) ----------
 // The same lists Settings edits (departments, and each industry's groups of jobs), so job openings, the job-seeker
 // form and the candidate filters pick up a new role at once. Anyone in the team can add; hiding or renaming stays in Settings.
@@ -1674,7 +1710,7 @@ route('POST', '/api/roles/role', T, (ctx) => {
 });
 
 // ---------- settings (super admin) ----------
-const EDITABLE = ['accounts_email', 'expense_tree', 'expense_accounts', 'revenue_kinds', 'call_script', 'email_templates', 'creative_template', 'hiring_channels', 'landing_roles', 'wa_pause', 'business', 'industries', 'default_industry', 'hidden_jobs', 'departments', 'cities', 'skills', 'client_stages', 'closing_reasons', 'job_close_reasons', 'reopen_reasons', 'lead_sources', 'src_tags', 'fee', 'agency_share_pct', 'gst', 'replacement_days', 'payment_days', 'targets', 'log_deadline', 'quiet', 'daily_limit', 'bulk_budget', 'match', 'languages', 'id_start', 'bill_prefix', 'retention_years', 'team_idle_hours', 'formats', 'auto_rules', 'crm', 'posting_channels', 'gap_targets', 'templates', 'jd_template', 'jd_templates'];
+const EDITABLE = ['accounts_email', 'resume_alert_pct', 'expense_tree', 'expense_accounts', 'revenue_kinds', 'call_script', 'email_templates', 'creative_template', 'hiring_channels', 'landing_roles', 'wa_pause', 'business', 'industries', 'default_industry', 'hidden_jobs', 'departments', 'cities', 'skills', 'client_stages', 'closing_reasons', 'job_close_reasons', 'reopen_reasons', 'lead_sources', 'src_tags', 'fee', 'agency_share_pct', 'gst', 'replacement_days', 'payment_days', 'targets', 'log_deadline', 'quiet', 'daily_limit', 'bulk_budget', 'match', 'languages', 'id_start', 'bill_prefix', 'retention_years', 'team_idle_hours', 'formats', 'auto_rules', 'crm', 'posting_channels', 'gap_targets', 'templates', 'jd_template', 'jd_templates'];
 route('GET', '/api/settings', SUPER, () => { const s = { ...D.settings() }; s.crm = { ...s.crm, token: s.crm.token ? '••••••••' : '', webhook_secret: s.crm.from_env && s.crm.from_env.webhook_secret ? '••••••••' : s.crm.webhook_secret }; return s; });
 route('POST', '/api/health/mail', SUPER, async () => require('./mailbox').check());
 route('POST', '/api/health/email', SUPER, (ctx) => {
@@ -1712,8 +1748,8 @@ function metaBody(text) {
   return { body, order };
 }
 route('POST', '/api/settings/formats/push', SUPER, async (ctx) => {
-  const s = D.settings(); const names = ctx.body.names && ctx.body.names.length ? ctx.body.names : Object.keys(s.formats).filter((k) => !s.formats[k].approved);
-  if (!names.length) throw httpError(400, 'All formats are already approved.');
+  const s = D.settings(); const names = (ctx.body.names || []).filter((k) => s.formats[k]);
+  if (!names.length) throw httpError(400, 'Select the formats to send.');
   const templates = [];
   for (const name of names) {
     const f = s.formats[name]; if (!f) continue;
@@ -1935,6 +1971,10 @@ route('GET', '/api/reports/:name', T, (ctx) => {
     const people = all("SELECT * FROM users WHERE level!='super' AND status='On'").filter((x) => seePerson(u, x) && (!q.person || x.id === q.person));
     const days = Math.min(92, Math.max(1, Math.round((new Date(to) - new Date(from)) / 86400000)));
     rows = people.map((x) => { const logs = all('SELECT day, status FROM logs WHERE user_id=?', x.id).filter((l) => l.day >= from.slice(0, 10) && l.day <= to.slice(0, 10)); return { person: `${x.id} ${x.name}`, agency: V.agencyName(x.agency_id), days, submitted: logs.length, approved: logs.filter((l) => l.status === 'Approved').length, missing: Math.max(0, days - logs.length) }; });
+  } else if (name === 'resumes') {
+    if (!isSuper(u)) throw httpError(403, 'This report is for the super admin.');
+    const since = new Date(Date.now() - L.RESUME_DAYS * 86400000).toISOString(); const total = get('SELECT COUNT(*) n FROM candidates WHERE cv_file IS NOT NULL AND merged_into IS NULL AND removed=0').n;
+    rows = all('SELECT user_id, COUNT(*) n, MAX(at) last FROM resume_use WHERE at>=? GROUP BY user_id ORDER BY n DESC', since).map((r) => { const x = get('SELECT name, level FROM users WHERE id=?', r.user_id) || {}; return { person: x.name || r.user_id, level: x.level === 'sub' ? 'Sub admin' : 'Admin', resumes_opened: r.n, percent_of_all: total ? Math.round((r.n / total) * 100) : 0, last_opened: L.istFmt(r.last) }; });
   } else throw httpError(404, 'Unknown report');
   if (['csv', 'xlsx'].includes(q.format)) return page(ctx, rows, `report-${name}`, cols || Object.keys(rows[0] || { empty: '' }));
   return { rows };

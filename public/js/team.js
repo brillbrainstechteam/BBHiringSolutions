@@ -30,10 +30,10 @@
     ['myday', 'My day', 'sun', ['sub']], ['dashboard', 'Dashboard', 'grid'], ['leads', 'Leads', 'inbox', null, 'leads'],
     ['clients', 'Clients', 'building'], ['candidates', 'Candidates', 'users', null, 'cand_new'], ['jobs', 'Job openings', 'brief'], ['channels', 'Digital Reach', 'flow'], ['applications', 'Applications', 'flow'],
     ['interviews', 'Interviews', 'cal', null, 'pending'], ['whatsapp', 'WhatsApp', 'chat', null, 'unread'],
-    ['performance', 'Performance', 'chart'], ['logs', 'Daily logs', 'note'], ['bills', 'Expenses', 'rupee', ['super', 'admin']], ['money', 'Money', 'money', ['super']],
+    ['performance', 'Performance', 'chart'], ['logs', 'Daily logs', 'note'], ['bills', 'Profit & Loss', 'rupee', ['super', 'admin']],
     ['reports', 'Reports', 'report'], ['agreement', 'Recruitment Agreement', 'note'], ['logins', 'Logins & team', 'key'], ['settings', 'Settings', 'cog'],
   ];
-  const GROUP = { books: 'Money', agreement: 'Admin', channels: 'Hiring', myday: 'Overview', dashboard: 'Overview', leads: 'Hiring', clients: 'Hiring', jobs: 'Hiring', candidates: 'Hiring', applications: 'Hiring', interviews: 'Hiring', whatsapp: 'Messages', performance: 'Team', logs: 'Team', bills: 'Money', money: 'Money', reports: 'Money', logins: 'Admin', settings: 'Admin' };
+  const GROUP = { agreement: 'Admin', channels: 'Hiring', myday: 'Overview', dashboard: 'Overview', leads: 'Hiring', clients: 'Hiring', jobs: 'Hiring', candidates: 'Hiring', applications: 'Hiring', interviews: 'Hiring', whatsapp: 'Messages', performance: 'Team', logs: 'Team', bills: 'Financials', reports: 'Financials', logins: 'Admin', settings: 'Admin' };
   const HELP = {
     agreement: 'The standard Recruitment Agreement. Clients see the same copy in their account.',
     channels: 'Every channel for every open job. Change the owner in the Owner column. Copy a job\'s link, post it, then click the cell to update it. Everyone sees the same page.',
@@ -62,7 +62,7 @@
     BB.guard(BB.me.user); // no printing / copying / screenshot keys for admins and sub admins
     if (BB.me.user.must_change || BB.mustChange) return changePassword(true);
     // Pages that moved: Segments is a Candidates tab, Departments & roles a Settings tab.
-    const MOVED = { segments: 'team/candidates?tab=segments', roles: 'team/settings?tab=roles' };
+    const MOVED = { segments: 'team/candidates?tab=segments', roles: 'team/settings?tab=roles', books: 'team/bills?tab=summary', money: 'team/bills?tab=bills' };
     if (MOVED[r.sub[0]]) return BB.go(MOVED[r.sub[0]]);
     const allowed = menuFor(BB.me.user).map((m) => m[0]);
     pageName = allowed.includes(r.sub[0]) ? r.sub[0] : BB.me.user.channel_only ? 'channels' : BB.me.user.level === 'sub' ? 'myday' : 'dashboard';
@@ -97,7 +97,7 @@
   async function renderPage() {
     const el = $('[data-page]'); const page = BB.pages[pageName];
     const m = MENU.find((x) => x[0] === pageName);
-    el.innerHTML = `<div class="page-h ${pageName === 'jobs' ? 'stacked' : ''}"><div class="grow"><span class="eyebrow">${GROUP[pageName]}</span><div class="row"><h1>${m[1]}</h1><button class="help-btn" data-help title="What is this page?">?</button></div><div class="help hidden" data-help-t>${HELP[pageName] || ''}</div></div><div class="row" data-actions></div></div><div data-content><div class="empty">Loading…</div></div>`;
+    el.innerHTML = `<div class="page-h ${pageName === 'jobs' ? 'stacked' : ''}"><div class="grow">${GROUP[pageName] === 'Financials' ? '' : `<span class="eyebrow">${GROUP[pageName]}</span>`}<div class="row"><h1>${m[1]}</h1><button class="help-btn" data-help title="What is this page?">?</button></div><div class="help hidden" data-help-t>${HELP[pageName] || ''}</div></div><div class="row" data-actions></div></div><div data-content><div class="empty">Loading…</div></div>`;
     $('[data-help]').onclick = () => $('[data-help-t]').classList.toggle('hidden');
     // A redraw while someone is typing in a list's search box keeps what they typed since (the old box still holds
     // it), the cursor in the box, and searches again for the newer text.
