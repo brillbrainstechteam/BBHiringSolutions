@@ -86,8 +86,7 @@
     if (d.can_download) { actions.innerHTML = dl(`/api/leads?${BB.qs(q, { tab, format: 'xlsx' })}`); wireDl(actions); }
     const agencyOpts = d.agencies.map((a) => `<option value="${a.id}">${esc(a.name)}</option>`).join('');
     const assignCell = (type, r) => (r.agency_id ? `<span class="badge b-outline">${esc(r.agency_id)}</span>` : !d.can_allocate ? '<span class="tiny muted">Not allocated</span>' : `<select data-assign="${type}:${r.id}" class="mini"><option value="">Assign to agency…</option>${agencyOpts}</select>`);
-    const src = Object.entries(d.sources).sort((a, b) => b[1] - a[1]);
-    el.innerHTML = `${d.shared ? '<div class="small muted" style="margin-bottom:10px">One agency is active, so every client shows for the whole team. Allocation starts when a second agency is active.</div>' : ''}<div class="card pad" style="margin-bottom:14px"><div class="row between"><b>Leads by source · last ${q.days || 30} days</b><div class="seg">${[7, 30].map((n) => `<button data-days="${n}" class="${String(q.days || 30) === String(n) ? 'on' : ''}">${n} days</button>`).join('')}</div></div><div class="row" style="margin-top:8px">${src.map(([s, n]) => `<span class="chip" data-src="${esc(s)}">${esc(s)} <span class="n">${n}</span>${d.hires[s] ? ` <span class="badge b-green tiny">${d.hires[s]} hired</span>` : ''}</span>`).join('') || '<span class="faint">No leads yet.</span>'}</div></div>
+    el.innerHTML = `${d.shared ? '<div class="small muted" style="margin-bottom:10px">One agency is active, so every client shows for the whole team. Allocation starts when a second agency is active.</div>' : ''}
       <div class="tabs">${[['client', 'Client leads', d.clients.length], ['check', 'Needs checking', d.check.length]].map(([k, l, n]) => `<button data-tab="${k}" class="${tab === k ? 'on' : ''}">${l} <span class="n">${n}</span></button>`).join('')}</div>
       <div class="filters"><select data-f="source"><option value="">All sources</option>${BB.boot.lead_sources.map((s) => `<option ${q.source === s ? 'selected' : ''}>${esc(s)}</option>`).join('')}</select><label class="row small"><input type="checkbox" data-f="all" ${q.all ? 'checked' : ''}> Include assigned</label><label class="row small"><input type="checkbox" data-f="new" ${q.new ? 'checked' : ''}> New only</label></div>
       ${tab !== 'check' ? `<div class="row small bulkbar" data-leadbar><span class="muted" data-selcount>Tick leads to act on them:</span>
@@ -96,14 +95,12 @@
         ${tab === 'client' ? `<select class="mini" data-lb-stage><option value="">Move to stage…</option>${(d.stages || []).map((x) => `<option>${esc(x)}</option>`).join('')}</select>` : '<button class="btn sm" data-lb="add_to_job">Add to a job</button>'}
         <button class="btn sm" data-lb="welcome">${BB.icon('chat')} Send account link</button>
         <button class="btn sm" data-lb="seen">Mark as seen</button>
-        <button class="btn sm danger" data-lb="junk">Mark as junk</button></div>` : ''}
+</div>` : ''}
       <div class="card" data-list></div>`;
     const list = $('[data-list]', el);
     if (tab === 'client') list.innerHTML = BB.table([{ t: '', f: (r) => (r.is_new ? '<span class="dot new" title="new"></span>' : '') }, { t: 'ID', f: (r) => `<span class="mono">${r.id}</span>` }, { t: 'Company', f: (r) => `<b>${esc(r.company)}</b><div class="tiny muted">${esc(r.contact)}</div>` }, { t: 'City', f: (r) => esc(r.city) }, { t: 'Need', f: (r) => esc(r.need) }, { t: 'Source', f: (r) => esc(r.source) }, { t: 'Came', f: (r) => `<span class="nw">${BB.daysAgo(r.created_at)}</span>` }, { t: 'Agency', f: (r) => assignCell('client', r) }, { t: '', f: (r) => `<div class="row nowrap" onclick="event.stopPropagation()">${BB.waBtn({ ptype: 'client', pid: r.id, format: 'bbhs_client_welcome' }, '', 'btn sm icon wa')}</div>` }], d.clients, { open: (r) => `client:${r.id}`, select: true, empty: 'No new client leads.' });
     else list.innerHTML = checkTable(d.check);
     $$('[data-tab]', el).forEach((b) => (b.onclick = () => BB.setQ({ tab: b.dataset.tab })));
-    $$('[data-days]', el).forEach((b) => (b.onclick = () => BB.setQ({ days: b.dataset.days })));
-    $$('[data-src]', el).forEach((b) => (b.onclick = () => BB.setQ({ source: q.source === b.dataset.src ? '' : b.dataset.src })));
     BB.wireMultiSel(el); $$('[data-f]', el).forEach((i) => (i.onchange = () => BB.setQ({ [i.dataset.f]: i.type === 'checkbox' ? (i.checked ? '1' : '') : i.value })));
     { const mf = $('.more-f', el); if (mf) mf.ontoggle = () => { BB.moreFiltersOpen = mf.open; }; const cl = $('[data-clear]', el); if (cl) cl.onclick = clearCandFilters; }
     $$('[data-assign]', el).forEach((s) => { s.onclick = (e) => e.stopPropagation(); s.onchange = async () => { const [type, id] = s.dataset.assign.split(':'); try { await BB.post('/api/leads/assign', { type, id, agency_id: s.value }); BB.toast(`${id} assigned — the agency admin got a task alert`); BB.refreshPage(); } catch (e) { BB.fail(e); } }; });
@@ -126,7 +123,6 @@
         if (a === 'add_to_job') { if (!ids().length) return; return BB.pickJob((jid) => run('add_to_job', jid, 'Added to the job')); }
         if (a === 'welcome') { if (!ids().length) return; if (await BB.confirm('Send account link on WhatsApp', `${many(v.length)} get their welcome message with the link to their ${tab === 'client' ? 'client account' : 'profile'}. People who said STOP are skipped.`, 'Send')) run('welcome', null, 'Sent'); return; }
         if (a === 'seen') return run('seen', null, 'Marked as seen');
-        if (a === 'junk') { if (!ids().length) return; if (await BB.confirm('Mark as junk', `${many(v.length)} will be hidden from all lists (not deleted).`, 'Mark as junk')) run('junk', null, 'Marked as junk'); }
       }));
       const ag = $('[data-lb-ag]', bar); if (ag) ag.onchange = async () => { const v = ids(); if (!v.length || !ag.value) { ag.value = ''; return; } try { await BB.post('/api/leads/assign', { type: tab, ids: v, agency_id: ag.value }); BB.toast(`${many(v.length)} assigned — the agency admin got a task alert`); BB.refreshPage(); } catch (e) { BB.fail(e); } };
       const st = $('[data-lb-stage]', bar); if (st) st.onchange = () => { const val = st.value; st.value = ''; if (val) run('stage', val, `Moved to ${val}`); };

@@ -122,20 +122,27 @@ route('POST', '/api/clients/:id/group', T, (ctx) => {
 });
 
 // ---------- email from the portal: one client or many ----------
-route('GET', '/api/email-templates', T, () => ({ templates: D.settings().email_templates, held: !!(D.settings().wa_pause || {}).email, can_send: M.configured() }));
+const clientEmail = (c) => c.email || (c.extra || {}).hr_email || '';
+route('GET', '/api/email-templates', T, (ctx) => ({ templates: D.settings().email_templates, held: !!(D.settings().wa_pause || {}).email, can_send: M.configured(), from: D.ENV.smtp.from || '',
+  recipients: String(ctx.query.ids || '').split(',').filter(Boolean).slice(0, 200).map((id) => get('SELECT * FROM clients WHERE id=? AND removed=0', id)).filter((c) => c && seeClient(ctx.user, c)).map((c) => ({ id: c.id, company: c.company, email: clientEmail(c) })) }));
 route('POST', '/api/clients/email', T, (ctx) => {
   const b = ctx.body || {}; const ids = (b.ids || []).map(String).slice(0, 200); const sender = ctx.user.name;
   if (!ids.length) throw httpError(400, 'Pick at least one client');
   if (!String(b.subject || '').trim()) throw httpError(400, 'Write the subject', 'subject');
   if (!String(b.body || '').trim()) throw httpError(400, 'Write the message', 'body');
   const out = { done: 0, held: 0, skipped: [] }; const isContract = b.kind === 'contract';
+  // The agreement is sent by a person, so it goes even while automatic messages are held.
+  if (isContract && !M.configured()) throw httpError(400, 'Email is not set up on the server yet, so the agreement cannot go. Nothing was sent.');
+  const typed = ids.length === 1 ? String(b.to || '').trim() : '';
+  if (typed && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(typed)) throw httpError(400, 'Enter a valid email', 'to');
   for (const id of ids) {
     const c = get('SELECT * FROM clients WHERE id=? AND removed=0', id); if (!c || !seeClient(ctx.user, c)) { out.skipped.push(`${id}: not found`); continue; }
-    const to = c.email || (c.extra || {}).hr_email; if (!to) { out.skipped.push(`${c.company}: no email`); continue; }
+    const to = typed || clientEmail(c); if (!to) { if (ids.length === 1) throw httpError(400, 'Enter the client\'s email', 'to'); out.skipped.push(`${c.company}: no email`); continue; }
+    if (typed && !clientEmail(c)) update('clients', c.id, { email: typed });
     const fill = (t) => String(t).replace(/\{(company|contact|sender)\}/g, (m, k) => ({ company: c.company, contact: c.contact || 'Sir/Madam', sender }[k]));
     const subject = fill(b.subject); const text = fill(b.body);
     const html = M.layout(subject, text.split(/\n{2,}/).map((p) => `<p style="font-size:14px;line-height:1.65;margin:0 0 12px">${p.split('\n').map((x) => x.replace(/[&<>]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[ch]))).join('<br>')}</p>`).join(''));
-    const eid = M.queue({ to, subject, text, html, kind: b.kind || 'client_mail', recordId: c.id, attachments: b.attach_agreement ? [{ agreement: true }] : [] });
+    const eid = M.queue({ to, subject, text, html, kind: b.kind || 'client_mail', recordId: c.id, attachments: isContract || b.attach_agreement ? [{ agreement: true }] : [], force: isContract });
     if (!eid) { out.skipped.push(`${c.company}: not a valid email`); continue; }
     if (isContract) {
       const st = D.settings().client_stages;
@@ -148,14 +155,18 @@ route('POST', '/api/clients/email', T, (ctx) => {
   return out;
 });
 
+// A signed copy by its file name, or a PDF or Word file sent on the agreement thread. KYC papers and logos in that thread are not one.
+const KYC_FILE = /gst|\bpan\b|aadha+r|kyc|owner|id.?proof|logo/i;
+const isSignedCopy = (name, subject) => !KYC_FILE.test(name) && (/sign|contract|agreement/i.test(name) || (/contract|agreement/i.test(subject || '') && /\.(pdf|docx?)$/i.test(name)));
 // A client's reply with papers: the file lands on the client, whoever owns them gets an alert. Called by the inbox reader.
 async function clientMail(c, subject, text, attachments) {
-  const saved = [];
+  const saved = []; let signed = null;
   for (const a of attachments || []) {
-    try { const f = await F.saveFile({ recordId: c.id, type: /sign|contract|agreement/i.test(`${a.name} ${subject}`) ? 'contract_signed' : 'client_mail', name: a.name, base64: a.buf.toString('base64'), by: 'Email inbox' }); saved.push(f.name || a.name); } catch (e) { insert('notes', { record_id: c.id, text: `Attachment ${a.name} not saved: ${e.message}`, author: 'Email inbox', at: now() }); }
+    try { const isSigned = isSignedCopy(a.name, subject); const f = await F.saveFile({ recordId: c.id, type: isSigned ? 'contract_signed' : 'client_mail', name: a.name, base64: a.buf.toString('base64'), by: 'Email inbox' }); saved.push(f.name || a.name); if (isSigned && !signed) signed = f; } catch (e) { insert('notes', { record_id: c.id, text: `Attachment ${a.name} not saved: ${e.message}`, author: 'Email inbox', at: now() }); }
   }
   insert('notes', { record_id: c.id, text: `Email from the client: ${subject || '(no subject)'}${text ? ` — ${String(text).trim().slice(0, 300)}` : ''}${saved.length ? `\nSaved: ${saved.join(', ')}` : ''}`, author: 'Email inbox', at: now() });
-  if (c.owner_id) L.alertUser(c.owner_id, `${c.company} emailed${saved.length ? ` ${saved.length} file(s)` : ''}: check KYC and contract`, c.id, false);
+  if (signed) { update('clients', c.id, { contract: JSON.stringify({ file: signed.id, by: 'Email inbox', at: now(), method: 'Signed copy received by email' }) }); L.checkActivation(c.id, { label: 'Email inbox' }); }
+  if (c.owner_id) L.alertUser(c.owner_id, `${c.company} emailed ${signed ? 'the signed agreement: please check it' : `${saved.length ? `${saved.length} file(s)` : 'us'}: check KYC and contract`}`, c.id, false);
 }
 const clientByEmail = (addr) => { const e = String(addr || '').toLowerCase(); if (!e) return null; return all('SELECT * FROM clients WHERE merged_into IS NULL AND removed=0').find((c) => String(c.email || '').toLowerCase() === e || String((c.extra || {}).hr_email || '').toLowerCase() === e) || null; };
 

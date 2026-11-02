@@ -7,7 +7,6 @@
   const canAdmin = () => me().level !== 'sub';
   const done = (msg) => { if (msg) BB.toast(msg); if (BB.refreshPanel) BB.refreshPanel(); if (BB.refreshPage) BB.refreshPage(); };
   const act = async (fn, msg) => { try { const r = await fn(); done(typeof msg === 'function' ? msg(r) : msg); return r; } catch (e) { BB.fail(e); return null; } };
-  const heldNote = '<div class="notice small">Messages are off for now. This is saved and listed under Settings → Messages on hold; nothing goes to the client yet.</div>';
   // Several files at once, read one by one.
   BB.pickFiles = (accept = '.pdf,.doc,.docx,.jpg,.jpeg,.png') => new Promise((resolve) => {
     const i = document.createElement('input'); i.type = 'file'; i.accept = accept; i.multiple = true;
@@ -18,7 +17,6 @@
   const F = BB.flow = {};
 
   // ---------- client: from lead to active client ----------
-  const steps = (c) => { const a = c.activation || {}; return [['Signed contract', a.contract], ['KYC', a.kyc]]; };
   const callRoleRows = (x) => `<div class="flow-call-roles">${x.call_roles.map((l, i) => `<div class="row between"><span class="grow"><b>${esc(l.role)}</b> · ${l.openings} ${l.openings === 1 ? 'opening' : 'openings'}${l.location ? ` · ${esc(l.location)}` : ''}${l.department ? ` · ${esc(l.department)}` : ''}</span>${l.job_id ? `<button class="btn sm" data-fopen="${esc(l.job_id)}">${esc(l.job_id)}</button>` : `<button class="btn sm" data-fline="${x.id}:${i}">Open job</button>`}</div>`).join('')}</div>`;
   const roleRow = (l = {}) => `<div class="flow-role" data-frole><label class="field"><span class="lab">Role</span><input data-r="role" list="flow-roles" value="${esc(l.role || '')}"></label><label class="field"><span class="lab">Openings</span><input data-r="openings" type="number" min="1" inputmode="numeric"></label><label class="field"><span class="lab">Location</span><input data-r="location" value="${esc(l.location || '')}"></label><label class="field"><span class="lab">Department <span class="opt">(optional)</span></span><input data-r="department" value="${esc(l.department || '')}"></label><button type="button" class="btn sm" data-frm aria-label="Remove role">×</button></div>`;
   const readRoles = (box) => $$('[data-frole]', box).map((r) => Object.fromEntries($$('[data-r]', r).map((i) => [i.dataset.r, i.value.trim()])));
@@ -32,10 +30,8 @@
     sum();
   };
   F.client = (c) => {
-    const on = c.lifecycle === 'Active client'; const g = c.wa_group || {}; const o = (c.extra || {}).online;
-    return `<div class="flow-life ${on ? 'on' : ''}"><div class="grow"><b>${on ? 'Active client' : 'Lead'}</b> ${on ? `<span class="small muted">since ${fmtD(c.activated_at)}</span>` : `<span class="small muted">becomes an active client when the signed contract is uploaded. All work can carry on until then.</span>`}</div>
-        <div class="row small">${steps(c).map(([l, d]) => `<span class="badge ${d ? 'b-green' : 'b-outline'}">${d ? '✓ ' : ''}${l}</span>`).join('')}</div></div>
-      <div class="row" style="margin-bottom:14px"><button class="btn sm primary" data-fcall>Call notes</button><button class="btn sm" data-fmail="contract">Send agreement</button><button class="btn sm" data-fmail="kyc">Ask for KYC</button><button class="btn sm" data-fmail="general">Email</button><button class="btn sm" data-fthanks>Thank-you message</button><button class="btn sm" data-fagree>Agreement</button><button class="btn sm" data-flook>Find online</button><button class="btn sm" data-fgroup>WhatsApp group</button></div>
+    const a = c.activation || {}; const g = c.wa_group || {}; const o = (c.extra || {}).online;
+    return `      <div class="row" style="margin-bottom:14px"><button class="btn sm primary" data-fcall>Call notes</button><button class="btn sm" data-fmail="contract">Send agreement</button>${a.contract ? '' : '<button class="btn sm" data-fsigned>Upload signed agreement</button>'}<button class="btn sm" data-fmail="kyc">Ask for KYC</button><button class="btn sm" data-fmail="general">Email</button><button class="btn sm" data-fthanks>Thank-you message</button><button class="btn sm" data-fagree>Agreement</button><button class="btn sm" data-flook>Find online</button><button class="btn sm" data-fgroup>WhatsApp group</button></div>
       ${(c.calls || []).length ? `<div class="sec"><h3>Client calls</h3><div class="stack-sm">${c.calls.map((x) => `<div class="card pad small"><div class="row between"><span class="faint">${fmtDT(x.at)} · ${esc(x.by)}</span>${x.call_roles ? (x.call_roles.filter((l) => !l.job_id).length ? `<button class="btn sm" data-fjobs="${x.id}">Open ${x.call_roles.filter((l) => !l.job_id).length > 1 ? 'all as draft jobs' : 'as a draft job'}</button>` : '') : `<button class="btn sm" data-fjob="${x.id}">Open a job from this</button>`}</div>${x.call_roles ? callRoleRows(x) : ''}<dl class="kv" style="margin-top:6px">${[...(x.call_roles ? [] : [['Openings', x.openings], ['Location', x.location], ['Department', x.department], ['Roles', x.roles]]), ['Skills', x.skills], ['Responsibilities', x.duties], ['Notes', x.notes]].filter(([, v]) => v).map(([k, v]) => `<dt>${k}</dt><dd>${esc(v)}</dd>`).join('')}</dl></div>`).join('')}</div></div>` : ''}
       ${o ? `<div class="sec"><h3>Found online <span class="faint small">· ${fmtD(o.at)}, please check</span></h3><div class="card pad small"><div>${esc(o.about)}</div><dl class="kv" style="margin-top:6px">${[['Website', o.website], ['Instagram', o.instagram], ['Facebook', o.facebook], ['LinkedIn', o.linkedin], ['Phone', o.phone], ['Email', o.email], ['Address', o.address], ['Branches', o.branches], ['Started', o.est_year], ['Owners', o.owners], ['Kind', o.kind]].filter(([, v]) => v).map(([k, v]) => `<dt>${k}</dt><dd>${esc(v)}</dd>`).join('')}</dl><div class="row" style="margin-top:6px"><button class="btn sm" data-fuse>Use these details</button></div></div></div>` : ''}
       ${g.name ? `<div class="sec"><h3>WhatsApp group</h3><div class="small"><b>${esc(g.name)}</b> ${g.created ? '<span class="badge b-green">Created</span>' : '<span class="badge b-outline">To create</span>'}${g.link ? ` · <a href="${esc(g.link)}" target="_blank" rel="noopener">invite link</a>` : ''}</div></div>` : ''}
@@ -46,10 +42,11 @@
     BB.ask({ title: 'Recruitment Agreement', wide: true, fields: [`<div class="flow-doc">${esc(a.text || 'Open the file to read it.')}</div>`], ok: 'Download', submit: async () => BB.download('/api/agreement/file') });
   };
   F.composeMail = async (ids, kind, label) => {
-    const t = await BB.api('/api/email-templates'); const tp = t.templates[kind] || t.templates.general;
-    const v = await BB.ask({ title: label, wide: true, fields: [...(t.held ? [heldNote] : []), { name: 'subject', label: 'Subject', value: tp.subject }, { name: 'body', label: 'Message', type: 'textarea', value: tp.body, voice: false }, { name: 'attach_agreement', label: 'Attach the Recruitment Agreement', type: 'check', value: kind === 'contract' }], ok: t.held ? 'Save for later' : 'Send' });
-    if (!v) return;
-    await act(() => BB.post('/api/clients/email', { ids, kind, ...v }), (r) => `${r.done} of ${ids.length} ${r.held ? 'saved' : 'sent'}${r.skipped.length ? ` · ${r.skipped[0]}` : ''}`);
+    const t = await BB.api(`/api/email-templates?ids=${ids.join(',')}`); const tp = t.templates[kind] || t.templates.general;
+    const contract = kind === 'contract'; const held = t.held && !contract; const one = t.recipients.length === 1 ? t.recipients[0] : null; const none = t.recipients.filter((x) => !x.email);
+    const who = `<div class="small muted">${t.from ? `From: <b>${esc(t.from)}</b>` : ''}${one ? '' : `<div>To: each client's saved email (${t.recipients.length - none.length} of ${t.recipients.length})${none.length ? `. No email for ${none.slice(0, 3).map((x) => esc(x.company)).join(', ')}${none.length > 3 ? ` and ${none.length - 3} more` : ''}` : ''}</div>`}</div>`;
+    const v = await BB.ask({ title: label, wide: true, fields: [who, ...(one ? [{ name: 'to', label: 'To', type: 'email', value: one.email }] : []), { name: 'subject', label: 'Subject', value: tp.subject }, { name: 'body', label: 'Message', type: 'textarea', value: tp.body, voice: false }, contract ? '<div class="small muted">Attached: Recruitment Agreement</div>' : { name: 'attach_agreement', label: 'Attach the Recruitment Agreement', type: 'check' }], ok: held ? 'Save for later' : 'Send', submit: (x) => BB.post('/api/clients/email', { ids, kind, ...x }) });
+    if (v) done(`${v.done} of ${ids.length} ${v.held ? 'saved' : 'sent'}${v.skipped.length ? ` · ${v.skipped[0]}` : ''}`);
   };
   F.clientMount = (el, c) => {
     const on = (s, fn) => { const b = $(s, el); if (b) b.onclick = fn; };
@@ -64,6 +61,7 @@
     $$('[data-fmail]', el).forEach((b) => (b.onclick = () => F.composeMail([c.id], b.dataset.fmail, b.textContent)));
     on('[data-fthanks]', () => act(() => BB.post(`/api/clients/${c.id}/thanks`), (r) => (r.held ? 'Saved: messages are off for now' : 'Sent')));
     on('[data-fagree]', agreementView);
+    on('[data-fsigned]', async () => { const f = await BB.pickFile(); if (f) act(() => BB.post('/api/files', { record_id: c.id, type: 'contract_signed', ...f }), 'Signed agreement saved'); });
     on('[data-flook]', async () => {
       const v = await BB.ask({ title: 'Find this business online', note: 'Optional. Searches the web and fills what it finds for you to check. Each search costs a few rupees.', fields: [{ name: 'name', label: 'Business name', value: c.company }, { name: 'city', label: 'City', value: c.city || '', opt: true }, { name: 'address', label: 'Address', opt: true }], ok: 'Search', submit: (x) => BB.post(`/api/clients/${c.id}/lookup`, x) });
       if (v) done('Details found: check them below');

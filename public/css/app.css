@@ -1436,8 +1436,6 @@ html[lang="hi"] .ss-g { letter-spacing: 0; }
 
 
 /* The working process: client status, next step, screening, documents */
-.flow-life{display:flex;gap:12px;align-items:center;flex-wrap:wrap;padding:10px 14px;border-radius:12px;background:#FFF8E8;margin-bottom:12px}
-.flow-life.on{background:#ECF8F1}
 .flow-next{margin:10px 0 0;padding:9px 12px;border-radius:10px;background:#EEF2FB;font-size:13px}
 .fit-pts{display:flex;flex-wrap:wrap;gap:4px 10px;margin-top:4px;font-size:12px}
 .fit-pts .ok{color:#15704A}.fit-pts .no{color:#9A5B00}
