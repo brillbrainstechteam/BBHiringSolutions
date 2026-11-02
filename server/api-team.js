@@ -407,7 +407,7 @@ route('PATCH', '/api/clients/:id', T, (ctx) => {
   const patch = {}; for (const k of allowed) if (ctx.body[k] !== undefined) patch[k] = ctx.body[k];
   if (patch.whatsapp) { patch.whatsapp = L.digits10(patch.whatsapp); if (!L.validPhone(patch.whatsapp)) throw httpError(400, 'Enter a 10-digit WhatsApp number', 'whatsapp'); }
   if (patch.fee_value === '') patch.fee_value = null;
-  if (patch.stage === 'Client activated' && !c.activated_at) { const st = L.activationState(c); if (!st.ready) throw httpError(400, `A lead becomes an active client after: ${st.missing.join(' and ')}.`); }
+  if (patch.stage === 'Client activated' && !c.activated_at) { const st = L.activationState(c); if (!st.ready) throw httpError(400, 'Upload the signed contract to activate this client. All other work can carry on without it.'); }
   if (patch.agency_id && patch.agency_id !== c.agency_id) { const adm = L.agencyAdmin(patch.agency_id); patch.owner_id = adm ? adm.id : null; patch.is_new = 0; D.run('UPDATE jobs SET agency_id=? WHERE client_id=? AND agency_id IS NULL', patch.agency_id, c.id); }
   return D.edit('clients', c.id, patch, ctx.actor.label, ctx.ip);
 });
@@ -479,6 +479,7 @@ route('POST', '/api/jobs', T, (ctx) => {
   if (ctx.user.level === 'sub') b.recruiter_id = ctx.user.id;
   const made = createJob(c, b, ctx.actor, false);
   if (b.jewel_need) { const j = get('SELECT jd FROM jobs WHERE id=?', made.id); update('jobs', made.id, { jd: { ...(j.jd || {}), jewel_need: b.jewel_need, ...(b.duties ? { duties: b.duties } : {}) } }); }
+  if (b.call_id) { const k = get('SELECT * FROM client_calls WHERE id=? AND client_id=?', b.call_id, c.id); const r = k && k.call_roles; if (r && r[b.call_line]) { r[b.call_line].job_id = made.id; update('client_calls', k.id, { call_roles: r }); } }
   return made;
 });
 function createJob(c, b, actor, byClient) {

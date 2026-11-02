@@ -779,18 +779,18 @@ const CONSENT_WORDING = 'By sending, you agree to be contacted on WhatsApp, phon
 function saveConsent(ptype, pid, source, wording, what) {
   insert('consents', { person_type: ptype, person_id: pid, what: what || 'Contact on WhatsApp, phone and email; share profile with employers', wording: wording || CONSENT_WORDING, source, at: now(), opted_out: 0 });
 }
-// A lead becomes an active client only with the signed contract and the KYC in hand.
+// A lead becomes an active client with the signed contract. KYC is tracked but not needed, and work on a lead is never blocked.
 function activationState(c) {
   const ob = c.onboarding || {}; const k = c.kyc || {};
   const kyc = ['gst', 'pan', 'owner_id'].every((x) => k[x]) || !!(ob.kyc || {}).done; const contract = !!c.contract || !!(ob.contract || {}).done;
-  return { kyc, contract, ready: kyc && contract, missing: [!contract && 'Signed contract', !kyc && 'KYC (GST certificate, PAN, owner ID)'].filter(Boolean) };
+  return { kyc, contract, ready: contract, missing: contract ? [] : ['Signed contract'] };
 }
 function checkActivation(clientId, by) {
   const c = get('SELECT * FROM clients WHERE id=?', clientId); if (!c || c.activated_at || !activationState(c).ready) return false;
   const stages = settings().client_stages; const patch = { activated_at: now() };
   if (stages.indexOf('Client activated') > stages.indexOf(c.stage)) patch.stage = 'Client activated';
   update('clients', c.id, patch); history(actorName(by), 'activate', c.id, 'stage', c.stage, 'Active client');
-  if (c.owner_id) alertUser(c.owner_id, `${c.company} is now an active client: contract and KYC are in`, c.id, false);
+  if (c.owner_id) alertUser(c.owner_id, `${c.company} is now an active client: signed contract is in`, c.id, false);
   return true;
 }
 function intakeClient(d, o) {

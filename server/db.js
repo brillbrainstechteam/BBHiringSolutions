@@ -12,7 +12,7 @@ const DB_FILE = path.join(DATA_DIR, 'bbhs.db');
 const db = new DatabaseSync(DB_FILE);
 db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;'); // wait up to 5 s if another write is in progress
 
-const JSON_COLS = new Set(['wa_group', 'exp_business', 'kyc', 'extra', 'perms', 'jd', 'qa', 'buttons', 'checklist', 'onboarding', 'work_cities', 'skills', 'rounds', 'screening_qs', 'value', 'map', 'vars', 'joining_docs', 'social', 'resume_check', 'ad_match']);
+const JSON_COLS = new Set(['call_roles', 'wa_group', 'exp_business', 'kyc', 'extra', 'perms', 'jd', 'qa', 'buttons', 'checklist', 'onboarding', 'work_cities', 'skills', 'rounds', 'screening_qs', 'value', 'map', 'vars', 'joining_docs', 'social', 'resume_check', 'ad_match']);
 
 db.exec(`
 CREATE TABLE IF NOT EXISTS counters (name TEXT PRIMARY KEY, next INTEGER NOT NULL);
@@ -208,10 +208,16 @@ function ensureSettings() {
     run("UPDATE messages SET status='held', error='Held: messages are off' WHERE status='scheduled'");
     setSetting('done_once', [...(settings().done_once || []), 'messages_off_2026_11_02']);
   }
-  // Clients already working with us stay active; from now on a client becomes active on signed contract + KYC.
+  // Clients already working with us stay active; from now on a client becomes active on the signed contract.
   if (!once.includes('clients_activated_2026_11_02')) {
     run("UPDATE clients SET activated_at=created_at WHERE activated_at IS NULL AND stage IN ('Client activated','Job opening active')");
     setSetting('done_once', [...(settings().done_once || []), 'clients_activated_2026_11_02']);
+  }
+  if (!once.includes('active_on_contract_2026_11_02')) {
+    run("UPDATE clients SET activated_at=?, stage=CASE WHEN stage IN ('Call initiated','Understanding needs','Proposal and pitch deck','Agreement shared') THEN 'Client activated' ELSE stage END WHERE activated_at IS NULL AND contract IS NOT NULL", new Date().toISOString());
+    const t = settings().email_templates || {}; const swap = (k, a, b) => (t[k] ? { ...t[k], body: t[k].body.replace(a, b) } : t[k]);
+    setSetting('email_templates', { ...t, contract: swap('contract', 'Please sign it and reply to this email with the signed copy, along with your KYC papers: GST certificate, business PAN and owner ID proof.\n\nOnce we have them, your account goes active and we begin hiring for {company}.', 'Please sign it and reply to this email with the signed copy. Your account goes active once we have it.\n\nPlease also send your KYC papers: GST certificate, business PAN and owner ID proof.'), kyc: swap('kyc', 'To activate your account, please reply', 'To complete your file, please reply') });
+    setSetting('done_once', [...(settings().done_once || []), 'active_on_contract_2026_11_02']);
   }
   if (!once.includes('format_client_thanks')) {
     const f = defs.formats.bbhs_client_thanks; setSetting('formats', { ...settings().formats, bbhs_client_thanks: f });

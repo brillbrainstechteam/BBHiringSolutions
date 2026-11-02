@@ -10,7 +10,7 @@ Last updated 2 Nov 2026. The live list of messages is in the portal: Settings â†
 | 2 | Put the SMTP details in the server `.env` (`SMTP_HOST`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM`) | No email can leave until this is done. |
 | 3 | Add the Accounts email: Settings â†’ Fees & limits | Invoice requests have nowhere to go without it. |
 | 4 | Decide: should Vaibhav Kanpur earn a share on the clients with no agency? | Today those bills carry no agency share. |
-| 5 | Check the 17 clients now marked Lead | Only clients at "Client activated" or "Job opening active" were kept active. |
+| 5 | Upload signed contracts for the 17 clients marked Lead | Each one becomes an active client as soon as its contract is uploaded. The team can work on them in the meantime. |
 | 6 | Fill "Date & Location" in the Recruitment Agreement, then replace it from the Recruitment Agreement page | It is still a blank in the standard copy that clients read. |
 | 7 | Create Dhanvi's login in Logins & team (team: Social media) | They run the creative and channel steps. |
 | 8 | Name owners for the channels marked "To be decided" | Colleges, institutes, agencies and job fairs have no owner. |

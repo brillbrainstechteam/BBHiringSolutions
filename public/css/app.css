@@ -1443,5 +1443,8 @@ html[lang="hi"] .ss-g { letter-spacing: 0; }
 .fit-pts .ok{color:#15704A}.fit-pts .no{color:#9A5B00}
 .flow-doc{white-space:pre-wrap;line-height:1.6;font-size:13.5px;max-height:70vh;overflow:auto}
 .flow-script{white-space:pre-wrap}
+.flow-role{display:grid;grid-template-columns:2fr 90px 1.3fr 1.3fr 34px;gap:8px;align-items:end;margin-bottom:8px}
+.flow-call-roles{display:grid;gap:6px;margin-top:8px}
+@media (max-width:640px){.flow-role{grid-template-columns:repeat(6,1fr)}.flow-role>.field{grid-column:span 3}.flow-role>.field:first-child{grid-column:span 4}.flow-role>.field:nth-child(2){grid-column:span 2}.flow-role [data-frm]{grid-column:span 6;justify-self:end}}
 .flow-dp{width:160px;height:160px;border-radius:50%;margin-top:8px}
 .kpi{font-size:22px;font-weight:600;margin-top:4px}

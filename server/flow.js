@@ -74,18 +74,40 @@ function mailFiles(list) {
 }
 
 // ---------- the first call with a client ----------
+if (!all('PRAGMA table_info(client_calls)').some((x) => x.name === 'call_roles')) D.db.exec('ALTER TABLE client_calls ADD COLUMN call_roles TEXT');
 route('GET', '/api/call-script', T, () => ({ script: D.settings().call_script }));
+// One call can carry many roles, each with its own count, location and department.
+function callRoles(lines) {
+  const rows = (Array.isArray(lines) ? lines : []).map((x) => ({ role: String(x.role || '').trim(), openings: String(x.openings ?? '').trim(), location: String(x.location || '').trim(), department: String(x.department || '').trim() })).filter((x) => x.role || x.openings);
+  if (rows.some((x) => !x.role)) throw httpError(400, 'Write the role for every count', 'call_roles');
+  if (rows.some((x) => !/^[1-9]\d*$/.test(x.openings))) throw httpError(400, `Write how many openings for ${(rows.find((x) => !/^[1-9]\d*$/.test(x.openings)) || {}).role}`, 'call_roles');
+  return rows.map((x) => ({ ...x, openings: Number(x.openings), job_id: null }));
+}
 route('POST', '/api/clients/:id/calls', T, (ctx) => {
-  const c = loadClient(ctx); const b = ctx.body || {};
-  if (!['openings', 'location', 'department', 'roles', 'skills', 'duties'].some((k) => String(b[k] || '').trim())) throw httpError(400, 'Fill in what the client told you', 'roles');
-  const row = { client_id: c.id, openings: b.openings || '', location: b.location || '', department: b.department || '', roles: b.roles || '', skills: b.skills || '', duties: b.duties || '', notes: b.notes || '', by: ctx.actor.label, at: now() };
+  const c = loadClient(ctx); const b = ctx.body || {}; const lines = callRoles(b.call_roles);
+  if (!lines.length && !['skills', 'duties', 'notes'].some((k) => String(b[k] || '').trim())) throw httpError(400, 'Fill in what the client told you', 'call_roles');
+  const uniq = (k) => [...new Set(lines.map((x) => x[k]).filter(Boolean))].join(', ');
+  const row = { client_id: c.id, openings: lines.length ? String(lines.reduce((t, x) => t + x.openings, 0)) : '', location: uniq('location'), department: uniq('department'), roles: lines.map((x) => `${x.role} (${x.openings})`).join(', '), call_roles: lines, skills: b.skills || '', duties: b.duties || '', notes: b.notes || '', by: ctx.actor.label, at: now() };
   insert('client_calls', row);
-  const line = [['Number of openings', row.openings], ['Location', row.location], ['Department', row.department], ['Roles', row.roles], ['Skills required', row.skills], ['Roles and responsibilities expected', row.duties], ['Notes', row.notes]].filter(([, v]) => v).map(([k, v]) => `${k}: ${v}`).join('\n');
+  const line = [['Number of openings', row.openings], ['Roles', lines.map((x) => `${x.role} (${x.openings})${x.location ? ` in ${x.location}` : ''}${x.department ? `, ${x.department}` : ''}`).join('; ')], ['Skills required', row.skills], ['Roles and responsibilities expected', row.duties], ['Notes', row.notes]].filter(([, v]) => v).map(([k, v]) => `${k}: ${v}`).join('\n');
   insert('notes', { record_id: c.id, text: `Client call\n${line}`, author: ctx.actor.label, at: now() });
   const ob = { ...(c.onboarding || {}), intro_call: { done: true, date: now(), by: ctx.actor.label, note: '' } }; const st = D.settings().client_stages;
   update('clients', c.id, { onboarding: ob, is_new: 0, ...(st.indexOf('Understanding needs') > st.indexOf(c.stage) ? { stage: 'Understanding needs' } : {}) });
   D.history(ctx.actor.label, 'client call', c.id);
   return { ok: true };
+});
+// Every role not opened yet becomes a draft job. Salary and experience are filled on each job.
+route('POST', '/api/clients/:id/calls/:call/jobs', T, (ctx) => {
+  const c = loadClient(ctx); const k = get('SELECT * FROM client_calls WHERE id=? AND client_id=?', ctx.params.call, c.id); if (!k) throw httpError(404, 'Call not found');
+  const lines = k.call_roles || []; const jobs = [];
+  for (const x of lines.filter((l) => !l.job_id)) {
+    const j = TEAM.createJob(c, { title: x.role, city: x.location, openings: x.openings, skills: String(k.skills || '').split(',').map((s) => s.trim()).filter(Boolean), notes: [x.department && `Department: ${x.department}`, k.notes].filter(Boolean).join('\n'), recruiter_id: ctx.user.level === 'sub' ? ctx.user.id : undefined }, ctx.actor, false);
+    if (k.duties) update('jobs', j.id, { jd: { ...(j.jd || {}), duties: k.duties } });
+    x.job_id = j.id; jobs.push(j.id);
+  }
+  if (!jobs.length) throw httpError(400, 'Every role on this call already has a job');
+  update('client_calls', k.id, { call_roles: lines });
+  return { jobs };
 });
 route('POST', '/api/clients/:id/thanks', T, (ctx) => {
   const c = loadClient(ctx);

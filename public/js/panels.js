@@ -524,7 +524,7 @@
     `<div class="grid g2">${field({ name: 'notice_days', label: 'Join within (days)', type: 'number' })}${field({ name: 'skills', label: 'Skills (comma separated)' })}</div>`,
     `<div class="grid g2">${field({ name: 'jewel_need', label: 'Jewellery experience', type: 'select', options: ['Required', 'Preferred', 'Not required'], value: pre.jewel_need || 'Preferred', placeholder: false })}${field({ name: 'notes', label: 'Notes', opt: true, value: pre.notes || '' })}</div>`,
     { name: 'jd_approved', label: 'Job description already approved (job goes Open; otherwise Draft)', type: 'check' },
-  ], ok: 'Create job opening', submit: (v) => BB.post('/api/jobs', { ...v, duties: pre.duties || '', salary_per: 'month', skills: v.skills.split(',').map((x) => x.trim()).filter(Boolean) }),
+  ], ok: 'Create job opening', submit: (v) => BB.post('/api/jobs', { ...v, duties: pre.duties || '', call_id: pre.call_id, call_line: pre.call_line, salary_per: 'month', skills: v.skills.split(',').map((x) => x.trim()).filter(Boolean) }),
   extra: '' }).then((x) => { if (x) { BB.toast(`${x.id} made`); BB.refreshPage && BB.refreshPage(); BB.open('job', x.id); } }) && setTimeout(async () => {
     const sel = $('[data-clients]'); if (!sel) return; const r = await BB.api('/api/clients?all=1'); const all = r.rows;
     sel.innerHTML = `<option value="">Choose…</option><option value="INTERNAL">BrillBrains — internal hiring (our own team)</option><option value="TBC">Client not decided yet (fill in later)</option>${all.filter((c) => !c.placeholder).map((c) => `<option value="${c.id}" ${c.id === clientId ? 'selected' : ''}>${esc(c.company)} (${c.id})</option>`).join('')}`;
