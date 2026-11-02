@@ -153,7 +153,7 @@ module.exports.defaultSettings = () => ({
   accounts_email: '',
   expense_categories: ['Salaries', 'Job portals', 'Ads', 'Office rent', 'Software', 'Travel', 'Commission', 'Other'],
   revenue_kinds: ['Recruitment fee', 'Retainer', 'Training', 'Other'],
-  call_script: 'Introduce BrillBrains: jewellery industry specialists since 2011, 100+ brands empowered.\nUnderstand the need: note every field below during the call.\nExplain the terms: fee, payment days and the free replacement window in the Recruitment Agreement.\nClose: if they agree, send the agreement to their email and ask for KYC (GST certificate, PAN, owner ID).',
+  call_script: 'Introduce BrillBrains: jewellery industry specialists since 2011, 100+ brands empowered.\nUnderstand the need: note every field below during the call.\nExplain the terms: fee, payment days and the free replacement window in the Recruitment Agreement.\nClose: if they agree, send the agreement to their email.',
   email_templates: {
     contract: { subject: 'Recruitment Agreement from BrillBrains Hiring Solutions', body: 'Hello {contact},\n\nThank you for speaking with us. Our Recruitment Agreement is attached.\n\nPlease sign it and reply to this email with the signed copy. Your account goes active once we have it.\n\nPlease also send your KYC papers: GST certificate, business PAN and owner ID proof.\n\nRegards,\n{sender}\nBrillBrains Hiring Solutions' },
     kyc: { subject: 'KYC papers for {company}', body: 'Hello {contact},\n\nTo complete your file, please reply with these papers: GST certificate, business PAN and owner ID proof.\n\nRegards,\n{sender}\nBrillBrains Hiring Solutions' },

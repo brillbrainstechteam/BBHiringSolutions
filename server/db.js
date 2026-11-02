@@ -219,6 +219,10 @@ function ensureSettings() {
     setSetting('email_templates', { ...t, contract: swap('contract', 'Please sign it and reply to this email with the signed copy, along with your KYC papers: GST certificate, business PAN and owner ID proof.\n\nOnce we have them, your account goes active and we begin hiring for {company}.', 'Please sign it and reply to this email with the signed copy. Your account goes active once we have it.\n\nPlease also send your KYC papers: GST certificate, business PAN and owner ID proof.'), kyc: swap('kyc', 'To activate your account, please reply', 'To complete your file, please reply') });
     setSetting('done_once', [...(settings().done_once || []), 'active_on_contract_2026_11_02']);
   }
+  if (!once.includes('call_script_no_kyc')) {
+    setSetting('call_script', String(settings().call_script || '').replace(' and ask for KYC (GST certificate, PAN, owner ID).', '.'));
+    setSetting('done_once', [...(settings().done_once || []), 'call_script_no_kyc']);
+  }
   if (!once.includes('format_client_thanks')) {
     const f = defs.formats.bbhs_client_thanks; setSetting('formats', { ...settings().formats, bbhs_client_thanks: f });
     setSetting('done_once', [...(settings().done_once || []), 'format_client_thanks']);
