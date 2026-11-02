@@ -7,10 +7,9 @@ Last updated 2 Nov 2026. The live list of messages is in the portal: Settings �
 | # | What | Why it matters |
 |---|---|---|
 | 1 | In the `transform@dgtrainings.com` Gmail: add `hiringsolutions@brillbrainsconsultants.com` under Settings → Accounts → Send mail as | Until then, Gmail is likely to show the sender as `transform@dgtrainings.com`. |
-| 2 | In the same Gmail: add a filter so mail to `hiringsolutions@brillbrainsconsultants.com` with subject `Recruitment Agreement` gets the `Hiring Resume` label | The portal reads only that label. Until then, upload signed agreements by hand. |
 | 3 | Add the Accounts email: Settings → Fees & limits | Invoice requests have nowhere to go without it. |
 | 4 | Create Dhanvi's login: Logins & team → + Add login (team: Social media) | They run the creative and channel steps. Needs their WhatsApp number. |
-| 5 | Name owners for the 6 channels marked "To be decided" | College Placement Cell, Training Institutes, Training Institutes (partnership), College Placement Cell (tie-up), Local Hiring Agencies, Job Fairs. |
+| 5 | Pick owners for the 6 channels marked "To be decided" in Hiring channels | Admins and sub-admins can set them too. College Placement Cell, Training Institutes, Training Institutes (partnership), College Placement Cell (tie-up), Local Hiring Agencies, Job Fairs. |
 | 6 | Settings → Message formats: press Send all formats to Meta for approval, then Check approval status after a day | `bbhs_client_thanks`, `bbhs_jd_approval` and `bbhs_team_login` are not approved. |
 | 7 | Check WhatsApp Manager → Account tools → Phone numbers | Shows whether `9093400444`, `9093400222` and any new number are on this account. It decides the two WhatsApp items below. |
 | 8 | Copy the resumes off the phones with `9093400444` and `9093400222` | See "Old WhatsApp resumes". |
@@ -62,6 +61,6 @@ Everything automatic is held. Held messages are not sent later; only new ones go
 
 - The CV for clients is rebuilt as a clean BrillBrains PDF, so it does not keep the candidate's own layout. A scanned or photo CV gives a profile summary only, with no resume text.
 - AI ranking runs when someone presses Rank with AI on a job. It does not run by itself, to control cost.
-- Client emails reach the client's record only if they land in the inbox label the portal reads.
+- Replies are found by the client's saved email address, so it must match the address they write from. Checked every 10 minutes from 2 Nov 2026 on.
 - Candidate phone numbers keep their existing protection.
 - Imported candidates gave no consent to messages from the portal, so job alerts do not go to them.

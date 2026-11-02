@@ -513,7 +513,7 @@ function syncPostings(jobId) {
 }
 function setPosting(p, status, link, actor) {
   if (!POST_STATUS.includes(status || '')) throw httpError(400, 'Pick Pending, Done or Not needed');
-  update('postings', p.id, { status: status || '', done_date: status === 'Done' ? (p.done_date || now()) : null, done_by: status === 'Done' ? actor.label : null, post_link: link !== undefined ? link : p.post_link });
+  update('postings', p.id, { status: status || '', done_date: status === 'Done' ? (p.done_date || now()) : null, done_by: status === 'Done' ? actor.label : null, post_link: link !== undefined ? link : p.post_link, updated_by: actor.label, updated_at: now() });
   D.history(actor.label, 'posting', p.job_id, p.channel, p.status || 'not started', status || 'not started');
 }
 function postingRows(j, apps) {
@@ -524,11 +524,25 @@ function postingRows(j, apps) {
 // The tracker: active jobs as columns, channels as rows, each cell a status.
 route('GET', '/api/postings/tracker', { ...T, channels: true }, (ctx) => {
   const limited = R.channelOnly(ctx.user);
-  const jobs = (limited ? all('SELECT * FROM jobs WHERE archived=0 ORDER BY created_at DESC') : visibleJobs(ctx.user)).map((j) => V.jobView(j)).filter((j) => ctx.query.all || !['Closed', 'Filled'].includes(j.status));
+  const jobs = all('SELECT * FROM jobs WHERE archived=0 ORDER BY created_at DESC').filter((j) => limited || seeJob(ctx.user, j) || R.sameAgency(ctx.user, j)).map((j) => V.jobView(j)).filter((j) => ctx.query.all || !['Closed', 'Filled'].includes(j.status));
   const cells = {};
-  for (const j of jobs) { syncPostings(j.id); cells[j.id] = {}; for (const p of all('SELECT ckey, status, done_date, post_link, done_by FROM postings WHERE job_id=? AND ckey IS NOT NULL', j.id)) cells[j.id][p.ckey] = { status: p.status || (p.done_date ? 'Done' : ''), done_date: p.done_date, post_link: p.post_link, done_by: p.done_by }; }
+  for (const j of jobs) { syncPostings(j.id); cells[j.id] = {}; for (const p of all('SELECT ckey, status, done_date, post_link, done_by, updated_by, updated_at FROM postings WHERE job_id=? AND ckey IS NOT NULL', j.id)) cells[j.id][p.ckey] = { status: p.status || (p.done_date ? 'Done' : ''), done_date: p.done_date, post_link: p.post_link, done_by: p.done_by, updated_by: p.updated_by, updated_at: p.updated_at }; }
   const tags = Object.fromEntries(channels().map((c) => [c.key, c.tag]));
-  return { channels: channels(), link_base: L.link('apply', '?'), tags, jobs: jobs.map((j) => ({ id: j.id, code: j.old_code || j.id, title: j.title, city: j.city, client: limited ? '' : j.client_name, status: j.status })), cells };
+  // What was last changed, by whom: everyone sees the same list.
+  const names = new Map(jobs.map((j) => [j.id, `${j.title}${j.city ? `, ${j.city}` : ''}`]));
+  const recent = all('SELECT job_id, channel, status, updated_by, updated_at FROM postings WHERE updated_at IS NOT NULL ORDER BY updated_at DESC LIMIT 60').filter((p) => names.has(p.job_id)).slice(0, 12).map((p) => ({ ...p, job: names.get(p.job_id) }));
+  const people = limited ? [] : all("SELECT id, name FROM users WHERE status='On' AND level IN ('super','admin','sub') ORDER BY name");
+  return { recent, people, channels: channels(), link_base: L.link('apply', '?'), tags, jobs: jobs.map((j) => ({ id: j.id, code: j.old_code || j.id, title: j.title, city: j.city, client: limited ? '' : j.client_name, status: j.status })), cells };
+});
+// Who owns a channel: any login, or a shared label. Applies to every job.
+route('POST', '/api/channels/owner', T, (ctx) => {
+  const b = ctx.body || {}; const list = D.settings().hiring_channels || []; const ch = list.find((c) => c.key === b.key); if (!ch) throw httpError(404, 'Channel not found');
+  const who = b.owner_id ? get("SELECT id, name FROM users WHERE id=? AND status='On'", b.owner_id) : null; if (b.owner_id && !who) throw httpError(400, 'Pick a person with a login');
+  const label = String(b.owner || '').trim().slice(0, 40); if (!who && !label) throw httpError(400, 'Pick an owner');
+  D.setSetting('hiring_channels', list.map((c) => { if (c.key !== b.key) return c; const { owner_id: _, ...rest } = c; return who ? { ...rest, owner: who.name, owner_id: who.id } : { ...rest, owner: label }; }));
+  D.run('UPDATE postings SET owner=? WHERE ckey=?', who ? who.name : label, b.key);
+  D.history(ctx.actor.label, 'channel owner', null, ch.channel, ch.owner, who ? who.name : label);
+  return { ok: true };
 });
 // The same status on one channel for every ticked job.
 route('POST', '/api/postings/tracker/bulk', { ...T, channels: true }, (ctx) => {
@@ -540,7 +554,7 @@ route('POST', '/api/postings/tracker/bulk', { ...T, channels: true }, (ctx) => {
   return { done };
 });
 route('POST', '/api/postings/tracker', { ...T, channels: true }, (ctx) => {
-  const j = get('SELECT * FROM jobs WHERE id=?', ctx.body.job_id); mustSee(R.channelOnly(ctx.user) ? !!j : seeJob(ctx.user, j), 'job opening');
+  const j = get('SELECT * FROM jobs WHERE id=?', ctx.body.job_id); mustSee(R.channelOnly(ctx.user) ? !!j : seeJob(ctx.user, j) || R.sameAgency(ctx.user, j), 'job opening');
   syncPostings(j.id); const p = get('SELECT * FROM postings WHERE job_id=? AND ckey=?', j.id, ctx.body.ckey); if (!p) throw httpError(404, 'Channel not found');
   setPosting(p, ctx.body.status, ctx.body.post_link, ctx.actor); return { ok: true };
 });

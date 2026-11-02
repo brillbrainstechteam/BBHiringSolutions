@@ -177,14 +177,39 @@ route('POST', '/api/clients/email', T, (ctx) => {
 const KYC_FILE = /gst|\bpan\b|aadha+r|kyc|owner|id.?proof|logo/i;
 const isSignedCopy = (name, subject) => !KYC_FILE.test(name) && (/sign|contract|agreement/i.test(name) || (/contract|agreement/i.test(subject || '') && /\.(pdf|docx?)$/i.test(name)));
 // A client's reply with papers: the file lands on the client, whoever owns them gets an alert. Called by the inbox reader.
-async function clientMail(c, subject, text, attachments) {
-  const saved = []; let signed = null;
-  for (const a of attachments || []) {
-    try { const isSigned = isSignedCopy(a.name, subject); const f = await F.saveFile({ recordId: c.id, type: isSigned ? 'contract_signed' : 'client_mail', name: a.name, base64: a.buf.toString('base64'), by: 'Email inbox' }); saved.push(f.name || a.name); if (isSigned && !signed) signed = f; } catch (e) { insert('notes', { record_id: c.id, text: `Attachment ${a.name} not saved: ${e.message}`, author: 'Email inbox', at: now() }); }
+const KYC_NAMES = { gst: 'GST certificate', pan: 'Business PAN', owner_id: 'Owner ID' };
+const kycByName = (n) => (/gst/i.test(n) ? 'gst' : /(^|[^a-z])pan([^a-z]|$)/i.test(n) ? 'pan' : /aadha+r|owner.?id|id.?proof|passport|driving|voter/i.test(n) ? 'owner_id' : null);
+// What a client's attachment is: the AI reads PDFs and pictures when it can, otherwise the file name and subject decide.
+async function readPaper(a, subject) {
+  if (LLM.available() && /\.(pdf|jpe?g|png)$/i.test(a.name)) {
+    try {
+      const r = await LLM.json({ system: 'You sort papers a client company emails to a recruitment firm. gst: GST registration certificate. pan: PAN card of the business. owner_id: an ID proof of a person, such as Aadhaar, PAN of the owner, passport or driving licence. signed_agreement: a recruitment agreement that shows a signature or stamp. unsigned_agreement: the agreement with nothing signed. other: anything else.', user: `File name: ${a.name}\nEmail subject: ${subject || ''}`, schema: { type: 'object', additionalProperties: false, required: ['kind'], properties: { kind: { type: 'string', enum: ['gst', 'pan', 'owner_id', 'signed_agreement', 'unsigned_agreement', 'other'] } } }, name: 'client_paper', maxTokens: 60, files: [{ name: a.name, buf: a.buf }] });
+      return (r.answer || r).kind;
+    } catch { /* the name decides */ }
   }
+  return kycByName(a.name) || (isSignedCopy(a.name, subject) ? 'signed_agreement' : 'other');
+}
+// A client's reply: it lands on the client's record, papers are filed by what they are, and the status updates itself.
+// Called by the inbox reader.
+async function clientMail(c, subject, text, attachments, from) {
+  const saved = []; const kyc = []; let signed = null; let unsigned = false;
+  for (const a of attachments || []) {
+    if (/\.(png|jpe?g|gif)$/i.test(a.name) && a.buf.length < 30000) continue; // a logo in the signature
+    try {
+      const kind = await readPaper(a, subject); if (kind === 'unsigned_agreement') unsigned = true;
+      const f = await F.saveFile({ recordId: c.id, type: KYC_NAMES[kind] ? kind : kind === 'signed_agreement' ? 'contract_signed' : 'client_mail', name: a.name, base64: a.buf.toString('base64'), by: 'Email inbox' }); saved.push(f.name || a.name);
+      if (KYC_NAMES[kind]) { const now_ = get('SELECT kyc FROM clients WHERE id=?', c.id); update('clients', c.id, { kyc: { ...(now_.kyc || {}), [kind]: f.id } }); kyc.push(KYC_NAMES[kind]); }
+      if (kind === 'signed_agreement' && !signed) signed = f;
+    } catch (e) { insert('notes', { record_id: c.id, text: `Attachment ${a.name} not saved: ${e.message}`, author: 'Email inbox', at: now() }); }
+  }
+  run('INSERT INTO emails (to_addr,subject,kind,record_id,text,html,status,tries,at) VALUES (?,?,?,?,?,?,?,?,?)', from || c.email || '', subject || '(no subject)', 'client_reply', c.id, String(text || '').slice(0, 2000), '', 'received', 0, now());
   insert('notes', { record_id: c.id, text: `Email from the client: ${subject || '(no subject)'}${text ? ` — ${String(text).trim().slice(0, 300)}` : ''}${saved.length ? `\nSaved: ${saved.join(', ')}` : ''}`, author: 'Email inbox', at: now() });
-  if (signed) { update('clients', c.id, { contract: JSON.stringify({ file: signed.id, by: 'Email inbox', at: now(), method: 'Signed copy received by email' }) }); L.checkActivation(c.id, { label: 'Email inbox' }); }
-  if (c.owner_id) L.alertUser(c.owner_id, `${c.company} emailed ${signed ? 'the signed agreement: please check it' : `${saved.length ? `${saved.length} file(s)` : 'us'}: check KYC and contract`}`, c.id, false);
+  if (signed) update('clients', c.id, { contract: JSON.stringify({ file: signed.id, by: 'Email inbox', at: now(), method: 'Signed copy received by email' }) });
+  const fresh = get('SELECT * FROM clients WHERE id=?', c.id); const left = Object.keys(KYC_NAMES).filter((k) => !(fresh.kyc || {})[k]);
+  if (kyc.length && !left.length) update('clients', c.id, { onboarding: { ...(fresh.onboarding || {}), kyc: { done: true, date: now(), by: 'Email inbox' } } });
+  if (signed || kyc.length) L.checkActivation(c.id, { label: 'Email inbox' });
+  const said = [signed && 'the signed agreement', kyc.length && kyc.join(', ')].filter(Boolean).join(' and ');
+  if (c.owner_id) L.alertUser(c.owner_id, `${c.company} emailed ${said ? `${said}: please check` : unsigned ? 'an agreement that looks unsigned' : saved.length ? `${saved.length} file(s)` : 'a reply'}${kyc.length && left.length ? `. Still needed: ${left.map((k) => KYC_NAMES[k]).join(', ')}` : ''}`, c.id, false);
 }
 const clientByEmail = (addr) => { const e = String(addr || '').toLowerCase(); if (!e) return null; return all('SELECT * FROM clients WHERE merged_into IS NULL AND removed=0').find((c) => String(c.email || '').toLowerCase() === e || String((c.extra || {}).hr_email || '').toLowerCase() === e) || null; };
 

@@ -1531,3 +1531,8 @@ html[lang="hi"] .ss-g { letter-spacing: 0; }
   .cand-table .sk { max-width: 132px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .tbl-scroll td.skills-col { min-width: 140px; max-width: 170px; }
 }
+.trk-how { max-width: 260px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; line-height: 1.3; white-space: normal; }
+.trk-own { width: 150px; max-width: 150px; }
+.trk-by { margin-top: 3px; font-size: 11px; color: var(--muted); white-space: nowrap; }
+.trk-rec { padding: 7px 0; font-size: 13px; border-top: 1px solid var(--border); }
+.trk-rec:first-of-type { border-top: 0; }

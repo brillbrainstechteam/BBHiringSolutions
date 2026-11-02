@@ -186,6 +186,38 @@ async function intakeEmail({ fromName, fromEmail, subject, text, attachments }) 
   return { id, isNew: r.isNew, found: { name: !!name, phone: !!phone, email: !!email, city, job } };
 }
 
+// One email can sit in the label and the whole mailbox: it counts once.
+async function clientOnce(headers, fn) {
+  const id = String(headers['message-id'] || '').trim(); const key = id ? `msg:${id}` : '';
+  if (key && D.get('SELECT 1 FROM mail_seen WHERE uid=?', key)) return;
+  await fn(); if (key) D.run('INSERT OR IGNORE INTO mail_seen (uid,at) VALUES (?,?)', key, D.now());
+}
+// Clients reply to the group address, which reaches the whole mailbox and not only the hiring label. This looks for
+// new mail from each client's own address, from the day this started, and leaves everything else unopened.
+async function checkReplies(cfg) {
+  const own = ownDomains(); const map = new Map();
+  for (const c of D.all('SELECT * FROM clients WHERE merged_into IS NULL AND removed=0 AND junk=0')) for (const e of [c.email, (c.extra || {}).hr_email]) { const a = String(e || '').trim().toLowerCase(); if (a.includes('@') && !own.includes(a.split('@')[1])) map.set(a, c); }
+  if (!D.settings().client_mail_since) D.setSetting('client_mail_since', D.now());
+  const d = new Date(D.settings().client_mail_since); const day = `${d.getUTCDate()}-${['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][d.getUTCMonth()]}-${d.getUTCFullYear()}`;
+  const folder = process.env.IMAP_REPLY_FOLDER || '[Gmail]/All Mail'; const box = await imapConnect(cfg); let got = 0;
+  try {
+    await box.cmd(`LOGIN ${q(cfg.user)} ${q(cfg.pass)}`); await box.cmd(`EXAMINE ${q(folder)}`);
+    for (const [addr, client] of map) {
+      const sr = await box.cmd(`UID SEARCH SINCE ${day} FROM ${q(addr)}`);
+      const uids = (sr.lines.find((l) => l.startsWith('* SEARCH')) || '').replace('* SEARCH', '').trim().split(/\s+/).filter(Boolean).filter((u) => !D.get('SELECT 1 FROM mail_seen WHERE uid=?', `reply:${u}`)).slice(0, 20);
+      for (const uid of uids) {
+        const fr = await box.cmd(`UID FETCH ${uid} BODY.PEEK[]`); const raw = fr.literals[0]; if (!raw) continue;
+        const { headers, parts } = parseMessage(raw); const from = decodeWords(headers.from || ''); const fm = /<([^>]+)>/.exec(from); const email = String(fm ? fm[1] : from).trim().toLowerCase();
+        if (email === addr) {
+          const text = parts.filter((p) => p.type === 'text/plain' && !p.name).map((p) => p.content.toString('utf8')).join('\n') || parts.filter((p) => p.type === 'text/html' && !p.name).map((p) => p.content.toString('utf8').replace(/<[^>]+>/g, ' ')).join('\n');
+          await clientOnce(headers, () => require('./flow').clientMail(client, decodeWords(headers.subject || ''), text, parts.filter((p) => p.name).map((p) => ({ name: p.name, buf: p.content })), email)); got++;
+        }
+        D.run('INSERT OR IGNORE INTO mail_seen (uid,at) VALUES (?,?)', `reply:${uid}`, D.now());
+      }
+    }
+  } finally { box.end(); }
+  D.setHealth('last_reply_check', `${D.now()} · ${map.size} client addresses · ${got} new`);
+}
 // Reads every email in the label not handled before (50 a run) and makes candidates; read/unread is left alone.
 // One run at a time: a big backlog can outlast the 10-minute timer.
 let running = null;
@@ -225,7 +257,7 @@ async function checkNow() {
           const subj = decodeWords(headers.subject || '');
           // The team's own replies in a thread are not candidates; a CV they forward is (read from the CV, not the sender).
           const client = own ? null : require('./flow').clientByEmail(fromEmail); // a client's reply with papers lands on the client
-          if (client) { await require('./flow').clientMail(client, subj, text, attachments); done.client = (done.client || 0) + 1; }
+          if (client) { await clientOnce(headers, () => require('./flow').clientMail(client, subj, text, attachments, fromEmail)); done.client = (done.client || 0) + 1; }
           else if (own && !hasCv) done.skipped = (done.skipped || 0) + 1;
           else if (hasCv || require('./llm').available() || /cv|resume|bio.?data|job|appl|position|profile|candidate|opening|vacanc|interview|portfolio|work experience/i.test(subj)) {
             // Several CVs with different phone numbers are different people (an agency sending profiles): one
@@ -248,6 +280,7 @@ async function checkNow() {
       } catch (e) { done.errors.push(`${uid}: ${e.message}`); }
     }
   } finally { box.end(); }
+  try { await checkReplies(cfg); } catch (e) { done.errors.push(`client replies: ${e.message}`); }
   D.setHealth('last_mail_check', `${D.now()} · ${done.read} read · ${done.leads} candidates · ${done.skipped || 0} skipped`);
   if (done.errors.length) require('./alerts').devAlert('Email inbox: some emails could not be read', done.errors.join('; '));
   return done;
