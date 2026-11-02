@@ -1711,6 +1711,32 @@ route('POST', '/api/files', T, async (ctx) => {
   if (b.type === 'jd') D.edit('jobs', b.record_id, { jd: { ...(get('SELECT jd FROM jobs WHERE id=?', b.record_id) || {}).jd, file: f.id } }, ctx.actor.label);
   return f;
 });
+// A wrong upload comes off the record (the stored file is kept), and whatever it counted for goes with it.
+route('POST', '/api/files/:id/remove', T, (ctx) => {
+  const f = get('SELECT * FROM files WHERE id=? AND replaced=0', ctx.params.id); if (!f) throw httpError(404, 'File not found');
+  const u = ctx.user; const rid = String(f.record_id);
+  const rec = (t) => get(`SELECT * FROM ${t} WHERE id=?`, rid);
+  const ok = rid.startsWith('CL-') ? R.seeClient(u, rec('clients')) : rid.startsWith('CA-') ? R.phoneVisible(u, rec('candidates')) : rid.startsWith('AP-') ? R.seeApp(u, rec('applications')) : rid.startsWith('JB-') ? R.seeJob(u, rec('jobs')) || R.sameAgency(u, rec('jobs')) : false;
+  mustSee(ok, 'file');
+  update('files', f.id, { replaced: 1 });
+  if (['gst', 'pan', 'owner_id'].includes(f.type)) {
+    const c = rec('clients'); const kyc = { ...(c.kyc || {}) }; delete kyc[f.type]; const ob = { ...(c.onboarding || {}) }; delete ob.kyc;
+    update('clients', c.id, { kyc, onboarding: ob });
+  }
+  if (f.type === 'contract_signed') {
+    const c = rec('clients'); let k = {}; try { k = JSON.parse(c.contract) || {}; } catch { /* no contract */ }
+    if (String(k.file) === String(f.id)) {
+      const ob = { ...(c.onboarding || {}) }; delete ob.contract;
+      const patch = { contract: null, onboarding: ob };
+      if (c.activated_at && c.activated_at !== c.created_at) { patch.activated_at = null; if (c.stage === 'Client activated') patch.stage = 'Agreement shared'; } // active only because of this file
+      update('clients', c.id, patch);
+    }
+  }
+  if (f.type === 'cv' || f.type === 'short_cv') { const k = f.type === 'cv' ? 'cv_file' : 'short_cv_file'; const c = rec('candidates'); if (String(c[k]) === String(f.id)) update('candidates', c.id, { [k]: null }); }
+  if (f.type === 'jd') { const j = rec('jobs'); if (String((j.jd || {}).file) === String(f.id)) { const jd = { ...j.jd }; delete jd.file; update('jobs', j.id, { jd }); } }
+  D.history(ctx.actor.label, 'remove file', rid, f.type, f.name, null, null, ctx.ip);
+  return { ok: true };
+});
 route('POST', '/api/candidates/:id/short-cv', T, (ctx) => {
   const c = get('SELECT * FROM candidates WHERE id=?', ctx.params.id); if (!c) throw httpError(404, 'Not found');
   const lines = [{ text: `${c.id} · ${c.job_wanted || ''}`, bold: true, size: 12 }, `City: ${c.city || '—'}  ·  Will work in: ${(c.work_cities || []).join(', ') || c.city || '—'}`, `Experience: ${c.exp_total ?? '—'} years (jewellery ${c.exp_jewellery ?? '—'})`,
