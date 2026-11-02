@@ -1663,11 +1663,16 @@ button.rs-step:hover { background: var(--surface-2); }
 .filters.cand-filters > label.small { display: flex; align-items: center; gap: 6px; height: var(--ctl-h); white-space: nowrap; }
 .filters.cand-filters > label.small input { min-width: 0; height: var(--ctl-h); border-radius: 999px; font-size: 13px; }
 /* The count has a fixed place, so the views beside it never move when a filter is on. */
-.cand-result:has(.cand-views) { display: grid; grid-template-columns: 150px minmax(0, 1fr) auto; align-items: center; gap: 12px; }
-.cand-seg { flex-wrap: nowrap; }
+.cand-result { justify-content: flex-start; gap: 12px 16px; }
+.cand-count { flex: none; }
+.cand-views { flex-wrap: nowrap; gap: 8px; }
+.cand-views .chip { height: 36px; padding: 0 14px; font: 600 13px var(--font); white-space: nowrap; }
+.cand-views .chip span { color: var(--muted); font-weight: 500; }
+.cand-views .chip.on span { color: var(--side-muted); }
+.cand-seg { flex-wrap: nowrap; margin-left: auto; }
 .cand-seg select { width: 190px; max-width: 190px; height: 36px; }
 .cand-seg .btn { height: 36px; white-space: nowrap; }
-@media (max-width: 1180px) { .cand-result:has(.cand-views) { grid-template-columns: 150px minmax(0, 1fr); } .cand-seg { grid-column: 1 / -1; justify-content: flex-end; flex-wrap: wrap; } }
+@media (max-width: 760px) { .cand-views { flex-wrap: wrap; } .cand-seg { flex-wrap: wrap; margin-left: 0; } }
 /* Bulk actions on every table. */
 .bulkbar.bulk-card { display: flex; flex-wrap: wrap; gap: 8px; align-items: stretch; padding: 16px; margin-bottom: 12px; background: var(--surface); }
 .bulkbar.bulk-card > .bulk-head { flex: 1 0 100%; margin-bottom: 4px; }
