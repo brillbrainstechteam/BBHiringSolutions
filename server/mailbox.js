@@ -194,9 +194,11 @@ async function clientOnce(headers, fn) {
 }
 // Clients reply to the group address, which reaches the whole mailbox and not only the hiring label. This looks for
 // new mail from each client's own address, from the day this started, and leaves everything else unopened.
+const L_accounts = () => require('./logic').accountsUsers().map((u) => u.email).filter(Boolean);
 async function checkReplies(cfg) {
   const own = ownDomains(); const map = new Map();
   for (const c of D.all('SELECT * FROM clients WHERE merged_into IS NULL AND removed=0 AND junk=0')) for (const e of [c.email, (c.extra || {}).hr_email]) { const a = String(e || '').trim().toLowerCase(); if (a.includes('@') && !own.includes(a.split('@')[1])) map.set(a, c); }
+  for (const a of [D.settings().accounts_email, ...L_accounts()]) if (String(a || '').includes('@')) map.set(String(a).trim().toLowerCase(), { accounts: true });
   if (!D.settings().client_mail_since) D.setSetting('client_mail_since', D.now());
   const d = new Date(D.settings().client_mail_since); const day = `${d.getUTCDate()}-${['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][d.getUTCMonth()]}-${d.getUTCFullYear()}`;
   const folder = process.env.IMAP_REPLY_FOLDER || '[Gmail]/All Mail'; const box = await imapConnect(cfg); let got = 0;
@@ -210,7 +212,7 @@ async function checkReplies(cfg) {
         const { headers, parts } = parseMessage(raw); const from = decodeWords(headers.from || ''); const fm = /<([^>]+)>/.exec(from); const email = String(fm ? fm[1] : from).trim().toLowerCase();
         if (email === addr) {
           const text = parts.filter((p) => p.type === 'text/plain' && !p.name).map((p) => p.content.toString('utf8')).join('\n') || parts.filter((p) => p.type === 'text/html' && !p.name).map((p) => p.content.toString('utf8').replace(/<[^>]+>/g, ' ')).join('\n');
-          await clientOnce(headers, () => require('./flow').clientMail(client, decodeWords(headers.subject || ''), text, parts.filter((p) => p.name).map((p) => ({ name: p.name, buf: p.content })), email)); got++;
+          if (client.accounts) await clientOnce(headers, () => require('./flow').accountsMail(decodeWords(headers.subject || ''), text, parts.filter((p) => p.name).map((p) => ({ name: p.name, buf: p.content })), email)); else await clientOnce(headers, () => require('./flow').clientMail(client, decodeWords(headers.subject || ''), text, parts.filter((p) => p.name).map((p) => ({ name: p.name, buf: p.content })), email)); got++;
         }
         D.run('INSERT OR IGNORE INTO mail_seen (uid,at) VALUES (?,?)', `reply:${uid}`, D.now());
       }

@@ -1753,3 +1753,5 @@ button.fin-tile.on { border-color: var(--mustard); box-shadow: 0 0 0 1px var(--m
 .rep-tbl .tbl-wrap { overflow-x: auto; }
 .rep-tbl .tbl { width: auto; min-width: 0; }
 .rep-tbl .tbl th, .rep-tbl .tbl td { padding-left: 10px; padding-right: 14px; white-space: nowrap; }
+/* No need for a round */
+.skip-row { display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); }

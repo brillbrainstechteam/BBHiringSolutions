@@ -70,6 +70,7 @@ function runTimer() {
     const r = L.sendWA({ ptype: 'client', pid: b.client_id, format: 'bbhs_payment_reminder', vars: { bill_no: b.bill_no, amount: L.inr(b.balance), status: d > 0 ? `due in ${d} days` : d === 0 ? 'due today' : 'overdue', link: L.upiLink(b.balance, b.bill_no) }, bl: b.id, auto: true, rule: 'payment_reminder', dedupe: `pay:${b.id}:${tag}` });
     if (!r.skipped) count('payment_reminder');
   }
+  require('./flow').followupsDue();
   // Daily log reminder 30 minutes before the deadline.
   const [dh, dm] = D.settings().log_deadline.split(':').map(Number); const h = L.istHour();
   if (h >= dh + dm / 60 - 0.5 && h < dh + dm / 60) {

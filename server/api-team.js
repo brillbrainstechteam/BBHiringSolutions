@@ -42,7 +42,7 @@ function visibleApps(u) {
 }
 
 // ---------- me / menu counts ----------
-route('GET', '/api/me', { auth: 'team', allow2fa: true, channels: true }, (ctx) => {
+route('GET', '/api/me', { auth: 'team', allow2fa: true, channels: true, accounts: true }, (ctx) => {
   const u = ctx.user;
   const counts = {
     leads: leadCount(u),
@@ -51,7 +51,7 @@ route('GET', '/api/me', { auth: 'team', allow2fa: true, channels: true }, (ctx) 
     unread: unreadThreads(u),
     alerts: get('SELECT COUNT(*) c FROM alerts WHERE user_id=? AND read=0', u.id).c,
   };
-  return { user: { id: u.id, name: u.name, level: u.level, agency_id: u.agency_id, role: u.role, username: u.username, must_change: u.must_change, whatsapp: u.whatsapp, team: u.team || 'Recruitment', channel_only: R.channelOnly(u), leads: isSuper(u) || R.sharedWith(u) || R.canAllocate(u) }, agency: ctx.agency, counts };
+  return { user: { id: u.id, name: u.name, level: u.level, agency_id: u.agency_id, role: u.role, username: u.username, must_change: u.must_change, whatsapp: u.whatsapp, team: u.team || 'Recruitment', channel_only: R.channelOnly(u), accounts_only: R.accountsOnly(u), leads: isSuper(u) || R.sharedWith(u) || R.canAllocate(u) }, agency: ctx.agency, counts };
 });
 function unreadThreads(u) {
   const rows = all("SELECT person_type, person_id FROM messages WHERE direction='in' AND read_by_us=0 GROUP BY person_type, person_id");
@@ -354,7 +354,7 @@ route('POST', '/api/leads/bulk', T, (ctx) => {
 // Screen protection (guard.js): blocked print / copy / screenshot attempts by admins and sub admins go to the
 // history, at most once a minute per person and kind, so the super admin can see who tried what.
 const lastEvent = new Map();
-route('POST', '/api/security-event', { auth: 'team', channels: true, rate: { key: 'secevent', max: 120, minutes: 60 } }, (ctx) => {
+route('POST', '/api/security-event', { auth: 'team', channels: true, accounts: true, rate: { key: 'secevent', max: 120, minutes: 60 } }, (ctx) => {
   const what = String(ctx.body.what || '').slice(0, 40).replace(/[^\w ]/g, '');
   const key = `${ctx.user.id}:${what}`; const t = Date.now();
   if (what && (lastEvent.get(key) || 0) < t - 60000) { lastEvent.set(key, t); D.history(ctx.actor.label, `blocked ${what}`, null, 'screen', null, null, null, ctx.ip); }
@@ -1159,7 +1159,7 @@ route('GET', '/api/applications/:id', T, (ctx) => {
   const job = get('SELECT * FROM jobs WHERE id=?', a.job_id); const cand = get('SELECT * FROM candidates WHERE id=?', a.candidate_id); const client = get('SELECT * FROM clients WHERE id=?', job.client_id);
   const bill = get('SELECT * FROM bills WHERE app_id=? AND credit_of IS NULL ORDER BY created_at DESC', a.id);
   return {
-    ...v, candidate: candidateOut(ctx.user, cand), cv_name: cand.cv_file ? (get('SELECT name FROM files WHERE id=?', cand.cv_file) || {}).name || '' : '', other_apps: all('SELECT * FROM applications WHERE candidate_id=? AND id<>? ORDER BY created_at DESC', a.candidate_id, a.id).filter((x) => R.seeApp(ctx.user, x)).map(V.appView).map((x) => ({ id: x.id, job_title: x.job_title, client_name: x.client_name, step: x.step, result: x.result })), slot_ask: get("SELECT * FROM slot_asks WHERE app_id=? AND status<>'Cancelled' ORDER BY id DESC LIMIT 1", a.id) || null, questions: get('SELECT * FROM app_questions WHERE app_id=?', a.id) || null, job: V.jobView(job), client: { id: client.id, company: client.company, contact: client.contact },
+    ...v, candidate: candidateOut(ctx.user, cand), cv_name: cand.cv_file ? (get('SELECT name FROM files WHERE id=?', cand.cv_file) || {}).name || '' : '', round_skips: all('SELECT * FROM round_skips WHERE app_id=? ORDER BY at', a.id), other_apps: all('SELECT * FROM applications WHERE candidate_id=? AND id<>? ORDER BY created_at DESC', a.candidate_id, a.id).filter((x) => R.seeApp(ctx.user, x)).map(V.appView).map((x) => ({ id: x.id, job_title: x.job_title, client_name: x.client_name, step: x.step, result: x.result })), slot_ask: get("SELECT * FROM slot_asks WHERE app_id=? AND status<>'Cancelled' ORDER BY id DESC LIMIT 1", a.id) || null, questions: get('SELECT * FROM app_questions WHERE app_id=?', a.id) || null, job: V.jobView(job), client: { id: client.id, company: client.company, contact: client.contact },
     history: all('SELECT * FROM app_history WHERE app_id=? ORDER BY at DESC, id DESC', a.id), messages: all('SELECT * FROM messages WHERE ap=? ORDER BY at DESC', a.id),
     score: (() => { const m = L.matchScore(cand, job, L.ratingOf(cand.id)); const f = require('./flow').rowFor(job, cand, m, {}); return { ...m, score: f.score, reasons: f.points, gaps: f.gaps }; })(), bill: bill ? L.billView(bill) : null, suggest: suggestFor(a), steps: L.STEPS, selected: !!get("SELECT 1 FROM interviews WHERE app_id=? AND result='Selected'", a.id), next: require('./flow').nextStep(a, bill), client_cv: cand.short_cv_file || null,
     files: all('SELECT * FROM files WHERE record_id=? AND replaced=0 ORDER BY at DESC', a.id), notes: all('SELECT * FROM notes WHERE record_id=? ORDER BY at DESC', a.id),
@@ -1189,6 +1189,18 @@ route('POST', '/api/applications/:id/step', T, (ctx) => {
   const step = ctx.body.next ? L.STEPS[Math.min(L.STEPS.length - 1, L.stepIdx(a.step) + 1)] : ctx.body.step;
   if (step === 'Joined' && a.step !== 'Offer accepted' && !ctx.body.force) throw httpError(400, 'Mark Joined after the offer is accepted.');
   return L.moveStep(a.id, step, ctx.actor, ctx.body.note || (ctx.body.next ? 'Move to next step' : 'Step set by hand'));
+});
+// A round can be skipped on the recruiter's judgement, with the reason kept. The other rounds are not affected.
+route('POST', '/api/applications/:id/skip-round', T, (ctx) => {
+  const a = loadApp(ctx); const { mode } = ctx.body || {}; const reason = String((ctx.body || {}).reason || '').trim(); const label = L.IV_MODES[mode];
+  if (!label) throw httpError(400, 'Pick the round'); if (a.result !== 'open') throw httpError(400, 'This application is closed.'); if (!reason) throw httpError(400, 'Give the reason for skipping this round', 'reason');
+  if (get("SELECT 1 FROM interviews WHERE app_id=? AND mode=? AND status IN ('Scheduled','Rescheduled')", a.id, mode)) throw httpError(400, 'This round is booked. Record or cancel it first.');
+  D.run('INSERT OR REPLACE INTO round_skips (app_id, mode, reason, by, at) VALUES (?, ?, ?, ?, ?)', a.id, mode, reason, ctx.actor.label, now());
+  L.appHist(a.id, a.step, ctx.actor, `${label}: No need. ${reason}`, 'interview'); return { ok: true };
+});
+route('POST', '/api/applications/:id/skip-round/undo', T, (ctx) => {
+  const a = loadApp(ctx); const label = L.IV_MODES[(ctx.body || {}).mode]; if (!label) throw httpError(400, 'Pick the round');
+  D.run('DELETE FROM round_skips WHERE app_id=? AND mode=?', a.id, ctx.body.mode); L.appHist(a.id, a.step, ctx.actor, `${label}: No need taken back`, 'interview'); return { ok: true };
 });
 route('POST', '/api/applications/:id/close', T, (ctx) => { const a = loadApp(ctx); return L.closeApplication(a.id, ctx.body.reason, ctx.actor, ctx.body.note); });
 // Match candidates to jobs: every candidate (that this login can see) gets an application on each open job their ad
@@ -1226,7 +1238,7 @@ route('POST', '/api/applications/:id/hold', T, (ctx) => {
   if (on && ctx.body.until) insert('followups', { record_id: a.id, at: new Date(ctx.body.until + 'T09:00:00+05:30').toISOString(), note: `Come back to ${a.id}: ${ctx.body.reason}`, for_user: ctx.user.id, created_by: ctx.user.id });
   return { ok: true };
 });
-route('POST', '/api/applications/:id/offer', T, (ctx) => { const a = loadApp(ctx); return L.recordOffer(a.id, ctx.body, ctx.actor); });
+route('POST', '/api/applications/:id/offer', T, (ctx) => { const a = loadApp(ctx); const r = L.recordOffer(a.id, ctx.body, ctx.actor); require('./flow').autoAccounts(a.id, ctx.actor); return r; });
 route('POST', '/api/applications/:id/accept', T, (ctx) => { const a = loadApp(ctx); if (a.step !== 'Offer made') throw httpError(400, 'Record the offer first.'); return L.moveStep(a.id, 'Offer accepted', ctx.actor, 'Offer accepted (marked by team)'); });
 route('POST', '/api/applications/:id/decline', T, (ctx) => { const a = loadApp(ctx); return L.closeApplication(a.id, 'Offer declined', ctx.actor, ctx.body.note); });
 route('POST', '/api/applications/:id/joined', T, (ctx) => {
@@ -1431,8 +1443,8 @@ route('POST', '/api/logs/:id/approve', ADMINS, (ctx) => {
 // A bill added by hand has no application behind it: its names are kept on the bill.
 const billApp = (b) => (b.app_id ? V.appView(get('SELECT * FROM applications WHERE id=?', b.app_id)) : { candidate_name: b.person_name || '', job_title: b.job_name || '', joining_date: null });
 const billDay = (b) => String(b.issued_at || b.date || b.created_at || '').slice(0, 10);
-route('GET', '/api/bills', T, (ctx) => {
-  if (ctx.user.level === 'sub') throw httpError(403, 'Sub admins do not see bills.');
+route('GET', '/api/bills', { ...T, accounts: true }, (ctx) => {
+  if (ctx.user.level === 'sub' && !R.accountsOnly(ctx.user)) throw httpError(403, 'Sub admins do not see bills.');
   const q = ctx.query;
   const seen = all('SELECT * FROM bills ORDER BY created_at DESC').filter((b) => seeBill(ctx.user, b)).map(L.billView).map((b) => {
     const a = billApp(b); return { ...b, bill_day: billDay(b), client_name: (get('SELECT company FROM clients WHERE id=?', b.client_id) || {}).company, candidate_name: a.candidate_name, job_title: a.job_title, joining_date: a.joining_date, agency_name: V.agencyName(b.agency_id), bb_share: b.fee - (b.agency_share || 0) };
@@ -1447,8 +1459,8 @@ route('GET', '/api/bills', T, (ctx) => {
 });
 const STAGES = ['Billed', 'Received', 'Outstanding'];
 const receiveBill = (b, actor) => { const v = L.billView(b); if (v.balance > 0) insert('payments', { bill_id: b.id, date: L.istDay(), amount: v.balance, mode: 'Marked received', ref: '', tds: 0, by: actor.label, created_at: now() }); return L.refreshBill(b.id, actor.label); };
-const noMoneyMarks = (ctx, stage) => { if (stage === 'Received' && !isSuper(ctx.user)) throw httpError(403, 'Only the super admin records money received.'); };
-route('POST', '/api/bills', ADMINS, async (ctx) => {
+const noMoneyMarks = (ctx, stage) => { if (stage === 'Received' && !isSuper(ctx.user) && !R.accountsOnly(ctx.user)) throw httpError(403, 'Only the super admin records money received.'); };
+route('POST', '/api/bills', { ...ADMINS, accounts: true }, async (ctx) => {
   const b = ctx.body || {}; const c = get('SELECT * FROM clients WHERE id=?', b.client_id); if (!c || !seeClient(ctx.user, c)) throw httpError(400, 'Pick the client', 'client_id');
   const total = Math.round(Number(b.amount) || 0); if (total <= 0) throw httpError(400, 'Enter the invoice amount', 'amount');
   const gst = Math.round(Number(b.gst) || 0); if (gst < 0 || gst >= total) throw httpError(400, 'GST must be less than the amount', 'gst');
@@ -1462,7 +1474,7 @@ route('POST', '/api/bills', ADMINS, async (ctx) => {
   if (stage === 'Received') receiveBill(get('SELECT * FROM bills WHERE id=?', id), ctx.actor);
   return { ok: true, id };
 });
-route('POST', '/api/bills/stage', ADMINS, (ctx) => {
+route('POST', '/api/bills/stage', { ...ADMINS, accounts: true }, (ctx) => {
   const { ids, stage } = ctx.body || {}; if (!STAGES.includes(stage)) throw httpError(400, 'Pick a stage'); noMoneyMarks(ctx, stage); const out = { done: 0, skipped: 0 };
   for (const id of (ids || []).slice(0, 200)) {
     const b = get('SELECT * FROM bills WHERE id=?', id); if (!b || !seeBill(ctx.user, b) || !['Issued', 'Paid'].includes(b.status)) { out.skipped++; continue; }
@@ -1473,11 +1485,11 @@ route('POST', '/api/bills/stage', ADMINS, (ctx) => {
   return out;
 });
 function loadBill(ctx) { const b = get('SELECT * FROM bills WHERE id=?', ctx.params.id); mustSee(b && seeBill(ctx.user, b), 'bill'); return b; }
-route('GET', '/api/bills/:id', T, (ctx) => {
+route('GET', '/api/bills/:id', { ...T, accounts: true }, (ctx) => {
   const b = loadBill(ctx); const v = L.billView(b); const a = billApp(b);
   return { ...v, app: a, client: get('SELECT * FROM clients WHERE id=?', b.client_id), payments: all('SELECT * FROM payments WHERE bill_id=? ORDER BY date', b.id), credits: all('SELECT * FROM credit_notes WHERE bill_id=?', b.id), upi: L.upiLink(v.balance || v.total, b.bill_no), agency_name: V.agencyName(b.agency_id) };
 });
-route('PATCH', '/api/bills/:id', ADMINS, (ctx) => {
+route('PATCH', '/api/bills/:id', { ...ADMINS, accounts: true }, (ctx) => {
   const b = loadBill(ctx); if (b.status !== 'Draft') throw httpError(400, 'Issued bills cannot be edited. Use a credit note.');
   const ctc = Number(ctx.body.ctc ?? b.ctc); const client = get('SELECT * FROM clients WHERE id=?', b.client_id);
   const f = b.is_replacement ? { fee: 0, share: 0 } : feeOverride(client, b.agency_id, ctc, ctx.body.fee);
@@ -1489,8 +1501,8 @@ function feeOverride(client, agencyId, ctc, fee) {
   if (fee !== undefined && fee !== null && fee !== '') { const v = Math.round(Number(fee)); return { fee: v, share: Math.floor((v * f.sharePct) / 100) }; }
   return f;
 }
-route('POST', '/api/bills/:id/issue', ADMINS, (ctx) => { const b = loadBill(ctx); return L.issueBill(b.id, ctx.actor); });
-route('POST', '/api/bills/:id/payment', SUPER, (ctx) => {
+route('POST', '/api/bills/:id/issue', { ...ADMINS, accounts: true }, (ctx) => { const b = loadBill(ctx); return L.issueBill(b.id, ctx.actor); });
+route('POST', '/api/bills/:id/payment', { ...SUPER, accounts: true }, (ctx) => {
   const b = loadBill(ctx); if (!['Issued'].includes(b.status)) throw httpError(400, 'Payments can be recorded only on an issued bill.');
   const amt = Number(ctx.body.amount) || 0; const tds = Number(ctx.body.tds) || 0;
   if (amt <= 0 && tds <= 0) throw httpError(400, 'Enter the amount received', 'amount');
@@ -1516,7 +1528,7 @@ route('POST', '/api/bills/payouts', SUPER, (ctx) => {
   for (const id of ids) { const b = get('SELECT * FROM bills WHERE id=?', id); if (b && b.payout_status === 'Due') { update('bills', id, { payout_status: 'Paid', payout_paid_at: now(), payout_ref: ctx.body.ref || '' }); D.history(ctx.actor.label, 'payout paid', id, 'payout_status', 'Due', 'Paid'); n++; } }
   return { paid: n };
 });
-route('GET', '/api/bills/:id/pdf', T, (ctx) => { const b = loadBill(ctx); D.history(ctx.actor.label, 'download', b.id, 'invoice'); return { __file: { name: `${(b.bill_no || b.id).replace(/\//g, '-')}.pdf`, mime: 'application/pdf', buf: invoicePdf(b) } }; });
+route('GET', '/api/bills/:id/pdf', { ...T, accounts: true }, (ctx) => { const b = loadBill(ctx); D.history(ctx.actor.label, 'download', b.id, 'invoice'); return { __file: { name: `${(b.bill_no || b.id).replace(/\//g, '-')}.pdf`, mime: 'application/pdf', buf: invoicePdf(b) } }; });
 function invoicePdf(b) {
   const s = D.settings(); const biz = s.business; const v = L.billView(b);
   const c = get('SELECT * FROM clients WHERE id=?', b.client_id); const a = billApp(b);
@@ -1576,7 +1588,7 @@ route('POST', '/api/users', ADMINS, (ctx) => {
   const level = isSuper(u) ? (b.level || 'sub') : 'sub';
   if (!['super', 'admin', 'sub'].includes(level)) throw httpError(400, 'Pick the level: sub admin, admin or super admin', 'level');
   const team = isSuper(u) && L.TEAMS.includes(b.team) ? b.team : 'Recruitment';
-  const limited = R.channelOnly({ level, team }); // social media and tech people belong to head office, not an agency
+  const limited = R.channelOnly({ level, team }) || R.accountsOnly({ level, team }); // these people belong to head office, not an agency
   const agency = isSuper(u) ? b.agency_id : u.agency_id;
   if (level !== 'super' && !limited && !agency) throw httpError(400, 'Pick the agency', 'agency_id');
   if (level !== 'super' && !limited && !get('SELECT 1 FROM agencies WHERE id=?', agency)) throw httpError(400, 'That agency does not exist', 'agency_id');
@@ -1817,8 +1829,8 @@ function removePerson(ptype, pid, who) {
 }
 
 // ---------- bell, notes, follow-ups, history, files ----------
-route('GET', '/api/alerts', { ...T, channels: true }, (ctx) => all('SELECT * FROM alerts WHERE user_id=? ORDER BY at DESC LIMIT 50', ctx.user.id));
-route('POST', '/api/alerts/read', { ...T, channels: true }, (ctx) => { if (ctx.body.id) D.run('UPDATE alerts SET read=1 WHERE id=? AND user_id=?', ctx.body.id, ctx.user.id); else D.run('UPDATE alerts SET read=1 WHERE user_id=?', ctx.user.id); return { ok: true }; });
+route('GET', '/api/alerts', { ...T, channels: true, accounts: true }, (ctx) => all('SELECT * FROM alerts WHERE user_id=? ORDER BY at DESC LIMIT 50', ctx.user.id));
+route('POST', '/api/alerts/read', { ...T, channels: true, accounts: true }, (ctx) => { if (ctx.body.id) D.run('UPDATE alerts SET read=1 WHERE id=? AND user_id=?', ctx.body.id, ctx.user.id); else D.run('UPDATE alerts SET read=1 WHERE user_id=?', ctx.user.id); return { ok: true }; });
 route('POST', '/api/notes', T, (ctx) => {
   if (!ctx.body.text) throw httpError(400, 'Write the note', 'text');
   insert('notes', { record_id: ctx.body.record_id, text: ctx.body.text, author: ctx.actor.label, at: now() }); D.history(ctx.actor.label, 'note', ctx.body.record_id); return { ok: true };

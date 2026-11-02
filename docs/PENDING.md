@@ -7,7 +7,7 @@ Last updated 2 Nov 2026. The live list of messages is in the portal: Settings �
 | # | What | Why it matters |
 |---|---|---|
 | 1 | In the `transform@dgtrainings.com` Gmail: add `hiringsolutions@brillbrainsconsultants.com` under Settings → Accounts → Send mail as | Until then, Gmail is likely to show the sender as `transform@dgtrainings.com`. |
-| 3 | Add the Accounts email: Settings → Fees & limits | Invoice requests have nowhere to go without it. |
+| 3 | Create the Accounts login with an email (Logins & team → + Add login, level Sub admin, team Accounts), or add an Accounts email in Settings → Fees & limits | The invoice email goes to that address. Accounts still see the work under Invoicing without one. |
 | 4 | Create Dhanvi's login: Logins & team → + Add login (team: Social media) | They run the creative and channel steps. Needs their WhatsApp number. |
 | 5 | Pick owners for the 6 channels marked "To be decided" in Digital Reach | Admins and sub-admins can set them too. College Placement Cell, Training Institutes, Training Institutes (partnership), College Placement Cell (tie-up), Local Hiring Agencies, Job Fairs. |
 | 6 | Settings → Message formats: tick the formats, press Send selected to Meta, then Check approval status after a day | `bbhs_client_slots`, `bbhs_client_thanks`, `bbhs_jd_approval` and `bbhs_team_login` are not approved. Ask client for a slot cannot go until `bbhs_client_slots` is. |
@@ -61,6 +61,8 @@ Everything automatic is held. Held messages are not sent later; only new ones go
 
 ## Good to know
 
+- An Accounts login is a Sub admin in the team Accounts: Invoicing, Clients, Candidates with an offer, and Profit & Loss. The invoice email to Accounts, Send invoice and Payment reminder go even while messages are off, because a person or a recorded offer letter starts them. Automatic payment reminders stay held.
+- Interview rounds can be marked No need with a reason on the application. Booking that round later takes the No need away.
 - Closing a job closes its open applications with the reason Job closed and cancels interviews ahead, with no message to anyone. Reopening the job brings those applications back, but not the interviews or a cancelled draft bill.
 - A Short CV added by hand must be a readable PDF or Word file with no phone, email or link, or the upload is refused. Candidates cannot add one.
 - The CV for clients is rebuilt as a clean BrillBrains PDF, so it does not keep the candidate's own layout. A scanned or photo CV gives a profile summary only, with no resume text.

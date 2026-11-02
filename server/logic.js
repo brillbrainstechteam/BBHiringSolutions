@@ -113,6 +113,7 @@ const actorName = (a) => (a ? a.label || a.name || 'System' : 'System');
 // Testing pause (settings.wa_pause): why a WhatsApp to a candidate is held instead of sent, or null to send it.
 function waHeld(msg) {
   // Asking a client for a slot, and telling the candidate the time it gives, are started by a recruiter, so they go.
+  if (['bbhs_bill_raised', 'bbhs_payment_reminder'].includes(msg.format) && msg.sent_by !== 'Auto') return null; // Accounts pressed Send
   if (msg.format === 'bbhs_client_slots' || (msg.format === 'bbhs_interview_scheduled' && msg.iv && (get('SELECT from_ask FROM interviews WHERE id=?', msg.iv) || {}).from_ask)) return null;
   if (msg.person_type === 'client' && (msg.format || ['Auto', 'Bot', 'System'].includes(msg.sent_by)) && !['bbhs_login_code', 'bbhs_team_login'].includes(msg.format)) {
     const c = get('SELECT quiet FROM clients WHERE id=?', msg.person_id); if (c && c.quiet) return 'Held: earlier client, no messages until a new job opening';
@@ -634,6 +635,7 @@ function scheduleInterview(appId, o, by) {
   insert('interviews', { id, app_id: appId, round, mode, link: mode === 'video' ? String(o.link || '').trim() : '', client_joins: clientJoins, name: o.name || (mode ? IV_MODES[mode] : (round === 'ours' ? 'Round 1' : 'Client round')), at: new Date(o.at).toISOString(), place, interviewer: o.interviewer || '', status: 'Scheduled', qa: [], confirmed: 0, created_by: by && by.uid, created_at: now() });
   history(actorName(by), 'create', id, null, null, `${round} interview on ${appId}`);
   if (o.from_ask) update('interviews', id, { from_ask: o.from_ask });
+  if (mode) D.run('DELETE FROM round_skips WHERE app_id=? AND mode=?', appId, mode); // booked after all: "No need" no longer stands
   if (round === 'client') D.run(`UPDATE slot_asks SET status='Scheduled', iv_id=? WHERE app_id=? AND status IN (${OPEN_ASK})`, id, appId);
   const target = round === 'ours' ? 'Our interview' : 'Client interview';
   if (stepIdx(app.step) < stepIdx(target)) moveStep(appId, target, by, `${id} scheduled`);
@@ -645,7 +647,7 @@ function scheduleInterview(appId, o, by) {
   return iv;
 }
 // Sections of the team. Everyone outside Recruitment who is a sub admin gets the hiring-channels-only login.
-const TEAMS = ['Recruitment', 'Social media & marketing', 'Tech'];
+const TEAMS = ['Recruitment', 'Accounts', 'Social media & marketing', 'Tech'];
 const IV_MODES = { phone: 'Telephonic round', video: 'Virtual round', in_person: 'Final round (in person)' };
 function ivVars(iv, job) {
   return { round: iv.mode === 'phone' ? 'telephonic interview' : iv.mode === 'video' ? (iv.client_joins ? 'video interview with the client' : 'video interview') : iv.round === 'ours' ? 'interview' : 'interview with the client', job: job.title, date: istFmt(iv.at, false), time: istTime(iv.at), place: iv.place };
@@ -1056,4 +1058,5 @@ function resumeUse(user, candidateId) {
   for (const s of superAdmins()) alertUser(s.id, `${user.name} opened or downloaded ${used} of ${total} resumes (${Math.round((used / total) * 100)}%) in the last ${RESUME_DAYS} days`, user.id, true);
   history(user.name, 'resume alert', user.id, null, null, `${used} of ${total}`);
 }
-Object.assign(module.exports, { fixAsk, openAsks, OPEN_ASK, resumeUse, RESUME_DAYS });
+const accountsUsers = () => all("SELECT * FROM users WHERE level='sub' AND team='Accounts' AND status='On'");
+Object.assign(module.exports, { accountsUsers, fixAsk, openAsks, OPEN_ASK, resumeUse, RESUME_DAYS });

@@ -25,15 +25,16 @@
   }
 
   // Social media and tech logins see only their hiring channels and their own login page.
-  const menuFor = (u) => (u.channel_only ? MENU.filter((m) => ['channels', 'agreement', 'logins'].includes(m[0])) : MENU.filter((m) => m[0] !== 'channels' && (m[0] !== 'leads' || u.leads) && (!m[3] || m[3].includes(u.level))));
+  const ACCOUNTS_MENU = ['accounts', 'acclients', 'accandidates', 'bills', 'logins'];
+  const menuFor = (u) => (u.accounts_only ? MENU.filter((m) => ACCOUNTS_MENU.includes(m[0])) : u.channel_only ? MENU.filter((m) => ['channels', 'agreement', 'logins'].includes(m[0])) : MENU.filter((m) => m[0] !== 'channels' && !['acclients', 'accandidates'].includes(m[0]) && (m[0] !== 'leads' || u.leads) && (!m[3] || m[3].includes(u.level))));
   const MENU = [
     ['myday', 'My day', 'sun', ['sub']], ['dashboard', 'Dashboard', 'grid'], ['leads', 'Leads', 'inbox', null, 'leads'],
     ['clients', 'Clients', 'building'], ['candidates', 'Candidates', 'users', null, 'cand_new'], ['jobs', 'Job openings', 'brief'], ['channels', 'Digital Reach', 'flow'], ['applications', 'Applications', 'flow'],
     ['interviews', 'Interviews', 'cal', null, 'pending'], ['whatsapp', 'WhatsApp', 'chat', null, 'unread'],
-    ['performance', 'Performance', 'chart'], ['logs', 'Daily logs', 'note'], ['bills', 'Profit & Loss', 'rupee', ['super', 'admin']],
+    ['performance', 'Performance', 'chart'], ['logs', 'Daily logs', 'note'], ['accounts', 'Invoicing', 'note', ['super']], ['acclients', 'Clients', 'building'], ['accandidates', 'Candidates', 'users'], ['bills', 'Profit & Loss', 'rupee', ['super', 'admin']],
     ['reports', 'Reports', 'report'], ['agreement', 'Recruitment Agreement', 'note'], ['logins', 'Logins & team', 'key'], ['settings', 'Settings', 'cog'],
   ];
-  const GROUP = { agreement: 'Admin', channels: 'Hiring', myday: 'Overview', dashboard: 'Overview', leads: 'Hiring', clients: 'Hiring', jobs: 'Hiring', candidates: 'Hiring', applications: 'Hiring', interviews: 'Hiring', whatsapp: 'Messages', performance: 'Team', logs: 'Team', bills: 'Financials', reports: 'Financials', logins: 'Admin', settings: 'Admin' };
+  const GROUP = { agreement: 'Admin', channels: 'Hiring', myday: 'Overview', dashboard: 'Overview', leads: 'Hiring', clients: 'Hiring', jobs: 'Hiring', candidates: 'Hiring', applications: 'Hiring', interviews: 'Hiring', whatsapp: 'Messages', performance: 'Team', logs: 'Team', accounts: 'Financials', acclients: 'Financials', accandidates: 'Financials', bills: 'Financials', reports: 'Financials', logins: 'Admin', settings: 'Admin' };
   const HELP = {
     agreement: 'The standard Recruitment Agreement. Clients see the same copy in their account.',
     channels: 'Every channel for every open job. Change the owner in the Owner column. Copy a job\'s link, post it, then click the cell to update it. Everyone sees the same page.',
@@ -65,7 +66,7 @@
     const MOVED = { segments: 'team/candidates?tab=segments', roles: 'team/settings?tab=roles', books: 'team/bills?tab=summary', money: 'team/bills?tab=bills' };
     if (MOVED[r.sub[0]]) return BB.go(MOVED[r.sub[0]]);
     const allowed = menuFor(BB.me.user).map((m) => m[0]);
-    pageName = allowed.includes(r.sub[0]) ? r.sub[0] : BB.me.user.channel_only ? 'channels' : BB.me.user.level === 'sub' ? 'myday' : 'dashboard';
+    pageName = allowed.includes(r.sub[0]) ? r.sub[0] : BB.me.user.accounts_only ? 'accounts' : BB.me.user.channel_only ? 'channels' : BB.me.user.level === 'sub' ? 'myday' : 'dashboard';
     pageQ = r.q;
     if (!$('.shell')) shell(); else updateNav();
     renderPage();
@@ -76,14 +77,14 @@
     const u = BB.me.user; const ag = BB.me.agency;
     $('#app').innerHTML = `<div class="shell"><aside class="side">${BB.brand('Team portal', '#team')}<nav class="nav" data-nav></nav>
       <div class="me"><b>${esc(u.name)}</b>${BB.levelName(u.level)}${ag ? ` · ${esc(ag.name)}` : ' · BrillBrains'}<div style="margin-top:6px"><a href="/guides/${{ super: 'super-admin', admin: 'admin', sub: 'sub-admin' }[u.level]}.html" target="_blank" rel="noopener" style="color:var(--gold)">1-page guide ↗</a></div></div></aside>
-      <div class="main"><header class="topbar"><div class="search"${u.channel_only ? ' hidden' : ''}>${icon('search')}<input placeholder="Search ID, name, phone or company…" data-search><div class="search-res hidden" data-res></div></div>
-        ${u.channel_only ? '' : `<button class="btn sm" data-addlead>${icon('plus', 'wa-ico')} Add lead</button>`}
+      <div class="main"><header class="topbar"><div class="search"${u.channel_only || u.accounts_only ? ' hidden' : ''}>${icon('search')}<input placeholder="Search ID, name, phone or company…" data-search><div class="search-res hidden" data-res></div></div>
+        ${u.channel_only || u.accounts_only ? '' : `<button class="btn sm" data-addlead>${icon('plus', 'wa-ico')} Add lead</button>`}
         <div class="bell" style="position:relative"><button class="btn icon ghost" data-bell title="Alerts">${icon('bell', 'wa-ico')}</button><span class="n hidden" data-bell-n></span><div class="drop hidden" data-bell-drop></div></div>
         <span class="who-chip"><span class="av">${esc(u.name.split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase())}</span><span><b>${esc(u.name)}</b><span>${BB.levelName(u.level)}${ag ? ' · ' + esc(ag.name) : ''}</span></span></span>
         <button class="btn sm ghost" data-out>Log out</button></header><div class="page" data-page></div></div></div>`;
     updateNav();
     $('[data-out]').onclick = async () => { await BB.post('/api/team/logout').catch(() => {}); BB.setToken('team', null); BB.closePanels(); BB.unguard(); BB.me = null; if (BB.setUrl) BB.setUrl('team'); BB.toast('You have logged out'); loginView(); };
-    if (!u.channel_only) { $('[data-addlead]').onclick = quickLead; wireSearch(); }
+    if (!u.channel_only && !u.accounts_only) { $('[data-addlead]').onclick = quickLead; wireSearch(); }
     wireBell();
   }
   function updateNav() {

@@ -29,7 +29,10 @@ function loadSession(req) {
 
 // A sub admin in a team other than Recruitment (social media, tech) works on hiring channels only. Routes are closed
 // to them unless marked { channels: true }, so anything new stays closed by default.
-const channelOnly = (u) => !!u && u.level === 'sub' && !!u.team && u.team !== 'Recruitment';
+const channelOnly = (u) => !!u && u.level === 'sub' && !!u.team && !['Recruitment', 'Accounts'].includes(u.team);
+// An Accounts login sees clients, offers, bills and expenses across BrillBrains. Routes are closed to it unless marked
+// { accounts: true }, so anything new stays closed by default.
+const accountsOnly = (u) => !!u && u.level === 'sub' && u.team === 'Accounts';
 function actorOf(u) { return { uid: u.id, name: u.name, label: u.name, level: u.level, agency_id: u.agency_id }; }
 
 async function dispatch(req, res, url, body) {
@@ -53,7 +56,8 @@ async function dispatch(req, res, url, body) {
         if (!u || u.status !== 'On') throw D.httpError(401, 'This login is turned off.');
         const ag = u.agency_id ? D.get('SELECT * FROM agencies WHERE id=?', u.agency_id) : null;
         if (ag && ag.status === 'Paused' && u.level !== 'super') throw D.httpError(401, 'This agency is paused.');
-        if (r.opts.levels && !r.opts.levels.includes(u.level)) throw D.httpError(403, 'Your level cannot do this.');
+        const acc = accountsOnly(u); if (r.opts.levels && !r.opts.levels.includes(u.level) && !(acc && r.opts.accounts)) throw D.httpError(403, 'Your level cannot do this.');
+        if (acc && !r.opts.accounts) throw D.httpError(403, 'Your login covers the accounts work only.');
         if (channelOnly(u) && !r.opts.channels) throw D.httpError(403, 'Your login covers Digital Reach only.');
         ctx.user = u; ctx.agency = ag; ctx.actor = actorOf(u);
         D.update('users', u.id, { last_action: D.now() });
@@ -91,7 +95,7 @@ const isSuper = (u) => u.level === 'super';
 const sharedWith = (u) => !!u.agency_id && D.soleAgency() === u.agency_id;
 const canAllocate = (u) => isSuper(u) || (u.level === 'admin' && !D.soleAgency() && !!D.get("SELECT 1 FROM agencies WHERE id=? AND status='Active'", u.agency_id));
 const sameAgency = (u, j) => !!j && ((!!j.agency_id && j.agency_id === u.agency_id) || sharedWith(u));
-function seeClient(u, c) { return c && (isSuper(u) || (c.agency_id && c.agency_id === u.agency_id) || sharedWith(u) || (!c.agency_id && canAllocate(u))); }
+function seeClient(u, c) { return c && (isSuper(u) || accountsOnly(u) || (c.agency_id && c.agency_id === u.agency_id) || sharedWith(u) || (!c.agency_id && canAllocate(u))); }
 function seeJob(u, j) {
   if (!j) return false;
   if (isSuper(u)) return true;
@@ -106,7 +110,7 @@ function seeApp(u, a, j) {
   return a.owner_id === u.id || (j && j.recruiter_id === u.id);
 }
 const phoneVisible = (u, c) => isSuper(u) || (c.agency_id && c.agency_id === u.agency_id);
-function seeBill(u, b) { return isSuper(u) || (u.level === 'admin' && sameAgency(u, b)); }
+function seeBill(u, b) { return isSuper(u) || accountsOnly(u) || (u.level === 'admin' && sameAgency(u, b)); }
 function seeThread(u, ptype, pid) {
   if (isSuper(u)) return true;
   if (ptype === 'user') { const t = D.get('SELECT * FROM users WHERE id=?', pid); return t && (t.id === u.id || (u.level === 'admin' && t.agency_id === u.agency_id)); }
@@ -121,4 +125,4 @@ function candidateOut(u, c) {
   return { ...c, whatsapp: show ? c.whatsapp : maskPhone(c.whatsapp), email: show ? c.email : '', phone_hidden: !show };
 }
 
-module.exports = { channelOnly, route, dispatch, newSession, loadSession, actorOf, isSuper, sharedWith, canAllocate, sameAgency, seeClient, seeJob, seeApp, seeBill, seeThread, phoneVisible, candidateOut, maskPhone };
+module.exports = { channelOnly, accountsOnly, route, dispatch, newSession, loadSession, actorOf, isSuper, sharedWith, canAllocate, sameAgency, seeClient, seeJob, seeApp, seeBill, seeThread, phoneVisible, candidateOut, maskPhone };

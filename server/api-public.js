@@ -113,15 +113,15 @@ route('POST', '/api/team/login', { rate: { key: 'login', max: 30, minutes: 15 } 
   }
   return { token: newSession('team', u.id, null, { device }), must_change: !!u.must_change };
 });
-route('POST', '/api/team/2fa', { auth: 'team', allow2fa: true, channels: true }, (ctx) => {
+route('POST', '/api/team/2fa', { auth: 'team', allow2fa: true, channels: true, accounts: true }, (ctx) => {
   checkCode(ctx.user.whatsapp, 'team2fa', ctx.body.code);
   D.run('UPDATE sessions SET pending_2fa=0 WHERE token=?', ctx.session.token);
   const devices = JSON.parse(ctx.user.devices || '[]');
   if (ctx.session.device && !devices.includes(ctx.session.device)) update('users', ctx.user.id, { devices: JSON.stringify([...devices, ctx.session.device].slice(-10)) });
   return { ok: true };
 });
-route('POST', '/api/team/logout', { auth: 'team', allow2fa: true, channels: true }, (ctx) => { D.run('DELETE FROM sessions WHERE token=?', ctx.session.token); D.history(ctx.actor.label, 'logout', ctx.user.id); return { ok: true }; });
-route('POST', '/api/team/password', { auth: 'team', channels: true }, (ctx) => {
+route('POST', '/api/team/logout', { auth: 'team', allow2fa: true, channels: true, accounts: true }, (ctx) => { D.run('DELETE FROM sessions WHERE token=?', ctx.session.token); D.history(ctx.actor.label, 'logout', ctx.user.id); return { ok: true }; });
+route('POST', '/api/team/password', { auth: 'team', channels: true, accounts: true }, (ctx) => {
   const { old, password } = ctx.body;
   if (!L.checkPassword(String(old || ''), ctx.user.pass_hash)) throw httpError(400, 'Your current password is wrong', 'old');
   if (!password || String(password).length < 8) throw httpError(400, 'Use at least 8 characters', 'password');
