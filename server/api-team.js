@@ -29,7 +29,7 @@ function page(ctx, rows, name, columns) {
 }
 const like = (q, ...vals) => !q || vals.some((v) => v && String(v).toLowerCase().includes(String(q).toLowerCase()));
 function mustSee(ok, what = 'record') { if (!ok) throw httpError(403, `You cannot see this ${what}.`); }
-const leadCount = (u) => all('SELECT * FROM clients WHERE agency_id IS NULL AND junk=0 AND archived=0 AND merged_into IS NULL AND removed=0').filter((c) => seeClient(u, c)).length;
+const leadCount = (u) => all('SELECT * FROM clients WHERE agency_id IS NULL AND old_client=0 AND junk=0 AND archived=0 AND merged_into IS NULL AND removed=0').filter((c) => seeClient(u, c)).length;
 const visibleJobs = (u) => all('SELECT * FROM jobs WHERE archived=0 ORDER BY created_at DESC').filter((j) => seeJob(u, j));
 function visibleApps(u) {
   const jobs = new Map(all('SELECT * FROM jobs').map((j) => [j.id, j]));
@@ -259,6 +259,7 @@ function candMatch(q) {
     if (q.job && c.job_wanted !== q.job && !list('job').includes(c.job_wanted)) return false; // a typed role may hold a comma
     if (q.source && !list('source').includes(c.source)) return false;
     if (q.domain && !list('domain').includes(c.domain || 'Not read yet')) return false;
+    if (q.biz && !(c.exp_business || []).some((x) => (q.biz === 'B2C' ? x === 'Retailer' : x !== 'Retailer'))) return false;
     if (q.city && !list('city').some((x) => c.city === x || (c.work_cities || []).includes(x))) return false;
     if (q.state && !list('state').includes(c.state || L.stateOf(c.city))) return false;
     if (q.skills) { const has = (c.skills || []).map((x) => String(x).toLowerCase()); if (!list('skills').some((x) => has.includes(x.toLowerCase()))) return false; }
@@ -285,7 +286,7 @@ route('GET', '/api/leads', T, (ctx) => {
   if (ctx.query.format && !sup) throw httpError(403, 'Only the super admin downloads leads.');
   const q = ctx.query; const days = Number(q.days) || 30; const since = new Date(Date.now() - days * 86400000).toISOString();
   const filt = (r) => (!q.source || many(q.source).includes(r.source)) && (!q.agency || (q.agency === 'none' ? !r.agency_id : r.agency_id === q.agency)) && (!q.new || r.is_new) && (!q.from || L.istDay(r.created_at) >= q.from) && (!q.to || L.istDay(r.created_at) <= q.to);
-  const clients = all('SELECT * FROM clients WHERE junk=0 AND merged_into IS NULL AND removed=0 ORDER BY created_at DESC').filter((c) => seeClient(u, c) && (!c.agency_id || q.all) && filt(c)).map(V.clientView);
+  const clients = all('SELECT * FROM clients WHERE junk=0 AND old_client=0 AND merged_into IS NULL AND removed=0 ORDER BY created_at DESC').filter((c) => seeClient(u, c) && (!c.agency_id || q.all) && filt(c)).map(V.clientView);
   const match = candMatch(q);
   const cands = !sup ? [] : all('SELECT * FROM candidates WHERE junk=0 AND merged_into IS NULL AND removed=0 ORDER BY created_at DESC').filter((c) => ((!c.agency_id && c.is_new) || q.all) && filt(c) && match(c));
   const check = [ // the candidate rows show on the Candidates page (Needs checking tab)
@@ -484,6 +485,7 @@ route('POST', '/api/jobs', T, (ctx) => {
 });
 function createJob(c, b, actor, byClient) {
   if (!b.title) throw httpError(400, 'Pick the job', 'title');
+  if (c.quiet) update('clients', c.id, { quiet: 0 }); // a new opening: this client can hear from us again
   const id = D.nextId('JB');
   const recruiter = b.recruiter_id || (byClient ? (get("SELECT recruiter_id FROM jobs WHERE client_id=? AND recruiter_id IS NOT NULL ORDER BY created_at DESC", c.id) || {}).recruiter_id || c.owner_id : actor.uid);
   const toYear = (v) => (v === '' || v === null || v === undefined ? null : Number(v) * (b.salary_per === 'month' ? 12 : 1));
@@ -1070,7 +1072,7 @@ route('GET', '/api/applications/:id', T, (ctx) => {
   return {
     ...v, candidate: candidateOut(ctx.user, cand), job: V.jobView(job), client: { id: client.id, company: client.company, contact: client.contact },
     history: all('SELECT * FROM app_history WHERE app_id=? ORDER BY at DESC, id DESC', a.id), messages: all('SELECT * FROM messages WHERE ap=? ORDER BY at DESC', a.id),
-    score: L.matchScore(cand, job, L.ratingOf(cand.id)), bill: bill ? L.billView(bill) : null, suggest: suggestFor(a), steps: L.STEPS, next: require('./flow').nextStep(a, bill), client_cv: cand.short_cv_file || null,
+    score: L.matchScore(cand, job, L.ratingOf(cand.id)), bill: bill ? L.billView(bill) : null, suggest: suggestFor(a), steps: L.STEPS, selected: !!get("SELECT 1 FROM interviews WHERE app_id=? AND result='Selected'", a.id), next: require('./flow').nextStep(a, bill), client_cv: cand.short_cv_file || null,
     files: all('SELECT * FROM files WHERE record_id=? AND replaced=0 ORDER BY at DESC', a.id), notes: all('SELECT * FROM notes WHERE record_id=? ORDER BY at DESC', a.id),
     calls: all('SELECT * FROM calls WHERE candidate_id=? ORDER BY at DESC LIMIT 50', a.candidate_id), call_outcomes: L.CALL_OUTCOMES, client_city: client.city,
     checklist_items: D.settings().templates.joining_checklist.split('\n').filter(Boolean),
@@ -1709,6 +1711,7 @@ route('POST', '/api/files', T, async (ctx) => {
   if (['gst', 'pan', 'owner_id'].includes(b.type)) { const c = get('SELECT * FROM clients WHERE id=?', b.record_id); update('clients', c.id, { kyc: { ...(c.kyc || {}), [b.type]: f.id } }); L.checkActivation(c.id, ctx.actor); }
   if (b.type === 'contract_signed') update('clients', b.record_id, { contract: JSON.stringify({ file: f.id, by: ctx.actor.label, at: now(), method: 'Signed copy uploaded' }) });
   if (b.type === 'contract_signed') L.checkActivation(b.record_id, ctx.actor);
+  if (b.type === 'offer_letter') update('applications', b.record_id, { offer_letter: String(f.id) });
   if (b.type === 'jd') D.edit('jobs', b.record_id, { jd: { ...(get('SELECT jd FROM jobs WHERE id=?', b.record_id) || {}).jd, file: f.id } }, ctx.actor.label);
   return f;
 });
@@ -1734,6 +1737,7 @@ route('POST', '/api/files/:id/remove', T, (ctx) => {
     }
   }
   if (f.type === 'cv' || f.type === 'short_cv') { const k = f.type === 'cv' ? 'cv_file' : 'short_cv_file'; const c = rec('candidates'); if (String(c[k]) === String(f.id)) update('candidates', c.id, { [k]: null }); }
+  if (f.type === 'offer_letter') { const a = rec('applications'); if (String(a.offer_letter) === String(f.id)) update('applications', a.id, { offer_letter: null }); }
   if (f.type === 'jd') { const j = rec('jobs'); if (String((j.jd || {}).file) === String(f.id)) { const jd = { ...j.jd }; delete jd.file; update('jobs', j.id, { jd }); } }
   D.history(ctx.actor.label, 'remove file', rid, f.type, f.name, null, null, ctx.ip);
   return { ok: true };

@@ -1,3 +1,7 @@
 node_modules/
 data/
 .env
+
+# resumes and other personal data never go in the repository
+assets/*.zip
+assets/Resume*/

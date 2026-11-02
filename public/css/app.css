@@ -1492,3 +1492,4 @@ html[lang="hi"] .ss-g { letter-spacing: 0; }
 .agr-row:first-child { border-top: 0; padding-top: 2px; }
 .agr-btns { flex: none; justify-content: flex-end; gap: 6px; }
 @media (max-width: 640px) { .agr-row { flex-direction: column; align-items: stretch; } .agr-btns { justify-content: flex-start; } }
+.offer-tpl { display: flex; align-items: center; gap: 12px; padding: 12px 14px; margin-bottom: 12px; border-radius: 14px; background: var(--mustard-50, var(--surface-2)); border: 1px solid var(--mustard-300, var(--border)); }

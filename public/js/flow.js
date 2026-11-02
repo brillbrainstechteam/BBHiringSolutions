@@ -163,14 +163,16 @@
   F.appNext = (a) => (a.next ? `<div class="flow-next"><b>Next:</b> ${esc(a.next)}</div>` : '');
   F.appOffer = (a) => {
     if (!['Sent to client', 'Client interview', 'Offer made', 'Offer accepted', 'Joined'].includes(a.step) || (a.result !== 'open' && a.result !== 'Hired')) return '';
+    const tpl = a.selected || ['Offer made', 'Offer accepted', 'Joined'].includes(a.step) ? `<div class="offer-tpl"><div class="grow"><b>Offer letter template</b><div class="small muted">Download the Word template and fill in the details in [brackets].</div></div><button class="btn sm primary" data-ftpl>Download</button></div>` : '';
     const st = [['verbal', 'Client made a verbal offer', a.verbal_at], ['verbal_ok', 'Candidate accepted verbally', a.verbal_ok_at], ['letter', 'Client shared the offer letter', a.letter_at]];
     const asked = a.bill && a.bill.accounts_asked_at;
-    return `<div class="sec card pad"><h3 style="margin-bottom:6px">Offer steps</h3>${st.map(([k, l, at]) => `<label class="row small"><input type="checkbox" data-ostage="${k}" ${at ? 'checked' : ''} ${a.result === 'open' ? '' : 'disabled'}> ${l}${at ? ` <span class="faint">${fmtDT(at)}</span>` : ''}</label>`).join('')}
+    return `${tpl}<div class="sec card pad"><h3 style="margin-bottom:6px">Offer steps</h3>${st.map(([k, l, at]) => `<label class="row small"><input type="checkbox" data-ostage="${k}" ${at ? 'checked' : ''} ${a.result === 'open' ? '' : 'disabled'}> ${l}${at ? ` <span class="faint">${fmtDT(at)}</span>` : ''}</label>`).join('')}
       ${canAdmin() && a.offer_ctc ? `<div class="row" style="margin-top:8px">${asked ? `<span class="small muted">Accounts asked ${fmtDT(asked)}</span>` : ''}<button class="btn sm ${asked ? '' : 'primary'}" data-faccounts>${asked ? 'Ask again' : 'Ask Accounts for the invoice'}</button>${a.bill ? `<a href="#" class="small" data-open="bill:${a.bill.id}">Open bill</a>` : ''}</div>` : ''}</div>`;
   };
   F.appCv = (a) => `<button class="btn sm" data-fcv>CV for client</button>`;
   F.appMount = (el, a) => {
     $$('[data-ostage]', el).forEach((c) => (c.onchange = () => act(() => BB.post(`/api/applications/${a.id}/offer-stage`, { stage: c.dataset.ostage, on: c.checked }), 'Saved')));
+    const tp = $('[data-ftpl]', el); if (tp) tp.onclick = () => BB.download('/api/offer-template/file');
     const ac = $('[data-faccounts]', el); if (ac) ac.onclick = () => act(() => BB.post(`/api/applications/${a.id}/ask-invoice`), (r) => (r.email === 'no address' ? 'Draft bill made. Add the Accounts email in Settings → Fees & limits' : r.email === 'held' ? 'Draft bill made. The email is saved: messages are off' : 'Accounts asked'));
     const cv = $('[data-fcv]', el); if (cv) cv.onclick = async () => { try { const f = await BB.post(`/api/applications/${a.id}/client-cv`); BB.openFile(f.id); BB.toast('CV made without phone and email'); } catch (e) { BB.fail(e); } };
   };

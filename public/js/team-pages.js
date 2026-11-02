@@ -315,7 +315,7 @@
   const JEW_LABEL = { 0: 'no experience', lt1: 'under 1 year', '1-3': '1–3 years', '3-5': '3–5 years', '5-10': '5–10 years', '10+': '10+ years' };
   const SEG_LABEL = [['q', 'Search'], ['industry', 'Industry', (v) => (v === 'all' ? 'All industries' : v)], ['domain', 'Domain'], ['skills', 'Skills'], ['dept', 'Department'], ['job', 'Designation'], ['city', 'City'], ['state', 'State'], ['jewellery', 'Jewellery', (v) => JEW_LABEL[v] || v],
     ['from', 'Applied from'], ['to', 'Applied up to'], ['exp_min', 'Experience from', (v) => `${v} yrs`], ['exp_max', 'Experience up to', (v) => `${v} yrs`], ['sal_min', 'Expected salary from', (v) => `${inr(v)}/mo`], ['sal_max', 'Expected salary up to', (v) => `${inr(v)}/mo`],
-    ['looking', 'Current job status'], ['status', 'Status'], ['source', 'Source'], ['ad', 'Ad'], ['updated', 'Updated in last', (v) => `${v} days`], ['notice', 'Notice up to', (v) => `${v} days`], ['stale', 'Not updated in 90+ days', () => 'yes'], ['archived', 'Archived', () => 'yes']];
+    ['biz', 'B2B / B2C'], ['looking', 'Current job status'], ['status', 'Status'], ['source', 'Source'], ['ad', 'Ad'], ['updated', 'Updated in last', (v) => `${v} days`], ['notice', 'Notice up to', (v) => `${v} days`], ['stale', 'Not updated in 90+ days', () => 'yes'], ['archived', 'Archived', () => 'yes']];
   const segChips = (q) => SEG_LABEL.filter(([k]) => q[k]).map(([k, l, f]) => `<span class="chip">${esc(l)}: <b>${esc(f ? f(q[k]) : q[k])}</b></span>`).join('') || '<span class="faint">All candidates</span>';
 
   // Share / rename / delete / copy link / download buttons, the same in the segment list and on an open segment.
@@ -391,7 +391,7 @@
     const desigs = [...new Set([...s.jobs.map((j) => j.title), ...(r.designations || [])])];
     const sel = (k, label, opts) => `<select data-f="${k}"><option value="">${label}</option>${opts.map((o) => { const [v, t] = Array.isArray(o) ? o : [o, o]; return `<option value="${esc(v)}" ${String(q[k] || '') === String(v) ? 'selected' : ''}>${esc(t)}</option>`; }).join('')}</select>`;
     const cf = candFilters(q, desigs, (r.quick || {}).skills);
-    const total = r.total ?? r.rows.length; const filtered = anyCandFilter(q) || q.q || q.looking || q.status || q.updated || q.notice || q.stale;
+    const total = r.total ?? r.rows.length; const filtered = anyCandFilter(q) || q.q || q.biz || q.looking || q.status || q.updated || q.notice || q.stale;
     const LOOK_BADGE = { 'Actively looking': 'b-green', 'Open to offers': 'b-primary', 'Not reachable': 'b-amber', Placed: 'b-gold' };
     const bulkBtn = (a, label, cls = '') => `<button class="btn sm ${cls}" data-bulk="${a}" disabled>${label}</button>`;
     // An open segment: its name, live count and filters, with the segment's own buttons.
@@ -399,7 +399,7 @@
       <div class="row cand-seg">${segButtons(seg, seg.can_download, false)}</div></div></section>` : '';
     // Filters and saved segments in one card; the selection bar; then the table in its own scroll box.
     const head = seg ? segHead : `<section class="card cand-panel">
-      <div class="filters cand-filters"><input placeholder="Search name, ID, phone, job…" value="${esc(q.q || '')}" data-q aria-label="Search candidates">${cf.main}${sel('looking', 'Current job status', BB.boot.looking)}${sel('status', 'Any status', ['Available', 'In process', 'Hired'])}${(r.ads || []).length || q.ad ? sel('ad', 'Any ad', r.ads || [q.ad]) : ''}
+      <div class="filters cand-filters"><input placeholder="Search name, ID, phone, job…" value="${esc(q.q || '')}" data-q aria-label="Search candidates">${cf.main}${sel('biz', 'B2B / B2C', ['B2B', 'B2C'])}${sel('looking', 'Current job status', BB.boot.looking)}${sel('status', 'Any status', ['Available', 'In process', 'Hired'])}${(r.ads || []).length || q.ad ? sel('ad', 'Any ad', r.ads || [q.ad]) : ''}
       <details class="more-f" ${BB.moreFiltersOpen ? 'open' : ''}><summary class="btn sm">${moreBtn(cf.count(['notice', 'updated', 'stale']))}</summary><div class="card more-pop">
         ${cf.more}
         <div class="grid g2"><label class="mf"><span>Profile last updated</span>${sel('updated', 'Any time', [['7', 'Last 7 days'], ['30', 'Last 30 days'], ['90', 'Last 90 days']])}</label><label class="mf"><span>Notice period up to (days)</span><input type="number" min="0" placeholder="Days" data-f="notice" value="${esc(q.notice || '')}"></label></div>
@@ -413,7 +413,7 @@
       ${bulkBtn('add_to_job', 'Add to a job')}${me.level !== 'sub' ? bulkBtn('alert', 'Send job alert', 'gold') : ''}${bulkBtn('set_looking', 'Set job status')}${bulkBtn('note', 'Add note')}${bulkBtn('followup', 'Follow-up')}${me.level !== 'sub' ? `${bulkBtn('assign', 'Assign recruiter')}${bulkBtn(q.archived ? 'unarchive' : 'archive', q.archived ? 'Unarchive' : 'Archive')}` : ''}${superAdmin ? `${bulkBtn('agency', 'Assign to agency')}${bulkBtn('welcome', 'Send account link')}${bulkBtn('download', 'Download selected')}` : ''}${me.level !== 'sub' ? bulkBtn('delete', 'Delete', 'danger') : ''}<button class="btn sm ghost" data-unsel hidden>Clear selection</button></div>
     <div class="card cand-table">${BB.table([
       { t: 'Candidate', cls: 'name-col', f: (c) => `<b>${esc(c.name)}</b>${c.is_new ? ' <span class="dot new" title="New"></span>' : ''}${c.opted_out ? ' <span class="badge b-red tiny">STOP</span>' : ''}<div class="mono tiny ${c.phone_hidden ? 'faint' : 'muted'}">${esc(c.whatsapp)}</div>` },
-      { t: 'Role and domain', cls: 'wrap', f: (c) => `${esc(c.job_wanted) || '<span class="faint">—</span>'}<div class="tiny muted">${c.domain && c.domain !== 'Not clear' ? esc(c.domain) : ''}</div>` },
+      { t: 'Role and domain', cls: 'wrap', f: (c) => `${esc(c.job_wanted) || '<span class="faint">—</span>'}<div class="tiny muted">${[(c.exp_business || []).length ? ((c.exp_business || []).includes('Retailer') ? 'B2C' : 'B2B') : '', c.domain && c.domain !== 'Not clear' ? c.domain : ''].filter(Boolean).map(esc).join(' · ')}</div>` },
       { t: 'Skills', cls: 'skills-col', f: (c) => { const sk = c.skills || []; return sk.length ? `<div class="sk-wrap">${sk.slice(0, 5).map((x) => `<span class="sk">${esc(x)}</span>`).join('')}${sk.length > 5 ? `<span class="sk more" title="${esc(sk.slice(5).join(', '))}">+${sk.length - 5}</span>` : ''}</div>` : '<span class="faint">—</span>'; } },
       { t: 'Experience', f: (c) => `${c.exp_total === null || c.exp_total === undefined ? '—' : `${c.exp_total} yrs`}<div class="tiny muted">Jewellery: ${jewYrs(c.exp_jewellery)}</div>${c.exp_salary ? `<div class="tiny muted">Expects ${inr(c.exp_salary / 12)}/mo</div>` : ''}` },
       { t: 'City', cls: 'city-col', f: (c) => esc(c.city) },

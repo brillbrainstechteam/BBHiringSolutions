@@ -68,6 +68,9 @@ route('POST', '/api/agreement', SUPER, async (ctx) => {
   if (!/\.(docx|pdf)$/i.test(ctx.body.name || '')) throw httpError(400, 'Upload the agreement as a Word or PDF file');
   return F.saveFile({ recordId: 'AGREEMENT', type: 'agreement', name: ctx.body.name, base64: ctx.body.base64, by: ctx.actor.label });
 });
+// The generic offer letter, ready once the client selects someone.
+const OFFER_TEMPLATE = path.join(__dirname, '..', 'assets', 'Generic_Offer_Letter_Montserrat_Clean.docx');
+route('GET', '/api/offer-template/file', T, () => { if (!fs.existsSync(OFFER_TEMPLATE)) throw httpError(404, 'The offer letter template has not been added yet.'); return { __file: { name: 'Offer Letter Template.docx', mime: DOCX, buf: fs.readFileSync(OFFER_TEMPLATE) } }; });
 // Files to attach to an email, read when it goes out.
 function mailFiles(list) {
   const out = [];
@@ -146,7 +149,7 @@ route('POST', '/api/clients/email', T, (ctx) => {
     const fill = (t) => String(t).replace(/\{(company|contact|sender)\}/g, (m, k) => ({ company: c.company, contact: c.contact || 'Sir/Madam', sender }[k]));
     const subject = fill(b.subject); const text = fill(b.body);
     const html = M.layout(subject, text.split(/\n{2,}/).map((p) => `<p style="font-size:14px;line-height:1.65;margin:0 0 12px">${p.split('\n').map((x) => x.replace(/[&<>]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[ch]))).join('<br>')}</p>`).join(''));
-    const eid = M.queue({ to, subject, text, html, kind: b.kind || 'client_mail', recordId: c.id, attachments: isContract || b.attach_agreement ? [editedAgreement(c.id) ? { file_id: editedAgreement(c.id).id } : { agreement: true }] : [], force: isContract });
+    const eid = M.queue({ to, subject, text, html, kind: b.kind || 'client_mail', recordId: c.id, attachments: isContract || b.attach_agreement ? [editedAgreement(c.id) ? { file_id: editedAgreement(c.id).id } : { agreement: true }] : [], force: isContract, person: true });
     if (!eid) { out.skipped.push(`${c.company}: not a valid email`); continue; }
     if (isContract) {
       const st = D.settings().client_stages;
@@ -375,7 +378,7 @@ function nextStep(a, bill) {
     case 'Applied': case 'Screening': return 'Screen the CV: accept to call them, or mark it not suitable.';
     case 'Our interview': return !passed('phone') ? 'Schedule the telephonic round.' : !passed('video') ? 'Telephonic cleared. Schedule the virtual round.' : 'Virtual cleared. Send the CV to the client.';
     case 'Sent to client': return 'The CV goes without phone and email. When the client replies, schedule their interview.';
-    case 'Client interview': return 'Record the client\'s decision. Selected goes to the offer; rejected goes back to searching.';
+    case 'Client interview': return ivs.some((i) => i.result === 'Selected') ? 'Selected. Download the offer letter template below, fill it in, then record the offer.' : 'Record the client\'s decision. Selected goes to the offer; rejected goes back to searching.';
     case 'Offer made': return !a.verbal_at ? 'Note the client\'s verbal offer.' : !a.verbal_ok_at ? 'Note whether the candidate accepted verbally.' : !a.letter_at ? 'Note when the client shares the offer letter.' : bill && bill.accounts_asked_at ? 'Mark the offer accepted once the candidate accepts it.' : 'Ask Accounts to prepare the invoice.';
     case 'Offer accepted': return bill && bill.accounts_asked_at ? 'Mark joined on the joining date.' : 'Ask Accounts to prepare the invoice.';
     default: return null;

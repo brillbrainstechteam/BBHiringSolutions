@@ -112,6 +112,9 @@ function person(type, id) {
 const actorName = (a) => (a ? a.label || a.name || 'System' : 'System');
 // Testing pause (settings.wa_pause): why a WhatsApp to a candidate is held instead of sent, or null to send it.
 function waHeld(msg) {
+  if (msg.person_type === 'client' && (msg.format || ['Auto', 'Bot', 'System'].includes(msg.sent_by)) && !['bbhs_login_code', 'bbhs_team_login'].includes(msg.format)) {
+    const c = get('SELECT quiet FROM clients WHERE id=?', msg.person_id); if (c && c.quiet) return 'Held: earlier client, no messages until a new job opening';
+  }
   const w = settings().wa_pause || {};
   if (!w.everyone && !(w.candidates && msg.person_type === 'candidate')) return null;
   if (['bbhs_login_code', 'bbhs_team_login'].includes(msg.format)) return null; // people must still be able to log in
@@ -435,12 +438,13 @@ function createBillForApp(app, by) {
   const cand = get('SELECT * FROM candidates WHERE id=?', app.candidate_id);
   const replacementOf = job.replacement_for && !get("SELECT 1 FROM bills WHERE is_replacement=1 AND credit_of IS NULL AND app_id IN (SELECT id FROM applications WHERE job_id=? AND replacement_of=?)", job.id, job.replacement_for) ? job.replacement_for : null;
   const ctc = app.offer_ctc || 0;
-  let f = feeFor(client, job.agency_id, ctc);
+  const agencyId = job.agency_id || require('./db').soleAgency(); // no agency on the client: the one active agency shares the fee
+  let f = feeFor(client, agencyId, ctc);
   if (replacementOf) f = { fee: 0, share: 0, sharePct: 0, note: `Replacement for ${replacementOf}` };
   const g = gstFor(client.state || stateOf(client.city), f.fee);
   const id = nextId('BL');
   const bill = {
-    id, app_id: app.id, client_id: client.id, agency_id: job.agency_id, bill_no: null, ctc, fee: f.fee, gst: g.gst, cgst: g.cgst, sgst: g.sgst, igst: g.igst,
+    id, app_id: app.id, client_id: client.id, agency_id: agencyId, bill_no: null, ctc, fee: f.fee, gst: g.gst, cgst: g.cgst, sgst: g.sgst, igst: g.igst,
     total: f.fee + g.gst, fee_note: f.note, status: 'Draft', date: istDay(), due_date: null, is_replacement: replacementOf ? 1 : 0,
     share_pct: f.sharePct, agency_share: f.share, payout_status: 'Not due', created_at: now(),
   };

@@ -101,13 +101,16 @@ const textRows = (pairs) => pairs.filter(([, v]) => v !== undefined && v !== nul
 // sendAfter: hold it until then (quiet hours); dedupe: never send the same one twice.
 // Off (settings.wa_pause.email): saved as held, not sent. Login codes (force) still go. attachments: [{ file_id } | { agreement: true }].
 const HELD = 'Held: messages are off';
-function queue({ to, subject, text, html, kind, recordId, sendAfter, dedupe, attachments, force }) {
+// Clients from before the portal get nothing automatic until a new job opening. A person writing to them is fine.
+const quietAddr = (list) => { const set = new Set(list.map((x) => x.toLowerCase())); return D.all("SELECT email, extra FROM clients WHERE quiet=1 AND removed=0").some((c) => { let hr = ''; try { hr = (JSON.parse(c.extra || '{}') || {}).hr_email || ''; } catch { /* no extra */ } return set.has(String(c.email || '').toLowerCase()) || set.has(String(hr).toLowerCase()); }); };
+function queue({ to, subject, text, html, kind, recordId, sendAfter, dedupe, attachments, force, person }) {
   const list = (Array.isArray(to) ? to : [to]).map((x) => String(x || '').trim()).filter((x) => /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(x));
   if (!list.length) return null;
   if (dedupe && D.get('SELECT 1 FROM emails WHERE dedupe=?', dedupe)) return null;
   const att = attachments && attachments.length ? JSON.stringify(attachments) : null;
-  if (!force && (D.settings().wa_pause || {}).email) {
-    const r = D.run('INSERT INTO emails (to_addr,subject,kind,record_id,text,html,status,tries,at,dedupe,attachments,error) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)', list.join(', '), subject, kind || null, recordId || null, text, html, 'held', 0, D.now(), dedupe || null, att, HELD);
+  const paused = !!(D.settings().wa_pause || {}).email; const quiet = !force && !person && quietAddr(list);
+  if ((!force && paused) || quiet) {
+    const r = D.run('INSERT INTO emails (to_addr,subject,kind,record_id,text,html,status,tries,at,dedupe,attachments,error) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)', list.join(', '), subject, kind || null, recordId || null, text, html, 'held', 0, D.now(), dedupe || null, att, quiet ? 'Held: earlier client, no messages until a new job opening' : HELD);
     return Number(r.lastInsertRowid);
   }
   if (sendAfter && sendAfter > D.now()) {
