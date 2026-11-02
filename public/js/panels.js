@@ -190,7 +190,7 @@
         }));
         $('[data-setclient]', el).onclick = async (e) => {
           e.preventDefault(); const r = await BB.api('/api/clients?all=1'); const list = r.rows.filter((c) => !c.placeholder);
-          const x = await BB.ask({ title: j.client_tbc ? 'Set the client' : 'Change client', fields: [{ name: 'client_id', label: 'Client', type: 'select', options: list.map((c) => [c.id, `${c.company} (${c.id})`]), value: j.client_tbc ? '' : j.client_id }], ok: 'Save', submit: (v) => BB.patch(`/api/jobs/${j.id}`, { client_id: v.client_id }) });
+          const x = await BB.ask({ title: j.client_tbc ? 'Set the client' : 'Change client', fields: [{ name: 'client_id', label: 'Client', type: 'select', options: list.map((c) => [c.id, c.company]), value: j.client_tbc ? '' : j.client_id }], ok: 'Save', submit: (v) => BB.patch(`/api/jobs/${j.id}`, { client_id: v.client_id }) });
           if (x) { BB.toast('Client saved'); BB.refreshPanel ? BB.refreshPanel() : BB.open('job', j.id); BB.refreshPage && BB.refreshPage(); }
         };
         $('[data-poster]', el).onclick = () => poster(j);
@@ -531,7 +531,7 @@
   ], ok: 'Create job opening', submit: (v) => BB.post('/api/jobs', { ...v, duties: pre.duties || '', call_id: pre.call_id, call_line: pre.call_line, salary_per: 'month', skills: v.skills.split(',').map((x) => x.trim()).filter(Boolean) }),
   extra: '' }).then((x) => { if (x) { BB.toast(`${x.id} made`); BB.refreshPage && BB.refreshPage(); BB.open('job', x.id); } }) && setTimeout(async () => {
     const sel = $('[data-clients]'); if (!sel) return; const r = await BB.api('/api/clients?all=1'); const all = r.rows;
-    sel.innerHTML = `<option value="">Choose…</option><option value="INTERNAL">BrillBrains — internal hiring (our own team)</option><option value="TBC">Client not decided yet (fill in later)</option>${all.filter((c) => !c.placeholder).map((c) => `<option value="${c.id}" ${c.id === clientId ? 'selected' : ''}>${esc(c.company)} (${c.id})</option>`).join('')}`;
+    sel.innerHTML = `<option value="">Choose…</option><option value="INTERNAL">BrillBrains — internal hiring (our own team)</option><option value="TBC">Client not decided yet (fill in later)</option>${all.filter((c) => !c.placeholder).map((c) => `<option value="${c.id}" ${c.id === clientId ? 'selected' : ''}>${esc(c.company)}</option>`).join('')}`;
     const city = $('[name=city]'); const title = $('.modal [name=title]');
     const put = (n, v) => { const x = $(`.modal [name=${n}]`); if (x && v !== null && v !== undefined && v !== '') x.value = v; };
     for (const k of ['city', 'openings', 'sal_from', 'sal_to', 'exp_from', 'exp_to', 'notice_days', 'priority']) put(k, pre[k]); if (pre.skills) put('skills', [].concat(pre.skills).join(', '));

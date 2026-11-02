@@ -102,7 +102,7 @@
   function apps(el) {
     const badge = (a) => (a.result === 'open' ? '<span class="badge b-primary">In process</span>' : a.result === 'Hired' ? '<span class="badge b-green">Hired</span>' : '<span class="badge b-red">Closed</span>');
     el.innerHTML = D.apps.length ? `<div class="stack">${D.apps.map((a) => `<div class="card pad stack-sm cp-app ${a.result === 'open' ? '' : 'done'}">
-      <div class="row between"><div><h3>${esc(a.job_title)}</h3><div class="small muted">${esc(a.company)} · ${esc(a.city)} <span class="mono faint">${a.id}</span></div></div>${badge(a)}</div>
+      <div class="row between"><div><h3>${esc(a.job_title)}</h3><div class="small muted">${esc(a.company)} · ${esc(a.city)}</div></div>${badge(a)}</div>
       ${BB.tracker(a.step, a.result)}
       ${a.interviews.length ? `<div class="stack-sm">${a.interviews.map((i) => ivCard(i)).join('')}</div>` : ''}
       ${a.step === 'Offer made' && a.result === 'open' ? `<div class="notice gold"><b>Offer: ${inr(a.offer_ctc)} a year, joining ${fmtD(a.joining_date)}</b><div class="row" style="margin-top:8px">${a.offer_letter ? `<button class="btn sm" data-file="${a.offer_letter}">Read offer letter</button>` : ''}<button class="btn gold" data-accept="${a.id}">Accept</button><button class="btn" data-decline="${a.id}">Decline</button></div></div>` : ''}
