@@ -1164,7 +1164,7 @@ route('POST', '/api/applications/reject-below', T, (ctx) => {
 route('GET', '/api/applications', T, (ctx) => {
   const q = ctx.query; const rows = scoreApps(appRows(q, ctx.user), q);
   const vis = visibleApps(ctx.user); const counts = { open: vis.filter((a) => a.result === 'open').length, closed: vis.filter((a) => a.result !== 'open').length, joined: vis.filter((a) => a.result === 'Hired').length };
-  return { counts, ...page(ctx, rows, 'applications', ['id', 'candidate_name', 'score', 'job_id', 'job_title', 'client_name', 'step', 'result', 'days_in_step', 'owner_name', 'source', 'ad', 'screen', 'screen_note']), ads: adOptions('applications'), screens: L.SCREEN,
+  return { counts, ...page(ctx, rows, 'applications', ['id', 'candidate_name', 'score', 'job_id', 'job_title', 'client_name', 'step', 'result', 'days_in_step', 'owner_name', 'source', 'ad', 'screen', 'screen_note']), ads: adOptions('applications'), screens: L.SCREEN.filter((x) => x !== 'Requirement not met'),
     // Choices for the filters: the jobs, clients, owners and sources these applications have.
     options: (() => { const vis = visibleApps(ctx.user).map(V.appView); const uniq = (f) => [...new Map(vis.map(f).filter((x) => x && x[0]).map((x) => [x[0], x])).values()].sort((a, b) => String(a[1]).localeCompare(String(b[1])));
       return { titles: [...new Set(vis.map((a) => a.job_title).filter(Boolean))].sort(), jobs: uniq((a) => [a.job_id, `${a.job_title} · ${a.client_name || ''}${a.job_city ? ` · ${a.job_city}` : ''}`]), clients: uniq((a) => [a.client_id, a.client_name]), owners: uniq((a) => [a.owner_id, a.owner_name]), sources: [...new Set(vis.map((a) => a.source).filter(Boolean))].sort() }; })() };
@@ -1181,6 +1181,16 @@ route('POST', '/api/applications', T, (ctx) => {
 function loadApp(ctx) {
   const a = get('SELECT * FROM applications WHERE id=?', ctx.params.id); mustSee(a && seeApp(ctx.user, a), 'application'); return a;
 }
+// The telephonic round's call task: set or move its time (the reminder goes again at the new time).
+route('POST', '/api/applications/:id/call-task', T, (ctx) => {
+  const a = get('SELECT * FROM applications WHERE id=?', ctx.params.id); if (!a) throw httpError(404, 'Application not found');
+  const at = ctx.body.at && !Number.isNaN(Date.parse(ctx.body.at)) ? new Date(ctx.body.at).toISOString() : null; if (!at) throw httpError(400, 'Pick the time', 'at');
+  const t = get("SELECT * FROM followups WHERE record_id=? AND done=0 AND note LIKE 'Telephonic round:%' ORDER BY at LIMIT 1", a.id);
+  if (t) D.update('followups', t.id, { at, alerted: 0 });
+  else { const c = get('SELECT name FROM candidates WHERE id=?', a.candidate_id) || {}; const j = get('SELECT title, recruiter_id FROM jobs WHERE id=?', a.job_id) || {}; const owner = a.owner_id || j.recruiter_id || ctx.user.id; D.insert('followups', { record_id: a.id, at, note: `Telephonic round: call ${c.name} for ${j.title}.`, for_user: owner, done: 0, created_by: ctx.user.id }); }
+  L.appHist(a.id, a.step, ctx.actor, `Call time set: ${L.istFmt(at)}`, 'call');
+  return { ok: true, at };
+});
 route('GET', '/api/applications/:id', T, (ctx) => {
   const a = loadApp(ctx); const v = V.appView(a);
   const job = get('SELECT * FROM jobs WHERE id=?', a.job_id); const cand = get('SELECT * FROM candidates WHERE id=?', a.candidate_id); const client = get('SELECT * FROM clients WHERE id=?', job.client_id);
@@ -1193,6 +1203,7 @@ route('GET', '/api/applications/:id', T, (ctx) => {
     calls: all("SELECT * FROM calls WHERE app_id=? AND status='Done' ORDER BY at DESC LIMIT 200", a.id), call_outcomes: L.CALL_OUTCOMES, client_city: client.city,
     checklist_items: D.settings().templates.joining_checklist.split('\n').filter(Boolean),
     replacement_window: (client.replacement_days || D.settings().replacement_days), care: a.result === 'Hired' ? require('./care').forApp(a) : null, verify: require('./verify').badge(a.candidate_id),
+    call_plan: { task: get("SELECT f.id, f.at, u.name owner FROM followups f LEFT JOIN users u ON u.id=f.for_user WHERE f.record_id=? AND f.done=0 AND f.note LIKE 'Telephonic round:%' ORDER BY f.at LIMIT 1", a.id) || null, asked: get("SELECT at, status FROM messages WHERE person_type='candidate' AND person_id=? AND format='bbhs_contact_prefs' ORDER BY at DESC LIMIT 1", a.candidate_id) || null },
   };
 });
 // Suggested next WhatsApp message by step (8.3).

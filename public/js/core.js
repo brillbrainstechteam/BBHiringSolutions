@@ -125,7 +125,7 @@ BB.showErr = (root, e) => {
   $$('.err-msg', root).forEach((x) => x.remove()); $$('.has-err', root).forEach((x) => x.classList.remove('has-err'));
   const f = e.field && $(`[data-f="${e.field}"]`, root);
   if (f) { f.classList.add('has-err'); f.insertAdjacentHTML('beforeend', `<div class="err-msg">${esc(e.message)}</div>`); const i = $('input,select,textarea', f); i && i.focus(); }
-  else BB.toast(e.message, true);
+  else { const b = root.closest ? (root.closest('.modal') || root) : root; const body = b.querySelector && b.querySelector('.modal-b'); if (body) { body.insertAdjacentHTML('afterbegin', `<div class="err-msg err-top">${esc(e.message)}</div>`); body.firstElementChild.scrollIntoView({ behavior: 'smooth', block: 'center' }); } BB.toast(e.message, true); }
 };
 // Form pop-up returning the values: BB.ask({title, fields, ok, submit:(vals)=>promise})
 BB.ask = ({ title, fields, ok = 'Save', note, submit, wide, extra }) => new Promise((resolve) => {
