@@ -1900,3 +1900,6 @@ button.fin-tile.on { border-color: var(--mustard); box-shadow: 0 0 0 1px var(--m
 .pop-hr { border: 0; border-top: 1px solid var(--border); margin: 4px 6px; }
 .tbl td:last-child, .tbl th:last-child { padding-right: 22px; }
 .iv-acts { margin-right: 2px; }
+.sub-card > summary { cursor: pointer; list-style: none; display: flex; gap: 8px; align-items: baseline; } .sub-card > summary::-webkit-details-marker { display: none; }
+.sub-card > summary::before { content: '▸'; color: var(--muted); } .sub-card[open] > summary::before { content: '▾'; }
+.sub-more { margin-top: 8px; } .sub-more > summary { cursor: pointer; padding: 4px 2px; }

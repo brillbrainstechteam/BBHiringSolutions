@@ -2189,7 +2189,7 @@ module.exports.removePerson = removePerson;
 require('./trash'); // delete with a recycle bin (Settings -> Deleted items)
 require('./lang'); // translation, voice notes and recordings
 require('./care'); // check-ins after joining, replacements, recruiter reviews
-require('./verify'); // candidate ID and court checks
+require('./verify'); // candidate ID and reference checks
 require('./partners'); // institutes and colleges that train candidates
 require('./flow'); // client onboarding, screening with AI, client CVs, invoices, books
 require('./adspend'); // ad spend reports from Meta and LinkedIn (Job openings -> Ad spend)

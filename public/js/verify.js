@@ -1,4 +1,4 @@
-/* Candidate verification: masked Aadhaar, PAN, court record search, last employer reference.
+/* Candidate verification: masked Aadhaar, PAN, last employer reference.
    The team panel shows each check with how to do it for free; the candidate uploads their papers in their profile. */
 (() => {
   const { $, $$, esc, fmtD } = BB;
