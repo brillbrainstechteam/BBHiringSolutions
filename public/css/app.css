@@ -1884,3 +1884,4 @@ button.fin-tile.on { border-color: var(--mustard); box-shadow: 0 0 0 1px var(--m
 .name-link { color: inherit; text-decoration: none; } .name-link:hover { text-decoration: underline; }
 .iv-acts { flex-direction: column; align-items: stretch; gap: 6px; min-width: 150px; } .iv-acts .btn { justify-content: center; } .iv-acts .mini { width: 100%; }
 .now .now-acts > .btn, .now .now-acts > .step-menu > summary.btn { height: 38px; }
+.calls-top { margin-bottom: 12px; } .calls-top > .sec { margin: 0; padding: 0; border: 0; }
