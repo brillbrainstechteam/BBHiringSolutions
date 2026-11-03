@@ -457,7 +457,8 @@
   F.callBar = () => {
     const k = BB.me.open_call; let bar = $('[data-callbar]'); if (!k) { if (bar) bar.remove(); return; }
     if (!bar) { bar = document.createElement('div'); bar.className = 'call-bar'; bar.dataset.callbar = 1; document.body.appendChild(bar); }
-    bar.innerHTML = `<b>Call with ${esc(k.who)} not logged yet</b><span class="grow">Nothing else can be saved until it is.</span><button class="btn sm primary" data-calllog>Log this call</button>`;
+    bar.innerHTML = `<b>Call with ${esc(k.who)} not logged yet</b><span class="grow">Nothing else can be saved until it is.</span><button class="btn sm ghost" data-callskip>I did not call</button><button class="btn sm primary" data-calllog>Log this call</button>`;
+    $('[data-callskip]', bar).onclick = () => BB.ask({ title: `No call with ${esc(k.who)}?`, note: 'The call is dropped and you can carry on. If you did speak to them, log the call instead.', fields: [{ name: 'reason', label: 'What happened', type: 'select', options: ['Tapped Call by mistake', 'Did not go through', 'Called from another phone and logged it there'], placeholder: false }], ok: 'Drop the call', submit: (v) => BB.post('/api/calls/open/cancel', v) }).then(async (x) => { if (x) { await BB.refreshCounts(); BB.toast('Call dropped. Carry on.'); } });
     $('[data-calllog]', bar).onclick = () => BB.logCall({ ...k, started_at: k.at }).then(async (x) => { if (x) { await BB.refreshCounts(); done('Call logged'); } });
   };
 

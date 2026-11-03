@@ -1391,6 +1391,13 @@ const callAccess = (ctx, b) => {
   if (b.client_id) { const c = get('SELECT * FROM clients WHERE id=?', b.client_id); mustSee(c && seeClient(ctx.user, c), 'client'); }
 };
 route('GET', '/api/call-topics', T, () => ({ topics: D.settings().call_topics || [], outcomes: L.CALL_OUTCOMES }));
+// Call now tapped by mistake (or the call never went through): the open call is dropped, with the reason kept.
+route('POST', '/api/calls/open/cancel', { ...T, calling: true }, (ctx) => {
+  const k = L.openCall(ctx.user.id); if (!k) return { ok: true };
+  D.update('calls', k.id, { status: 'Cancelled', outcome: 'Not called', note: String((ctx.body || {}).reason || 'Tapped Call by mistake').slice(0, 300) });
+  D.history(ctx.actor.label, 'call cancelled', k.app_id || k.candidate_id || k.client_id, null, null, `Call with ${k.who} not made: ${(ctx.body || {}).reason || 'tapped by mistake'}`, null, ctx.ip);
+  return { ok: true };
+});
 route('POST', '/api/calls/start', { ...T, calling: true }, (ctx) => { const b = ctx.body || {}; callAccess(ctx, b); return L.startCall(b, ctx.actor); });
 route('POST', '/api/calls', { ...T, calling: true }, (ctx) => {
   const b = ctx.body || {}; callAccess(ctx, b); const r = L.logCall(b, ctx.actor); const p = L.cleanPrefs(b);
