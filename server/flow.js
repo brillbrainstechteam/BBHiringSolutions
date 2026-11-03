@@ -475,6 +475,12 @@ const QA_ROUNDS = {
   phone: 'This is a telephonic screening of about 15 minutes. Keep every question short and easy to answer on a phone line. Use the low end of each count. Check the basics: real experience, claims in the resume, salary, notice and location.',
   video: 'This is a video interview of about 30 to 45 minutes. Go deeper: ask for examples, numbers and how they handled real situations, and add a short role-play for customer-facing roles. Use the high end of each count.',
 };
+// The language the recruiter will ask in. The resume reference stays as written in the resume.
+const QA_LANGS = {
+  en: '',
+  hi: 'Write every question and every "listen for" note in simple spoken Hindi in Devanagari script, the way a recruiter speaks on a call. Keep job titles, company names, products and tools in English words. This replaces "plain English" above.',
+  hinglish: 'Write every question and every "listen for" note in Hinglish: Hindi in Roman letters mixed with everyday English words, the way recruiters in India talk on calls (for example: "Aapne last company kyun chhodi?"). This replaces "plain English" above.',
+};
 route('POST', '/api/applications/:id/questions', T, async (ctx) => {
   const a = loadApp(ctx); const cand = get('SELECT * FROM candidates WHERE id=?', a.candidate_id); const job = get('SELECT * FROM jobs WHERE id=?', a.job_id); const client = get('SELECT * FROM clients WHERE id=?', job.client_id);
   if (!cand.cv_file) throw httpError(400, 'Upload the resume first: the questions come from it.');
@@ -484,10 +490,10 @@ route('POST', '/api/applications/:id/questions', T, async (ctx) => {
   const extra = Object.fromEntries(Object.entries(client.extra || {}).filter(([k, v]) => typeof v === 'string' && /product|about|categor|segment|brand/i.test(k)));
   const business = { industry: client.industry || D.settings().default_industry, business_type: client.business_type, b2b_or_b2c: job.market || '', city: client.city, what_they_asked_for: client.need, ...extra };
   const { cv, ...facts } = candFacts(cand);
-  const round = QA_ROUNDS[ctx.body.round] ? ctx.body.round : '';
-  const r = await LLM.json({ system: round ? `${QA_SYSTEM}\n${QA_ROUNDS[round]}` : QA_SYSTEM, user: `Job:\n${JSON.stringify(jobFacts(job))}\n\nClient's business:\n${JSON.stringify(business)}\n\nCandidate:\n${JSON.stringify(facts)}\n\nResume:\n${text.slice(0, 9000) || '(see the attached file)'}`, schema: QA_SCHEMA, name: 'interview_questions', maxTokens: 2600, files });
+  const round = QA_ROUNDS[ctx.body.round] ? ctx.body.round : ''; const lang = QA_LANGS[ctx.body.lang] !== undefined ? ctx.body.lang : 'en';
+  const r = await LLM.json({ system: [QA_SYSTEM, QA_ROUNDS[round], QA_LANGS[lang]].filter(Boolean).join('\n'), user: `Job:\n${JSON.stringify(jobFacts(job))}\n\nClient's business:\n${JSON.stringify(business)}\n\nCandidate:\n${JSON.stringify(facts)}\n\nResume:\n${text.slice(0, 9000) || '(see the attached file)'}`, schema: QA_SCHEMA, name: 'interview_questions', maxTokens: 2600, files });
   const sections = QA_PARTS.map(([k, title]) => ({ title, questions: r[k] || [] })); if (!sections[0].questions.length) throw httpError(424, 'The AI gave no questions from the resume. Please try again.');
-  D.run('INSERT OR REPLACE INTO app_questions (app_id, questions, by, at, round) VALUES (?, ?, ?, ?, ?)', a.id, JSON.stringify(sections), ctx.actor.label, now(), round || null);
+  D.run('INSERT OR REPLACE INTO app_questions (app_id, questions, by, at, round, lang) VALUES (?, ?, ?, ?, ?, ?)', a.id, JSON.stringify(sections), ctx.actor.label, now(), round || null, lang);
   L.appHist(a.id, a.step, ctx.actor, `Interview questions made with AI${round ? ` for the ${round === 'phone' ? 'phone' : 'video'} round` : ''}`, 'interview');
   return { sections };
 });
