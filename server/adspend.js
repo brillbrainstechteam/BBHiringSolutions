@@ -86,9 +86,67 @@ route('POST', '/api/adspend/uploads/:id/delete', SUPER, (ctx) => {
   D.run('DELETE FROM ad_spend WHERE upload_id=?', ctx.params.id); D.run('DELETE FROM ad_spend_uploads WHERE id=?', ctx.params.id);
   D.history(ctx.actor.label, 'ad spend removed', null, ctx.params.id); return { ok: true };
 });
+// Meta Marketing API: spend per ad per day, read with a system-user token that has ads_read (META_ADS_TOKEN and
+// META_AD_ACCOUNT in .env). It only reads figures. Each day fetched replaces that day's figures, and an uploaded Meta
+// export for days the API already covers is left out of the report, so nothing is counted twice.
+const API = 'META-API';
+const metaCfg = () => { const token = String(process.env.META_ADS_TOKEN || '').trim(); let account = String(process.env.META_AD_ACCOUNT || '').trim(); if (account && !account.startsWith('act_')) account = `act_${account}`; return token && account ? { token, account } : null; };
+const LEAD_ACTIONS = ['lead', 'onsite_conversion.lead_grouped', 'leadgen_grouped', 'offsite_conversion.fb_pixel_lead'];
+const isoDay = (v) => /^\d{4}-\d{2}-\d{2}$/.test(String(v || ''));
+const istAgo = (n) => new Date(Date.now() + 5.5 * 3600000 - n * 86400000).toISOString().slice(0, 10);
+async function fetchMeta(from, to, by) {
+  const cfg = metaCfg(); if (!cfg) throw httpError(424, 'Meta is not connected: add META_ADS_TOKEN and META_AD_ACCOUNT to the server .env.');
+  if (!isoDay(from) || !isoDay(to) || from > to) throw httpError(400, 'Pick the dates', 'from');
+  if ((Date.parse(to) - Date.parse(from)) / 86400000 > 92) throw httpError(400, 'Fetch at most 3 months at a time', 'from');
+  const q = new URLSearchParams({ level: 'ad', time_increment: '1', time_range: JSON.stringify({ since: from, until: to }), fields: 'campaign_name,adset_name,ad_name,spend,impressions,inline_link_clicks,actions,account_currency', limit: '500', access_token: cfg.token });
+  let url = `${process.env.META_GRAPH_URL || 'https://graph.facebook.com/v21.0'}/${cfg.account}/insights?${q}`; const got = [];
+  for (let page = 0; url && page < 60; page++) {
+    let res; try { res = await fetch(url, { signal: AbortSignal.timeout(30000) }); } catch (e) { throw httpError(424, `Meta could not be reached: ${e.message}`); }
+    const j = await res.json().catch(() => ({}));
+    if (!res.ok || j.error) throw httpError(424, `Meta said: ${(j.error && j.error.message) || `error ${res.status}`}`);
+    for (const r of j.data || []) {
+      const acts = Object.fromEntries((r.actions || []).map((x) => [x.action_type, Number(x.value) || 0])); const lead = LEAD_ACTIONS.find((k) => acts[k] !== undefined);
+      got.push({ campaign: r.campaign_name || '', adset: r.adset_name || '', ad: r.ad_name || '', day: r.date_start, spend: num(r.spend), impressions: Math.round(num(r.impressions)), clicks: Math.round(num(r.inline_link_clicks)), results: lead ? acts[lead] : 0, currency: r.account_currency || 'INR' });
+    }
+    url = j.paging && j.paging.next;
+  }
+  // Replace those days, all at once.
+  D.db.exec('BEGIN');
+  try {
+    D.run('DELETE FROM ad_spend WHERE upload_id=? AND day_from>=? AND day_from<=?', API, from, to);
+    for (const r of got) if (r.spend || r.impressions) insert('ad_spend', { upload_id: API, platform: 'Meta', campaign: r.campaign, adset: r.adset, ad: r.ad, day_from: r.day, day_to: r.day, spend: r.spend, impressions: r.impressions, clicks: r.clicks, results: r.results, currency: r.currency });
+    const t = get('SELECT COUNT(*) n, IFNULL(SUM(spend),0) total, MIN(day_from) a, MAX(day_from) b FROM ad_spend WHERE upload_id=?', API);
+    D.run('DELETE FROM ad_spend_uploads WHERE id=?', API);
+    if (t.n) insert('ad_spend_uploads', { id: API, name: `Fetched from Meta: ${t.a} to ${t.b}`, platform: 'Meta', rows: t.n, total: t.total, by: by.label, at: now() });
+    D.db.exec('COMMIT');
+  } catch (e) { D.db.exec('ROLLBACK'); throw e; }
+  const spent = got.reduce((x, r) => x + r.spend, 0);
+  D.setHealth('meta_spend_last', JSON.stringify({ at: now(), from, to, rows: got.length, spent: Math.round(spent), by: by.label })); D.setHealth('meta_spend_error', '');
+  return { rows: got.length, spent: Math.round(spent), from, to };
+}
+// Once a day after 6 am IST, from the timer: the last three days (Meta keeps adjusting the latest figures).
+function daily() {
+  if (!metaCfg() || new Date(Date.now() + 5.5 * 3600000).getUTCHours() < 6) return;
+  const today = istAgo(0); const h = get("SELECT value FROM health WHERE key='meta_spend_day'"); if (h && h.value === today) return;
+  D.setHealth('meta_spend_day', today);
+  fetchMeta(istAgo(3), istAgo(1), { label: 'Daily fetch' }).catch((e) => { D.setHealth('meta_spend_error', `${now()} ${e.message}`); require('./alerts').devAlert('Meta ad spend fetch failed', e.message); });
+}
+const health = (k) => (get('SELECT value FROM health WHERE key=?', k) || {}).value || '';
+route('GET', '/api/adspend/meta', SUPER, () => {
+  const cfg = metaCfg(); const v = health('meta_spend_last'); let last = typeof v === 'object' ? v : null; if (typeof v === 'string' && v) try { last = JSON.parse(v); } catch { /* none */ }
+  return { connected: !!cfg, account: cfg ? `act_…${cfg.account.slice(-4)}` : '', last, error: health('meta_spend_error') };
+});
+route('POST', '/api/adspend/meta/fetch', { ...SUPER, rate: { key: 'metaspend', max: 30, minutes: 60 } }, async (ctx) => {
+  const r = await fetchMeta(String(ctx.body.from || ''), String(ctx.body.to || ''), ctx.actor);
+  D.history(ctx.actor.label, 'ad spend fetched', null, 'Meta', null, `${r.from} to ${r.to}: ${r.rows} rows, ${r.spent} spent`, null, ctx.ip);
+  return r;
+});
 // The report: per job (spend, applications from ads, hires, cost per application and per hire) and per ad set.
 route('GET', '/api/adspend/report', SUPER, () => {
-  const rows = all('SELECT * FROM ad_spend');
+  // An uploaded Meta export is left out for any ad set and day the API already fetched.
+  const fetched = new Set(); for (const r of all('SELECT adset, day_from FROM ad_spend WHERE upload_id=?', API)) fetched.add(`${norm(r.adset)}|${r.day_from}`);
+  const covered = (r) => { if (r.upload_id === API || r.platform !== 'Meta' || !fetched.size || !isoDay(r.day_from) || !isoDay(r.day_to)) return false; for (let d = new Date(`${r.day_from}T00:00:00Z`), k = 0; d.toISOString().slice(0, 10) <= r.day_to && k < 400; d.setUTCDate(d.getUTCDate() + 1), k++) if (fetched.has(`${norm(r.adset)}|${d.toISOString().slice(0, 10)}`)) return true; return false; };
+  const every = all('SELECT * FROM ad_spend'); const rows = every.filter((r) => !covered(r)); const overlap = every.reduce((t, r) => t + r.spend, 0) - rows.reduce((t, r) => t + r.spend, 0);
   const apps = all("SELECT id, job_id, ad_set, ad_name, ad_campaign, result FROM applications WHERE ad_set IS NOT NULL OR ad_name IS NOT NULL");
   const jobs = {}; const sets = {};
   for (const r of rows) {
@@ -107,10 +165,10 @@ route('GET', '/api/adspend/report', SUPER, () => {
   const total = rows.reduce((t, r) => t + r.spend, 0); const matched = out.reduce((t, j) => t + j.spend, 0);
   const adApps = out.reduce((t, j) => t + j.ad_apps, 0); const hires = out.reduce((t, j) => t + j.hires, 0);
   return {
-    summary: { total: Math.round(total), unmatched: Math.round(total - matched), ad_apps: adApps, hires, per_app: adApps ? Math.round(matched / adApps) : null, per_hire: hires ? Math.round(matched / hires) : null },
+    summary: { total: Math.round(total), overlap: Math.round(overlap), unmatched: Math.round(total - matched), ad_apps: adApps, hires, per_app: adApps ? Math.round(matched / adApps) : null, per_hire: hires ? Math.round(matched / hires) : null },
     jobs: out,
     sets: Object.values(sets).map((s) => ({ ...s, spend: Math.round(s.spend), portal_apps: apps.filter((a) => norm(a.ad_set) === norm(s.adset)).length, jobs: Object.keys(s.jobs) })).sort((a, b) => b.spend - a.spend),
     uploads: all('SELECT * FROM ad_spend_uploads ORDER BY at DESC'),
   };
 });
-module.exports = { parse, allocate };
+module.exports = { parse, allocate, fetchMeta, daily };
