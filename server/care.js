@@ -137,6 +137,8 @@ route('GET', '/api/aftercare', T, (ctx) => {
   ].map(({ a, r }) => { const v = V.appView(a); return { id: a.id, candidate_id: a.candidate_id, candidate_name: v.candidate_name, client_name: v.client_name, job_id: a.job_id, job_title: v.job_title, owner_name: v.owner_name, joined_at: a.joined_at, left_date: a.left_date, left_reason: a.left_reason, ...r }; }).filter(match);
   return {
     offers,
+    // For recording an offer by hand: everyone in an interview round, not yet at the offer.
+    can_offer: all("SELECT * FROM applications WHERE result='open' AND step IN ('Our interview','Sent to client','Client interview')").filter((a) => R.seeApp(u, a)).map((a) => { const v = V.appView(a); return { id: a.id, label: `${v.candidate_name} · ${v.job_title} · ${v.client_name || ''}` }; }).sort((x, y) => x.label.localeCompare(y.label)),
     active: active.sort((x, y) => y.todo.length - x.todo.length || Number(y.at_risk) - Number(x.at_risk) || x.since - y.since), replacements,
     counts: { offers: offers.length, late: offers.filter((x) => x.late).length, active: active.length, todo: active.filter((x) => x.todo.length).length, at_risk: active.filter((x) => x.at_risk).length, to_find: replacements.filter((x) => ['To find', 'Client asked'].includes(x.status)).length, in_progress: replacements.filter((x) => x.status === 'In progress').length },
     marks: marks(), plan: plan(), outcomes: OUTCOMES,

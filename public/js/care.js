@@ -29,7 +29,7 @@
     const a = BB.care.current; if (a) C.logCheckin(a.id, a.care);
   });
 
-  P.aftercare = async ({ el, q }) => {
+  P.aftercare = async ({ el, q, actions }) => {
     const tab = ['offers', 'replacements'].includes(q.tab) ? q.tab : 'active';
     const d = await BB.api(`/api/aftercare?${BB.qs({ q: q.q })}`); const n = d.counts;
     const tabs = `<div class="tabs"><button data-ctab="offers" class="${tab === 'offers' ? 'on' : ''}">Offers <span class="n">${n.offers}</span></button><button data-ctab="active" class="${tab === 'active' ? 'on' : ''}">First 90 days <span class="n">${n.active}</span></button><button data-ctab="replacements" class="${tab === 'replacements' ? 'on' : ''}">Replacements <span class="n">${n.to_find + n.in_progress}</span></button></div>`;
@@ -41,6 +41,11 @@
       : tab === 'active'
       ? BB.table([{ t: 'Candidate', f: who }, { t: 'Joined', f: (x) => `${fmtD(x.joined_at)}<div class="tiny muted">day ${x.since}</div>` }, { t: 'Check-ins', f: (x) => dots(x.schedule) }, { t: 'Last answer', f: (x) => (x.last ? `<span class="badge ${CLS[x.last.outcome] || 'b-outline'}">${esc(x.last.outcome)}</span><div class="tiny muted">day ${x.last.day} · ${party(x.last.party).toLowerCase()}${x.last.note ? ` · ${esc(x.last.note)}` : ''}</div>` : '<span class="faint">—</span>') }, { t: 'Next', f: (x) => (x.todo.length ? `<span class="badge b-amber">Day ${x.todo.join(', ')} due</span>` : x.next ? `Day ${x.next.day}<div class="tiny muted">${fmtD(x.next.date)}</div>` : '<span class="faint">All done</span>') }, { t: 'Window left', num: 1, f: (x) => `${x.window_left} days` }, { t: 'Owner', f: (x) => esc(x.owner_name || '—') }, { t: '', f: (x) => `${x.at_risk ? '<span class="badge b-amber">At risk</span> ' : ''}<button class="btn sm" data-clog="${x.id}">Log check-in</button>` }], d.active, { empty: 'Nobody is in their first 90 days right now.' })
       : BB.table([{ t: 'Candidate who left', f: who }, { t: 'Joined', f: (x) => fmtD(x.joined_at) }, { t: 'Left', f: (x) => (x.left_date ? `${fmtD(x.left_date)}<div class="tiny muted">after ${x.stay} days${x.left_reason ? ` · ${esc(x.left_reason)}` : ''}</div>` : '<span class="faint">Not yet</span>') }, { t: 'Free replacement', f: (x) => (x.free ? 'Yes' : `No<div class="tiny muted">${esc(x.why)}</div>`) }, { t: 'Status', f: (x) => `<span class="badge ${x.status === 'Replaced' ? 'b-green' : x.status === 'Not covered' ? 'b-outline' : 'b-amber'}">${esc(x.status)}</span>${x.status === 'Client asked' ? `<div class="tiny muted">${esc(x.why)}</div>` : ''}` }, { t: 'Replacement', f: (x) => (x.by ? `<a href="#" data-open="application:${x.by.id}">${esc(x.by.name)}</a><div class="tiny muted">${esc(x.by.result === 'Hired' ? 'Joined' : x.by.step)}</div>` : x.free ? `<a href="#" data-open="job:${x.job_id}">Find on the job</a>` : '—') }, { t: 'Owner', f: (x) => esc(x.owner_name || '—') }], d.replacements, { empty: 'No replacements.' });
+    if (actions) { actions.innerHTML = '<button class="btn gold" data-offnew>Record an offer</button>'; $('[data-offnew]', actions).onclick = async () => {
+      if (!d.can_offer.length) return BB.toast('Nobody is in an interview round to make an offer to', true);
+      const v = await BB.ask({ title: 'Record an offer', note: 'Offers also appear here on their own when an application reaches Offer made.', fields: [{ name: 'app', label: 'Candidate and job', type: 'select', options: d.can_offer.map((x) => [x.id, x.label]) }], ok: 'Next' });
+      if (v && v.app) BB.recordOffer(await BB.api(`/api/applications/${v.app}`));
+    }; }
     el.innerHTML = `${tiles}${tabs}<div class="filters exp-filters"><input placeholder="Search candidate, client or job…" value="${esc(q.q || '')}" data-q data-xq></div>${tab === 'active' ? plan : ''}<div class="card">${body}</div>`;
     $$('[data-ctab]', el).forEach((b) => (b.onclick = () => BB.setQ({ tab: b.dataset.ctab === 'active' ? '' : b.dataset.ctab })));
     let t; $('[data-q]', el).oninput = (e) => { clearTimeout(t); t = setTimeout(() => BB.setQ({ q: e.target.value }), 350); };

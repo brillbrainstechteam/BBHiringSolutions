@@ -114,6 +114,7 @@ const FORMATS = {
 const AUTO_RULES = [
   { key: 'candidate_welcome', when: 'Fills the form / added by team', to: 'Candidate', format: 'bbhs_candidate_welcome', on: true },
   { key: 'job_alert', when: 'Match score 70+ on a new job', to: 'Candidate', format: 'bbhs_job_alert', on: true },
+  { key: 'pref1_screen', when: 'Screened in: ask their best time to call (gives the recruiter a call task at that time)', to: 'Candidate', format: 'bbhs_contact_prefs', on: true },
   { key: 'interview_scheduled', when: 'Interview scheduled', to: 'Candidate', format: 'bbhs_interview_scheduled', on: true },
   { key: 'interview_reminder', when: 'Interview tomorrow and 2 hours before', to: 'Candidate (and client for client rounds)', format: 'bbhs_interview_reminder', on: true },
   { key: 'offer', when: 'Offer recorded', to: 'Candidate', format: 'bbhs_offer', on: true },

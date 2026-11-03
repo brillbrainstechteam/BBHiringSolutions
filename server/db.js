@@ -260,6 +260,10 @@ function ensureSettings() {
     setSetting('auto_rules', settings().auto_rules.map((r) => (r.key === 'post_join_checkin' ? { ...r, when: defs.auto_rules.find((x) => x.key === r.key).when } : r)));
     setSetting('done_once', [...(settings().done_once || []), 'format_aftercare']);
   }
+  if (!once.includes('rule_pref1_screen')) {
+    const r = defs.auto_rules.find((x) => x.key === 'pref1_screen'); if (!settings().auto_rules.some((x) => x.key === r.key)) setSetting('auto_rules', [r, ...settings().auto_rules]);
+    setSetting('done_once', [...(settings().done_once || []), 'rule_pref1_screen']);
+  }
   if (!once.includes('format_review_end')) { // Meta refuses a body that ends with a blank
     const f = settings().formats.bbhs_review_request; const ends = (t) => /\{link\}\s*$/.test(t || '');
     if (f) setSetting('formats', { ...settings().formats, bbhs_review_request: { ...f, en: ends(f.en) ? defs.formats.bbhs_review_request.en : f.en, hi: ends(f.hi) ? defs.formats.bbhs_review_request.hi : f.hi } });

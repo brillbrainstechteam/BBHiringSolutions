@@ -607,7 +607,26 @@ function screenApplication(appId, verdict, by, note) {
   if (app.result !== 'open') { if (!['Requirement not met', 'Rejected at screening'].includes(app.result)) throw httpError(400, `This application is closed (${app.result}). Reopen it first.`); reopenApplication(appId, by); app = get('SELECT * FROM applications WHERE id=?', appId); }
   const target = verdict === 'Accepted' ? 'Our interview' : 'Screening';
   if (stepIdx(app.step) < stepIdx(target)) moveStep(appId, target, by, `Screening: ${verdict}`);
+  if (verdict === 'Accepted') phoneTask(appId);
   return get('SELECT * FROM applications WHERE id=?', appId);
+}
+// Screened in: the owner gets a call task for the telephonic round at the candidate's best time, and when we do not
+// know that time the candidate is asked for it on WhatsApp. Their answer moves the task to that time.
+const PHONE_TASK = 'Telephonic round:';
+function phoneTask(appId) {
+  const a = get('SELECT * FROM applications WHERE id=?', appId); const c = get('SELECT * FROM candidates WHERE id=?', a.candidate_id); const job = get('SELECT * FROM jobs WHERE id=?', a.job_id);
+  const owner = a.owner_id || job.recruiter_id; if (!owner || !c) return;
+  if (get(`SELECT 1 FROM followups WHERE record_id=? AND done=0 AND note LIKE '${PHONE_TASK}%'`, appId)) return;
+  const known = !!(c.pref_time || c.pref_days);
+  insert('followups', { record_id: appId, at: (known && nextPreferred(c)) || now(), note: `${PHONE_TASK} call ${c.name} for ${job.title}. ${known ? `Best time: ${prefNote(c)}.` : 'Asked on WhatsApp for their best time.'}`, for_user: owner, done: 0, created_by: owner });
+  if (!known && c.whatsapp) { try { sendWA({ ptype: 'candidate', pid: c.id, format: 'bbhs_contact_prefs', vars: {}, rule: 'pref1_screen', auto: true, ap: appId, dedupe: `prefs:${c.id}:${appId}`, noEmailCopy: true }); } catch (e) { /* the task still stands */ } }
+}
+function phoneTaskTimes(candId) {
+  const c = get('SELECT * FROM candidates WHERE id=?', candId);
+  for (const f of all(`SELECT f.* FROM followups f JOIN applications a ON a.id=f.record_id WHERE a.candidate_id=? AND f.done=0 AND f.note LIKE '${PHONE_TASK}%'`, candId)) {
+    update('followups', f.id, { at: nextPreferred(c) || now(), note: f.note.replace(/ (Best time:.*|Asked on WhatsApp for their best time\.)$/, ` Best time: ${prefNote(c) || 'any time'}.`), alerted: 0 });
+    alertUser(f.for_user, `${c.name} gave their best time to call: ${prefNote(c) || 'any time'}`, f.record_id, false);
+  }
 }
 function reopenApplication(appId, by) {
   const app = get('SELECT * FROM applications WHERE id=?', appId);
@@ -647,7 +666,7 @@ function scheduleInterview(appId, o, by) {
   else appHist(appId, app.step, by, `${id} scheduled`, 'interview');
   const job = get('SELECT * FROM jobs WHERE id=?', app.job_id);
   const iv = get('SELECT * FROM interviews WHERE id=?', id);
-  sendWA({ ptype: 'candidate', pid: app.candidate_id, format: 'bbhs_interview_scheduled', vars: ivVars(iv, job), ap: appId, jb: job.id, iv: id, auto: true, rule: 'interview_scheduled', dedupe: `ivs:${id}:${iv.at}` });
+  if (!o.now) sendWA({ ptype: 'candidate', pid: app.candidate_id, format: 'bbhs_interview_scheduled', vars: ivVars(iv, job), ap: appId, jb: job.id, iv: id, auto: true, rule: 'interview_scheduled', dedupe: `ivs:${id}:${iv.at}` });
   recalcJob(job.id, actorName(by));
   return iv;
 }
@@ -663,6 +682,7 @@ function recordInterview(ivId, o, by) {
   if (!iv) throw httpError(404, 'Interview not found');
   if (!o.status) throw httpError(400, 'Say what happened', 'status');
   if (!o.remark || !String(o.remark).trim()) throw httpError(400, 'A remark is required', 'remark');
+  if (iv.mode === 'phone' && o.status === 'Completed') D.run(`UPDATE followups SET done=1 WHERE record_id=? AND done=0 AND note LIKE '${PHONE_TASK}%'`, iv.app_id); // the call task is done
   if (o.status === 'Completed' && o.result === 'Move ahead' && o.next && !String(o.skip_reason || '').trim()) { // asked before anything is saved
     const appNow = get('SELECT * FROM applications WHERE id=?', iv.app_id); const rows = roundsOf(appNow).filter((r) => !r.interview_ids.includes(ivId)); const at = rows.findIndex((r) => r.key === o.next);
     const left = o.next === 'client' ? rows.filter((r) => r.status === 'To do' && r.mode !== 'in_person') : rows.slice(0, Math.max(0, at)).filter((r) => r.status === 'To do');
@@ -781,7 +801,7 @@ function prefAnswer(step, t, candId, by) {
   const c = get('SELECT * FROM candidates WHERE id=?', candId); const say = (rule, text, buttons) => { try { sendWA({ ptype: 'candidate', pid: candId, text, buttons: buttons || [], rule, by: { label: 'Preferences' } }); } catch (e) { /* the window may have closed: the answer is still saved */ } };
   if (step.startsWith('pref1')) { const v = pick(PREF.channel); if (!v) return null; update('candidates', candId, { pref_channel: v }); say('pref2', PREF_ASK.pref2.text, PREF_ASK.pref2.buttons); return `Prefers ${v}`; }
   if (step === 'pref2') { const v = t.startsWith('any') ? null : pick(PREF.time); if (!v && !t.startsWith('any')) return null; update('candidates', candId, { pref_time: v }); say('pref3', PREF_ASK.pref3.text, PREF_ASK.pref3.buttons); return `Best time: ${v || 'any time'}`; }
-  if (step === 'pref3') { const v = t.startsWith('any') ? null : pick(PREF.days); if (!v && !t.startsWith('any')) return null; update('candidates', candId, { pref_days: v }); const f = get('SELECT * FROM candidates WHERE id=?', candId); say('pref_done', `Thank you. We will reach you on ${f.pref_channel || 'WhatsApp'}${f.pref_time ? `, ${f.pref_time.split(' (')[0].toLowerCase()}` : ''}${f.pref_days ? `, ${f.pref_days.toLowerCase()}` : ''}.`); history('Candidate on WhatsApp', 'contact preferences', candId, null, null, prefNote(f)); return `Best days: ${v || 'any day'}`; }
+  if (step === 'pref3') { const v = t.startsWith('any') ? null : pick(PREF.days); if (!v && !t.startsWith('any')) return null; update('candidates', candId, { pref_days: v }); const f = get('SELECT * FROM candidates WHERE id=?', candId); say('pref_done', `Thank you. We will reach you on ${f.pref_channel || 'WhatsApp'}${f.pref_time ? `, ${f.pref_time.split(' (')[0].toLowerCase()}` : ''}${f.pref_days ? `, ${f.pref_days.toLowerCase()}` : ''}.`); history('Candidate on WhatsApp', 'contact preferences', candId, null, null, prefNote(f)); phoneTaskTimes(candId); return `Best days: ${v || 'any day'}`; }
   return null;
 }
 

@@ -1142,7 +1142,7 @@ route('POST', '/api/import/run', T, (ctx) => {
 // Applications matching the list's filters.
 function appRows(q, u) {
   const rows = visibleApps(u).map(V.appView)
-    .filter((a) => (!q.job || a.job_id === q.job) && (!q.title || a.job_title === q.title || many(q.title).includes(a.job_title)) && (!q.client || a.client_id === q.client) && (!q.owner || a.owner_id === q.owner) && (!q.source || a.source === q.source) && (!q.from || L.istDay(a.created_at) >= q.from) && (!q.to || L.istDay(a.created_at) <= q.to) && (q.closed || q.screen ? true : a.result === 'open') && (!q.step || a.step === q.step) && (!q.screen || (q.screen === 'none' ? !a.screen : a.screen === q.screen)) && (!q.ad || [a.ad_campaign, a.ad_set, a.ad_name].includes(q.ad)) && like(q.q, a.id, a.candidate_name, a.job_title, a.client_name, a.ad));
+    .filter((a) => (!q.job || a.job_id === q.job) && (!q.title || a.job_title === q.title || many(q.title).includes(a.job_title)) && (!q.client || a.client_id === q.client) && (!q.owner || a.owner_id === q.owner) && (!q.source || a.source === q.source) && (!q.from || L.istDay(a.created_at) >= q.from) && (!q.to || L.istDay(a.created_at) <= q.to) && (q.closed === '1' ? a.result !== 'open' : q.screen ? true : a.result === 'open') && (!q.step || a.step === q.step) && (!q.screen || (q.screen === 'none' ? !a.screen : a.screen === q.screen)) && (!q.ad || [a.ad_campaign, a.ad_set, a.ad_name].includes(q.ad)) && like(q.q, a.id, a.candidate_name, a.job_title, a.client_name, a.ad));
   return rows;
 }
 // Each application's fit with its job: the AI's score when it has read them, otherwise the matching rules. Best first.
@@ -1163,7 +1163,8 @@ route('POST', '/api/applications/reject-below', T, (ctx) => {
 });
 route('GET', '/api/applications', T, (ctx) => {
   const q = ctx.query; const rows = scoreApps(appRows(q, ctx.user), q);
-  return { ...page(ctx, rows, 'applications', ['id', 'candidate_name', 'score', 'job_id', 'job_title', 'client_name', 'step', 'result', 'days_in_step', 'owner_name', 'source', 'ad', 'screen', 'screen_note']), ads: adOptions('applications'), screens: L.SCREEN,
+  const vis = visibleApps(ctx.user); const counts = { open: vis.filter((a) => a.result === 'open').length, closed: vis.filter((a) => a.result !== 'open').length, joined: vis.filter((a) => a.result === 'Hired').length };
+  return { counts, ...page(ctx, rows, 'applications', ['id', 'candidate_name', 'score', 'job_id', 'job_title', 'client_name', 'step', 'result', 'days_in_step', 'owner_name', 'source', 'ad', 'screen', 'screen_note']), ads: adOptions('applications'), screens: L.SCREEN,
     // Choices for the filters: the jobs, clients, owners and sources these applications have.
     options: (() => { const vis = visibleApps(ctx.user).map(V.appView); const uniq = (f) => [...new Map(vis.map(f).filter((x) => x && x[0]).map((x) => [x[0], x])).values()].sort((a, b) => String(a[1]).localeCompare(String(b[1])));
       return { titles: [...new Set(vis.map((a) => a.job_title).filter(Boolean))].sort(), jobs: uniq((a) => [a.job_id, `${a.job_title} · ${a.client_name || ''}${a.job_city ? ` · ${a.job_city}` : ''}`]), clients: uniq((a) => [a.client_id, a.client_name]), owners: uniq((a) => [a.owner_id, a.owner_name]), sources: [...new Set(vis.map((a) => a.source).filter(Boolean))].sort() }; })() };
@@ -1326,6 +1327,20 @@ route('POST', '/api/applications/bulk', T, (ctx) => {
 });
 
 // ---------- interviews ----------
+// Everyone screened in and not yet at the offer, with the round they are in now: telephonic, virtual, then the client.
+route('GET', '/api/interviews/rounds', T, (ctx) => {
+  const want = ctx.query.round || ''; const settled = ['Cleared', 'Not needed', 'Not cleared'];
+  const rows = visibleApps(ctx.user).filter((a) => a.result === 'open' && (['Our interview', 'Sent to client', 'Client interview'].includes(a.step) || (['Applied', 'Screening'].includes(a.step) && a.screen === 'Accepted'))).map((a) => {
+    const v = V.appView(a); const rounds = L.roundsOf(a); const client = L.stepIdx(a.step) >= L.stepIdx('Sent to client');
+    const cur = rounds.filter((r) => (client ? r.mode === 'in_person' : r.mode !== 'in_person')).find((r) => !settled.includes(r.status)) || null;
+    const c = get('SELECT * FROM candidates WHERE id=?', a.candidate_id) || {}; const task = get(`SELECT at FROM followups WHERE record_id=? AND done=0 ORDER BY at LIMIT 1`, a.id);
+    const iv = cur && cur.interview_ids.length ? get("SELECT * FROM interviews WHERE id=?", cur.interview_ids[cur.interview_ids.length - 1]) : null;
+    return { id: a.id, candidate_id: a.candidate_id, candidate_name: v.candidate_name, job_title: v.job_title, client_name: v.client_name, owner_name: v.owner_name, step: a.step, round: cur ? cur.name : client ? 'Client round done' : 'Ready for the client', mode: cur ? cur.mode : client ? 'in_person' : 'ready', status: cur ? cur.status : 'Next step', at: cur && cur.status !== 'To do' ? cur.at : null, iv_id: iv && ['Scheduled', 'Rescheduled'].includes(iv.status) ? iv.id : null, best: L.prefNote(c), task_at: task ? task.at : null, asked: !c.pref_time && !c.pref_days && !!get("SELECT 1 FROM messages WHERE person_type='candidate' AND person_id=? AND format='bbhs_contact_prefs'", c.id) };
+  });
+  const order = { 'Result pending': 0, Scheduled: 1, 'To do': 2, 'No-show': 2, 'On hold': 3, 'Next step': 4 };
+  const counts = { all: rows.length, phone: rows.filter((r) => r.mode === 'phone').length, video: rows.filter((r) => r.mode === 'video').length, in_person: rows.filter((r) => r.mode === 'in_person').length, ready: rows.filter((r) => r.mode === 'ready').length };
+  return { counts, rows: rows.filter((r) => !want || r.mode === want || (want === 'video' && !['phone', 'in_person', 'ready'].includes(r.mode))).sort((x, y) => (order[x.status] ?? 5) - (order[y.status] ?? 5) || String(x.at || x.task_at || '9').localeCompare(String(y.at || y.task_at || '9'))) };
+});
 route('GET', '/api/interviews', T, (ctx) => {
   const f = ctx.query.filter || 'Upcoming';
   const apps = new Map(visibleApps(ctx.user).map((a) => [a.id, a]));
@@ -1815,6 +1830,12 @@ route('GET', '/api/campaigns/:id', T, (ctx) => {
   return { ...campRow(x), people: Object.values(people).map((p) => ({ ...p, name: name(p.id), replied: replied(p.id) })) };
 });
 route('GET', '/api/contact-prefs', T, () => L.PREF);
+// The message they will get, shown before sending.
+route('GET', '/api/candidates/:id/ask-prefs', T, (ctx) => {
+  const c = get('SELECT * FROM candidates WHERE id=?', ctx.params.id); if (!c) throw httpError(404, 'Candidate not found'); if (!c.whatsapp) throw httpError(400, 'This candidate has no WhatsApp number.');
+  const f = D.settings().formats.bbhs_contact_prefs; const lang = c.language && f[c.language] ? c.language : 'en';
+  return { text: L.fillFormat('bbhs_contact_prefs', lang, { name: String(c.name || '').split(' ')[0] }), buttons: f.buttons, approved: !!f.approved };
+});
 // One candidate, asked on WhatsApp with tap buttons. A recruiter pressing it sends it even while messages are off.
 route('POST', '/api/candidates/:id/ask-prefs', T, (ctx) => {
   const c = get('SELECT * FROM candidates WHERE id=?', ctx.params.id); if (!c) throw httpError(404, 'Candidate not found'); if (!c.whatsapp) throw httpError(400, 'This candidate has no WhatsApp number.');
@@ -2151,5 +2172,6 @@ require('./trash'); // delete with a recycle bin (Settings -> Deleted items)
 require('./lang'); // translation, voice notes and recordings
 require('./care'); // check-ins after joining, replacements, recruiter reviews
 require('./verify'); // candidate ID, police and court checks
+require('./partners'); // institutes and colleges that train candidates
 require('./flow'); // client onboarding, screening with AI, client CVs, invoices, books
 require('./adspend'); // ad spend reports from Meta and LinkedIn (Job openings -> Ad spend)
