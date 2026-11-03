@@ -1,7 +1,7 @@
-// Candidate verification without a paid provider: the candidate uploads a masked Aadhaar, the PAN card and (for
-// cash, gold or stock roles) a police verification certificate, and declares they have no criminal cases. The team
-// checks each one on the free government sites and records the result, searches eCourts for cases, and calls the
-// last employer. "ID verified" = Aadhaar and PAN checked; "Fully checked" = that plus a clear police or court check.
+// Candidate verification without a paid provider: the candidate uploads a masked Aadhaar and the PAN card, and
+// declares they have no criminal cases. The team checks each one on the free government sites and records the result,
+// searches eCourts for cases, and calls the last employer. "ID verified" = Aadhaar and PAN checked; "Fully checked" =
+// that plus a clear court search.
 const D = require('./db');
 const L = require('./logic');
 const F = require('./files');
@@ -18,7 +18,6 @@ CREATE INDEX IF NOT EXISTS ix_cand_checks ON cand_checks(candidate_id);
 const KINDS = {
   aadhaar: { label: 'Aadhaar (masked)', upload: true, results: ['Verified', 'Does not match'], how: 'Check the number exists, the age band and the state on myaadhaar.uidai.gov.in → Verify Aadhaar, and that the name and photo match the person.', link: 'https://myaadhaar.uidai.gov.in/verifyAadhaar' },
   pan: { label: 'PAN card', upload: true, results: ['Verified', 'Does not match'], how: 'Check the PAN, name and date of birth on the Income Tax site → Verify Your PAN.', link: 'https://eportal.incometax.gov.in/iec/foservices/#/pre-login/verifyYourPAN' },
-  police: { label: 'Police verification certificate', upload: true, results: ['Verified', 'Does not match'], how: 'The candidate applies on their state police citizen portal (a few days to 3 weeks). Check the name, address and date on the certificate.', link: '' },
   court: { label: 'Court record search', upload: false, results: ['No cases found', 'Case found'], how: 'Search eCourts → Case Status → Party name with the candidate\'s name in each district they lived in, for the last 7 years. Note the districts you searched.', link: 'https://services.ecourts.gov.in/ecourtindia_v6/' },
   reference: { label: 'Last employer reference', upload: false, results: ['Good', 'Concern'], how: 'Call the last employer (not a friend the candidate names): dates, role, why they left, any cash or stock issue, would they rehire.', link: '' },
 };
@@ -36,7 +35,7 @@ function stateOf(candId) {
   });
   const ok = (k) => items.find((i) => i.kind === k).ok;
   const flag = items.some((i) => i.bad);
-  const summary = flag ? 'Problem found' : ok('aadhaar') && ok('pan') && (ok('police') || ok('court')) ? 'Fully checked' : ok('aadhaar') && ok('pan') ? 'ID verified' : items.some((i) => i.status !== 'Not started') || decl ? 'In progress' : 'Not started';
+  const summary = flag ? 'Problem found' : ok('aadhaar') && ok('pan') && ok('court') ? 'Fully checked' : ok('aadhaar') && ok('pan') ? 'ID verified' : items.some((i) => i.status !== 'Not started') || decl ? 'In progress' : 'Not started';
   return { items, declaration: decl ? { text: decl.note, at: decl.at } : null, summary };
 }
 const badge = (candId) => stateOf(candId).summary;

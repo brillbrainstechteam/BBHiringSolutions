@@ -316,6 +316,22 @@
     let skip_reason; if (left.length) { const v = await BB.ask({ title: `Skip ${left.map((r) => r.name).join(' and ')}?`, fields: [{ name: 'reason', label: 'Why are they not needed?', type: 'textarea' }], ok: 'Skip and move' }); if (!v) return; skip_reason = v.reason; }
     try { await BB.post(`/api/applications/${a.id}/step`, { ...body, rounds: true, skip_reason }); done('Moved'); } catch (e) { BB.fail(e); if (e.field === 'call' && (await BB.logCall({ party: 'candidate', candidate_id: a.candidate_id, app_id: a.id }))) done('Call logged. Press again to move on.'); }
   };
+  // Move to a stage. Telephonic and virtual are both Our interview: going to Virtual skips a telephonic round still
+  // to do (with the reason); going back to Telephonic undoes that skip. Rejected closes the application.
+  F.moveToStage = async (a, stage) => {
+    const s = BB.boot.steps; const late = s.indexOf(a.step) >= s.indexOf('Sent to client');
+    if (stage === 'Rejected') { const v = await BB.ask({ title: 'Reject', note: `This closes ${a.id}. You can reopen it later.`, fields: [{ name: 'reason', label: 'Reason', type: 'select', options: late ? ['Client rejected', 'Not suitable', 'Candidate withdrew', 'No response'] : ['Not suitable', 'Candidate withdrew', 'No response'], placeholder: false }, { name: 'note', label: 'Note', type: 'textarea', opt: true }], ok: 'Reject', submit: (x) => BB.post(`/api/applications/${a.id}/close`, x) }); if (v) done('Rejected'); return; }
+    if (!['Telephonic round', 'Virtual round'].includes(stage)) return F.moveTo(a, { step: stage, note: 'Set by hand', force: true });
+    const phone = a.rounds.find((r) => r.mode === 'phone');
+    // A telephonic round that is booked or done without a result moves on through its feedback.
+    if (stage === 'Virtual round' && phone && !['To do', 'Cleared', 'Not needed', 'Not cleared'].includes(phone.status)) { BB.toast(`Record the ${phone.name} feedback: Cleared moves them to the virtual round`); return BB.feedbackFor(a.id); }
+    try {
+      if (stage === 'Virtual round' && phone && phone.status === 'To do') { const v = await BB.ask({ title: `Skip ${phone.name}?`, fields: [{ name: 'reason', label: 'Why is it not needed?', type: 'textarea' }], ok: 'Skip and move' }); if (!v) return; await BB.post(`/api/applications/${a.id}/skip-round`, { key: phone.key, reason: v.reason }); }
+      if (stage === 'Telephonic round' && phone && phone.status === 'Not needed') await BB.post(`/api/applications/${a.id}/skip-round/undo`, { key: phone.key });
+    } catch (e) { return BB.fail(e); }
+    if (a.step === 'Our interview') return done(`Moved to ${stage}`);
+    return F.moveTo(a, { step: 'Our interview', note: `Set by hand: ${stage}`, force: true });
+  };
   F.nextChoices = (a, i) => { const mine = a.rounds.findIndex((r) => r.interview_ids.includes(i.id)); const list = a.rounds.map((r, k) => ({ ...r, k })).filter((r) => r.status === 'To do' && r.k !== mine).map((r) => [r.key, `Schedule ${r.name}`]); return BB.boot.steps.indexOf(a.step) < BB.boot.steps.indexOf('Sent to client') ? [...list, ['client', 'Send to client']] : list; };
   F.skipsFor = (a, target, i) => { const rows = a.rounds.filter((r) => !r.interview_ids.includes(i.id)); if (target === 'client') return rows.filter((r) => r.status === 'To do' && r.mode !== 'in_person'); const at = rows.findIndex((r) => r.key === target); return rows.slice(0, Math.max(0, at)).filter((r) => r.status === 'To do'); };
   // Same person, a new direction: found under the new role from now on.

@@ -606,7 +606,12 @@ BB.jobOptions = (selected, withOther = true, industry) => {
   const groups = {}; for (const j of list) (groups[j.group] = groups[j.group] || []).push(j.title);
   return `<option value="">Choose…</option>${Object.entries(groups).map(([g, list]) => `<optgroup label="${esc(g)}">${list.map((t) => `<option ${t === selected ? 'selected' : ''}>${esc(t)}</option>`).join('')}</optgroup>`).join('')}${withOther ? `<option value="Other" ${selected === 'Other' ? 'selected' : ''}>Other</option>` : ''}`;
 };
-BB.tracker = (step, result) => {
-  const i = BB.boot.steps.indexOf(step);
-  return `<div class="tracker ${result && result !== 'open' && result !== 'Hired' ? 'closed' : ''}">${BB.boot.steps.map((s, k) => `<div class="s ${k < i || (k === i && result === 'Hired') ? 'done' : ''} ${k === i && result !== 'Hired' ? 'cur' : ''}">${esc(s)}</div>`).join('')}</div>`;
+// The team sees our interview step as its two rounds: telephonic, then virtual.
+BB.STAGES = ['Applied', 'Screening', 'Telephonic round', 'Virtual round', 'Sent to client', 'Client interview', 'Offer made', 'Offer accepted', 'Joined'];
+BB.stageOf = (a) => { if (a.step !== 'Our interview') return a.step; const r = (a.rounds || []).find((x) => x.mode !== 'in_person' && !['Cleared', 'Not needed', 'Not cleared'].includes(x.status)); return r && r.mode === 'phone' ? 'Telephonic round' : 'Virtual round'; };
+// Move to step: every stage, then Rejected (closes the application).
+BB.stageOptions = (cur) => `${BB.STAGES.map((x) => `<option ${x === cur ? 'disabled' : ''}>${x}</option>`).join('')}<option disabled>──────────</option><option value="Rejected">Rejected</option>`;
+BB.tracker = (step, result, list = BB.boot.steps) => {
+  const i = list.indexOf(step);
+  return `<div class="tracker ${result && result !== 'open' && result !== 'Hired' ? 'closed' : ''}">${list.map((s, k) => `<div class="s ${k < i || (k === i && result === 'Hired') ? 'done' : ''} ${k === i && result !== 'Hired' ? 'cur' : ''}">${esc(s)}</div>`).join('')}</div>`;
 };

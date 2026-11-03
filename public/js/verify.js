@@ -1,4 +1,4 @@
-/* Candidate verification: masked Aadhaar, PAN, police certificate, court record search, last employer reference.
+/* Candidate verification: masked Aadhaar, PAN, court record search, last employer reference.
    The team panel shows each check with how to do it for free; the candidate uploads their papers in their profile. */
 (() => {
   const { $, $$, esc, fmtD } = BB;
@@ -23,7 +23,7 @@
         <div class="card verify-list">${d.items.map((i) => `<div class="verify-row"><div class="grow"><b>${esc(i.label)}</b> <span class="badge ${stCls(i)}">${esc(i.status)}</span>${i.note ? `<div class="tiny muted">${esc(i.note)}</div>` : ''}${i.by ? `<div class="tiny faint">${esc(i.by)} · ${fmtD(i.at)}</div>` : ''}</div><div class="row" style="gap:6px">${i.file ? `<button class="btn sm ghost" data-file="${esc(i.file)}">View</button>` : ''}<button class="btn sm" data-vrec="${i.kind}">${i.ok || i.bad ? 'Change' : 'Record'}</button></div></div>`).join('')}
         <div class="verify-row small ${d.declaration ? '' : 'muted'}">${d.declaration ? `✓ Candidate declared no criminal cases on ${fmtD(d.declaration.at)}` : 'No declaration from the candidate yet'}</div></div>`;
       $$('[data-vrec]', box).forEach((b) => (b.onclick = () => record(d.items.find((i) => i.kind === b.dataset.vrec))));
-      $('[data-vask]', box).onclick = () => { BB.copy(`${location.origin}/my-profile/verify`); BB.toast('Link copied: send it to the candidate. They upload masked Aadhaar, PAN and the police certificate there.'); };
+      $('[data-vask]', box).onclick = () => { BB.copy(`${location.origin}/my-profile/verify`); BB.toast('Link copied: send it to the candidate. They upload masked Aadhaar and PAN there.'); };
     };
     const record = (i) => { V.picked = null; return BB.ask({ title: i.label, note: `${esc(i.how)}${i.link ? ` <a href="${esc(i.link)}" target="_blank" rel="noopener">Open the site</a>` : ''}${i.kind === 'aadhaar' ? '<br><b>Keep only a masked Aadhaar</b> (only the last 4 digits showing): the law does not allow us to store the full number.' : ''}`, fields: [
       i.upload ? `<div class="field"><span class="lab">Document ${i.file ? '<span class="faint">(one is already saved; add another only to replace it)</span>' : ''}</span><div class="row"><button type="button" class="btn sm" data-vfile>Choose file</button><span class="small muted" data-vname></span></div></div>` : '',
@@ -37,7 +37,7 @@
   V.cand = async (el) => {
     el.innerHTML = '<div class="card pad">Loading…</div>';
     let d; try { d = await BB.api('/api/cand/verify'); } catch (e) { el.innerHTML = `<div class="card pad">${esc(e.message)}</div>`; return; }
-    const help = { aadhaar: 'Download a masked Aadhaar (only the last 4 digits show) from myaadhaar.uidai.gov.in and upload it here.', pan: 'A photo or scan of your PAN card.', police: 'For jobs with cash, gold or stock: apply on your state police website for a police verification (character) certificate and upload it when you get it.' };
+    const help = { aadhaar: 'Download a masked Aadhaar (only the last 4 digits show) from myaadhaar.uidai.gov.in and upload it here.', pan: 'A photo or scan of your PAN card.' };
     el.innerHTML = `<div class="stack"><div class="card pad stack-sm"><h3>Verify your ID</h3><div class="small muted">Verified candidates are trusted more by jewellery companies and get offers faster. Only your recruiter sees these papers; companies only see that you are verified.</div>${d.summary === 'ID verified' || d.summary === 'Fully checked' ? '<div class="notice gold">✓ Your ID is verified</div>' : ''}</div>
       ${d.items.map((i) => `<div class="card pad row between verify-cand"><div class="grow"><b>${esc(i.label)}</b> ${i.status !== 'Not started' ? `<span class="badge ${stCls(i)}">${esc(i.status === 'Uploaded' ? 'Uploaded: being checked' : i.status)}</span>` : ''}<div class="small muted">${esc(help[i.kind] || '')}</div></div><button class="btn ${i.has_file ? '' : 'primary'} sm" data-vup="${i.kind}">${i.has_file ? 'Upload again' : 'Upload'}</button></div>`).join('')}
       <div class="card pad stack-sm">${d.declaration ? `<div class="small">✓ You declared on ${fmtD(d.declaration.at)} that you have no criminal case against you.</div>` : `<label class="row small" style="gap:8px;align-items:flex-start"><input type="checkbox" data-vdecl style="margin-top:3px"> I declare that I have no criminal case against me, and that the documents I upload are mine and true.</label><button class="btn primary sm" style="width:max-content" data-vdgo>Save declaration</button>`}</div></div>`;
