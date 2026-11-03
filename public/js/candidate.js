@@ -24,7 +24,7 @@
 
   function render() {
     const p = D.profile; const first = esc(String(p.name || '').split(' ')[0]);
-    const tabs = [['home', 'Home', 'home'], ['jobs', 'Jobs for you', 'brief', D.jobs.length], ['apps', 'Applications', 'flow', active().length], ['profile', 'Profile', 'users'], ...(D.can_review ? [['review', 'Rate your recruiter', 'star']] : [])];
+    const tabs = [['home', 'Home', 'home'], ['jobs', 'Jobs for you', 'brief', D.jobs.length], ['apps', 'Applications', 'flow', active().length], ['profile', 'Profile', 'users'], ['verify', 'Verify ID', 'check'], ...(D.can_review ? [['review', 'Rate your recruiter', 'star']] : [])];
     $('#app').innerHTML = `<div class="pub">${BB.publicTop('My profile', false, 'candidate')}
       <div class="acct-band cp-hero"><div class="in">
         <div class="cp-avatar">${esc(initials(p.name))}</div>
@@ -39,7 +39,7 @@
     $$('[data-goto]').forEach((b) => (b.onclick = (e) => { e.preventDefault(); go(b.dataset.goto, b.dataset.f); }));
     $('[data-logout]').onclick = () => BB.logout('candidate');
     const el = $('[data-body]');
-    ({ home, jobs, apps, profile, review }[tab] || home)(el);
+    ({ home, jobs, apps, profile, review, verify: BB.verify.cand }[tab] || home)(el);
     BB.attachMics(el); BB.romanizeFields(el); wire(el);
     $$('[data-goto]', el).forEach((b) => (b.onclick = (e) => { e.preventDefault(); go(b.dataset.goto, b.dataset.f); }));
   }

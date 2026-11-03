@@ -957,6 +957,7 @@ route('GET', '/api/candidates/:id', T, (ctx) => {
   if (c.is_new) update('candidates', c.id, { is_new: 0 }); // opened, so no longer new
   return {
     ...candidateOut(u, c), status: V.candStatus(c.id), apps, messages: msgs, rating: L.ratingOf(c.id), can_message: seeThread(u, 'candidate', c.id) || isSuper(u),
+    verify: require('./verify').badge(c.id),
     job_matches: L.jobsFor(c, 20).filter((m) => seeJob(u, m.j)).slice(0, 6).map((m) => ({ id: m.j.id, title: m.j.title, city: m.j.city, client_name: (get('SELECT company FROM clients WHERE id=?', m.j.client_id) || {}).company, score: m.score, reasons: m.reasons, gaps: m.gaps })),
     files: show ? all('SELECT * FROM files WHERE record_id=? AND replaced=0 ORDER BY at DESC', c.id) : all("SELECT * FROM files WHERE record_id=? AND replaced=0 AND type IN ('cv','short_cv') ORDER BY at DESC", c.id),
     // History tab: every application, open or closed, with its screening, interviews (results and notes), calls and steps.
@@ -1190,7 +1191,7 @@ route('GET', '/api/applications/:id', T, (ctx) => {
     files: all('SELECT * FROM files WHERE record_id=? AND replaced=0 ORDER BY at DESC', a.id), notes: all('SELECT * FROM notes WHERE record_id=? ORDER BY at DESC', a.id),
     calls: all("SELECT * FROM calls WHERE app_id=? AND status='Done' ORDER BY at DESC LIMIT 200", a.id), call_outcomes: L.CALL_OUTCOMES, client_city: client.city,
     checklist_items: D.settings().templates.joining_checklist.split('\n').filter(Boolean),
-    replacement_window: (client.replacement_days || D.settings().replacement_days), care: a.result === 'Hired' ? require('./care').forApp(a) : null,
+    replacement_window: (client.replacement_days || D.settings().replacement_days), care: a.result === 'Hired' ? require('./care').forApp(a) : null, verify: require('./verify').badge(a.candidate_id),
   };
 });
 // Suggested next WhatsApp message by step (8.3).
@@ -1907,14 +1908,21 @@ function metaBody(text) {
 route('POST', '/api/settings/formats/push', T, async (ctx) => {
   const s = D.settings(); const names = (ctx.body.names || []).filter((k) => s.formats[k]);
   if (!names.length) throw httpError(400, 'Select the formats to send.');
-  const templates = [];
+  // Meta refuses a name and language it already has ("Invalid parameter"), so those are left out and said so.
+  const have = {}; for (const t of (await crmCall('/templates', 'GET')).templates || []) (have[t.name] = have[t.name] || {})[t.language] = t.status;
+  const templates = []; const skipped = [];
   for (const name of names) {
     const f = s.formats[name]; if (!f) continue;
-    for (const lang of s.languages) if (f[lang]) templates.push({ name, category: f.type.toUpperCase(), language: lang, body: metaBody(f[lang]).body, buttons: f.buttons });
+    for (const lang of s.languages) {
+      if (!f[lang]) continue; const st = (have[name] || {})[lang];
+      if (st) skipped.push({ name, language: lang, ok: false, skipped: true, error: st === 'APPROVED' ? 'Already approved on Meta' : st === 'REJECTED' ? 'Rejected earlier: Meta keeps the name, so change it in WhatsApp Manager or give the format a new name' : `Already with Meta (${st.toLowerCase()})` });
+      else templates.push({ name, category: f.type.toUpperCase(), language: lang, body: metaBody(f[lang]).body, buttons: f.buttons });
+    }
   }
-  const out = await crmCall('/templates', 'POST', { templates });
+  const out = templates.length ? await crmCall('/templates', 'POST', { templates }) : { results: [] };
+  const hint = (e) => (/invalid parameter/i.test(e || '') ? `${e}: usually the name was used before (deleted in the last 4 weeks) or a blank sits at the very start or end` : e);
   D.history(ctx.actor.label, 'templates sent to Meta', null, null, null, `${templates.length} templates`);
-  return out;
+  return { ...out, results: [...(out.results || []).map((r) => (r.ok ? r : { ...r, error: hint(r.error) })), ...skipped] };
 });
 route('POST', '/api/settings/formats/sync', T, async (ctx) => {
   const out = await crmCall('/templates', 'GET');
@@ -1925,7 +1933,8 @@ route('POST', '/api/settings/formats/sync', T, async (ctx) => {
   }
   for (const [name, langs] of Object.entries(seen)) {
     formats[name].meta_status = langs;
-    formats[name].approved = Object.values(langs).length > 0 && Object.values(langs).every((st) => st === 'APPROVED');
+    // English is what everyone falls back to, so its approval decides whether the format can be sent.
+    formats[name].approved = (langs.en || Object.values(langs)[0]) === 'APPROVED';
   }
   D.setSetting('formats', formats);
   D.history(ctx.actor.label, 'templates status from Meta', null, null, null, `${Object.keys(seen).length} formats`);
@@ -2141,5 +2150,6 @@ module.exports.removePerson = removePerson;
 require('./trash'); // delete with a recycle bin (Settings -> Deleted items)
 require('./lang'); // translation, voice notes and recordings
 require('./care'); // check-ins after joining, replacements, recruiter reviews
+require('./verify'); // candidate ID, police and court checks
 require('./flow'); // client onboarding, screening with AI, client CVs, invoices, books
 require('./adspend'); // ad spend reports from Meta and LinkedIn (Job openings -> Ad spend)

@@ -260,6 +260,11 @@ function ensureSettings() {
     setSetting('auto_rules', settings().auto_rules.map((r) => (r.key === 'post_join_checkin' ? { ...r, when: defs.auto_rules.find((x) => x.key === r.key).when } : r)));
     setSetting('done_once', [...(settings().done_once || []), 'format_aftercare']);
   }
+  if (!once.includes('format_review_end')) { // Meta refuses a body that ends with a blank
+    const f = settings().formats.bbhs_review_request; const ends = (t) => /\{link\}\s*$/.test(t || '');
+    if (f) setSetting('formats', { ...settings().formats, bbhs_review_request: { ...f, en: ends(f.en) ? defs.formats.bbhs_review_request.en : f.en, hi: ends(f.hi) ? defs.formats.bbhs_review_request.hi : f.hi } });
+    setSetting('done_once', [...(settings().done_once || []), 'format_review_end']);
+  }
   if (!once.includes('format_candidate_news')) {
     setSetting('formats', { ...settings().formats, bbhs_candidate_news: defs.formats.bbhs_candidate_news });
     setSetting('done_once', [...(settings().done_once || []), 'format_candidate_news']);

@@ -5,6 +5,12 @@
 (() => {
   const exact = {
     // ---- rate your recruiter, interview preparation, login codes by email ----
+    'Verify ID': 'ID वेरिफ़ाई करें', 'Verify your ID': 'अपनी ID वेरिफ़ाई करें', 'Aadhaar (masked)': 'आधार (मास्क्ड)', 'Police verification certificate': 'पुलिस वेरिफ़िकेशन सर्टिफ़िकेट', 'Upload again': 'फिर से अपलोड करें', 'Save declaration': 'घोषणा सेव करें', 'Uploaded: being checked': 'अपलोड हो गया: जाँच हो रही है', 'Verified': 'वेरिफ़ाई हो गया', '✓ Your ID is verified': '✓ आपकी ID वेरिफ़ाई हो गई है',
+    'Verified candidates are trusted more by jewellery companies and get offers faster. Only your recruiter sees these papers; companies only see that you are verified.': 'वेरिफ़ाई किए गए उम्मीदवारों पर ज्वेलरी कंपनियाँ ज़्यादा भरोसा करती हैं और उन्हें ऑफ़र जल्दी मिलते हैं। ये कागज़ सिर्फ़ आपका रिक्रूटर देखता है; कंपनियाँ सिर्फ़ यह देखती हैं कि आप वेरिफ़ाई हैं।',
+    'Download a masked Aadhaar (only the last 4 digits show) from myaadhaar.uidai.gov.in and upload it here.': 'myaadhaar.uidai.gov.in से मास्क्ड आधार (सिर्फ़ आखिरी 4 अंक दिखते हैं) डाउनलोड करके यहाँ अपलोड करें।',
+    'A photo or scan of your PAN card.': 'अपने PAN कार्ड की फ़ोटो या स्कैन।',
+    'For jobs with cash, gold or stock: apply on your state police website for a police verification (character) certificate and upload it when you get it.': 'कैश, सोना या स्टॉक वाली नौकरियों के लिए: अपने राज्य की पुलिस वेबसाइट पर पुलिस वेरिफ़िकेशन (कैरेक्टर) सर्टिफ़िकेट के लिए आवेदन करें और मिलने पर यहाँ अपलोड करें।',
+    'I declare that I have no criminal case against me, and that the documents I upload are mine and true.': 'मैं घोषणा करता/करती हूँ कि मेरे खिलाफ़ कोई आपराधिक केस नहीं है, और मेरे अपलोड किए गए कागज़ मेरे अपने और सही हैं।',
     'Rate your recruiter': 'अपने रिक्रूटर को रेटिंग दें', 'Tell us more': 'और बताइए', 'Update': 'अपडेट करें', 'Thank you for your feedback': 'आपकी राय के लिए धन्यवाद', 'Tap the stars first': 'पहले स्टार दबाएँ', 'Post on Google': 'Google पर लिखें', 'No recruiter to rate yet.': 'अभी रेटिंग देने के लिए कोई रिक्रूटर नहीं है।',
     'Prepare for your interview': 'अपने इंटरव्यू की तैयारी करें', 'No password? Email me a login code': 'पासवर्ड नहीं है? ईमेल पर लॉगिन कोड भेजें', 'Log in with a code': 'कोड से लॉग इन करें', 'We email you a 6-digit code. No password needed.': 'हम आपको ईमेल पर 6 अंकों का कोड भेजेंगे। पासवर्ड की ज़रूरत नहीं।',
     // ---- top bar, menu, footer ----

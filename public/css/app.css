@@ -1806,3 +1806,29 @@ button.fin-tile.on { border-color: var(--mustard); box-shadow: 0 0 0 1px var(--m
 .q-sec.prep { border-top: 1px dashed var(--border); padding-top: 8px; }
 .chips-pick { display: flex; flex-wrap: wrap; gap: 8px; }
 .chip-pick { display: inline-flex; gap: 6px; align-items: center; border: 1px solid var(--border); border-radius: 999px; padding: 6px 12px; font-size: 13px; cursor: pointer; }
+
+/* Choices inside dialogs: even pills that wrap, the picked one filled */
+.modal .choice { gap: 8px; }
+.modal .choice label { flex: 0 0 auto; min-width: 0; white-space: nowrap; border-radius: 999px; padding: 8px 15px; font-size: 13.5px; position: relative; }
+.modal .choice input { position: absolute; opacity: 0; width: 1px; height: 1px; pointer-events: none; }
+.modal .choice label:has(input:checked) { background: var(--navy); border-color: var(--navy); color: #fff; box-shadow: none; }
+.modal .choice label:has(input:focus-visible) { box-shadow: var(--ring); }
+/* On/off switch */
+.switch { position: relative; display: inline-block; width: 38px; height: 22px; cursor: pointer; vertical-align: middle; }
+.switch input { position: absolute; opacity: 0; width: 0; height: 0; }
+.switch span { position: absolute; inset: 0; border-radius: 999px; background: var(--border-strong); transition: background .15s; }
+.switch span::after { content: ''; position: absolute; left: 3px; top: 3px; width: 16px; height: 16px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.25); transition: transform .15s; }
+.switch input:checked + span { background: var(--green); }
+.switch input:checked + span::after { transform: translateX(16px); }
+.switch input:focus-visible + span { box-shadow: var(--ring); }
+/* Language approval chips on message formats */
+.lchips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px; }
+.lchip { display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: .02em; padding: 2px 7px; border-radius: 999px; border: 1px solid var(--border); color: var(--muted); background: var(--surface); }
+.lchip.ok { background: var(--green-50); border-color: var(--green); color: var(--green); }
+.lchip.wait { background: var(--amber-50); border-color: var(--amber); color: var(--amber); }
+.lchip.bad { background: var(--red-50); border-color: var(--red); color: var(--red); }
+/* Verification */
+.verify-list { padding: 4px 14px; }
+.verify-row { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--border); }
+.verify-row:last-child { border-bottom: 0; }
+.verify-cand { gap: 12px; align-items: center; }

@@ -96,12 +96,14 @@ route('POST', '/api/settings/formats/translate', T, async (ctx) => {
   if (!names.length) throw httpError(400, 'Select the formats to translate.'); if (!langs.length) throw httpError(400, 'Pick at least one language.');
   if (names.length * langs.length > 60) throw httpError(400, 'Translate up to 60 at a time: pick fewer formats or languages.');
   const done = []; const failed = [];
+  const skipped = [];
   for (const name of names) for (const l of langs) {
+    if (!ctx.body.replace && s.formats[name][l]) { skipped.push(`${name} · ${LANGS[l]}`); continue; }
     try { const text = await translate(s.formats[name].en, l); const f = D.settings().formats; const ms = { ...(f[name].meta_status || {}) }; delete ms[l]; D.setSetting('formats', { ...f, [name]: { ...f[name], [l]: text, meta_status: ms } }); done.push(`${name} · ${LANGS[l]}`); } catch (e) { failed.push(`${name} · ${LANGS[l]}: ${e.message}`); }
   }
   const on = active(); const add = langs.filter((l) => !on.includes(l) && done.some((x) => x.endsWith(` · ${LANGS[l]}`))); if (add.length) D.setSetting('languages', [...on, ...add]);
   D.history(ctx.actor.label, 'formats translated', null, null, null, `${done.length} done`);
-  return { done, failed, added: add.map((l) => LANGS[l]) };
+  return { done, failed, skipped, added: add.map((l) => LANGS[l]) };
 });
 
 module.exports = { LANGS, active, pick, translate, toEnglish, englishFor, onInbound, transcribe, voiceNote, AUDIO };
