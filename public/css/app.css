@@ -1860,3 +1860,20 @@ button.fin-tile.on { border-color: var(--mustard); box-shadow: 0 0 0 1px var(--m
 .wa-btns { display: grid; gap: 4px; margin-top: 8px; border-top: 1px solid #eee; padding-top: 6px; }
 .wa-btns span { text-align: center; color: #0a7cff; font-weight: 600; font-size: 13.5px; padding: 4px 0; }
 .app-link { text-decoration: underline; text-underline-offset: 2px; }
+/* Application toolbar: Move to step and More, right under the tracker */
+.app-toolbar { display: flex; justify-content: flex-end; gap: 8px; margin: -4px 0 10px; }
+.app-toolbar .step-menu > summary.btn { min-width: 132px; justify-content: center; }
+.step-pop .danger-item { color: var(--red); }
+/* Resume bar: the file name shortens instead of running under the buttons */
+.cv-bar { flex-wrap: wrap; }
+.cv-bar .file-main { flex: 1 1 180px; min-width: 0; }
+.cv-bar .file-meta { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cv-bar .btn { min-width: 112px; }
+/* Feedback form and what each round's feedback said */
+.fb-form { border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; background: var(--surface-2); }
+.fb-view { margin-top: 6px; display: flex; flex-direction: column; gap: 4px; }
+.fb-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.fb-chip { font-size: 11.5px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface); }
+.fb-chip.ok { background: var(--green-50); border-color: var(--green); color: var(--green); }
+.fb-chip.bad { background: var(--red-50); border-color: var(--red); color: var(--red); }
+.app-toolbar .step-pop { left: auto; right: 0; }

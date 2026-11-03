@@ -696,6 +696,13 @@ function recordInterview(ivId, o, by) {
   if (o.status === 'Completed') {
     if (!o.result) throw httpError(400, 'Pick a result', 'result');
     patch.result = o.result; patch.completed_by = by && by.uid ? by.uid : null; patch.completed_at = now();
+    // The feedback form: each point Strong / OK / Weak / Not relevant, with what was good and what worried.
+    if (o.feedback && typeof o.feedback === 'object') {
+      const marks = ['Strong', 'OK', 'Weak', 'N/A']; const points = Object.fromEntries(Object.entries(o.feedback.points || {}).filter(([k, v]) => k && marks.includes(v)).slice(0, 40));
+      patch.iv_feedback = { points, liked: String(o.feedback.liked || '').trim().slice(0, 1500), concerns: String(o.feedback.concerns || '').trim().slice(0, 1500) };
+      // Our own rounds also count as the candidate's evaluation, so the score stays up to date.
+      if (iv.round === 'ours' && Object.values(points).some((v) => v !== 'N/A')) { const ap = get('SELECT candidate_id FROM applications WHERE id=?', iv.app_id); insert('evaluations', { candidate_id: ap.candidate_id, app_id: iv.app_id, scores: points, note: `${iv.name}: ${String(o.remark).trim()}`, by: actorName(by), at: now() }); }
+    }
   }
   update('interviews', ivId, patch);
   history(actorName(by), 'interview result', ivId, 'status', iv.status, `${o.status}${o.result ? ' / ' + o.result : ''}`);
