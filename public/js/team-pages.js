@@ -299,7 +299,7 @@
     $$('[data-del]', root).forEach((b) => (b.onclick = async () => { const s = find(b.dataset.del); if (await BB.confirm('Delete segment', `"${s.name}" will be deleted${s.shared ? ' for the whole team' : ''}. The candidates are not touched.`, 'Delete')) { await BB.post(`/api/segments/${s.id}/delete`).catch(BB.fail); BB.setQ({ seg: '', page: '' }); } }));
     $$('[data-segedit]', root).forEach((b) => (b.onclick = () => { const s = find(b.dataset.segedit); BB.go(`team/candidates?${BB.qs({ ...s.query, editseg: s.id })}`); BB.toast('Change the filters, then tap "Update segment"'); }));
   };
-  const segButtons = (s, canDl, withOpen) => `${withOpen ? `<button class="btn sm primary" data-segopen="${s.id}">Open</button>` : ''}${s.can_edit ? `<button class="btn sm" data-segedit="${s.id}">Edit filters</button>` : ''}${canDl ? `<button class="btn sm" data-sdl="${s.id}">Download</button>` : ''}<button class="btn sm" data-link="${s.id}">Copy link</button>${s.can_edit ? `<button class="btn sm" data-share="${s.id}">${s.shared ? 'Unshare' : 'Share with team'}</button><button class="btn sm" data-ren="${s.id}">Rename</button><button class="btn sm danger" data-del="${s.id}">Delete</button>` : ''}`;
+  const segButtons = (s, canDl, withOpen) => `${withOpen ? `<button class="btn sm primary" data-segopen="${s.id}">Open</button>` : ''}<button class="btn sm gold" data-segsend="${s.id}" data-segname="${esc(s.name)}">Send campaign</button>${s.can_edit ? `<button class="btn sm" data-segedit="${s.id}">Edit filters</button>` : ''}${canDl ? `<button class="btn sm" data-sdl="${s.id}">Download</button>` : ''}<button class="btn sm" data-link="${s.id}">Copy link</button>${s.can_edit ? `<button class="btn sm" data-share="${s.id}">${s.shared ? 'Unshare' : 'Share with team'}</button><button class="btn sm" data-ren="${s.id}">Rename</button><button class="btn sm danger" data-del="${s.id}">Delete</button>` : ''}`;
   // Candidates → Segments: the list; ?seg=ID opens one with the full table and every bulk action.
   async function segmentsTab(el, actions, q, me) {
     const d = await BB.api('/api/segments');
@@ -316,6 +316,7 @@
         { t: '', f: (s) => `<div class="row nowrap" onclick="event.stopPropagation()">${segButtons(s, d.can_download, true)}</div>` },
       ], d.segments) : '<div class="pad muted">No segments yet. Tap <b>+ New segment</b>, pick filters in the resume bank, then <b>Save as segment</b>.</div>'}</div>`;
     $$('[data-segopen]', el).forEach((b) => (b.onclick = () => BB.setQ({ tab: 'segments', seg: b.dataset.segopen, page: '' })));
+    $$('[data-segsend]', el).forEach((b) => (b.onclick = () => BB.flow.campaign({ segment: b.dataset.segsend, label: b.dataset.segname })));
     wireSegButtons(el, find);
   }
 
@@ -340,10 +341,11 @@
   P.candidates = async (ctx) => {
     const { el, actions, q } = ctx; const tab = q.tab || 'bank';
     // Gap view is hidden for now (its page still works at ?tab=gap); put ['gap', 'Gap view'] back in this list to show it.
-    el.innerHTML = `<div class="tabs">${[['bank', 'Resume bank'], ['segments', 'Segments'], ...(ctx.me.level === 'super' ? [['check', 'Needs checking']] : []), ['tieups', 'Tie-ups'], ['import', 'Upload Excel']].map(([k, l]) => `<button data-tab="${k}" class="${tab === k ? 'on' : ''}">${l}</button>`).join('')}</div><div data-tabbody></div>`;
+    el.innerHTML = `<div class="tabs">${[['bank', 'Resume bank'], ['segments', 'Segments'], ['campaigns', 'Campaigns'], ...(ctx.me.level === 'super' ? [['check', 'Needs checking']] : []), ['tieups', 'Tie-ups'], ['import', 'Upload Excel']].map(([k, l]) => `<button data-tab="${k}" class="${tab === k ? 'on' : ''}">${l}</button>`).join('')}</div><div data-tabbody></div>`;
     $$('[data-tab]', el).forEach((b) => (b.onclick = () => BB.setQ({ tab: b.dataset.tab === 'bank' ? '' : b.dataset.tab, page: '', seg: '' })));
     const body = $('[data-tabbody]', el); actions.innerHTML = '';
     if (tab === 'segments') return segmentsTab(body, actions, q, ctx.me);
+    if (tab === 'campaigns') return BB.flow.campaignsTab(body);
     if (tab === 'gap') return gapView(body);
     if (tab === 'check') { const d = await BB.api('/api/leads'); body.innerHTML = `<div class="card">${checkTable(d.check.filter((r) => r.type === 'candidate'))}</div>`; $$('[data-merge]', body).forEach((b) => (b.onclick = () => { const [type, a, c] = b.dataset.merge.split(':'); BB.mergeScreen(type, a, c); })); return; }
     if (tab === 'tieups') return tieups(body);
@@ -382,7 +384,7 @@
     </section>`;
     el.innerHTML = `${head}
     <div class="card bulkbar bulk-card cand-bulk" data-bulkbar>${BB.bulkHead('candidate', 'data-selcount')}
-      ${bulkBtn('add_to_job', 'Add to a job')}${!me.accounts_only ? bulkBtn('alert', 'Send job alert', 'gold') : ''}${bulkBtn('set_looking', 'Set job status')}${bulkBtn('note', 'Add note')}${bulkBtn('followup', 'Follow-up')}${!me.accounts_only ? `${bulkBtn('assign', 'Assign recruiter')}${bulkBtn(q.archived ? 'unarchive' : 'archive', q.archived ? 'Unarchive' : 'Archive')}` : ''}${superAdmin ? `${bulkBtn('agency', 'Assign to agency')}${bulkBtn('welcome', 'Send account link')}${bulkBtn('download', 'Download selected')}` : ''}${!me.accounts_only ? bulkBtn('delete', 'Delete', 'danger') : ''}<button class="btn sm ghost" data-unsel hidden>Clear selection</button></div>
+      ${bulkBtn('add_to_job', 'Add to a job')}${!me.accounts_only ? bulkBtn('alert', 'Send campaign', 'gold') : ''}${bulkBtn('set_looking', 'Set job status')}${bulkBtn('note', 'Add note')}${bulkBtn('followup', 'Follow-up')}${!me.accounts_only ? `${bulkBtn('assign', 'Assign recruiter')}${bulkBtn(q.archived ? 'unarchive' : 'archive', q.archived ? 'Unarchive' : 'Archive')}` : ''}${superAdmin ? `${bulkBtn('agency', 'Assign to agency')}${bulkBtn('welcome', 'Send account link')}${bulkBtn('download', 'Download selected')}` : ''}${!me.accounts_only ? bulkBtn('delete', 'Delete', 'danger') : ''}<button class="btn sm ghost" data-unsel hidden>Clear selection</button></div>
     <div class="card cand-table">${BB.table([
       { t: 'Candidate', sort: 'name', cls: 'name-col', f: (c) => `<b>${esc(c.name)}</b>${c.is_new ? ' <span class="dot new" title="New"></span>' : ''}${c.opted_out ? ' <span class="badge b-red tiny">STOP</span>' : ''}<div class="cand-phone ${c.phone_hidden ? 'faint' : 'muted'}">${esc(c.whatsapp)}</div>` },
       { t: 'Role and domain', sort: 'job_wanted', cls: 'wrap', f: (c) => `${esc(c.job_wanted) || '<span class="faint">—</span>'}<div class="tiny muted">${[(c.exp_business || []).length ? ((c.exp_business || []).includes('Retailer') ? 'B2C' : 'B2B') : '', c.domain && c.domain !== 'Not clear' ? c.domain : ''].filter(Boolean).map(esc).join(' · ')}</div>` },
@@ -428,6 +430,7 @@
       const lead = (action) => BB.post('/api/leads/bulk', { type: 'candidate', ids, action }).then((x) => ({ done: x.done, errors: x.skipped })).then(report).catch(BB.fail);
       if (act === 'welcome') return BB.confirm('Send account link on WhatsApp', `${n} get their welcome message with the link to their profile. People who said STOP are skipped.`, 'Send').then((ok) => ok && lead('welcome'));
       if (act === 'agency') return BB.api('/api/users').then((d) => BB.ask({ title: `Assign to agency · ${n}`, note: 'The agency admin gets a task alert.', fields: [{ name: 'agency_id', label: 'Agency', type: 'select', options: d.agencies.filter((a) => a.status === 'Active').map((a) => [a.id, a.name]) }], ok: 'Assign', submit: (v) => BB.post('/api/leads/assign', { type: 'candidate', ids, agency_id: v.agency_id }) })).then((x) => { if (x) { BB.toast(`${x.count} assigned`); BB.refreshPage(); } });
+      if (act === 'alert') return BB.flow.campaign({ ids, label: n });
       if (act === 'set_looking') return BB.ask({ title: `Set job status · ${n}`, fields: [{ name: 'looking', label: 'Current job status', type: 'select', options: BB.boot.looking, placeholder: false }], ok: 'Update', submit: send }).then(report);
       if (act === 'note') return BB.ask({ title: `Add note · ${n}`, fields: [{ name: 'text', label: 'Note', type: 'textarea', placeholder: 'e.g. Called 29 Oct, no answer' }], ok: 'Add note', submit: send }).then(report);
       if (act === 'followup') return BB.ask({ title: `Follow-up · ${n}`, note: 'You get a reminder on My day and the bell at this time.', fields: [{ name: 'at', label: 'When', type: 'datetime-local' }, { name: 'note', label: 'What to do', opt: true, placeholder: 'e.g. Call back about the Jaipur showroom job' }], ok: 'Set follow-up', submit: (v) => send({ ...v, at: v.at ? BB.fromLocalInput(v.at) : '' }) }).then(report);

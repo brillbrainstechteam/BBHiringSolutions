@@ -19,7 +19,7 @@ route('GET', '/api/bootstrap', {}, () => {
     jobs: L.jobList().filter((j) => !j.hidden), places: (() => { const seen = new Set(); const out = []; for (const p of [...s.cities, ...require('./places').PLACES]) { const k = p.name.toLowerCase(); if (!seen.has(k)) { seen.add(k); out.push({ name: p.name, state: p.state || L.stateOf(p.name) }); } } return out; })(), industries: Object.fromEntries(Object.keys(s.industries).map((k) => [k, L.jobList(k).filter((j) => !j.hidden)])), default_industry: s.default_industry, departments: s.departments, cities: s.cities.map((c) => c.name), skills: s.skills, stages: s.client_stages,
     closing_reasons: s.closing_reasons, job_close_reasons: s.job_close_reasons, reopen_reasons: s.reopen_reasons, lead_sources: s.lead_sources, src_tags: s.src_tags, industry_list: s.industry_list || ['Jewellery'], default_industry: s.default_industry || 'Jewellery',
     steps: L.STEPS, consent: L.CONSENT_WORDING, fee: s.fee, replacement_days: s.replacement_days, payment_days: s.payment_days, agency_share_pct: s.agency_share_pct, gst: s.gst, match: s.match, quiet: s.quiet, log_deadline: s.log_deadline,
-    test_mode: !s.crm.enabled, languages: s.languages, env: D.ENV.name, base_url: s.business.base_url, landing: s.landing || null, landing_roles: s.landing_roles || [], team_sections: L.TEAMS, looking: L.LOOKING,
+    test_mode: !s.crm.enabled, languages: s.languages, env: D.ENV.name, base_url: s.business.base_url, landing: s.landing || null, landing_roles: s.landing_roles || [], team_sections: L.TEAMS, contact_prefs: L.PREF, looking: L.LOOKING,
   };
 });
 // Home page: open jobs anyone can see (no employer names), and how many there are per field of work.
@@ -410,7 +410,7 @@ route('POST', '/api/public/apply', { rate: { key: 'form', max: 60, minutes: 60 }
   if (!b.job && !jobInAd(b) && !adJobs.length) adJobs = L.jobsForPerson({ ad_set: b.ad_set, ad_name: b.ad_name, ad_campaign: b.ad_campaign, job_wanted: b.job_wanted === 'Other' ? b.job_other : b.job_wanted }).jobs.map((j) => j.id);
   const jobId = b.job ? String(b.job).toUpperCase() : jobInAd(b) || adJobs[0] || null;
   const jobOk = jobId ? get('SELECT * FROM jobs WHERE id=?', jobId) : null;
-  const r = L.intakeCandidate({ exp_business: business, exp_jewellery: b.exp_jewellery in jewMap ? jewMap[b.exp_jewellery] : null, language: b.lang, name: b.name, whatsapp: b.whatsapp, email: b.email || '', city: b.city, state: b.state, work_cities: [b.city], job_wanted: b.job_wanted === 'Other' ? b.job_other : b.job_wanted, exp_total: b.experience ? expMap[b.experience] : null, ref_by: refBy, apply_job: jobOk && ['Open', 'Sourcing', 'Interviewing', 'Offer stage'].includes(V.jobView(jobOk).status) ? jobOk.id : null }, { source: srcFrom(b), ad: adFrom(b) });
+  const r = L.intakeCandidate({ ...L.cleanPrefs(b), exp_business: business, exp_jewellery: b.exp_jewellery in jewMap ? jewMap[b.exp_jewellery] : null, language: b.lang, name: b.name, whatsapp: b.whatsapp, email: b.email || '', city: b.city, state: b.state, work_cities: [b.city], job_wanted: b.job_wanted === 'Other' ? b.job_other : b.job_wanted, exp_total: b.experience ? expMap[b.experience] : null, ref_by: refBy, apply_job: jobOk && ['Open', 'Sourcing', 'Interviewing', 'Offer stage'].includes(V.jobView(jobOk).status) ? jobOk.id : null }, { source: srcFrom(b), ad: adFrom(b) });
   // The same ad on several jobs: an application on each of the others too.
   for (const extra of adJobs.slice(1)) { try { L.createApplication(r.candidate.id, extra, { label: 'Candidate' }, srcFrom(b), 'Applied from an ad', adFrom(b)); } catch { /* already on it */ } }
   { const mailer = require('./mailer'); const rec = get('SELECT * FROM candidates WHERE id=?', r.candidate.id); if (r.isNew) mailer.newLead('candidate', rec); mailer.confirmToPerson('candidate', rec); }
@@ -722,6 +722,7 @@ route('PUT', '/api/cand/profile', K, (ctx) => {
   const b = ctx.body; const patch = {};
   if (b.exp_business !== undefined) b.exp_business = L.cleanBusiness(b.exp_business);
   for (const k of ['exp_business', 'name', 'email', 'city', 'state', 'job_wanted', 'exp_total', 'exp_jewellery', 'notice_days', 'skills', 'current_company', 'looking', 'work_cities']) if (b[k] !== undefined) patch[k] = b[k] === '' ? null : b[k];
+  Object.assign(patch, L.cleanPrefs(b));
   if (patch.looking && !L.LOOKING.includes(patch.looking)) throw httpError(400, 'Pick a looking status', 'looking');
   if (b.social !== undefined) patch.social = cleanSocial(b.social);
   // A new city brings its own state (the profile has no State box), unless a state was sent with it.

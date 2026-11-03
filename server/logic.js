@@ -169,7 +169,7 @@ function sendWA(o) {
   // Email copy of the same message, under the same rules (on in Settings, not after STOP, never twice) and the
   // same timing (held to 9 am in quiet hours). Codes and passwords never go by email.
   const email = p.record && p.record.email; let emailed = false;
-  if (o.format && !o.secret && email && D.ENV.emailCopies !== false) {
+  if (o.format && !o.secret && !o.noEmailCopy && email && D.ENV.emailCopies !== false) {
     const mailAt = o.sendLater && o.sendLater !== true ? o.sendLater : (o.auto || o.sendLater) && inQuiet() && p.type !== 'user' ? next9am() : null;
     emailed = require('./mailer').configured(); // only counts once email is really set up
     require('./mailer').copyOfWhatsApp({ to: email, personType: p.type, format: o.format, text: fillFormat(o.format, o.lang || p.lang || 'en', { name: p.name, ...(o.vars || {}) }), recordId: p.id, sendAfter: mailAt, dedupe: o.dedupe ? `mail:${o.dedupe}` : null });
@@ -754,6 +754,20 @@ function needsCall(app, step, u) {
   return !get("SELECT 1 FROM calls WHERE app_id=? AND status='Done' AND at>=?", app.id, app.step_since || app.created_at);
 }
 
+// ---------- how and when a candidate wants to be reached ----------
+const PREF = { channel: ['WhatsApp', 'Email', 'Phone call'], time: ['Morning (9 to 12)', 'Afternoon (12 to 4)', 'Evening (4 to 8)'], days: ['Weekdays', 'Weekends'] };
+const PREF_HOURS = { Morning: [9, 12], Afternoon: [12, 16], Evening: [16, 20] };
+function cleanPrefs(b) { const out = {}; for (const [k, list] of Object.entries(PREF)) { const v = b[`pref_${k}`]; if (v !== undefined) out[`pref_${k}`] = v && list.includes(v) ? v : null; } return out; }
+const istNow = (d) => { const p = Object.fromEntries(new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Kolkata', weekday: 'short', hour: 'numeric', hourCycle: 'h23' }).formatToParts(d).map((x) => [x.type, x.value])); return { hour: Number(p.hour), weekend: ['Sat', 'Sun'].includes(p.weekday) }; };
+function inPreferred(c, d = new Date()) {
+  const t = istNow(d); const hours = c.pref_time ? PREF_HOURS[c.pref_time.split(' ')[0]] : null;
+  if (c.pref_days === 'Weekdays' && t.weekend) return false; if (c.pref_days === 'Weekends' && !t.weekend) return false;
+  return !hours || (t.hour >= hours[0] && t.hour < hours[1]);
+}
+// The first moment inside their window, in half-hour steps: null when now is fine.
+function nextPreferred(c, from = new Date()) { if (inPreferred(c, from)) return null; for (let i = 1; i <= 16 * 24; i++) { const d = new Date(Math.ceil(from.getTime() / 1800000) * 1800000 + (i - 1) * 1800000); if (inPreferred(c, d)) return d.toISOString(); } return null; }
+const prefNote = (c) => [c.pref_channel, c.pref_time && c.pref_time.split(' (')[0].toLowerCase(), c.pref_days && c.pref_days.toLowerCase()].filter(Boolean).join(', ');
+
 // ---------- what we already know about a candidate, in one place ----------
 const EVAL_POINTS = { Strong: 2, OK: 1, Weak: 0 };
 const evalView = (e) => { if (!e) return null; const all_ = Object.entries(e.scores || {}); const marks = all_.filter(([, v]) => v in EVAL_POINTS); const by = (r) => all_.filter(([, v]) => v === r).map(([k]) => k.split('|').pop().trim()); const max = marks.length * 2; return { ...e, marked: marks.length, percent: max ? Math.round((marks.reduce((t, [, v]) => t + EVAL_POINTS[v], 0) / max) * 100) : null, weak: by('Weak'), strong: by('Strong'), ok: by('OK'), na: by('N/A') }; };
@@ -774,7 +788,7 @@ function candidateStory(candidateId) {
 function candidateKnown(c) {
   const call = get("SELECT * FROM calls WHERE candidate_id=? AND status='Done' ORDER BY at DESC LIMIT 1", c.id); const ev = evalView(get('SELECT * FROM evaluations WHERE candidate_id=? ORDER BY id DESC LIMIT 1', c.id));
   const decision = get("SELECT h.* FROM app_history h JOIN applications a ON a.id=h.app_id WHERE a.candidate_id=? AND h.kind IN ('screen','close') ORDER BY h.at DESC LIMIT 1", c.id);
-  return { last_call: call ? { ...call, job: jobOf(call.app_id), days: daysBetween(call.at) } : null, evaluation: ev ? { ...ev, job: jobOf(ev.app_id) } : null, decision: decision ? { note: decision.note, by: decision.by, at: decision.at, job: jobOf(decision.app_id) } : null };
+  return { prefs: { channel: c.pref_channel || '', time: c.pref_time || '', days: c.pref_days || '', note: prefNote(c), now_ok: inPreferred(c) }, last_call: call ? { ...call, job: jobOf(call.app_id), days: daysBetween(call.at) } : null, evaluation: ev ? { ...ev, job: jobOf(ev.app_id) } : null, decision: decision ? { note: decision.note, by: decision.by, at: decision.at, job: jobOf(decision.app_id) } : null };
 }
 
 // ---------- offers ----------
@@ -944,7 +958,7 @@ function intakeCandidate(d, o) {
   // the same number first; else the record the caller already knows (o.existingId, e.g. the same email address)
   const existing = (phone ? get('SELECT * FROM candidates WHERE whatsapp=? AND merged_into IS NULL AND removed=0', phone) : null)
     || (o.existingId ? get('SELECT * FROM candidates WHERE id=? AND merged_into IS NULL AND removed=0', o.existingId) : null);
-  const fields = ['name', 'email', 'city', 'job_wanted', 'exp_total', 'exp_jewellery', 'cur_salary', 'exp_salary', 'notice_days', 'current_company', 'cv_file'];
+  const fields = ['name', 'email', 'city', 'job_wanted', 'exp_total', 'exp_jewellery', 'cur_salary', 'exp_salary', 'notice_days', 'current_company', 'cv_file', 'pref_channel', 'pref_time', 'pref_days'];
   if (existing) {
     const fill = {};
     for (const k of fields) if ((existing[k] === null || existing[k] === '' || existing[k] === undefined) && d[k] !== undefined && d[k] !== '' && d[k] !== null) fill[k] = d[k];
@@ -964,7 +978,7 @@ function intakeCandidate(d, o) {
   const repeat = d.email ? get('SELECT id FROM candidates WHERE lower(email)=lower(?) AND merged_into IS NULL', d.email) : null;
   const agency = by && by.agency_id ? by.agency_id : null;
   insert('candidates', {
-    id, name: d.name, whatsapp: phone, email: d.email || '', city: d.city || '', state: d.state || stateOf(d.city), work_cities: d.work_cities || (d.city ? [d.city] : []), language: d.language === 'hi' ? 'hi' : 'en', industry: d.industry || settings().default_industry || 'Jewellery', exp_business: cleanBusiness(d.exp_business),
+    ...cleanPrefs(d), id, name: d.name, whatsapp: phone, email: d.email || '', city: d.city || '', state: d.state || stateOf(d.city), work_cities: d.work_cities || (d.city ? [d.city] : []), language: d.language === 'hi' ? 'hi' : 'en', industry: d.industry || settings().default_industry || 'Jewellery', exp_business: cleanBusiness(d.exp_business),
     job_wanted: d.job_wanted || '', department: dept, exp_total: d.exp_total ?? null, exp_jewellery: d.exp_jewellery ?? null,
     cur_salary: d.cur_salary ?? null, exp_salary: d.exp_salary ?? null, notice_days: d.notice_days ?? null, skills: d.skills || [], current_company: d.current_company || '',
     cv_file: d.cv_file || null, source, ...adCols(o.ad), ref_by: d.ref_by || null, tieup_id: d.tieup_id || null, agency_id: agency, recruiter_id: by && by.uid ? by.uid : null,
@@ -1141,4 +1155,4 @@ function resumeUse(user, candidateId) {
 }
 const accountsUsers = () => all("SELECT * FROM users WHERE level='sub' AND team='Accounts' AND status='On'");
 const openTasksOf = (userId) => all("SELECT * FROM tasks WHERE owner_id=? AND removed=0 AND status<>'Done' ORDER BY COALESCE(due_date, '9999'), at", userId);
-Object.assign(module.exports, { evalView, candidateStory, candidateKnown, startCall, openCall, needsCall, callGateOn, roundsOf, skipRounds, passRounds, openTasksOf, accountsUsers, fixAsk, openAsks, OPEN_ASK, resumeUse, RESUME_DAYS });
+Object.assign(module.exports, { PREF, cleanPrefs, inPreferred, nextPreferred, prefNote, evalView, candidateStory, candidateKnown, startCall, openCall, needsCall, callGateOn, roundsOf, skipRounds, passRounds, openTasksOf, accountsUsers, fixAsk, openAsks, OPEN_ASK, resumeUse, RESUME_DAYS });

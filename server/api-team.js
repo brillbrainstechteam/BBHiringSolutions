@@ -978,6 +978,7 @@ route('PATCH', '/api/candidates/:id', T, (ctx) => {
   if (patch.looking && !L.LOOKING.includes(patch.looking)) throw httpError(400, 'Pick a looking status', 'looking');
   if (patch.whatsapp) { patch.whatsapp = L.digits10(patch.whatsapp); if (!L.validPhone(patch.whatsapp)) throw httpError(400, 'Enter a 10-digit WhatsApp number', 'whatsapp'); }
   if (patch.job_wanted) patch.department = L.deptOf(patch.job_wanted);
+  Object.assign(patch, L.cleanPrefs(ctx.body));
   patch.last_updated = now();
   if (isSuper(ctx.user) && ctx.body.agency_id !== undefined) patch.agency_id = ctx.body.agency_id;
   return D.edit('candidates', c.id, patch, ctx.actor.label, ctx.ip);
@@ -1363,7 +1364,13 @@ const callAccess = (ctx, b) => {
 };
 route('GET', '/api/call-topics', T, () => ({ topics: D.settings().call_topics || [], outcomes: L.CALL_OUTCOMES }));
 route('POST', '/api/calls/start', { ...T, calling: true }, (ctx) => { const b = ctx.body || {}; callAccess(ctx, b); return L.startCall(b, ctx.actor); });
-route('POST', '/api/calls', { ...T, calling: true }, (ctx) => { const b = ctx.body || {}; callAccess(ctx, b); return L.logCall(b, ctx.actor); });
+route('POST', '/api/calls', { ...T, calling: true }, (ctx) => {
+  const b = ctx.body || {}; callAccess(ctx, b); const r = L.logCall(b, ctx.actor); const p = L.cleanPrefs(b);
+  // Preferences heard on the call are kept on the candidate.
+  const cid = b.candidate_id || (b.id ? (get('SELECT candidate_id FROM calls WHERE id=?', b.id) || {}).candidate_id : null); const cand = cid && get('SELECT * FROM candidates WHERE id=?', cid);
+  if (cand && Object.keys(p).some((k) => (p[k] || null) !== (cand[k] || null))) D.edit('candidates', cand.id, p, ctx.actor.label, ctx.ip);
+  return r;
+});
 route('POST', '/api/interviews/:id/confirm', T, (ctx) => {
   const iv = get('SELECT * FROM interviews WHERE id=?', ctx.params.id); const a = iv && get('SELECT * FROM applications WHERE id=?', iv.app_id);
   mustSee(a && seeApp(ctx.user, a), 'interview'); update('interviews', iv.id, { confirmed: 1 }); D.history(ctx.actor.label, 'confirm', iv.id, 'confirmed', 0, 1); return { ok: true };
@@ -1738,6 +1745,42 @@ const tellOwner = (ctx, t) => { if (t.owner_id && t.owner_id !== ctx.user.id) L.
 route('POST', '/api/tasks', T, (ctx) => { const id = D.nextId('TK'); const r = { id, ...taskFields(ctx, ctx.body || {}), agency_id: ctx.user.agency_id || null, by: ctx.actor.label, at: now() }; insert('tasks', r); D.history(ctx.actor.label, 'create', id, null, null, r.title); tellOwner(ctx, r); return taskRow(get('SELECT * FROM tasks WHERE id=?', id)); });
 route('PATCH', '/api/tasks/:id', T, (ctx) => { const t = loadTask(ctx); const r = taskFields(ctx, ctx.body || {}, t); update('tasks', t.id, r); D.history(ctx.actor.label, 'task', t.id, 'status', t.status, r.status); if (r.owner_id !== t.owner_id) tellOwner(ctx, { ...t, ...r }); return taskRow(get('SELECT * FROM tasks WHERE id=?', t.id)); });
 route('POST', '/api/tasks/:id/delete', T, (ctx) => { const t = loadTask(ctx); update('tasks', t.id, { removed: 1 }); D.history(ctx.actor.label, 'task removed', t.id); return { ok: true }; });
+
+// ---------- campaigns to candidates on WhatsApp and email ----------
+// Who gets it: the ticked candidates or a saved segment. STOP and no consent are always left out; the send time can follow each person's window.
+const CHANNELS = ['preferred', 'whatsapp', 'email', 'both'];
+route('POST', '/api/campaigns', T, (ctx) => {
+  const M = require('./mailer'); const b = ctx.body || {}; const u = ctx.user; const kind = b.kind === 'job' ? 'job' : 'message'; const channel = CHANNELS.includes(b.channel) ? b.channel : 'preferred'; const timing = b.timing === 'preferred' ? 'preferred' : 'now';
+  const job = kind === 'job' && b.job_id ? get('SELECT * FROM jobs WHERE id=?', String(b.job_id)) : null; if (kind === 'job' && !job) throw httpError(400, 'Pick the job', 'job_id');
+  const text = String(b.body || '').trim(); const subject = String(b.subject || '').trim(); if (kind === 'message' && !text) throw httpError(400, 'Write the message', 'body'); if (kind === 'message' && channel !== 'whatsapp' && !subject) throw httpError(400, 'Write the email subject', 'subject');
+  let people; let audience;
+  if (b.segment) { const s = segVisible(u).find((x) => String(x.id) === String(b.segment)); if (!s) throw httpError(404, 'Segment not found'); people = candRows(segQuery(s.query), u); audience = `Segment: ${s.name}`; }
+  else { people = (b.ids || []).map((id) => get('SELECT * FROM candidates WHERE id=? AND removed=0', id)).filter(Boolean); audience = `${people.length} ticked`; }
+  if (!people.length) throw httpError(400, 'Nobody to send to');
+  const cap = D.settings().bulk_budget; const id = D.nextId('CM'); const out = { wa: 0, email: 0, skipped: {} }; const skip = (why) => { out.skipped[why] = (out.skipped[why] || 0) + 1; };
+  const news = D.settings().formats.bbhs_candidate_news; const waFormat = kind === 'job' ? 'bbhs_job_alert' : 'bbhs_candidate_news'; const waReady = kind === 'job' || (news && news.approved);
+  const link = L.link('my-profile'); const fill = (t, c) => String(t).replace(/\{name\}/g, c.name || 'there');
+  people.forEach((p, n) => {
+    const c = get('SELECT * FROM candidates WHERE id=?', p.id); if (n >= cap) return skip(`Over the limit of ${cap} per campaign`);
+    if (c.opted_out) return skip('Said STOP'); if (!c.consent_alerts) return skip('No consent for messages');
+    const when = timing === 'preferred' ? L.nextPreferred(c) : null;
+    let wa = channel === 'whatsapp' || channel === 'both'; let mail = channel === 'email' || channel === 'both';
+    if (channel === 'preferred') { if (c.pref_channel === 'Email' && c.email) mail = true; else if (c.whatsapp) wa = true; else mail = true; }
+    if (wa && !waReady) { wa = false; if (channel === 'preferred' && c.email) mail = true; skip('WhatsApp format waiting for Meta approval'); }
+    if (wa && !c.whatsapp) { wa = false; skip('No WhatsApp number'); }
+    if (mail && !c.email) { mail = false; skip('No email'); }
+    if (wa) { try { const r = L.sendWA({ ptype: 'candidate', pid: c.id, format: waFormat, vars: kind === 'job' ? { job: job.title, city: job.city, salary: L.salaryText(job) } : { message: fill(text, c) }, jb: job ? job.id : null, by: ctx.actor, bulk: true, noEmailCopy: true, sendLater: when || undefined, dedupe: `camp:${id}:${c.id}` }); if (r.skipped) skip(r.skipped); else out.wa++; } catch (e) { skip(e.message); } }
+    if (mail) {
+      const sub = kind === 'job' ? `New job: ${job.title}, ${job.city}` : fill(subject, c); const body = kind === 'job' ? `Hello ${c.name || 'there'},\n\nWe have a ${job.title} opening in ${job.city}${L.salaryText(job) ? `, ${L.salaryText(job)}` : ''}. If you are interested, reply to this email or open your profile: ${link}\n\nBrillBrains Hiring Solutions` : `${fill(text, c)}\n\nBrillBrains Hiring Solutions`;
+      const html = M.layout(sub, body.split(/\n{2,}/).map((x) => `<p style="font-size:14px;line-height:1.65;margin:0 0 12px">${x.replace(/[&<>]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[ch])).replace(/\n/g, '<br>')}</p>`).join(''));
+      if (M.queue({ to: c.email, subject: sub, text: body, html, kind: 'campaign', recordId: c.id, sendAfter: when || undefined, dedupe: `camp:${id}:${c.id}:mail` })) out.email++; else skip('Email not valid');
+    }
+  });
+  insert('campaigns', { id, name: String(b.name || '').trim() || (job ? `Job alert: ${job.title}` : subject || text.slice(0, 40)), kind, job_id: job ? job.id : null, subject, body: text, channel, timing, audience, total: people.length, wa: out.wa, email: out.email, skipped: JSON.stringify(out.skipped), user_id: u.id, agency_id: u.agency_id || null, by: ctx.actor.label, at: now() });
+  D.history(ctx.actor.label, 'campaign', id, null, null, `${out.wa} WhatsApp, ${out.email} email to ${audience}`); return { id, ...out, total: people.length };
+});
+route('GET', '/api/campaigns', T, (ctx) => all('SELECT * FROM campaigns ORDER BY at DESC LIMIT 200').filter((x) => isSuper(ctx.user) || x.user_id === ctx.user.id || (x.agency_id && x.agency_id === ctx.user.agency_id)).map((x) => ({ ...x, skipped: JSON.parse(x.skipped || '{}'), job_title: x.job_id ? (get('SELECT title FROM jobs WHERE id=?', x.job_id) || {}).title : '' })));
+route('GET', '/api/contact-prefs', T, () => L.PREF);
 
 // ---------- departments & roles (every team level) ----------
 // The same lists Settings edits (departments, and each industry's groups of jobs), so job openings, the job-seeker

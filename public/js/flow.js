@@ -234,16 +234,37 @@
     return `${tpl}<div class="sec card pad"><h3 style="margin-bottom:6px">Offer steps</h3>${st.map(([k, l, at]) => `<label class="row small"><input type="checkbox" data-ostage="${k}" ${at ? 'checked' : ''} ${a.result === 'open' ? '' : 'disabled'}> ${l}${at ? ` <span class="faint">${fmtDT(at)}</span>` : ''}</label>`).join('')}
       ${canAdmin() && a.offer_ctc ? `<div class="row" style="margin-top:8px">${asked ? `<span class="small muted">Accounts asked ${fmtDT(asked)}</span>` : ''}<button class="btn sm ${asked ? '' : 'primary'}" data-faccounts>${asked ? 'Ask again' : 'Ask Accounts for the invoice'}</button>${a.bill ? `<a href="#" class="small" data-open="bill:${a.bill.id}">Open bill</a>` : ''}</div>` : ''}</div>`;
   };
+  // ---------- Campaigns to candidates ----------
+  const PREF_FIELDS = (p, cur = {}) => `<div class="grid g3">${field({ name: 'pref_channel', label: 'Best way to reach', type: 'select', options: p.channel, opt: true, placeholder: 'Any', value: cur.pref_channel || '' })}${field({ name: 'pref_time', label: 'Best time to call', type: 'select', options: p.time, opt: true, placeholder: 'Any time', value: cur.pref_time || '' })}${field({ name: 'pref_days', label: 'Best days', type: 'select', options: p.days, opt: true, placeholder: 'Any day', value: cur.pref_days || '' })}</div>`;
+  BB.prefFields = PREF_FIELDS;
+  F.campaign = async (audience) => {
+    const jobs = (await BB.api('/api/jobs?size=200')).rows.filter((j) => ['Open', 'Sourcing', 'Interviewing'].includes(j.status));
+    setTimeout(() => { const m = $('.modal'); if (!m) return; const show = () => { const k = ($('[name=kind]:checked', m) || {}).value; const ch = ($('[name=channel]:checked', m) || {}).value; $('[data-f=job_id]', m).classList.toggle('hidden', k !== 'job'); $('[data-f=body]', m).classList.toggle('hidden', k !== 'message'); $('[data-f=subject]', m).classList.toggle('hidden', k !== 'message' || ch === 'whatsapp'); }; $$('input[type=radio]', m).forEach((r) => (r.onchange = show)); show(); }, 0);
+    const v = await BB.ask({ title: `Send campaign · ${esc(audience.label)}`, wide: true, note: 'People who said STOP or have not given consent are left out. While messages are off, campaigns wait on hold.', fields: [
+      { name: 'kind', label: 'What', type: 'choice', options: [['job', 'Job alert'], ['message', 'Message']], value: 'job' },
+      { name: 'job_id', label: 'Job opening', type: 'select', options: jobs.map((j) => [j.id, `${j.title}, ${j.city || ''}`]) },
+      { name: 'subject', label: 'Email subject', voice: false }, { name: 'body', label: 'Message ({name} becomes their name)', type: 'textarea' },
+      { name: 'channel', label: 'Send by', type: 'choice', options: [['preferred', 'Their preferred channel'], ['whatsapp', 'WhatsApp'], ['email', 'Email'], ['both', 'Both']], value: 'preferred' },
+      { name: 'timing', label: 'When', type: 'choice', options: [['now', 'Now'], ['preferred', 'In each person\'s preferred time']], value: 'now' },
+      { name: 'name', label: 'Campaign name', opt: true, voice: false }], ok: 'Send', submit: (x) => BB.post('/api/campaigns', { ...x, ids: audience.ids, segment: audience.segment }) });
+    if (v) { const sk = Object.entries(v.skipped); BB.modal({ title: 'Campaign sent', foot: false, body: `<p>${v.wa} on WhatsApp, ${v.email} by email, of ${v.total}.</p>${sk.length ? `<div class="small">${sk.map(([k, n]) => `<div>${esc(k)}: ${n}</div>`).join('')}</div>` : ''}` }); }
+  };
+  F.campaignsTab = async (el) => {
+    const rows = await BB.api('/api/campaigns');
+    el.innerHTML = `<div class="small muted" style="margin-bottom:10px">Tick candidates in the resume bank, or open a segment, then press Send campaign.</div><div class="card">${BB.table([{ t: 'Campaign', f: (x) => `<b>${esc(x.name)}</b><div class="tiny muted">${esc(x.kind === 'job' ? `Job alert · ${x.job_title}` : 'Message')}</div>` }, { t: 'To', f: (x) => esc(x.audience) }, { t: 'By', f: (x) => esc({ preferred: 'Preferred channel', whatsapp: 'WhatsApp', email: 'Email', both: 'Both' }[x.channel]) }, { t: 'WhatsApp', num: 1, f: (x) => x.wa }, { t: 'Email', num: 1, f: (x) => x.email }, { t: 'Left out', f: (x) => `<div class="tiny">${Object.entries(x.skipped).map(([k, n]) => `${esc(k)}: ${n}`).join('<br>') || '—'}</div>` }, { t: 'Sent', f: (x) => `${fmtDT(x.at)}<div class="tiny muted">${esc(x.by)}${x.timing === 'preferred' ? ' · preferred time' : ''}</div>` }], rows, { empty: 'No campaigns yet.' })}</div>`;
+  };
+
   // ---------- What we already know: read this before calling or assessing again ----------
   const daysAgo = (n) => (n === 0 ? 'today' : n === 1 ? 'yesterday' : `${n} days ago`);
   F.known = (k, c, next) => {
-    const call = k.last_call; const ev = k.evaluation; const d = k.decision; const pm = (y) => (y ? inr(y / 12) : ''); const facts = [c.exp_total != null && `${c.exp_total} yrs experience`, c.cur_salary && `now ${pm(c.cur_salary)}/mo`, c.exp_salary && `expects ${pm(c.exp_salary)}/mo`, c.notice_days != null && `${c.notice_days} days notice`, c.city].filter(Boolean);
+    const call = k.last_call; const ev = k.evaluation; const d = k.decision; const pm = (y) => (y ? inr(y / 12) : ''); const facts = [c.exp_total != null && `${c.exp_total} yrs experience`, c.cur_salary && `now ${pm(c.cur_salary)}/mo`, c.exp_salary && `expects ${pm(c.exp_salary)}/mo`, c.notice_days != null && `${c.notice_days} days notice`, c.city].filter(Boolean); const pf = k.prefs || {};
     const line = (label, body) => `<div class="kn-row"><span>${label}</span><div>${body}</div></div>`;
     return `<div class="sec card pad known"><h3>What we already know</h3>
       ${call && call.days <= 3 ? `<div class="notice gold">Spoken to ${daysAgo(call.days)} by ${esc(call.by)}. Read this before calling again.</div>` : ''}
       ${line('Last contact', call ? `<b>${esc(call.outcome)}</b> · ${fmtD(call.at)} · ${esc(call.by)}${call.job ? ` · ${esc(call.job)}` : ''}${call.note ? `<div class="small muted">${esc(call.note)}</div>` : ''}` : '<span class="faint">No call on record</span>')}
       ${line('Evaluation', ev ? `<b>${ev.percent === null ? 'Saved' : `${ev.percent}%`}</b> · ${ev.marked} points · ${fmtD(ev.at)} · ${esc(ev.by)}${ev.weak.length ? `<div class="small muted">Weak: ${esc(ev.weak.join(', '))}</div>` : ''}` : '<span class="faint">Not evaluated yet</span>')}
       ${line('Last decision', d ? `${esc(d.note)} · ${fmtD(d.at)} · ${esc(d.by)}${d.job ? ` · ${esc(d.job)}` : ''}` : '<span class="faint">None yet</span>')}
+      ${line('Reach them', pf.note ? `${esc(pf.note)}${pf.now_ok ? '' : ' <span class="badge b-amber">Not their time now</span>'}` : '<span class="faint">No preference given</span>')}
       ${facts.length ? line('On file', esc(facts.join(' · '))) : ''}${next ? line('Next', esc(next)) : ''}</div>`;
   };
   F.story = (rows) => (rows.length ? `<div class="story">${rows.map((r) => `<div class="story-row"><span class="story-when">${fmtD(r.at)}</span><div class="grow"><b>${esc(r.title)}</b>${r.job ? ` <span class="faint small">· ${esc(r.job)}</span>` : ''}${r.detail ? `<div class="small muted">${esc(r.detail)}</div>` : ''}${r.by ? `<div class="tiny faint">${esc(r.by)}</div>` : ''}</div></div>`).join('')}</div>` : '<div class="faint small">Nothing yet.</div>');

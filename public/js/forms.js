@@ -42,6 +42,7 @@
         <div data-only="job" class="stack">
           <label class="field" data-f="experience"><span class="lab">Experience <span class="opt">(optional)</span></span><div class="choice">${EXPERIENCE.map((x) => `<label style="min-width:96px"><input type="radio" name="experience" value="${x}"> ${x}</label>`).join('')}</div></label>
           ${field({ name: 'exp_jewellery', label: 'Experience in the jewellery industry', type: 'select', opt: true, options: JEWEL_EXP, placeholder: 'Select years' })}
+          ${BB.boot.contact_prefs ? `<div class="grid g3">${field({ name: 'pref_channel', label: 'Best way to reach you', type: 'select', opt: true, options: BB.boot.contact_prefs.channel, placeholder: 'Any' })}${field({ name: 'pref_time', label: 'Best time to call', type: 'select', opt: true, options: BB.boot.contact_prefs.time, placeholder: 'Any time' })}${field({ name: 'pref_days', label: 'Best days', type: 'select', opt: true, options: BB.boot.contact_prefs.days, placeholder: 'Any day' })}</div>` : ''}
           <div class="field hidden" data-f="exp_business" data-expbiz><span class="lab">Where have you worked?</span><div class="choice biz-choice">${BUSINESS.map((x) => `<label><input type="checkbox" name="exp_business" value="${x}"> ${x}</label>`).join('')}</div><span class="hint">Tick all that apply.</span></div>
         </div>
         <label class="hp" aria-hidden="true">Leave this empty <input name="website" tabindex="-1" autocomplete="off"></label>
@@ -87,7 +88,7 @@
       if (!check(form, rules)) return;
       const body = mode === 'hire'
         ? { contact: v.name, company: v.company, whatsapp: v.whatsapp, email, city: v.city, state: v.state, business_type: v.business_type, need: v.need, roles: v.roles, website: v.website, src: q.src, lang: BB.lang }
-        : { name: v.name, whatsapp: v.whatsapp, email, city: v.city, state: v.state, job_wanted: v.job_wanted, job_other: v.job_other, experience: v.experience, exp_business: v.exp_business, exp_jewellery: v.exp_jewellery, cv, website: v.website, lang: BB.lang, src: q.src || BB.adSource() || undefined, ...BB.adParams(), job: q.job, ref: q.ref };
+        : { name: v.name, whatsapp: v.whatsapp, email, city: v.city, state: v.state, job_wanted: v.job_wanted, job_other: v.job_other, experience: v.experience, exp_business: v.exp_business, exp_jewellery: v.exp_jewellery, pref_channel: v.pref_channel, pref_time: v.pref_time, pref_days: v.pref_days, cv, website: v.website, lang: BB.lang, src: q.src || BB.adSource() || undefined, ...BB.adParams(), job: q.job, ref: q.ref };
       const btn = $('[data-send]', card); btn.disabled = true; btn.textContent = 'Sending…';
       try {
         const res = await BB.post(mode === 'hire' ? '/api/public/hire' : '/api/public/apply', body, { kind: null });
