@@ -102,7 +102,7 @@ route('POST', '/api/applications/:id/checkin', T, (ctx) => {
   return record(a, ctx.body.party, ctx.body.outcome, ctx.actor, ctx.body.note);
 });
 
-// The After joining page: everyone in their first 90 days, and every replacement.
+// The Offer page: offers waiting to be accepted or joined, everyone in their first 90 days, and every replacement.
 const txt = (s) => String(s || '').toLowerCase();
 function replacementOf(a) {
   const used = !!a.replacement_used; const win = windowOf(a); const stay = L.daysBetween(a.joined_at, new Date(a.left_date).toISOString());
@@ -124,6 +124,11 @@ route('GET', '/api/aftercare', T, (ctx) => {
     const done = all("SELECT * FROM care_checks WHERE app_id=? AND status='Done' ORDER BY at DESC LIMIT 1", a.id)[0];
     return { id: a.id, candidate_id: a.candidate_id, candidate_name: v.candidate_name, client_name: v.client_name, job_title: v.job_title, owner_name: v.owner_name, joined_at: a.joined_at, since, at_risk: !!a.at_risk, schedule: sch, todo: todo.map((x) => x.day), next: next ? { day: next.day, date: next.date } : null, last: done ? { day: done.day, party: done.party, outcome: done.outcome, note: done.note, at: done.at } : null, window_left: Math.max(0, win - since) };
   }).filter(match);
+  const today = new Date().toISOString().slice(0, 10);
+  const offers = all("SELECT * FROM applications WHERE result='open' AND step IN ('Offer made','Offer accepted') ORDER BY joining_date").filter((a) => R.seeApp(u, a)).map((a) => {
+    const v = V.appView(a); const late = !!a.joining_date && a.joining_date < today;
+    return { id: a.id, candidate_id: a.candidate_id, candidate_name: v.candidate_name, client_name: v.client_name, job_title: v.job_title, owner_name: v.owner_name, step: a.step, ctc: a.offer_ctc || 0, joining_date: a.joining_date || null, late, days: a.joining_date ? L.daysBetween(today + 'T00:00:00Z', a.joining_date + 'T00:00:00Z') : null };
+  }).filter(match);
   const leftApps = all('SELECT * FROM applications WHERE left_date IS NOT NULL ORDER BY left_date DESC').filter((a) => R.seeApp(u, a) && a.joined_at);
   const asked = all("SELECT b.app_id FROM bills b WHERE b.replacement_requested=1").map((b) => b.app_id);
   const replacements = [
@@ -131,8 +136,9 @@ route('GET', '/api/aftercare', T, (ctx) => {
     ...leftApps.map((a) => ({ a, r: replacementOf(a) })),
   ].map(({ a, r }) => { const v = V.appView(a); return { id: a.id, candidate_id: a.candidate_id, candidate_name: v.candidate_name, client_name: v.client_name, job_id: a.job_id, job_title: v.job_title, owner_name: v.owner_name, joined_at: a.joined_at, left_date: a.left_date, left_reason: a.left_reason, ...r }; }).filter(match);
   return {
+    offers,
     active: active.sort((x, y) => y.todo.length - x.todo.length || Number(y.at_risk) - Number(x.at_risk) || x.since - y.since), replacements,
-    counts: { active: active.length, todo: active.filter((x) => x.todo.length).length, at_risk: active.filter((x) => x.at_risk).length, to_find: replacements.filter((x) => ['To find', 'Client asked'].includes(x.status)).length, in_progress: replacements.filter((x) => x.status === 'In progress').length },
+    counts: { offers: offers.length, late: offers.filter((x) => x.late).length, active: active.length, todo: active.filter((x) => x.todo.length).length, at_risk: active.filter((x) => x.at_risk).length, to_find: replacements.filter((x) => ['To find', 'Client asked'].includes(x.status)).length, in_progress: replacements.filter((x) => x.status === 'In progress').length },
     marks: marks(), plan: plan(), outcomes: OUTCOMES,
   };
 });

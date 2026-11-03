@@ -44,7 +44,7 @@
   const MENU = [
     ['myday', 'My day', 'sun', ['sub']], ['dashboard', 'Dashboard', 'grid'], ['leads', 'Leads', 'inbox', null, 'leads'],
     ['clients', 'Clients', 'building'], ['candidates', 'Candidates', 'users', null, 'cand_new'], ['jobs', 'Job openings', 'brief'], ['channels', 'Digital Reach', 'flow'], ['applications', 'Applications', 'flow'],
-    ['interviews', 'Interviews', 'cal', null, 'pending'], ['aftercare', 'After joining', 'check'], ['whatsapp', 'WhatsApp', 'chat', null, 'unread'], ['campaigns', 'Campaigns', 'flow'],
+    ['interviews', 'Interviews', 'cal', null, 'pending'], ['aftercare', 'Offer', 'check'], ['whatsapp', 'WhatsApp', 'chat', null, 'unread'], ['campaigns', 'Campaigns', 'flow'],
     ['performance', 'Performance', 'chart'], ['tasks', 'Tasks', 'note'], ['reviews', 'Recruiter reviews', 'star', ['super']], ['logs', 'Daily logs', 'note', ['super']], ['accounts', 'Invoicing', 'note'], ['acclients', 'Clients', 'building'], ['accandidates', 'Candidates', 'users'], ['bills', 'Profit & Loss', 'rupee'],
     ['reports', 'Reports', 'report'], ['agreement', 'Recruitment Agreement', 'note'], ['logins', 'Logins & team', 'key'], ['settings', 'Settings', 'cog'],
   ];
@@ -60,7 +60,7 @@
     candidates: 'Every candidate from every door lands here, with New and Unassigned views. Domain and skills are read from each CV automatically. The resume bank is shared by all agencies. Segments are saved groups of candidates that stay up to date. Phone numbers show only for your own agency\'s candidates.',
     applications: 'One candidate on one job. Move cards step by step; days in this step turn red after 7.',
     interviews: 'Our rounds and client rounds. "Result pending" means the time has passed and no result is recorded.',
-    aftercare: 'Everyone in their first 90 days after joining: weekly, then monthly check-ins with the candidate and the client. Below, every replacement after someone leaves.',
+    aftercare: 'From the offer to the end of the replacement window: offers waiting to be accepted or joined, weekly then monthly check-ins for 90 days after joining, and every replacement after someone leaves.',
     reviews: 'What candidates say about each recruiter. Only super admins see this.',
     whatsapp: 'One shared inbox. Replies open a 24-hour window for free typing; otherwise only approved formats can be sent.',
     performance: 'Counted from the history lines every action saves. Nobody types these numbers.',
