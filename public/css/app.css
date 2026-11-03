@@ -1886,3 +1886,10 @@ button.fin-tile.on { border-color: var(--mustard); box-shadow: 0 0 0 1px var(--m
 .now .now-acts > .btn, .now .now-acts > .step-menu > summary.btn { height: 38px; }
 .calls-top { margin-bottom: 12px; } .calls-top > .sec { margin: 0; padding: 0; border: 0; }
 .ad-more { display: inline-block; margin-left: 4px; } .ad-more > summary { font-size: 12px; color: var(--muted); text-decoration: underline dotted; } .ad-more > summary::after { width: 5px; height: 5px; } .ad-pop { width: 280px; display: grid; gap: 8px; padding: 10px 12px; } .ad-pop .small { overflow-wrap: anywhere; }
+.scr-more { border: 1px solid var(--border); border-radius: 12px; padding: 10px 14px; }
+.scr-more > summary { cursor: pointer; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; list-style: none; }
+.scr-more > summary::-webkit-details-marker { display: none; }
+.scr-more > summary::before { content: '▸'; color: var(--muted); } .scr-more[open] > summary::before { content: '▾'; }
+.scr-skills { display: flex; flex-wrap: wrap; gap: 4px; flex-basis: 100%; padding-left: 16px; }
+.scr-more[open] .scr-skills { display: none; } .scr-more .tbl-wrap { margin-top: 10px; }
+.now .fit-card { margin: 4px 0 2px; }
