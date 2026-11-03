@@ -985,10 +985,13 @@ route('PATCH', '/api/candidates/:id', T, (ctx) => {
 // A structured view of the candidate, saved each time so earlier ones stay. The last one opens ready to update.
 route('POST', '/api/candidates/:id/evaluation', T, (ctx) => {
   const c = get('SELECT * FROM candidates WHERE id=?', ctx.params.id); if (!c) throw httpError(404, 'Candidate not found'); const b = ctx.body || {}; const known = D.settings().eval_criteria || [];
-  const scores = Object.fromEntries(Object.entries(b.scores || {}).filter(([k, v]) => known.includes(k) && ['Strong', 'OK', 'Weak'].includes(v))); const note = String(b.note || '').trim();
-  if (!Object.keys(scores).length) throw httpError(400, 'Mark at least one point', 'scores');
+  const scores = Object.fromEntries(Object.entries(b.scores || {}).filter(([k, v]) => known.includes(k) && ['Strong', 'OK', 'Weak', 'N/A'].includes(v))); const note = String(b.note || '').trim();
+  if (!Object.values(scores).some((v) => v !== 'N/A')) throw httpError(400, 'Mark at least one point', 'scores');
   const a = b.app_id ? get('SELECT * FROM applications WHERE id=? AND candidate_id=?', b.app_id, c.id) : null;
-  insert('evaluations', { candidate_id: c.id, app_id: a ? a.id : null, scores, note, by: ctx.actor.label, at: now() }); return { ok: true };
+  insert('evaluations', { candidate_id: c.id, app_id: a ? a.id : null, scores, note, by: ctx.actor.label, at: now() });
+  // What is not relevant for this job is remembered on the job, so the next candidate's form starts with it set.
+  if (a) { const j = get('SELECT * FROM jobs WHERE id=?', a.job_id); const na = new Set(j.eval_na || []); for (const [k, v] of Object.entries(scores)) { if (v === 'N/A') na.add(k); else na.delete(k); } update('jobs', j.id, { eval_na: [...na] }); }
+  return { ok: true };
 });
 // The copy with phone and email taken out, for reading or sharing inside the team.
 route('POST', '/api/candidates/:id/hidden-cv', T, (ctx) => {
@@ -1179,7 +1182,7 @@ route('GET', '/api/applications/:id', T, (ctx) => {
   const job = get('SELECT * FROM jobs WHERE id=?', a.job_id); const cand = get('SELECT * FROM candidates WHERE id=?', a.candidate_id); const client = get('SELECT * FROM clients WHERE id=?', job.client_id);
   const bill = get('SELECT * FROM bills WHERE app_id=? AND credit_of IS NULL ORDER BY created_at DESC', a.id);
   return {
-    ...v, candidate: candidateOut(ctx.user, cand), cv_name: cand.cv_file ? (get('SELECT name FROM files WHERE id=?', cand.cv_file) || {}).name || '' : '', story: L.candidateStory(a.candidate_id), known: L.candidateKnown(cand), eval_criteria: D.settings().eval_criteria || [], rounds: L.roundsOf(a), other_apps: all('SELECT * FROM applications WHERE candidate_id=? AND id<>? ORDER BY created_at DESC', a.candidate_id, a.id).filter((x) => R.seeApp(ctx.user, x)).map(V.appView).map((x) => ({ id: x.id, job_title: x.job_title, client_name: x.client_name, step: x.step, result: x.result })), slot_ask: get("SELECT * FROM slot_asks WHERE app_id=? AND status<>'Cancelled' ORDER BY id DESC LIMIT 1", a.id) || null, questions: get('SELECT * FROM app_questions WHERE app_id=?', a.id) || null, job: V.jobView(job), client: { id: client.id, company: client.company, contact: client.contact },
+    ...v, candidate: candidateOut(ctx.user, cand), cv_name: cand.cv_file ? (get('SELECT name FROM files WHERE id=?', cand.cv_file) || {}).name || '' : '', story: L.candidateStory(a.candidate_id), known: L.candidateKnown(cand), eval_criteria: D.settings().eval_criteria || [], eval_na: job.eval_na || [], rounds: L.roundsOf(a), other_apps: all('SELECT * FROM applications WHERE candidate_id=? AND id<>? ORDER BY created_at DESC', a.candidate_id, a.id).filter((x) => R.seeApp(ctx.user, x)).map(V.appView).map((x) => ({ id: x.id, job_title: x.job_title, client_name: x.client_name, step: x.step, result: x.result })), slot_ask: get("SELECT * FROM slot_asks WHERE app_id=? AND status<>'Cancelled' ORDER BY id DESC LIMIT 1", a.id) || null, questions: get('SELECT * FROM app_questions WHERE app_id=?', a.id) || null, job: V.jobView(job), client: { id: client.id, company: client.company, contact: client.contact },
     history: all('SELECT * FROM app_history WHERE app_id=? ORDER BY at DESC, id DESC', a.id), messages: all('SELECT * FROM messages WHERE ap=? ORDER BY at DESC', a.id),
     score: (() => { const m = L.matchScore(cand, job, L.ratingOf(cand.id)); const f = require('./flow').rowFor(job, cand, m, {}); return { ...m, score: f.score, reasons: f.points, gaps: f.gaps }; })(), bill: bill ? L.billView(bill) : null, suggest: suggestFor(a), steps: L.STEPS, selected: !!get("SELECT 1 FROM interviews WHERE app_id=? AND result='Selected'", a.id), next: require('./flow').nextStep(a, bill), client_cv: cand.short_cv_file || null,
     files: all('SELECT * FROM files WHERE record_id=? AND replaced=0 ORDER BY at DESC', a.id), notes: all('SELECT * FROM notes WHERE record_id=? ORDER BY at DESC', a.id),

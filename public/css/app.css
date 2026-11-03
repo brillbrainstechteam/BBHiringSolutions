@@ -1772,6 +1772,8 @@ button.fin-tile.on { border-color: var(--mustard); box-shadow: 0 0 0 1px var(--m
 .story-row:first-child { border-top: 0; } .story-when { flex: none; width: 92px; color: var(--muted); font-size: 13px; }
 .eval-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 4px 18px; }
 .eval-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 5px 0; font-size: 14px; }
+.eval-form .eval-row { justify-content: flex-start; } .eval-form .eval-row > span:first-child { width: 290px; flex: none; }
+.eval-form .eval-row:has(input[value='N/A']:checked) > span:first-child { color: var(--faint); text-decoration: line-through; }
 .eval-group h4 { margin: 12px 0 4px; font-size: 13px; color: var(--muted); }
-.eval-pick { display: inline-flex; gap: 14px; flex: none; } .eval-pick label { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; }
+.eval-pick { display: inline-flex; gap: 14px; flex: none; } .eval-pick label { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; } .eval-pick label.na { margin-left: 8px; color: var(--muted); }
 @media (max-width: 760px) { .eval-row { flex-wrap: wrap; } .kn-row { grid-template-columns: 1fr; gap: 2px; } }
