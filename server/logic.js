@@ -114,6 +114,7 @@ const actorName = (a) => (a ? a.label || a.name || 'System' : 'System');
 function waHeld(msg) {
   // Asking a client for a slot, and telling the candidate the time it gives, are started by a recruiter, so they go.
   if (['bbhs_bill_raised', 'bbhs_payment_reminder'].includes(msg.format) && msg.sent_by !== 'Auto') return null; // Accounts pressed Send
+  if (msg.format === 'bbhs_contact_prefs' && msg.rule === 'pref1') return null; // asked of one candidate by a recruiter
   if (msg.format === 'bbhs_client_slots' || (msg.format === 'bbhs_interview_scheduled' && msg.iv && (get('SELECT from_ask FROM interviews WHERE id=?', msg.iv) || {}).from_ask)) return null;
   if (msg.person_type === 'client' && (msg.format || ['Auto', 'Bot', 'System'].includes(msg.sent_by)) && !['bbhs_login_code', 'bbhs_team_login'].includes(msg.format)) {
     const c = get('SELECT quiet FROM clients WHERE id=?', msg.person_id); if (c && c.quiet) return 'Held: earlier client, no messages until a new job opening';
@@ -768,6 +769,20 @@ function inPreferred(c, d = new Date()) {
 function nextPreferred(c, from = new Date()) { if (inPreferred(c, from)) return null; for (let i = 1; i <= 16 * 24; i++) { const d = new Date(Math.ceil(from.getTime() / 1800000) * 1800000 + (i - 1) * 1800000); if (inPreferred(c, d)) return d.toISOString(); } return null; }
 const prefNote = (c) => [c.pref_channel, c.pref_time && c.pref_time.split(' (')[0].toLowerCase(), c.pref_days && c.pref_days.toLowerCase()].filter(Boolean).join(', ');
 
+// The three taps on WhatsApp: channel, then time, then days. Each answer is saved before the next question goes.
+const PREF_ASK = {
+  pref2: { text: '2 of 3: What time is best to call you?', buttons: ['Morning 9 to 12', 'Afternoon 12 to 4', 'Evening 4 to 8', 'Any time'] },
+  pref3: { text: '3 of 3: Which days suit you?', buttons: ['Weekdays', 'Weekends', 'Any day'] },
+};
+function prefAnswer(step, t, candId, by) {
+  const pick = (list) => list.find((x) => t.startsWith(x.split(' ')[0].toLowerCase()));
+  const c = get('SELECT * FROM candidates WHERE id=?', candId); const say = (rule, text, buttons) => { try { sendWA({ ptype: 'candidate', pid: candId, text, buttons: buttons || [], rule, by: { label: 'Preferences' } }); } catch (e) { /* the window may have closed: the answer is still saved */ } };
+  if (step.startsWith('pref1')) { const v = pick(PREF.channel); if (!v) return null; update('candidates', candId, { pref_channel: v }); say('pref2', PREF_ASK.pref2.text, PREF_ASK.pref2.buttons); return `Prefers ${v}`; }
+  if (step === 'pref2') { const v = t.startsWith('any') ? null : pick(PREF.time); if (!v && !t.startsWith('any')) return null; update('candidates', candId, { pref_time: v }); say('pref3', PREF_ASK.pref3.text, PREF_ASK.pref3.buttons); return `Best time: ${v || 'any time'}`; }
+  if (step === 'pref3') { const v = t.startsWith('any') ? null : pick(PREF.days); if (!v && !t.startsWith('any')) return null; update('candidates', candId, { pref_days: v }); const f = get('SELECT * FROM candidates WHERE id=?', candId); say('pref_done', `Thank you. We will reach you on ${f.pref_channel || 'WhatsApp'}${f.pref_time ? `, ${f.pref_time.split(' (')[0].toLowerCase()}` : ''}${f.pref_days ? `, ${f.pref_days.toLowerCase()}` : ''}.`); history('Candidate on WhatsApp', 'contact preferences', candId, null, null, prefNote(f)); return `Best days: ${v || 'any day'}`; }
+  return null;
+}
+
 // ---------- what we already know about a candidate, in one place ----------
 const EVAL_POINTS = { Strong: 2, OK: 1, Weak: 0 };
 const evalView = (e) => { if (!e) return null; const all_ = Object.entries(e.scores || {}); const marks = all_.filter(([, v]) => v in EVAL_POINTS); const by = (r) => all_.filter(([, v]) => v === r).map(([k]) => k.split('|').pop().trim()); const max = marks.length * 2; return { ...e, marked: marks.length, percent: max ? Math.round((marks.reduce((t, [, v]) => t + EVAL_POINTS[v], 0) / max) * 100) : null, weak: by('Weak'), strong: by('Strong'), ok: by('OK'), na: by('N/A') }; };
@@ -1103,6 +1118,7 @@ function receiveReply(phone, text, button, opts = {}) {
     update('slot_asks', ask.id, { status: 'Replied', reply: String(text).slice(0, 500), replied_at: now() }); alertUser(askOwner(get('SELECT * FROM applications WHERE id=?', ask.app_id)), `${ask.app_id}: the client replied about the slot: ${String(text).slice(0, 120)}`, ask.app_id, 'client'); effect = 'Client replied about the slot';
     setImmediate(() => require('./flow').readSlotReply(ask.id, text).catch((e) => console.error('Slot reply', ask.id, e.message)));
   }
+  else if (ptype === 'candidate' && ref && /^pref[123]/.test(ref.rule || '') && (effect = prefAnswer(ref.rule, t, pid, by) || effect) !== 'Saved in inbox') { /* a preference was saved */ }
   else if (ptype === 'candidate' && t === 'i agree') { update('candidates', pid, { consent_alerts: 1 }); saveConsent('candidate', pid, 'WhatsApp', text); effect = 'Consent saved'; }
   else if (ref && ref.iv && t === 'confirm') { update('interviews', ref.iv, { confirmed: 1 }); history(by.label, 'confirm', ref.iv, 'confirmed', 0, 1); effect = `${ref.iv} confirmed`; }
   else if (ref && ref.iv && t === 'reschedule') { const ap = get('SELECT * FROM applications WHERE id=?', ref.ap); if (ap) alertUser(ap.owner_id, `Reschedule asked for ${ref.iv}`, ref.iv, 'candidate'); effect = 'Task alert to recruiter'; }
@@ -1155,4 +1171,4 @@ function resumeUse(user, candidateId) {
 }
 const accountsUsers = () => all("SELECT * FROM users WHERE level='sub' AND team='Accounts' AND status='On'");
 const openTasksOf = (userId) => all("SELECT * FROM tasks WHERE owner_id=? AND removed=0 AND status<>'Done' ORDER BY COALESCE(due_date, '9999'), at", userId);
-Object.assign(module.exports, { PREF, cleanPrefs, inPreferred, nextPreferred, prefNote, evalView, candidateStory, candidateKnown, startCall, openCall, needsCall, callGateOn, roundsOf, skipRounds, passRounds, openTasksOf, accountsUsers, fixAsk, openAsks, OPEN_ASK, resumeUse, RESUME_DAYS });
+Object.assign(module.exports, { prefAnswer, PREF, cleanPrefs, inPreferred, nextPreferred, prefNote, evalView, candidateStory, candidateKnown, startCall, openCall, needsCall, callGateOn, roundsOf, skipRounds, passRounds, openTasksOf, accountsUsers, fixAsk, openAsks, OPEN_ASK, resumeUse, RESUME_DAYS });

@@ -1750,7 +1750,7 @@ route('POST', '/api/tasks/:id/delete', T, (ctx) => { const t = loadTask(ctx); up
 // Who gets it: the ticked candidates or a saved segment. STOP and no consent are always left out; the send time can follow each person's window.
 const CHANNELS = ['preferred', 'whatsapp', 'email', 'both'];
 route('POST', '/api/campaigns', T, (ctx) => {
-  const M = require('./mailer'); const b = ctx.body || {}; const u = ctx.user; const kind = b.kind === 'job' ? 'job' : 'message'; const channel = CHANNELS.includes(b.channel) ? b.channel : 'preferred'; const timing = b.timing === 'preferred' ? 'preferred' : 'now';
+  const M = require('./mailer'); const b = ctx.body || {}; const u = ctx.user; const kind = ['job', 'prefs'].includes(b.kind) ? b.kind : 'message'; const channel = CHANNELS.includes(b.channel) ? b.channel : 'preferred'; const timing = b.timing === 'preferred' ? 'preferred' : 'now';
   const job = kind === 'job' && b.job_id ? get('SELECT * FROM jobs WHERE id=?', String(b.job_id)) : null; if (kind === 'job' && !job) throw httpError(400, 'Pick the job', 'job_id');
   const text = String(b.body || '').trim(); const subject = String(b.subject || '').trim(); if (kind === 'message' && !text) throw httpError(400, 'Write the message', 'body'); if (kind === 'message' && channel !== 'whatsapp' && !subject) throw httpError(400, 'Write the email subject', 'subject');
   let people; let audience;
@@ -1758,29 +1758,67 @@ route('POST', '/api/campaigns', T, (ctx) => {
   else { people = (b.ids || []).map((id) => get('SELECT * FROM candidates WHERE id=? AND removed=0', id)).filter(Boolean); audience = `${people.length} ticked`; }
   if (!people.length) throw httpError(400, 'Nobody to send to');
   const cap = D.settings().bulk_budget; const id = D.nextId('CM'); const out = { wa: 0, email: 0, skipped: {} }; const skip = (why) => { out.skipped[why] = (out.skipped[why] || 0) + 1; };
-  const news = D.settings().formats.bbhs_candidate_news; const waFormat = kind === 'job' ? 'bbhs_job_alert' : 'bbhs_candidate_news'; const waReady = kind === 'job' || (news && news.approved);
+  const news = D.settings().formats.bbhs_candidate_news; const waFormat = kind === 'job' ? 'bbhs_job_alert' : kind === 'prefs' ? 'bbhs_contact_prefs' : 'bbhs_candidate_news'; const waReady = kind === 'job' || ((D.settings().formats[waFormat] || {}).approved);
   const link = L.link('my-profile'); const fill = (t, c) => String(t).replace(/\{name\}/g, c.name || 'there');
   people.forEach((p, n) => {
     const c = get('SELECT * FROM candidates WHERE id=?', p.id); if (n >= cap) return skip(`Over the limit of ${cap} per campaign`);
     if (c.opted_out) return skip('Said STOP'); if (!c.consent_alerts) return skip('No consent for messages');
     const when = timing === 'preferred' ? L.nextPreferred(c) : null;
     let wa = channel === 'whatsapp' || channel === 'both'; let mail = channel === 'email' || channel === 'both';
-    if (channel === 'preferred') { if (c.pref_channel === 'Email' && c.email) mail = true; else if (c.whatsapp) wa = true; else mail = true; }
+    if (kind === 'prefs') { wa = true; mail = false; } else if (channel === 'preferred') { if (c.pref_channel === 'Email' && c.email) mail = true; else if (c.whatsapp) wa = true; else mail = true; }
     if (wa && !waReady) { wa = false; if (channel === 'preferred' && c.email) mail = true; skip('WhatsApp format waiting for Meta approval'); }
     if (wa && !c.whatsapp) { wa = false; skip('No WhatsApp number'); }
     if (mail && !c.email) { mail = false; skip('No email'); }
-    if (wa) { try { const r = L.sendWA({ ptype: 'candidate', pid: c.id, format: waFormat, vars: kind === 'job' ? { job: job.title, city: job.city, salary: L.salaryText(job) } : { message: fill(text, c) }, jb: job ? job.id : null, by: ctx.actor, bulk: true, noEmailCopy: true, sendLater: when || undefined, dedupe: `camp:${id}:${c.id}` }); if (r.skipped) skip(r.skipped); else out.wa++; } catch (e) { skip(e.message); } }
+    if (wa) { try { const r = L.sendWA({ ptype: 'candidate', pid: c.id, format: waFormat, vars: kind === 'job' ? { job: job.title, city: job.city, salary: L.salaryText(job) } : kind === 'prefs' ? {} : { message: fill(text, c) }, rule: kind === 'prefs' ? 'pref1-bulk' : undefined, jb: job ? job.id : null, by: ctx.actor, bulk: true, noEmailCopy: true, sendLater: when || undefined, dedupe: `camp:${id}:${c.id}` }); if (r.skipped) skip(r.skipped); else out.wa++; } catch (e) { skip(e.message); } }
     if (mail) {
       const sub = kind === 'job' ? `New job: ${job.title}, ${job.city}` : fill(subject, c); const body = kind === 'job' ? `Hello ${c.name || 'there'},\n\nWe have a ${job.title} opening in ${job.city}${L.salaryText(job) ? `, ${L.salaryText(job)}` : ''}. If you are interested, reply to this email or open your profile: ${link}\n\nBrillBrains Hiring Solutions` : `${fill(text, c)}\n\nBrillBrains Hiring Solutions`;
       const html = M.layout(sub, body.split(/\n{2,}/).map((x) => `<p style="font-size:14px;line-height:1.65;margin:0 0 12px">${x.replace(/[&<>]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[ch])).replace(/\n/g, '<br>')}</p>`).join(''));
       if (M.queue({ to: c.email, subject: sub, text: body, html, kind: 'campaign', recordId: c.id, sendAfter: when || undefined, dedupe: `camp:${id}:${c.id}:mail` })) out.email++; else skip('Email not valid');
     }
   });
-  insert('campaigns', { id, name: String(b.name || '').trim() || (job ? `Job alert: ${job.title}` : subject || text.slice(0, 40)), kind, job_id: job ? job.id : null, subject, body: text, channel, timing, audience, total: people.length, wa: out.wa, email: out.email, skipped: JSON.stringify(out.skipped), user_id: u.id, agency_id: u.agency_id || null, by: ctx.actor.label, at: now() });
+  insert('campaigns', { id, name: String(b.name || '').trim() || (job ? `Job alert: ${job.title}` : kind === 'prefs' ? 'Contact preferences' : subject || text.slice(0, 40)), kind, job_id: job ? job.id : null, subject, body: text, channel, timing, audience, total: people.length, wa: out.wa, email: out.email, skipped: JSON.stringify(out.skipped), user_id: u.id, agency_id: u.agency_id || null, by: ctx.actor.label, at: now() });
   D.history(ctx.actor.label, 'campaign', id, null, null, `${out.wa} WhatsApp, ${out.email} email to ${audience}`); return { id, ...out, total: people.length };
 });
-route('GET', '/api/campaigns', T, (ctx) => all('SELECT * FROM campaigns ORDER BY at DESC LIMIT 200').filter((x) => isSuper(ctx.user) || x.user_id === ctx.user.id || (x.agency_id && x.agency_id === ctx.user.agency_id)).map((x) => ({ ...x, skipped: JSON.parse(x.skipped || '{}'), job_title: x.job_id ? (get('SELECT title FROM jobs WHERE id=?', x.job_id) || {}).title : '' })));
+// What happened to each campaign, by channel, read from the messages and emails it made (they carry the campaign in their key).
+const WA_STEP = { sent: 'Sent', delivered: 'Delivered', read: 'Read', failed: 'Failed' };
+const waState = (st) => WA_STEP[st] || (st === 'held' ? 'On hold' : st === 'scheduled' ? 'Scheduled' : st === 'would send' ? 'Not sent (test copy)' : 'Sending');
+const mailState = (st) => (st === 'sent' ? 'Sent' : st === 'failed' ? 'Failed' : st === 'held' ? 'On hold' : st === 'scheduled' ? 'Scheduled' : /not sent/.test(st || '') ? 'Not sent (email not set up)' : 'Sending');
+const pct = (n, d) => (d ? Math.round((n / d) * 100) : null);
+function campaignStats(x) {
+  const wa = all("SELECT * FROM messages WHERE direction='out' AND dedupe LIKE ?", `camp:${x.id}:%`); const mails = all('SELECT * FROM emails WHERE dedupe LIKE ?', `camp:${x.id}:%`);
+  const count = (list, f) => list.reduce((m, r) => { const k = f(r.status); m[k] = (m[k] || 0) + 1; return m; }, {});
+  const w = count(wa, waState); const e = count(mails, mailState); const out = (o, ks) => ks.reduce((t, k) => t + (o[k] || 0), 0);
+  const waTried = out(w, ['Sent', 'Delivered', 'Read', 'Failed']); const waReached = out(w, ['Delivered', 'Read']); const mailTried = out(e, ['Sent', 'Failed']);
+  const people = [...new Set([...wa.map((m) => m.person_id), ...mails.map((m) => m.record_id)])];
+  const ids = people.length ? `(${people.map(() => '?').join(',')})` : "('')";
+  const replied = new Set(all(`SELECT DISTINCT person_id FROM messages WHERE person_type='candidate' AND direction='in' AND at>=? AND person_id IN ${ids}`, x.at, ...people).map((r) => r.person_id)).size;
+  const applied = x.job_id ? all(`SELECT DISTINCT candidate_id FROM applications WHERE job_id=? AND created_at>=? AND candidate_id IN ${ids}`, x.job_id, x.at, ...people).length : null;
+  const stopped = all(`SELECT DISTINCT person_id FROM consents WHERE person_type='candidate' AND at>=? AND what LIKE 'Opted out%' AND person_id IN ${ids}`, x.at, ...people).length;
+  return { whatsapp: { total: wa.length, by: w, delivered_rate: pct(waReached, waTried), read_rate: pct(w.Read || 0, waTried), failed: w.Failed || 0 }, email: { total: mails.length, by: e, sent_rate: pct(e.Sent || 0, mailTried), failed: e.Failed || 0 }, reached: people.length, replied, reply_rate: pct(replied, people.length), applied, stopped };
+}
+const seeCampaign = (u, x) => isSuper(u) || x.user_id === u.id || (x.agency_id && x.agency_id === u.agency_id);
+const campRow = (x) => ({ ...x, skipped: JSON.parse(x.skipped || '{}'), job_title: x.job_id ? (get('SELECT title FROM jobs WHERE id=?', x.job_id) || {}).title : '', stats: campaignStats(x) });
+route('GET', '/api/campaigns', T, (ctx) => {
+  const q = ctx.query || {}; const rows = all('SELECT * FROM campaigns ORDER BY at DESC LIMIT 500').filter((x) => seeCampaign(ctx.user, x) && (!q.from || x.at.slice(0, 10) >= q.from) && (!q.to || x.at.slice(0, 10) <= q.to) && (!q.kind || x.kind === q.kind) && like(q.q, x.name, x.audience, x.by)).map(campRow);
+  const sum = (f) => rows.reduce((t, r) => t + (f(r) || 0), 0); const tried = (r, ks) => ks.reduce((t, k) => t + (r.stats.whatsapp.by[k] || 0), 0);
+  const waTried = sum((r) => tried(r, ['Sent', 'Delivered', 'Read', 'Failed'])); const waReached = sum((r) => tried(r, ['Delivered', 'Read'])); const mailTried = sum((r) => (r.stats.email.by.Sent || 0) + (r.stats.email.by.Failed || 0));
+  return { rows, totals: { campaigns: rows.length, whatsapp: sum((r) => r.stats.whatsapp.total), email: sum((r) => r.stats.email.total), wa_delivered_rate: pct(waReached, waTried), wa_read_rate: pct(sum((r) => r.stats.whatsapp.by.Read), waTried), email_sent_rate: pct(sum((r) => r.stats.email.by.Sent), mailTried), replied: sum((r) => r.stats.replied), reached: sum((r) => r.stats.reached) }, segments: segVisible(ctx.user).map((x) => [x.id, x.name]) };
+});
+route('GET', '/api/campaigns/:id', T, (ctx) => {
+  const x = get('SELECT * FROM campaigns WHERE id=?', ctx.params.id); if (!x || !seeCampaign(ctx.user, x)) throw httpError(404, 'Campaign not found');
+  const name = (id) => (get('SELECT name FROM candidates WHERE id=?', id) || {}).name || id; const replied = (id) => !!get("SELECT 1 FROM messages WHERE person_type='candidate' AND person_id=? AND direction='in' AND at>=?", id, x.at);
+  const people = {};
+  for (const m of all("SELECT * FROM messages WHERE direction='out' AND dedupe LIKE ?", `camp:${x.id}:%`)) people[m.person_id] = { ...(people[m.person_id] || {}), id: m.person_id, whatsapp: waState(m.status), wa_error: m.error || '' };
+  for (const m of all('SELECT * FROM emails WHERE dedupe LIKE ?', `camp:${x.id}:%`)) people[m.record_id] = { ...(people[m.record_id] || {}), id: m.record_id, email: mailState(m.status), mail_error: m.error || '' };
+  return { ...campRow(x), people: Object.values(people).map((p) => ({ ...p, name: name(p.id), replied: replied(p.id) })) };
+});
 route('GET', '/api/contact-prefs', T, () => L.PREF);
+// One candidate, asked on WhatsApp with tap buttons. A recruiter pressing it sends it even while messages are off.
+route('POST', '/api/candidates/:id/ask-prefs', T, (ctx) => {
+  const c = get('SELECT * FROM candidates WHERE id=?', ctx.params.id); if (!c) throw httpError(404, 'Candidate not found'); if (!c.whatsapp) throw httpError(400, 'This candidate has no WhatsApp number.');
+  if (!D.settings().formats.bbhs_contact_prefs.approved) throw httpError(400, 'The preferences message is waiting for Meta approval. Send it from Settings → Message formats.');
+  const r = L.sendWA({ ptype: 'candidate', pid: c.id, format: 'bbhs_contact_prefs', vars: {}, rule: 'pref1', by: ctx.actor, noEmailCopy: true }); if (r.skipped) throw httpError(400, `Not sent: ${r.skipped}`); return { ok: true };
+});
 
 // ---------- departments & roles (every team level) ----------
 // The same lists Settings edits (departments, and each industry's groups of jobs), so job openings, the job-seeker

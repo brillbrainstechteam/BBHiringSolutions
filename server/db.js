@@ -250,6 +250,10 @@ function ensureSettings() {
     run('UPDATE candidates SET short_cv_for=NULL'); // made by the older cleaner: the next one is made afresh
     setSetting('done_once', [...(settings().done_once || []), 'client_cv_2026_11_02']);
   }
+  if (!once.includes('format_contact_prefs')) {
+    setSetting('formats', { ...settings().formats, bbhs_contact_prefs: defs.formats.bbhs_contact_prefs });
+    setSetting('done_once', [...(settings().done_once || []), 'format_contact_prefs']);
+  }
   if (!once.includes('format_candidate_news')) {
     setSetting('formats', { ...settings().formats, bbhs_candidate_news: defs.formats.bbhs_candidate_news });
     setSetting('done_once', [...(settings().done_once || []), 'format_candidate_news']);

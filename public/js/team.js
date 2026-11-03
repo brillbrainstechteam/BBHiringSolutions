@@ -30,11 +30,11 @@
   const MENU = [
     ['myday', 'My day', 'sun', ['sub']], ['dashboard', 'Dashboard', 'grid'], ['leads', 'Leads', 'inbox', null, 'leads'],
     ['clients', 'Clients', 'building'], ['candidates', 'Candidates', 'users', null, 'cand_new'], ['jobs', 'Job openings', 'brief'], ['channels', 'Digital Reach', 'flow'], ['applications', 'Applications', 'flow'],
-    ['interviews', 'Interviews', 'cal', null, 'pending'], ['whatsapp', 'WhatsApp', 'chat', null, 'unread'],
+    ['interviews', 'Interviews', 'cal', null, 'pending'], ['whatsapp', 'WhatsApp', 'chat', null, 'unread'], ['campaigns', 'Campaigns', 'flow'],
     ['performance', 'Performance', 'chart'], ['tasks', 'Tasks', 'note'], ['logs', 'Daily logs', 'note', ['super']], ['accounts', 'Invoicing', 'note'], ['acclients', 'Clients', 'building'], ['accandidates', 'Candidates', 'users'], ['bills', 'Profit & Loss', 'rupee'],
     ['reports', 'Reports', 'report'], ['agreement', 'Recruitment Agreement', 'note'], ['logins', 'Logins & team', 'key'], ['settings', 'Settings', 'cog'],
   ];
-  const GROUP = { agreement: 'Admin', channels: 'Hiring', myday: 'Overview', dashboard: 'Overview', leads: 'Hiring', clients: 'Hiring', jobs: 'Hiring', candidates: 'Hiring', applications: 'Hiring', interviews: 'Hiring', whatsapp: 'Messages', performance: 'Team', tasks: 'Team', logs: 'Team', accounts: 'Financials', acclients: 'Financials', accandidates: 'Financials', bills: 'Financials', reports: 'Financials', logins: 'Admin', settings: 'Admin' };
+  const GROUP = { agreement: 'Admin', channels: 'Hiring', myday: 'Overview', dashboard: 'Overview', leads: 'Hiring', clients: 'Hiring', jobs: 'Hiring', candidates: 'Hiring', applications: 'Hiring', interviews: 'Hiring', whatsapp: 'Messages', campaigns: 'Messages', performance: 'Team', tasks: 'Team', logs: 'Team', accounts: 'Financials', acclients: 'Financials', accandidates: 'Financials', bills: 'Financials', reports: 'Financials', logins: 'Admin', settings: 'Admin' };
   const HELP = {
     agreement: 'The standard Recruitment Agreement. Clients see the same copy in their account.',
     channels: 'Every channel for every open job. Change the owner in the Owner column. Copy a job\'s link, post it, then click the cell to update it. Everyone sees the same page.',
@@ -63,7 +63,7 @@
     BB.guard(BB.me.user); // no printing / copying / screenshot keys for admins and sub admins
     if (BB.me.user.must_change || BB.mustChange) return changePassword(true);
     // Pages that moved: Segments is a Candidates tab, Departments & roles a Settings tab.
-    const MOVED = { segments: 'team/candidates?tab=segments', roles: 'team/settings?tab=roles', books: 'team/bills?tab=summary', money: 'team/bills?tab=bills' };
+    const MOVED = { segments: 'team/candidates?tab=segments', 'candidates?tab=campaigns': 'team/campaigns', roles: 'team/settings?tab=roles', books: 'team/bills?tab=summary', money: 'team/bills?tab=bills' };
     if (MOVED[r.sub[0]]) return BB.go(MOVED[r.sub[0]]);
     const allowed = menuFor(BB.me.user).map((m) => m[0]);
     pageName = allowed.includes(r.sub[0]) ? r.sub[0] : BB.me.user.accounts_only ? 'accounts' : BB.me.user.channel_only ? 'channels' : BB.me.user.level === 'sub' ? 'myday' : 'dashboard';

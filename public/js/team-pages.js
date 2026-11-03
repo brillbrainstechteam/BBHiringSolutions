@@ -341,11 +341,11 @@
   P.candidates = async (ctx) => {
     const { el, actions, q } = ctx; const tab = q.tab || 'bank';
     // Gap view is hidden for now (its page still works at ?tab=gap); put ['gap', 'Gap view'] back in this list to show it.
-    el.innerHTML = `<div class="tabs">${[['bank', 'Resume bank'], ['segments', 'Segments'], ['campaigns', 'Campaigns'], ...(ctx.me.level === 'super' ? [['check', 'Needs checking']] : []), ['tieups', 'Tie-ups'], ['import', 'Upload Excel']].map(([k, l]) => `<button data-tab="${k}" class="${tab === k ? 'on' : ''}">${l}</button>`).join('')}</div><div data-tabbody></div>`;
+    el.innerHTML = `<div class="tabs">${[['bank', 'Resume bank'], ['segments', 'Segments'], ...(ctx.me.level === 'super' ? [['check', 'Needs checking']] : []), ['tieups', 'Tie-ups'], ['import', 'Upload Excel']].map(([k, l]) => `<button data-tab="${k}" class="${tab === k ? 'on' : ''}">${l}</button>`).join('')}</div><div data-tabbody></div>`;
     $$('[data-tab]', el).forEach((b) => (b.onclick = () => BB.setQ({ tab: b.dataset.tab === 'bank' ? '' : b.dataset.tab, page: '', seg: '' })));
     const body = $('[data-tabbody]', el); actions.innerHTML = '';
     if (tab === 'segments') return segmentsTab(body, actions, q, ctx.me);
-    if (tab === 'campaigns') return BB.flow.campaignsTab(body);
+    if (tab === 'campaigns') return BB.go('team/campaigns');
     if (tab === 'gap') return gapView(body);
     if (tab === 'check') { const d = await BB.api('/api/leads'); body.innerHTML = `<div class="card">${checkTable(d.check.filter((r) => r.type === 'candidate'))}</div>`; $$('[data-merge]', body).forEach((b) => (b.onclick = () => { const [type, a, c] = b.dataset.merge.split(':'); BB.mergeScreen(type, a, c); })); return; }
     if (tab === 'tieups') return tieups(body);
