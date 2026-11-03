@@ -477,8 +477,6 @@
     BB.recordResult(iv, a);
   };
   BB.stepFor = async (appId, step) => { const a = await BB.api(`/api/applications/${appId}`); if (a.result !== 'open') return BB.toast('This application is closed', true); return BB.flow.moveTo(a, { step, note: 'Set from Interviews', force: true }); };
-  // What we ask the client about the candidate after their interview.
-  const CLIENT_POINTS = ['Product knowledge', 'Communication', 'Selling and customer handling', 'Attitude and fit with the team', 'Salary expectation fits', 'Overall impression'];
   BB.recordResult = (i, a) => {
     const ours = i.round === 'ours';
     // The client decides Selected or Rejected; another round with them is a next action, not a decision.
@@ -488,8 +486,9 @@
     const QLANG = [['en', 'English'], ['hinglish', 'Hinglish'], ['hi', 'Hindi']];
     const roundOf = (k) => a.rounds.find((x) => x.key === k);
     // The form: our evaluation points for our rounds; for the client round, what the client says about the candidate.
-    const points = ours ? (a.eval_criteria || []) : CLIENT_POINTS; const fbWas = i.iv_feedback || {};
-    let pts = { ...(ours ? Object.fromEntries((a.eval_na || []).map((k) => [k, 'N/A'])) : {}), ...(fbWas.points || {}) };
+    // The same points in every round (the evaluation in Settings); for the client round you ask the client about each.
+    const points = a.eval_criteria || []; const fbWas = i.iv_feedback || {};
+    let pts = { ...Object.fromEntries((a.eval_na || []).map((k) => [k, 'N/A'])), ...(fbWas.points || {}) };
     const groups = {}; for (const x of points) { const g = x.includes('|') ? x.split('|')[0].trim() : ''; (groups[g] = groups[g] || []).push(x); }
     const fbForm = () => `<div class="fb-form" data-f="fb"><div class="row between"><b>${ours ? 'Interview feedback' : 'Client feedback'}</b><span class="tiny muted">${ours ? 'Mark what you checked' : 'Ask the client about each point'}</span></div>${Object.entries(groups).map(([g, list]) => `<div class="eval-group">${g ? `<h4>${esc(g)}</h4>` : ''}${list.map((k) => `<div class="eval-row"><span>${esc(k.split('|').pop().trim())}</span><span class="eval-pick">${['Strong', 'OK', 'Weak', 'N/A'].map((o) => `<label class="${o === 'N/A' ? 'na' : ''}"><input type="radio" name="fb:${esc(k)}" data-fb="${esc(k)}" value="${o}" ${pts[k] === o ? 'checked' : ''}> ${o === 'N/A' ? 'Not relevant' : o}</label>`).join('')}</span></div>`).join('')}</div>`).join('')}
       <div class="grid g2">${BB.field({ name: 'fb_liked', label: ours ? 'Strengths' : 'What the client liked', type: 'textarea', opt: true, value: st.liked ?? fbWas.liked ?? '' })}${BB.field({ name: 'fb_concerns', label: ours ? 'Concerns' : 'The client\'s concerns', type: 'textarea', opt: true, value: st.concerns ?? fbWas.concerns ?? '' })}</div></div>`;
@@ -497,12 +496,23 @@
     let qa = (i.qa || []).length ? i.qa.slice() : [{ q: '', a: '' }]; let rating = i.rating || 0;
     const m = BB.modal({ title: `${ours ? 'Interview feedback' : 'Client feedback'} · ${esc(i.name || i.id)}`, wide: true, body: '<div data-b></div>', foot: '<button class="btn" data-c>Cancel</button><button class="btn primary" data-s>Save</button>' });
     const el = m.el; const st = { status: 'Completed', result: '', next: choices.length ? choices[0][0] : '', cnext: 'offer', mkq: true, qlang: (a.questions && a.questions.lang) || 'en' };
+    const nextName = () => (st.next === 'client' ? '' : ((a.rounds.find((x) => x.key === st.next) || {}).name || ''));
+    const appAfter = () => {
+      if (st.status === 'No-show') return 'stays where it is; book the round again';
+      if (st.status === 'Rescheduled') return 'stays where it is; the interview moves to the new time';
+      if (st.status === 'Cancelled') return 'stays where it is';
+      if (!st.result) return '';
+      if (st.result === 'Not selected') return `Closed · ${ours ? 'Not suitable' : 'Client rejected'}`;
+      if (st.result === 'On hold') return 'On hold';
+      if (ours) return st.next === 'client' || !choices.length ? 'Sent to client' : `Our interview · ${esc(nextName())} next`;
+      return st.cnext === 'offer' ? 'Offer made (when you record the offer)' : st.cnext === 'round' ? 'Client interview · another round' : 'Client interview · selected, offer to record';
+    };
     const jumps = () => (st.result === 'Move ahead' && st.next ? BB.flow.skipsFor(a, st.next, i) : []);
     const draw = () => {
       $('[data-b]', el).innerHTML = `<div class="stack"><div class="small muted">${esc(a.candidate_name)} · ${esc(a.job_title)} · ${fmtDT(i.at)}</div>
         <label class="field" data-f="status"><span class="lab">What happened</span><div class="choice">${['Completed', 'No-show', 'Cancelled', 'Rescheduled'].map((x) => `<label><input type="radio" name="status" value="${x}" ${st.status === x ? 'checked' : ''}> ${x}</label>`).join('')}</div></label>
         ${st.status === 'Rescheduled' ? `<label class="field" data-f="new_at"><span class="lab">New time</span><input type="datetime-local" name="new_at"></label>` : ''}
-        ${st.status === 'Completed' ? `<label class="field" data-f="result"><span class="lab">${ours ? 'Result' : 'Client\'s decision'}</span><div class="choice">${results.map((x) => `<label><input type="radio" name="result" value="${x}" ${st.result === x ? 'checked' : ''}> ${resultLabel(x)}</label>`).join('')}</div></label>${st.result === 'Move ahead' && choices.length ? `<label class="field" data-f="next"><span class="lab">Where next?</span><select name="next">${choices.map(([v, l]) => `<option value="${esc(v)}" ${st.next === v ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select></label>${jumps().length ? `<label class="field" data-f="skip_reason"><span class="lab">Why skip ${esc(jumps().map((r) => r.name).join(' and '))}?</span><div class="inp-wrap"><textarea name="skip_reason">${esc(st.skip_reason || '')}</textarea></div></label>` : ''}` : ''}${!ours && st.result === 'Selected' ? `<label class="field" data-f="cnext"><span class="lab">Next action</span><div class="choice">${CLIENT_NEXT.map(([v, l]) => `<label><input type="radio" name="cnext" value="${v}" ${st.cnext === v ? 'checked' : ''}> ${l}</label>`).join('')}</div></label>` : ''}${ours && st.result === 'Move ahead' && (a.candidate || {}).cv_file && roundOf(st.next) && roundOf(st.next).mode !== 'in_person' ? `<div class="row qmake"><label class="row small"><input type="checkbox" name="mkq" ${st.mkq ? 'checked' : ''}> Make interview questions for ${esc(roundOf(st.next).name)} in</label><select class="mini" name="qlang" style="width:auto">${QLANG.map(([v, l]) => `<option value="${v}" ${st.qlang === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>` : ''}${st.result && nextText[st.result] ? `<div class="notice small">${nextText[st.result]}</div>` : ''}
+        ${st.status === 'Completed' ? `<label class="field" data-f="result"><span class="lab">${ours ? 'Result' : 'Client\'s decision'}</span><div class="choice">${results.map((x) => `<label><input type="radio" name="result" value="${x}" ${st.result === x ? 'checked' : ''}> ${resultLabel(x)}</label>`).join('')}</div></label>${st.result === 'Move ahead' && choices.length ? `<label class="field" data-f="next"><span class="lab">Where next?</span><select name="next">${choices.map(([v, l]) => `<option value="${esc(v)}" ${st.next === v ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select></label>${jumps().length ? `<label class="field" data-f="skip_reason"><span class="lab">Why skip ${esc(jumps().map((r) => r.name).join(' and '))}?</span><div class="inp-wrap"><textarea name="skip_reason">${esc(st.skip_reason || '')}</textarea></div></label>` : ''}` : ''}${!ours && st.result === 'Selected' ? `<label class="field" data-f="cnext"><span class="lab">Next action</span><div class="choice">${CLIENT_NEXT.map(([v, l]) => `<label><input type="radio" name="cnext" value="${v}" ${st.cnext === v ? 'checked' : ''}> ${l}</label>`).join('')}</div></label>` : ''}${ours && st.result === 'Move ahead' && (a.candidate || {}).cv_file && roundOf(st.next) && roundOf(st.next).mode !== 'in_person' ? `<div class="row qmake"><label class="row small"><input type="checkbox" name="mkq" ${st.mkq ? 'checked' : ''}> Make interview questions for ${esc(roundOf(st.next).name)} in</label><select class="mini" name="qlang" style="width:auto">${QLANG.map(([v, l]) => `<option value="${v}" ${st.qlang === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>` : ''}${appAfter() ? `<div class="app-after small">Application after saving: <b>${appAfter()}</b></div>` : ''}
         ${st.result ? fbForm() : ''}
         ${ours ? `<div><div class="row between"><b class="small">Questions and answers</b><button type="button" class="btn sm" data-addq>+ Add a question</button></div><div class="stack-sm" style="margin-top:6px">${qa.map((x, k) => `<div class="qa-row grid g2"><div class="inp-wrap"><input data-q="${k}" value="${esc(x.q)}" placeholder="Question" data-voice></div><div class="inp-wrap"><input data-a="${k}" value="${esc(x.a)}" placeholder="Answer" data-voice></div></div>`).join('')}</div></div>
         <div><b class="small">Rating</b> <span class="faint small">(optional, used in matching)</span><div class="stars">${[1, 2, 3, 4, 5].map((n) => `<button type="button" data-star="${n}" class="${n <= rating ? 'on' : ''}">★</button>`).join('')}</div></div>` : ''}` : ''}
@@ -511,7 +521,7 @@
       $$('[name=status]', el).forEach((r) => (r.onchange = () => { keep(); st.status = r.value; draw(); }));
       $$('[name=result]', el).forEach((r) => (r.onchange = () => { keep(); st.result = r.value; draw(); }));
       const nx = $('[name=next]', el); if (nx) nx.onchange = () => { keep(); st.next = nx.value; draw(); };
-      $$('[name=cnext]', el).forEach((r) => (r.onchange = () => { keep(); st.cnext = r.value; }));
+      $$('[name=cnext]', el).forEach((r) => (r.onchange = () => { keep(); st.cnext = r.value; draw(); }));
       const aq = $('[data-addq]', el); if (aq) aq.onclick = () => { keep(); qa.push({ q: '', a: '' }); draw(); };
       $$('[data-star]', el).forEach((b) => (b.onclick = () => { keep(); rating = Number(b.dataset.star) === rating ? 0 : Number(b.dataset.star); draw(); }));
     };

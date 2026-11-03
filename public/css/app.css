@@ -1896,3 +1896,4 @@ button.fin-tile.on { border-color: var(--mustard); box-shadow: 0 0 0 1px var(--m
 .err-top { margin: 0 0 12px; padding: 9px 12px; border-radius: 10px; background: rgba(220, 38, 38, .08); }
 .call-plan .now-acts { margin-top: 2px; }
 .fb-form.has-err { border-color: var(--red); box-shadow: 0 0 0 2px var(--red-50); } .fb-form.has-err textarea { border-color: var(--border); background-color: var(--surface); }
+.app-after { padding: 9px 12px; border-radius: 10px; background: var(--surface-2); border: 1px solid var(--border); } .app-after b { color: var(--navy); }
