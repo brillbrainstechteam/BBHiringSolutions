@@ -207,7 +207,9 @@ function copyOfWhatsApp({ to, personType, format, text, recordId, sendAfter, ded
 // 'reset' sets a new password.
 function accountCode(to, code, recordId, why) {
   const b = D.settings().business;
-  const w = why === 'signup'
+  const w = why === 'login'
+    ? { subject: `Your login code: ${code}`, title: 'Your login code', line: 'Use this code to log in.', after: 'If you did not try to log in, ignore this email.' }
+    : why === 'signup'
     ? { subject: `Confirm your email: ${code}`, title: 'Confirm your email', line: 'Use this code to finish creating your account.', after: 'If you did not ask for an account, ignore this email.' }
     : { subject: `Your password reset code: ${code}`, title: 'Reset your password', line: 'Use this code to set a new password.', after: 'If you did not ask for it, ignore this email. Your password stays the same.' };
   const text = `${b.name}: ${w.line} Code: ${code} (valid for 10 minutes). ${w.after}`;

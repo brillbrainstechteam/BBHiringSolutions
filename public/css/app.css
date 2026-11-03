@@ -1780,3 +1780,29 @@ button.fin-tile.on { border-color: var(--mustard); box-shadow: 0 0 0 1px var(--m
 /* Campaigns */
 .camp-tiles { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 14px; margin-bottom: 14px; }
 .camp-tiles .stat .v { font-size: 22px; }
+
+/* After joining, reviews, languages */
+.login-ways { display: flex; width: 100%; margin-bottom: 14px; }
+.login-ways button { flex: 1; }
+.care-dots { display: inline-flex; gap: 3px; flex-wrap: wrap; }
+.care-dot { min-width: 24px; height: 20px; padding: 0 4px; border-radius: 6px; border: 1px solid var(--border); font: 600 10px/18px var(--font); text-align: center; color: var(--muted); background: var(--surface); }
+.care-dot.ok { background: #E6F6EC; border-color: #9BD3AE; color: #1E6B3A; }
+.care-dot.due { background: #FFF4DB; border-color: #F0C66B; color: #7A5300; }
+.care-dot.bad { background: #FDE8E8; border-color: #EFA3A3; color: #9B1C1C; }
+.care-plan { display: grid; gap: 6px; }
+.care-step { display: flex; gap: 12px; align-items: flex-start; padding: 6px 0; border-top: 1px solid var(--border); }
+.care-step:first-child { border-top: 0; }
+.care-day { display: flex; flex-direction: column; min-width: 74px; }
+.stars { color: #D19B12; letter-spacing: 1px; }
+.star-pick { display: flex; gap: 4px; }
+.star-pick button { border: 0; background: none; font-size: 30px; line-height: 1; color: #D5D9E4; cursor: pointer; padding: 2px; }
+.star-pick button.on { color: #D19B12; }
+.msg-en { margin-top: 6px; padding-top: 6px; border-top: 1px dashed var(--border); font-size: 12.5px; }
+.link-btn { border: 0; background: none; color: var(--primary, #2F4AA8); cursor: pointer; padding: 0; margin-top: 4px; display: block; }
+.tr-bar select { max-width: 140px; }
+.cp-prep { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; background: #FFFBF0; }
+.cp-prep summary { cursor: pointer; }
+.cp-prep ol { margin: 10px 0 6px; padding-left: 20px; display: grid; gap: 8px; }
+.q-sec.prep { border-top: 1px dashed var(--border); padding-top: 8px; }
+.chips-pick { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip-pick { display: inline-flex; gap: 6px; align-items: center; border: 1px solid var(--border); border-radius: 999px; padding: 6px 12px; font-size: 13px; cursor: pointer; }

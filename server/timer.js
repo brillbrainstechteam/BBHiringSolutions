@@ -52,15 +52,8 @@ function runTimer() {
       if (!r.skipped) count('joining_reminder');
     }
   }
-  // Day 30 / 60 / 90 check-ins.
-  for (const a of all("SELECT * FROM applications WHERE result='Hired' AND left_date IS NULL AND joined_at IS NOT NULL")) {
-    const days = L.daysBetween(a.joined_at);
-    for (const mark of [30, 60, 90]) if (days >= mark && days < mark + 5) {
-      const job = get('SELECT * FROM jobs WHERE id=?', a.job_id); const cl = get('SELECT company FROM clients WHERE id=?', job.client_id);
-      const r = L.sendWA({ ptype: 'candidate', pid: a.candidate_id, format: 'bbhs_post_join_checkin', vars: { days: mark, company: cl.company }, ap: a.id, auto: true, rule: 'post_join_checkin', dedupe: `checkin:${a.id}:${mark}` });
-      if (!r.skipped) count('checkin');
-    }
-  }
+  // After joining: weekly, then monthly check-ins for 90 days, each with a call task for the recruiter.
+  require('./care').due(count);
   // Bills: due in 3 days, due today, then every 7 days overdue.
   for (const b of all("SELECT * FROM bills WHERE status='Issued'").map(L.billView)) {
     if (b.balance <= 0 || !b.due_date) continue;

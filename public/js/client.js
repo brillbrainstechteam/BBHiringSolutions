@@ -68,7 +68,14 @@
     const views = {
       login: (msg) => `${note(msg)}${emF()}${pwF('Password', 'current-password')}
         <button class="btn gold block lg">Log in</button>
-        <div class="row between small ea-links"><a href="#" data-ea="forgot">Forgot password?</a><a href="#" data-ea="register">Create an account</a></div>`,
+        <div class="row between small ea-links"><a href="#" data-ea="forgot">Forgot password?</a><a href="#" data-ea="register">Create an account</a></div>
+        <div class="ea-links ea-center small"><a href="#" data-ea="mailcode">No password? Email me a login code</a></div>`,
+      mailcode: () => `${head('Log in with a code', 'We email you a 6-digit code. No password needed.')}${emF()}
+        <button class="btn gold block lg">Send code</button>${back}`,
+      mailcode2: (r) => `${head('Enter the code', `We sent a 6-digit code to ${BB.esc(email)}. It is valid for 10 minutes.`)}${dev(r && r.dev_code)}
+        ${codeF('Enter the 6 digit code')}
+        <button class="btn gold block lg">Log in</button>
+        <div class="row between small ea-links"><a href="#" data-ea="mailcode">Send the code again</a><a href="#" data-ea="login">Back to log in</a></div>`,
       register: () => `${head('Create your account')}${emF()}${pwF('Password', 'new-password', 'At least 8 characters')}
           <button class="btn gold block lg">Create account</button>${back}`,
       linkPhone: () => `${head('Link your profile', 'Enter the WhatsApp number you used in the form. We send a code to it.')}
@@ -110,6 +117,8 @@
         pending = '';
         show('login', 'Account created. Log in with your email and password.');
       },
+      mailcode: async (v) => { okEmail(v); const r = await BB.post('/api/account/code', { kind: o.kind, email: v.email }, { kind: null }); show('mailcode2', r); },
+      mailcode2: (v) => BB.post('/api/account/code/verify', { kind: o.kind, email, code: v.code }, { kind: null }).then((r) => o.onLogin(r.token)),
       forgot: (v) => { okEmail(v); return BB.post('/api/account/forgot', { kind: o.kind, email: v.email }, { kind: null }).then((r) => show('reset', r.dev_code)); },
       reset: async (v) => {
         okPw(v);

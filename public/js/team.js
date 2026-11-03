@@ -6,7 +6,10 @@
 
   function loginView(msg) {
     $('#app').innerHTML = BB.split({ top: BB.publicTop('Team portal'), eyebrow: 'Team portal', title: 'Good to see you <em>again</em>', lead: 'Pick up where you left off — today’s interviews, new candidates and the next step on every job opening.', perks: [['1', 'Needs attention first', 'Your dashboard lists what to do next.'], ['2', 'Numbers count themselves', 'Performance comes from the work you record.']],
-      card: `<div class="card-title">Log in</div><p class="muted small" style="margin:0 0 16px">Use the username and password from your admin.</p><form class="stack" data-login>${msg ? `<div class="notice warn small">${esc(msg)}</div>` : ''}
+      card: `<div class="card-title">Log in</div>${(() => { const w = BB.boot.team_login || { password: true }; const codes = [w.whatsapp && ['whatsapp', 'Code on WhatsApp'], w.email && ['email', 'Code by email']].filter(Boolean); return codes.length ? `<div class="seg login-ways" data-ways>${w.password ? '<button type="button" data-way="password" class="on">Password</button>' : ''}${codes.map(([k, l], i) => `<button type="button" data-way="${k}" class="${!w.password && !i ? 'on' : ''}">${l}</button>`).join('')}</div>` : ''; })()}
+        <form class="stack hidden" data-codeform><p class="muted small" style="margin:0" data-codehint></p>${field({ name: 'who', label: 'Username, WhatsApp number or email', voice: false, attrs: 'autocomplete="username" autocapitalize="off"' })}<button class="btn gold block lg">Send code</button></form>
+        <form class="stack hidden" data-codeform2><p class="small muted" style="margin:0" data-codesent></p><div data-codedev></div>${field({ name: 'code', label: 'Enter the 6 digit code', voice: false, attrs: 'inputmode="numeric" maxlength="6" class="code-in" autocomplete="one-time-code"' })}<button class="btn gold block lg">Log in</button><a href="#" class="small" data-codeback>Use another way</a></form>
+        <p class="muted small" style="margin:0 0 16px" data-pwhint>Use the username and password from your admin.</p><form class="stack" data-login>${msg ? `<div class="notice warn small">${esc(msg)}</div>` : ''}
         ${field({ name: 'username', label: 'Username', voice: false, attrs: 'autocomplete="username" autocapitalize="off"' })}
         <label class="field" data-f="password"><span class="lab">Password</span><div class="inp-wrap"><input name="password" type="password" autocomplete="current-password"><button type="button" class="mic" data-eye title="Show or hide" style="font-size:12px;width:44px">Show</button></div></label>
         <button class="btn gold block lg">Log in</button><p class="small faint" style="margin:0">5 wrong tries lock the login for 15 minutes.</p></form>
@@ -21,6 +24,17 @@
         else BB.route();
       } catch (er) { BB.showErr(e.target, { ...er, field: er.field || 'password', message: er.message }); }
     };
+    // Codes instead of the password: the person picks WhatsApp or email.
+    let way = 'password'; let who = '';
+    const showWay = (w) => { way = w; $$('[data-way]').forEach((b) => b.classList.toggle('on', b.dataset.way === w)); const pw = w === 'password'; $('[data-login]').classList.toggle('hidden', !pw); $('[data-pwhint]').classList.toggle('hidden', !pw); $('[data-codeform]').classList.toggle('hidden', pw); $('[data-codeform2]').classList.add('hidden'); $('[data-2fa]').classList.add('hidden'); if (!pw) $('[data-codehint]').textContent = w === 'email' ? 'We email you a 6-digit code. No password needed.' : 'We send a 6-digit code to your WhatsApp. No password needed.'; };
+    $$('[data-way]').forEach((b) => (b.onclick = () => showWay(b.dataset.way)));
+    const bw = BB.boot.team_login || { password: true }; if (!bw.password && (bw.whatsapp || bw.email)) showWay(bw.whatsapp ? 'whatsapp' : 'email');
+    $('[data-codeform]').onsubmit = async (e) => {
+      e.preventDefault(); const btn = $('button', e.target); btn.disabled = true; who = BB.formValues(e.target).who;
+      try { const r = await BB.post('/api/team/code', { who, via: way }, { kind: null }); e.target.classList.add('hidden'); $('[data-codeform2]').classList.remove('hidden'); $('[data-codesent]').textContent = `If this login exists, a code is on its way to ${r.to}. It is valid for 10 minutes.`; $('[data-codedev]').innerHTML = r.dev_code ? `<div class="test-code">Test copy: the code is <b class="mono">${r.dev_code}</b></div>` : ''; $('[data-codeform2] [name=code]').focus(); } catch (er) { BB.showErr(e.target, { ...er, field: er.field || 'who', message: er.message }); } finally { btn.disabled = false; }
+    };
+    $('[data-codeform2]').onsubmit = async (e) => { e.preventDefault(); try { const r = await BB.post('/api/team/code/verify', { who, via: way, code: BB.formValues(e.target).code, device: device() }, { kind: null }); BB.setToken('team', r.token); BB.route(); } catch (er) { BB.showErr(e.target, { message: er.message, field: 'code' }); } };
+    $('[data-codeback]').onclick = (e) => { e.preventDefault(); showWay(way); };
     $('[data-2fa]').onsubmit = async (e) => { e.preventDefault(); try { await BB.post('/api/team/2fa', BB.formValues(e.target)); BB.route(); } catch (er) { BB.showErr(e.target, { message: er.message, field: 'code' }); } };
   }
 
@@ -30,11 +44,11 @@
   const MENU = [
     ['myday', 'My day', 'sun', ['sub']], ['dashboard', 'Dashboard', 'grid'], ['leads', 'Leads', 'inbox', null, 'leads'],
     ['clients', 'Clients', 'building'], ['candidates', 'Candidates', 'users', null, 'cand_new'], ['jobs', 'Job openings', 'brief'], ['channels', 'Digital Reach', 'flow'], ['applications', 'Applications', 'flow'],
-    ['interviews', 'Interviews', 'cal', null, 'pending'], ['whatsapp', 'WhatsApp', 'chat', null, 'unread'], ['campaigns', 'Campaigns', 'flow'],
-    ['performance', 'Performance', 'chart'], ['tasks', 'Tasks', 'note'], ['logs', 'Daily logs', 'note', ['super']], ['accounts', 'Invoicing', 'note'], ['acclients', 'Clients', 'building'], ['accandidates', 'Candidates', 'users'], ['bills', 'Profit & Loss', 'rupee'],
+    ['interviews', 'Interviews', 'cal', null, 'pending'], ['aftercare', 'After joining', 'check'], ['whatsapp', 'WhatsApp', 'chat', null, 'unread'], ['campaigns', 'Campaigns', 'flow'],
+    ['performance', 'Performance', 'chart'], ['tasks', 'Tasks', 'note'], ['reviews', 'Recruiter reviews', 'star', ['super']], ['logs', 'Daily logs', 'note', ['super']], ['accounts', 'Invoicing', 'note'], ['acclients', 'Clients', 'building'], ['accandidates', 'Candidates', 'users'], ['bills', 'Profit & Loss', 'rupee'],
     ['reports', 'Reports', 'report'], ['agreement', 'Recruitment Agreement', 'note'], ['logins', 'Logins & team', 'key'], ['settings', 'Settings', 'cog'],
   ];
-  const GROUP = { agreement: 'Admin', channels: 'Hiring', myday: 'Overview', dashboard: 'Overview', leads: 'Hiring', clients: 'Hiring', jobs: 'Hiring', candidates: 'Hiring', applications: 'Hiring', interviews: 'Hiring', whatsapp: 'Messages', campaigns: 'Messages', performance: 'Team', tasks: 'Team', logs: 'Team', accounts: 'Financials', acclients: 'Financials', accandidates: 'Financials', bills: 'Financials', reports: 'Financials', logins: 'Admin', settings: 'Admin' };
+  const GROUP = { agreement: 'Admin', channels: 'Hiring', myday: 'Overview', dashboard: 'Overview', leads: 'Hiring', clients: 'Hiring', jobs: 'Hiring', candidates: 'Hiring', applications: 'Hiring', interviews: 'Hiring', aftercare: 'Hiring', reviews: 'Team', whatsapp: 'Messages', campaigns: 'Messages', performance: 'Team', tasks: 'Team', logs: 'Team', accounts: 'Financials', acclients: 'Financials', accandidates: 'Financials', bills: 'Financials', reports: 'Financials', logins: 'Admin', settings: 'Admin' };
   const HELP = {
     agreement: 'The standard Recruitment Agreement. Clients see the same copy in their account.',
     channels: 'Every channel for every open job. Change the owner in the Owner column. Copy a job\'s link, post it, then click the cell to update it. Everyone sees the same page.',
@@ -46,6 +60,8 @@
     candidates: 'Every candidate from every door lands here, with New and Unassigned views. Domain and skills are read from each CV automatically. The resume bank is shared by all agencies. Segments are saved groups of candidates that stay up to date. Phone numbers show only for your own agency\'s candidates.',
     applications: 'One candidate on one job. Move cards step by step; days in this step turn red after 7.',
     interviews: 'Our rounds and client rounds. "Result pending" means the time has passed and no result is recorded.',
+    aftercare: 'Everyone in their first 90 days after joining: weekly, then monthly check-ins with the candidate and the client. Below, every replacement after someone leaves.',
+    reviews: 'What candidates say about each recruiter. Only super admins see this.',
     whatsapp: 'One shared inbox. Replies open a 24-hour window for free typing; otherwise only approved formats can be sent.',
     performance: 'Counted from the history lines every action saves. Nobody types these numbers.',
     logs: 'One log a day: tasks done, problems, plan for tomorrow. Admins approve their sub admins\' logs.',

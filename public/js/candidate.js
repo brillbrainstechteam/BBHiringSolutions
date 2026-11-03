@@ -24,7 +24,7 @@
 
   function render() {
     const p = D.profile; const first = esc(String(p.name || '').split(' ')[0]);
-    const tabs = [['home', 'Home', 'home'], ['jobs', 'Jobs for you', 'brief', D.jobs.length], ['apps', 'Applications', 'flow', active().length], ['profile', 'Profile', 'users']];
+    const tabs = [['home', 'Home', 'home'], ['jobs', 'Jobs for you', 'brief', D.jobs.length], ['apps', 'Applications', 'flow', active().length], ['profile', 'Profile', 'users'], ...(D.can_review ? [['review', 'Rate your recruiter', 'star']] : [])];
     $('#app').innerHTML = `<div class="pub">${BB.publicTop('My profile', false, 'candidate')}
       <div class="acct-band cp-hero"><div class="in">
         <div class="cp-avatar">${esc(initials(p.name))}</div>
@@ -39,7 +39,7 @@
     $$('[data-goto]').forEach((b) => (b.onclick = (e) => { e.preventDefault(); go(b.dataset.goto, b.dataset.f); }));
     $('[data-logout]').onclick = () => BB.logout('candidate');
     const el = $('[data-body]');
-    ({ home, jobs, apps, profile }[tab] || home)(el);
+    ({ home, jobs, apps, profile, review }[tab] || home)(el);
     BB.attachMics(el); BB.romanizeFields(el); wire(el);
     $$('[data-goto]', el).forEach((b) => (b.onclick = (e) => { e.preventDefault(); go(b.dataset.goto, b.dataset.f); }));
   }
@@ -105,12 +105,31 @@
       <div class="row between"><div><h3>${esc(a.job_title)}</h3><div class="small muted">${esc(a.company)} · ${esc(a.city)}</div></div>${badge(a)}</div>
       ${BB.tracker(a.step, a.result)}
       ${a.interviews.length ? `<div class="stack-sm">${a.interviews.map((i) => ivCard(i)).join('')}</div>` : ''}
+      ${a.prep ? `<details class="cp-prep"><summary><b>Prepare for your interview</b> <span class="small muted">${a.prep.questions.length} questions the company may ask, with tips</span></summary><ol>${a.prep.questions.map((x) => `<li><b>${esc(x.q)}</b><div class="small muted">${esc(x.tip)}</div></li>`).join('')}</ol>${a.prep.know.length ? `<ul class="small">${a.prep.know.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}</details>` : ''}
       ${a.step === 'Offer made' && a.result === 'open' ? `<div class="notice gold"><b>Offer: ${inr(a.offer_ctc)} a year, joining ${fmtD(a.joining_date)}</b><div class="row" style="margin-top:8px">${a.offer_letter ? `<button class="btn sm" data-file="${a.offer_letter}">Read offer letter</button>` : ''}<button class="btn gold" data-accept="${a.id}">Accept</button><button class="btn" data-decline="${a.id}">Decline</button></div></div>` : ''}
       ${a.step === 'Offer accepted' && a.result === 'open' ? `<div class="notice"><b>You join on ${fmtD(a.joining_date)}.</b> Upload your joining papers so the company is ready for you.
         <div class="cp-docs">${a.offer_letter ? `<button class="btn sm" data-file="${a.offer_letter}">Offer letter</button><button class="cp-doc ${a.joining_docs.some((x) => x.label === 'Signed offer letter') ? 'ok' : ''}" data-doc="${a.id}" data-type="offer_signed" data-label="Signed offer letter">Signed offer</button>` : ''}${['PAN card', 'Aadhaar', 'Bank details', 'Relieving letter', 'Photo'].map((d) => `<button class="cp-doc ${a.joining_docs.some((x) => x.label === d) ? 'ok' : ''}" data-doc="${a.id}" data-label="${d}">${d}</button>`).join('')}</div></div>` : ''}
       ${a.result === 'Hired' ? `<div class="small muted">Joined ${fmtD(a.joining_date)}${a.left_date ? ` · left ${fmtD(a.left_date)}` : ''}</div>` : ''}
       ${a.result !== 'open' && a.result !== 'Hired' ? `<div class="small muted">This application is closed (${esc(a.result)}).</div>` : ''}
     </div>`).join('')}</div>` : `<div class="card pad cp-empty big">${icon('flow')}<div><b>No applications yet</b><div class="small muted">When you apply or your recruiter puts you forward, every step shows here.</div><button class="btn sm primary" data-goto="jobs" style="margin-top:10px">See jobs for you</button></div></div>`;
+  }
+
+  // ---------- Rate your recruiter: read only by the senior team ----------
+  async function review(el) {
+    el.innerHTML = '<div class="card pad">Loading…</div>';
+    let d; try { d = await BB.api('/api/cand/reviews'); } catch (e) { el.innerHTML = `<div class="card pad">${esc(e.message)}</div>`; return; }
+    const pickStars = (id, n) => `<div class="star-pick" data-stars="${id}">${[1, 2, 3, 4, 5].map((i) => `<button type="button" data-st="${i}" class="${n >= i ? 'on' : ''}" aria-label="${i} star${i > 1 ? 's' : ''}">★</button>`).join('')}</div>`;
+    el.innerHTML = `<div class="stack">${d.recruiters.map((r) => `<form class="card pad stack-sm" data-rv="${r.id}"><h3>How was ${esc(r.name)}?</h3><div class="small muted">Only BrillBrains' senior team reads this. ${esc(r.name)} does not see it.</div>${pickStars(r.id, r.stars || 0)}${field({ name: 'text', label: 'Tell us more', type: 'textarea', opt: true, value: r.text })}<button class="btn primary" style="width:max-content">${r.stars ? 'Update' : 'Send'}</button></form>`).join('') || '<div class="card pad">No recruiter to rate yet.</div>'}</div>`;
+    $$('[data-stars]', el).forEach((box) => $$('[data-st]', box).forEach((b) => (b.onclick = () => { box.dataset.val = b.dataset.st; $$('[data-st]', box).forEach((x) => x.classList.toggle('on', Number(x.dataset.st) <= Number(b.dataset.st))); })));
+    $$('[data-rv]', el).forEach((f) => (f.onsubmit = async (e) => {
+      e.preventDefault(); const box = $('[data-stars]', f); const stars = Number(box.dataset.val || $$('.on', box).length);
+      if (!stars) return BB.toast('Tap the stars first', true);
+      try {
+        const r = await BB.post('/api/cand/reviews', { user_id: f.dataset.rv, stars, text: BB.formValues(f).text });
+        if (r.google_url) { f.insertAdjacentHTML('beforeend', `<div class="notice gold">Thank you! Would you share this on Google too? It helps other job seekers find us.<div class="row" style="margin-top:8px"><a class="btn gold sm" href="${esc(r.google_url)}" target="_blank" rel="noopener" data-gopen="${esc(f.dataset.rv)}">Post on Google</a></div></div>`); const g = $('[data-gopen]', f); g.onclick = () => { BB.post(`/api/cand/reviews/${g.dataset.gopen}/google`).catch(() => {}); try { navigator.clipboard.writeText(BB.formValues(f).text || `${r.name} at BrillBrains helped me find my job.`); BB.toast('Your words are copied: paste them on Google'); } catch { /* fine */ } }; }
+        else BB.toast('Thank you for your feedback');
+      } catch (er) { BB.fail(er); }
+    }));
   }
 
   // ---------- Profile ----------

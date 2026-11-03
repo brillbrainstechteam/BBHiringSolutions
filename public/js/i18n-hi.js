@@ -4,6 +4,9 @@
    amounts and dates stay as they are (they are data, and the jewellery trade uses the English job titles). */
 (() => {
   const exact = {
+    // ---- rate your recruiter, interview preparation, login codes by email ----
+    'Rate your recruiter': 'अपने रिक्रूटर को रेटिंग दें', 'Tell us more': 'और बताइए', 'Update': 'अपडेट करें', 'Thank you for your feedback': 'आपकी राय के लिए धन्यवाद', 'Tap the stars first': 'पहले स्टार दबाएँ', 'Post on Google': 'Google पर लिखें', 'No recruiter to rate yet.': 'अभी रेटिंग देने के लिए कोई रिक्रूटर नहीं है।',
+    'Prepare for your interview': 'अपने इंटरव्यू की तैयारी करें', 'No password? Email me a login code': 'पासवर्ड नहीं है? ईमेल पर लॉगिन कोड भेजें', 'Log in with a code': 'कोड से लॉग इन करें', 'We email you a 6-digit code. No password needed.': 'हम आपको ईमेल पर 6 अंकों का कोड भेजेंगे। पासवर्ड की ज़रूरत नहीं।',
     // ---- top bar, menu, footer ----
     'Menu': 'मेन्यू', 'For Employers': 'नियोक्ताओं के लिए', 'For Job Seekers': 'नौकरी ढूँढने वालों के लिए', 'Client login': 'क्लाइंट लॉगिन', 'Candidate login': 'उम्मीदवार लॉगिन',
     'Home': 'होम', 'Back to home': 'होम पर वापस', 'Need help?': 'मदद चाहिए?', 'Log out': 'लॉग आउट', 'Already registered?': 'पहले से रजिस्टर्ड हैं?',

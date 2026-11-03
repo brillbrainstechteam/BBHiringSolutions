@@ -1,6 +1,6 @@
 # Pending list
 
-Last updated 2 Nov 2026. The live list of messages is in the portal: Settings → Messages on hold.
+Last updated 3 Nov 2026. The live list of messages is in the portal: Settings → Messages on hold.
 
 ## Needed from you
 
@@ -16,6 +16,10 @@ Last updated 2 Nov 2026. The live list of messages is in the portal: Settings �
 | 9 | Give the Meta ad account ID and a Marketing API token | Needed to fetch ad spend by itself. Upload works today. Paste the token on the server, never in chat. |
 | 9a | Give the right dates for 4 LinkedIn candidates | Their Excel upload gave Applied dates in June and July 2028. |
 | 9b | Finish your sentence: "once the application status changes to offer" | It was cut off. |
+| 9c | Send the new formats to Meta: `bbhs_client_hire_checkin`, `bbhs_review_request` (and any language you translate) | The client check-in buttons and the review request on WhatsApp wait for them. Check-in call tasks for the recruiter work without them. |
+| 9d | Add your Google review link: Recruiter reviews → Google review link (from Google Business Profile → Ask for reviews) | After 4 or 5 stars, candidates are then asked to post on Google. |
+| 9e | Decide how the team logs in: Settings → Fees & limits → How the team logs in | WhatsApp codes cost a little per login; email codes are free once outgoing email is set up. |
+| 9f | Ask the WhatsApp CRM to forward voice notes (audio files) to the portal | Voice notes are then saved and written out in English. Needs the CRM change, which needs your OK. |
 | 10 | Confirm the two numbers still allowed | `9093400666` and `9986950695` still get automatic messages while everything else is held. |
 
 ## Messages to switch on later
@@ -35,7 +39,9 @@ Everything automatic is held. Held messages are not sent later; only new ones go
 | Profiles ready | Client | WhatsApp, email |
 | Interview fixed, interview reminders | Candidate, client | WhatsApp, email |
 | Interview feedback request | Client | WhatsApp, email |
-| Offer, joining reminders, post-joining check-ins | Candidate | WhatsApp, email |
+| Offer, joining reminders, post-joining check-ins (days 7, 14, 21, 30, 60, 90) | Candidate | WhatsApp, email |
+| How is the new hire doing? (days 7, 30, 60, 90) | Client | WhatsApp, email |
+| Rate your recruiter (day 14) | Candidate | WhatsApp, email |
 | Job alerts, "still looking?" | Candidate | WhatsApp, email |
 | Bill raised, payment reminders, monthly summary | Client | WhatsApp, email |
 | Task alerts, log reminders, day summary | Team | WhatsApp or email |

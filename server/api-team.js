@@ -973,8 +973,9 @@ route('PATCH', '/api/candidates/:id', T, (ctx) => {
   const c = get('SELECT * FROM candidates WHERE id=?', ctx.params.id); if (!c) throw httpError(404, 'Not found');
   if (!R.phoneVisible(ctx.user, c)) throw httpError(403, 'Only the candidate\'s own agency can edit this profile.');
   if (ctx.body.exp_business !== undefined) ctx.body.exp_business = L.cleanBusiness(ctx.body.exp_business);
-  const allowed = ['exp_business', 'name', 'whatsapp', 'email', 'city', 'state', 'work_cities', 'industry', 'domain', 'job_wanted', 'exp_total', 'exp_jewellery', 'cur_salary', 'exp_salary', 'notice_days', 'skills', 'current_company', 'looking', 'tieup_id', 'archived', 'recruiter_id'];
+  const allowed = ['exp_business', 'name', 'whatsapp', 'email', 'city', 'state', 'work_cities', 'industry', 'domain', 'job_wanted', 'exp_total', 'exp_jewellery', 'cur_salary', 'exp_salary', 'notice_days', 'skills', 'current_company', 'looking', 'tieup_id', 'archived', 'recruiter_id', 'language'];
   const patch = {}; for (const k of allowed) if (ctx.body[k] !== undefined) patch[k] = ctx.body[k];
+  if (patch.language !== undefined) patch.language = require('./lang').pick(patch.language);
   if (patch.looking && !L.LOOKING.includes(patch.looking)) throw httpError(400, 'Pick a looking status', 'looking');
   if (patch.whatsapp) { patch.whatsapp = L.digits10(patch.whatsapp); if (!L.validPhone(patch.whatsapp)) throw httpError(400, 'Enter a 10-digit WhatsApp number', 'whatsapp'); }
   if (patch.job_wanted) patch.department = L.deptOf(patch.job_wanted);
@@ -1183,13 +1184,13 @@ route('GET', '/api/applications/:id', T, (ctx) => {
   const job = get('SELECT * FROM jobs WHERE id=?', a.job_id); const cand = get('SELECT * FROM candidates WHERE id=?', a.candidate_id); const client = get('SELECT * FROM clients WHERE id=?', job.client_id);
   const bill = get('SELECT * FROM bills WHERE app_id=? AND credit_of IS NULL ORDER BY created_at DESC', a.id);
   return {
-    ...v, candidate: candidateOut(ctx.user, cand), cv_name: cand.cv_file ? (get('SELECT name FROM files WHERE id=?', cand.cv_file) || {}).name || '' : '', story: L.candidateStory(a.candidate_id), known: L.candidateKnown(cand), eval_criteria: D.settings().eval_criteria || [], eval_na: job.eval_na || [], rounds: L.roundsOf(a), other_apps: all('SELECT * FROM applications WHERE candidate_id=? AND id<>? ORDER BY created_at DESC', a.candidate_id, a.id).filter((x) => R.seeApp(ctx.user, x)).map(V.appView).map((x) => ({ id: x.id, job_title: x.job_title, client_name: x.client_name, step: x.step, result: x.result })), slot_ask: get("SELECT * FROM slot_asks WHERE app_id=? AND status<>'Cancelled' ORDER BY id DESC LIMIT 1", a.id) || null, questions: get('SELECT * FROM app_questions WHERE app_id=?', a.id) || null, job: V.jobView(job), client: { id: client.id, company: client.company, contact: client.contact },
+    ...v, candidate: candidateOut(ctx.user, cand), cv_name: cand.cv_file ? (get('SELECT name FROM files WHERE id=?', cand.cv_file) || {}).name || '' : '', story: L.candidateStory(a.candidate_id), known: L.candidateKnown(cand), eval_criteria: D.settings().eval_criteria || [], eval_na: job.eval_na || [], rounds: L.roundsOf(a), other_apps: all('SELECT * FROM applications WHERE candidate_id=? AND id<>? ORDER BY created_at DESC', a.candidate_id, a.id).filter((x) => R.seeApp(ctx.user, x)).map(V.appView).map((x) => ({ id: x.id, job_title: x.job_title, client_name: x.client_name, step: x.step, result: x.result })), slot_ask: get("SELECT * FROM slot_asks WHERE app_id=? AND status<>'Cancelled' ORDER BY id DESC LIMIT 1", a.id) || null, questions: get('SELECT * FROM app_questions WHERE app_id=?', a.id) || null, prep: get('SELECT * FROM app_prep WHERE app_id=?', a.id) || null, job: V.jobView(job), client: { id: client.id, company: client.company, contact: client.contact },
     history: all('SELECT * FROM app_history WHERE app_id=? ORDER BY at DESC, id DESC', a.id), messages: all('SELECT * FROM messages WHERE ap=? ORDER BY at DESC', a.id),
     score: (() => { const m = L.matchScore(cand, job, L.ratingOf(cand.id)); const f = require('./flow').rowFor(job, cand, m, {}); return { ...m, score: f.score, reasons: f.points, gaps: f.gaps }; })(), bill: bill ? L.billView(bill) : null, suggest: suggestFor(a), steps: L.STEPS, selected: !!get("SELECT 1 FROM interviews WHERE app_id=? AND result='Selected'", a.id), next: require('./flow').nextStep(a, bill), client_cv: cand.short_cv_file || null,
     files: all('SELECT * FROM files WHERE record_id=? AND replaced=0 ORDER BY at DESC', a.id), notes: all('SELECT * FROM notes WHERE record_id=? ORDER BY at DESC', a.id),
     calls: all("SELECT * FROM calls WHERE app_id=? AND status='Done' ORDER BY at DESC LIMIT 200", a.id), call_outcomes: L.CALL_OUTCOMES, client_city: client.city,
     checklist_items: D.settings().templates.joining_checklist.split('\n').filter(Boolean),
-    replacement_window: (client.replacement_days || D.settings().replacement_days),
+    replacement_window: (client.replacement_days || D.settings().replacement_days), care: a.result === 'Hired' ? require('./care').forApp(a) : null,
   };
 });
 // Suggested next WhatsApp message by step (8.3).
@@ -1393,7 +1394,7 @@ route('GET', '/api/wa/thread/:ptype/:pid', T, (ctx) => {
   const p = L.person(ptype, pid); const rec = p.record;
   const showPhone = ptype !== 'candidate' || R.phoneVisible(ctx.user, rec);
   return {
-    person: { type: ptype, id: pid, name: V.threadName(ptype, pid), phone: showPhone ? p.phone : R.maskPhone(p.phone), opted_out: p.opted_out, window_until: L.windowOpenUntil(ptype, pid) },
+    person: { type: ptype, id: pid, name: V.threadName(ptype, pid), phone: showPhone ? p.phone : R.maskPhone(p.phone), opted_out: p.opted_out, lang: p.lang, window_until: L.windowOpenUntil(ptype, pid) },
     messages: all('SELECT * FROM messages WHERE person_type=? AND person_id=? ORDER BY at', ptype, pid),
     quick: ptype === 'client' ? ['bbhs_shortlist_ready', 'bbhs_feedback_request', 'bbhs_payment_reminder'] : ptype === 'candidate' ? ['bbhs_details_request', 'bbhs_interview_reminder', 'bbhs_job_alert'] : ['bbhs_team_task_alert', 'bbhs_log_reminder', 'bbhs_day_summary'],
   };
@@ -1863,9 +1864,9 @@ route('POST', '/api/roles/role', T, (ctx) => {
 });
 
 // ---------- settings (super admin) ----------
-const EDITABLE = ['eval_criteria', 'call_topics', 'call_gate', 'accounts_email', 'resume_alert_pct', 'expense_tree', 'expense_accounts', 'revenue_kinds', 'call_script', 'email_templates', 'creative_template', 'hiring_channels', 'landing_roles', 'wa_pause', 'business', 'industries', 'default_industry', 'hidden_jobs', 'departments', 'cities', 'skills', 'client_stages', 'closing_reasons', 'job_close_reasons', 'reopen_reasons', 'lead_sources', 'src_tags', 'fee', 'agency_share_pct', 'gst', 'replacement_days', 'payment_days', 'targets', 'log_deadline', 'quiet', 'daily_limit', 'bulk_budget', 'match', 'languages', 'id_start', 'bill_prefix', 'retention_years', 'team_idle_hours', 'formats', 'auto_rules', 'crm', 'posting_channels', 'gap_targets', 'templates', 'jd_template', 'jd_templates'];
+const EDITABLE = ['team_login', 'languages', 'aftercare', 'google_review_url', 'eval_criteria', 'call_topics', 'call_gate', 'accounts_email', 'resume_alert_pct', 'expense_tree', 'expense_accounts', 'revenue_kinds', 'call_script', 'email_templates', 'creative_template', 'hiring_channels', 'landing_roles', 'wa_pause', 'business', 'industries', 'default_industry', 'hidden_jobs', 'departments', 'cities', 'skills', 'client_stages', 'closing_reasons', 'job_close_reasons', 'reopen_reasons', 'lead_sources', 'src_tags', 'fee', 'agency_share_pct', 'gst', 'replacement_days', 'payment_days', 'targets', 'log_deadline', 'quiet', 'daily_limit', 'bulk_budget', 'match', 'languages', 'id_start', 'bill_prefix', 'retention_years', 'team_idle_hours', 'formats', 'auto_rules', 'crm', 'posting_channels', 'gap_targets', 'templates', 'jd_template', 'jd_templates'];
 // Everyone in the team can set up what goes out. Connection secrets and the checks on the team's own activity stay with the super admin.
-const SUPER_ONLY = ['crm', 'resume_alert_pct', 'call_gate'];
+const SUPER_ONLY = ['crm', 'resume_alert_pct', 'call_gate', 'google_review_url', 'team_login'];
 route('GET', '/api/settings', T, (ctx) => { const s = { ...D.settings() }; if (!isSuper(ctx.user)) { for (const k of SUPER_ONLY) delete s[k]; return s; } s.crm = { ...s.crm, token: s.crm.token ? '••••••••' : '', webhook_secret: s.crm.from_env && s.crm.from_env.webhook_secret ? '••••••••' : s.crm.webhook_secret }; return s; });
 route('POST', '/api/health/mail', SUPER, async () => require('./mailbox').check());
 route('POST', '/api/health/email', SUPER, (ctx) => {
@@ -2138,5 +2139,7 @@ route('GET', '/api/reports/:name', T, (ctx) => {
 });
 module.exports.removePerson = removePerson;
 require('./trash'); // delete with a recycle bin (Settings -> Deleted items)
+require('./lang'); // translation, voice notes and recordings
+require('./care'); // check-ins after joining, replacements, recruiter reviews
 require('./flow'); // client onboarding, screening with AI, client CVs, invoices, books
 require('./adspend'); // ad spend reports from Meta and LinkedIn (Job openings -> Ad spend)

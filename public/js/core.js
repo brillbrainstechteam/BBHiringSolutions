@@ -17,6 +17,8 @@ const fromLocalInput = (v) => (v ? new Date(v + ':00+05:30').toISOString() : '')
 Object.assign(BB, { $, $$, esc, inr, fmtD, fmtDT, fmtT, daysAgo, istDay, toLocalInput, fromLocalInput });
 
 const ICONS = {
+  star: '<path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z"/>',
+  check: '<path d="M20 6 9 17l-5-5"/>',
   download: '<path d="M12 3v12M7 11l5 5 5-5M4 20h16"/>', upload: '<path d="M12 16V4M7 8l5-5 5 5M4 20h16"/>', lock: '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>', layers: '<path d="m12 3 9 5-9 5-9-5z"/><path d="m3 12 9 5 9-5M3 16l9 5 9-5"/>', info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/>',
   home: '<path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/>', grid: '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>',
   inbox: '<path d="M4 4h16v10h-5l-1 3h-4l-1-3H4z"/><path d="M4 14v6h16v-6"/>', building: '<rect x="4" y="3" width="16" height="18" rx="1.5"/><path d="M9 7h1M14 7h1M9 11h1M14 11h1M9 15h1M14 15h1"/>',
@@ -348,13 +350,13 @@ BB.wa = async (o) => {
           <div class="row small"><span class="muted">Phone</span> <span class="mono">${esc(info.person.phone)}</span>${info.person.phone_hidden ? '<span class="badge b-outline tiny">hidden — another agency\'s candidate; the message still goes</span>' : ''}${info.person.opted_out ? '<span class="badge b-red">Opted out (STOP)</span>' : ''}</div>
           <div class="notice ${windowOpen ? '' : 'warn'} small">${windowOpen ? `Chat open until ${fmtT(info.window_until)} — you can type freely or send a format.` : 'Only an approved format can be sent (no message from them in the last 24 hours).'}</div>
           <div>
-            <div class="row between"><b class="small">Suggested for this step</b><div class="seg" data-lang><button type="button" data-l="en" class="${lang === 'en' ? 'on' : ''}">English</button><button type="button" data-l="hi" class="${lang === 'hi' ? 'on' : ''}">Hindi</button></div></div>
+            <div class="row between"><b class="small">Suggested for this step</b><div class="seg" data-lang>${BB.langOptions().map(([k, l]) => `<button type="button" data-l="${k}" class="${lang === k ? 'on' : ''}">${l}</button>`).join('')}</div></div>
             <div class="stack-sm" style="margin-top:6px">${info.suggested.length ? info.suggested.map((k) => fmtBtn(k)).join('') : '<div class="faint small">No suggestion for this step.</div>'}</div>
             <details style="margin-top:8px" ${info.suggested.length ? '' : 'open'}><summary class="small muted" style="cursor:pointer">Other formats</summary><div class="stack-sm" style="margin-top:6px">${info.others.map((k) => fmtBtn(k)).join('')}</div></details>
             ${windowOpen ? `<button type="button" class="fmt-chip ${free ? 'on' : ''}" data-free style="margin-top:6px">✎ Type a free message</button>` : ''}
           </div>
           ${f ? `<details ${blanks(fmt).some((b) => !vars[b]) ? 'open' : ''}><summary class="small muted" style="cursor:pointer">Edit the filled-in details</summary><div class="stack-sm" style="margin-top:8px">${blanks(fmt).map((b) => `<label class="field"><span class="lab">${esc(b.replace(/_/g, ' '))}</span><input data-var="${b}" value="${esc(vars[b] ?? '')}"></label>`).join('')}</div></details>` : ''}
-          ${free ? `<label class="field"><span class="lab">Message</span><div class="inp-wrap"><textarea data-free-text data-voice>${esc(o.text || '')}</textarea></div></label>` : ''}
+          ${free ? `<label class="field"><span class="lab">Message</span><div class="inp-wrap"><textarea data-free-text data-voice>${esc(o.text || '')}</textarea></div></label>${BB.care.translateBar(lang !== 'en' ? lang : '')}` : ''}
           ${f && !f.approved ? '<div class="notice bad small">This format is waiting for Meta approval and cannot be sent yet.</div>' : ''}
           ${info.quiet ? `<label class="row small"><input type="checkbox" data-later checked> Quiet hours (9 pm–9 am): send at ${fmtT(info.next9)} instead</label>` : ''}
         </div>
@@ -365,7 +367,7 @@ BB.wa = async (o) => {
     const fb = $('[data-free]', el); if (fb) fb.onclick = () => { free = true; fmt = null; render(); };
     $$('[data-lang] button', el).forEach((b) => (b.onclick = () => { lang = b.dataset.l; render(); }));
     $$('[data-var]', el).forEach((i) => (i.oninput = () => { vars[i.dataset.var] = i.value; $('[data-prev]', el).textContent = fill(fmt, lang); }));
-    const ft = $('[data-free-text]', el); if (ft) ft.oninput = () => { $('[data-prev]', el).textContent = ft.value; };
+    const ft = $('[data-free-text]', el); if (ft) { ft.oninput = () => { o.text = ft.value; $('[data-prev]', el).textContent = ft.value; }; BB.care.wireTranslate(el, ft); }
     $('[data-send]', el).disabled = !!(f && !f.approved);
   };
   const fmtBtn = (k) => { const f = fmts[k]; if (!f) return ''; return `<button type="button" class="fmt-chip ${k === fmt && !free ? 'on' : ''} ${f.approved ? '' : 'pending'}" data-fmt="${k}"><span class="mono">${esc(k)}</span> <span class="badge ${f.type === 'Marketing' ? 'b-gold' : 'b-outline'} tiny">${f.type}</span>${f.approved ? '' : ' <span class="badge b-amber tiny">waiting for approval</span>'}</button>`; };

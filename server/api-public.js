@@ -19,7 +19,8 @@ route('GET', '/api/bootstrap', {}, () => {
     jobs: L.jobList().filter((j) => !j.hidden), places: (() => { const seen = new Set(); const out = []; for (const p of [...s.cities, ...require('./places').PLACES]) { const k = p.name.toLowerCase(); if (!seen.has(k)) { seen.add(k); out.push({ name: p.name, state: p.state || L.stateOf(p.name) }); } } return out; })(), industries: Object.fromEntries(Object.keys(s.industries).map((k) => [k, L.jobList(k).filter((j) => !j.hidden)])), default_industry: s.default_industry, departments: s.departments, cities: s.cities.map((c) => c.name), skills: s.skills, stages: s.client_stages,
     closing_reasons: s.closing_reasons, job_close_reasons: s.job_close_reasons, reopen_reasons: s.reopen_reasons, lead_sources: s.lead_sources, src_tags: s.src_tags, industry_list: s.industry_list || ['Jewellery'], default_industry: s.default_industry || 'Jewellery',
     steps: L.STEPS, consent: L.CONSENT_WORDING, fee: s.fee, replacement_days: s.replacement_days, payment_days: s.payment_days, agency_share_pct: s.agency_share_pct, gst: s.gst, match: s.match, quiet: s.quiet, log_deadline: s.log_deadline,
-    test_mode: !s.crm.enabled, languages: s.languages, env: D.ENV.name, base_url: s.business.base_url, landing: s.landing || null, landing_roles: s.landing_roles || [], team_sections: L.TEAMS, contact_prefs: L.PREF, looking: L.LOOKING,
+    team_login: teamWays(),
+    test_mode: !s.crm.enabled, languages: require('./lang').active(), lang_names: require('./lang').LANGS, env: D.ENV.name, base_url: s.business.base_url, landing: s.landing || null, landing_roles: s.landing_roles || [], team_sections: L.TEAMS, contact_prefs: L.PREF, looking: L.LOOKING,
   };
 });
 // Home page: open jobs anyone can see (no employer names), and how many there are per field of work.
@@ -85,6 +86,7 @@ route('POST', '/api/team/login', { rate: { key: 'login', max: 30, minutes: 15 } 
   const u = get('SELECT * FROM users WHERE username=?', String(username || '').trim().toLowerCase());
   const fail = (msg) => { D.history(username || '?', 'failed login', u ? u.id : null, null, null, msg, null, ctx.ip); throw httpError(401, msg); };
   if (!u) fail('Wrong username or password.');
+  if (!teamWays().password && u.level !== 'super') fail('Log in with a code instead: press "Get a login code".');
   if (u.locked_until && u.locked_until > now()) fail(`Too many wrong tries. Locked until ${L.istTime(u.locked_until)}.`);
   if (!L.checkPassword(String(password || ''), u.pass_hash)) {
     const n = (u.failed || 0) + 1;
@@ -112,6 +114,73 @@ route('POST', '/api/team/login', { rate: { key: 'login', max: 30, minutes: 15 } 
     return { token, need2fa: true, dev_code: showCode() ? code : undefined, must_change: !!u.must_change };
   }
   return { token: newSession('team', u.id, null, { device }), must_change: !!u.must_change };
+});
+// ---------- logging in with a one-time code instead of the password ----------
+// The super admin chooses the ways in (Settings → Fees & limits → Team login): a code on WhatsApp (each one costs
+// a little), a code by email (free), the password, or all three. The super admin keeps the password as a way back in.
+function teamWays() {
+  const w = D.settings().team_login || {}; const M = require('./mailer');
+  return { password: w.password !== false, whatsapp: w.whatsapp !== false && (D.settings().crm.enabled || showCode()), email: w.email !== false && (M.configured() || showCode()) };
+}
+const mailKey = (e) => `mail:${String(e || '').trim().toLowerCase()}`;
+function teamUserFor(who) {
+  const w = String(who || '').trim().toLowerCase(); if (!w) throw httpError(400, 'Enter your username, WhatsApp number or email', 'who');
+  const p10 = L.digits10(w);
+  return get('SELECT * FROM users WHERE username=?', w) || (L.validPhone(p10) && get('SELECT * FROM users WHERE whatsapp=?', p10)) || (/@/.test(w) && get('SELECT * FROM users WHERE lower(email)=?', w)) || null;
+}
+route('POST', '/api/team/code', { rate: { key: 'teamcode', max: 20, minutes: 30 } }, (ctx) => {
+  const via = ctx.body.via === 'email' ? 'email' : 'whatsapp'; const ways = teamWays();
+  if (!ways[via]) throw httpError(400, via === 'email' ? 'Login codes by email are not available. Use another way.' : 'Login codes on WhatsApp are not available. Use another way.');
+  const u = teamUserFor(ctx.body.who);
+  const sent = { sent: true, to: via === 'email' ? 'your email' : 'your WhatsApp' };
+  if (!u || u.status !== 'On') { D.history(String(ctx.body.who || '?'), 'login code for unknown login', null, null, null, null, null, ctx.ip); return sent; }
+  if (via === 'email' && !u.email) throw httpError(400, 'No email is saved on this login. Use WhatsApp or ask your admin to add it.', 'who');
+  if (via === 'whatsapp' && !u.whatsapp) throw httpError(400, 'No WhatsApp number is saved on this login. Use email or ask your admin to add it.', 'who');
+  let code;
+  if (via === 'whatsapp') code = issueCode(u.whatsapp, 'teamlogin');
+  else {
+    const key = mailKey(u.email); const hourAgo = new Date(Date.now() - 3600000).toISOString();
+    if (get('SELECT COUNT(*) c FROM otps WHERE phone=? AND created_at>?', key, hourAgo).c >= 5) throw httpError(429, 'Too many codes asked for. Try again in an hour.');
+    code = String(crypto.randomInt(0, 1000000)).padStart(6, '0');
+    insert('otps', { phone: key, purpose: 'teamlogin', code_hash: L.sha(code + key), expires: new Date(Date.now() + 10 * 60000).toISOString(), tries: 0, used: 0, created_at: now() });
+    require('./mailer').accountCode(u.email, code, u.id, 'login');
+  }
+  return { ...sent, dev_code: showCode() ? code : undefined };
+});
+route('POST', '/api/team/code/verify', { rate: { key: 'login', max: 30, minutes: 15 } }, (ctx) => {
+  const via = ctx.body.via === 'email' ? 'email' : 'whatsapp'; const u = teamUserFor(ctx.body.who);
+  if (!u) throw httpError(400, 'Wrong code.', 'code');
+  checkCode(via === 'email' ? mailKey(u.email) : u.whatsapp, 'teamlogin', ctx.body.code);
+  if (u.status !== 'On') throw httpError(401, 'This login is turned off. Ask your admin.');
+  const ag = u.agency_id ? get('SELECT * FROM agencies WHERE id=?', u.agency_id) : null;
+  if (ag && ag.status === 'Paused') throw httpError(401, 'Your agency is paused. Contact BrillBrains.');
+  update('users', u.id, { failed: 0, locked_until: null, last_login: now() });
+  D.history(u.name, 'login', u.id, null, null, `code on ${via}`, null, ctx.ip);
+  // The code proves the phone or mailbox, so this device counts as checked for the super admin too.
+  const device = ctx.body.device; const devices = JSON.parse(u.devices || '[]');
+  if (device && !devices.includes(device)) update('users', u.id, { devices: JSON.stringify([...devices, device].slice(-10)) });
+  return { token: newSession('team', u.id, null, { device }), must_change: false };
+});
+// Candidates and clients: a code by email, next to the WhatsApp code and the password.
+route('POST', '/api/account/code', { rate: { key: 'acccode', max: 20, minutes: 30 } }, (ctx) => {
+  const kind = ctx.body.kind === 'client' ? 'client' : 'candidate'; const email = String(ctx.body.email || '').trim().toLowerCase();
+  if (!/^\S+@\S+\.\S+$/.test(email)) throw httpError(400, 'Enter your email', 'email');
+  if (!require('./mailer').configured() && !showCode()) throw httpError(400, 'Codes by email are being set up. Use your WhatsApp number for now.', 'email');
+  const rec = get(`SELECT id FROM ${kind === 'client' ? 'clients' : 'candidates'} WHERE lower(email)=? AND merged_into IS NULL AND removed=0 ORDER BY created_at DESC`, email);
+  if (!rec) throw httpError(404, kind === 'client' ? 'No client account uses this email. Use your WhatsApp number, or fill the hiring form first.' : 'No profile uses this email. Use your WhatsApp number, or fill the job form first.', 'email');
+  const key = mailKey(email); const hourAgo = new Date(Date.now() - 3600000).toISOString();
+  if (get('SELECT COUNT(*) c FROM otps WHERE phone=? AND created_at>?', key, hourAgo).c >= 5) throw httpError(429, 'Too many codes asked for. Try again in an hour.');
+  const code = String(crypto.randomInt(0, 1000000)).padStart(6, '0');
+  insert('otps', { phone: key, purpose: `login:${kind}`, code_hash: L.sha(code + key), expires: new Date(Date.now() + 10 * 60000).toISOString(), tries: 0, used: 0, created_at: now() });
+  require('./mailer').accountCode(email, code, rec.id, 'login');
+  return { sent: true, dev_code: showCode() ? code : undefined };
+});
+route('POST', '/api/account/code/verify', { rate: { key: 'acccode', max: 30, minutes: 15 } }, (ctx) => {
+  const kind = ctx.body.kind === 'client' ? 'client' : 'candidate'; const email = String(ctx.body.email || '').trim().toLowerCase();
+  checkCode(mailKey(email), `login:${kind}`, ctx.body.code);
+  const rec = get(`SELECT id FROM ${kind === 'client' ? 'clients' : 'candidates'} WHERE lower(email)=? AND merged_into IS NULL AND removed=0 ORDER BY created_at DESC`, email);
+  if (!rec) throw httpError(404, 'Account not found', 'email');
+  openedAccount(kind, rec.id); return { token: newSession(kind, rec.id) };
 });
 route('POST', '/api/team/2fa', { auth: 'team', allow2fa: true, channels: true, accounts: true, calling: true }, (ctx) => {
   checkCode(ctx.user.whatsapp, 'team2fa', ctx.body.code);
@@ -313,7 +382,7 @@ route('POST', '/api/account/reset', { rate: { key: 'pwreset', max: 20, minutes: 
   return { ok: true };
 });
 // English / हिन्दी from the switch in the account: the screens and the WhatsApp messages follow it.
-const langOf = (ctx) => { const l = ctx.body.language; if (!['en', 'hi'].includes(l)) throw httpError(400, 'Pick English or Hindi'); return l; };
+const langOf = (ctx) => { const l = ctx.body.language; if (!require('./lang').active().includes(l)) throw httpError(400, 'Pick a language'); return l; };
 route('POST', '/api/cand/language', { auth: 'candidate' }, (ctx) => { update('candidates', ctx.candidate.id, { language: langOf(ctx) }); return { ok: true }; });
 route('POST', '/api/client/language', { auth: 'client' }, (ctx) => { update('clients', ctx.client.id, { language: langOf(ctx) }); return { ok: true }; });
 route('POST', '/api/cand/password', { auth: 'candidate', rate: { key: 'pwset', max: 10, minutes: 60 } }, (ctx) => setPassword('candidate', ctx.candidate, ctx.body, ctx.actor, ctx.ip));
@@ -378,7 +447,7 @@ route('POST', '/api/public/hire', { rate: { key: 'form', max: 60, minutes: 60 } 
   const mailer = require('./mailer');
   if (r.isNew) mailer.newLead('client', r.client);
   mailer.confirmToPerson('client', r.client);
-  if (['en', 'hi'].includes(b.lang)) update('clients', r.client.id, { language: b.lang });
+  if (require('./lang').active().includes(b.lang)) update('clients', r.client.id, { language: b.lang });
   return formDone('client', r.isNew, r.client.id, r.client.whatsapp);
 });
 // The job form's first step: read the chosen CV and hand back the details to fill in. Nothing is saved here.
@@ -416,7 +485,7 @@ route('POST', '/api/public/apply', { rate: { key: 'form', max: 60, minutes: 60 }
   { const mailer = require('./mailer'); const rec = get('SELECT * FROM candidates WHERE id=?', r.candidate.id); if (r.isNew) mailer.newLead('candidate', rec); mailer.confirmToPerson('candidate', rec); }
   if (refBy && r.isNew) insert('notes', { record_id: r.candidate.id, text: `Referred by ${refBy}`, author: 'Form', at: now() });
   if (b.cv && b.cv.base64) { try { const f = await F.saveFile({ recordId: r.candidate.id, type: 'cv', name: b.cv.name, base64: b.cv.base64, by: 'Candidate form' }); update('candidates', r.candidate.id, { cv_file: String(f.id) }); CV.fillCandidate(r.candidate.id, b.cv.name, b.cv.base64, 'Candidate form'); } catch (e) { insert('notes', { record_id: r.candidate.id, text: `CV not saved: ${e.message}`, author: 'Form', at: now() }); } }
-  if (['en', 'hi'].includes(b.lang)) update('candidates', r.candidate.id, { language: b.lang });
+  if (require('./lang').active().includes(b.lang)) update('candidates', r.candidate.id, { language: b.lang });
   return formDone('candidate', r.isNew, r.candidate.id, r.candidate.whatsapp);
 });
 // A new sign-up opens its own fresh account straight away: it holds only what this person just typed.
@@ -669,7 +738,7 @@ route('GET', '/api/cand/me', K, (ctx) => {
   const apps = all('SELECT * FROM applications WHERE candidate_id=? ORDER BY created_at DESC', c.id).map((a) => {
     const job = get('SELECT * FROM jobs WHERE id=?', a.job_id); const cl = get('SELECT * FROM clients WHERE id=?', job.client_id);
     const ivs = all('SELECT * FROM interviews WHERE app_id=? ORDER BY at', a.id).map(L.interviewView).map(({ notes, remark, rating, qa, ...i }) => i);
-    return { id: a.id, step: a.step, result: a.result, job_title: job.title, city: job.city, company: companyShown(a, cl) ? cl.company : companyLabel(cl), company_shown: companyShown(a, cl), interviews: ivs, offer_ctc: a.offer_ctc, joining_date: a.joining_date, offer_letter: a.offer_sent ? a.offer_letter : null, joining_docs: a.joining_docs || [], checklist: a.checklist, left_date: a.left_date, steps: L.STEPS };
+    return { id: a.id, step: a.step, result: a.result, job_title: job.title, city: job.city, company: companyShown(a, cl) ? cl.company : companyLabel(cl), company_shown: companyShown(a, cl), interviews: ivs, offer_ctc: a.offer_ctc, joining_date: a.joining_date, offer_letter: a.offer_sent ? a.offer_letter : null, joining_docs: a.joining_docs || [], checklist: a.checklist, left_date: a.left_date, steps: L.STEPS, prep: (() => { const p = get('SELECT * FROM app_prep WHERE app_id=? AND shared_at IS NOT NULL', a.id); return p && a.result === 'open' ? { questions: p.questions || [], know: p.know || [], at: p.shared_at } : null; })() };
   });
   const rating = L.ratingOf(c.id);
   const onJob = new Set(apps.filter((a) => a.result === 'open' || a.result === 'Hired').map((a) => a.id));
@@ -681,6 +750,7 @@ route('GET', '/api/cand/me', K, (ctx) => {
   const offer = apps.find((a) => a.result === 'open' && a.step === 'Offer made') || null;
   return {
     profile: { ...c, resume_check: undefined, cur_month: c.cur_salary ? Math.round(c.cur_salary / 12) : null, exp_month: c.exp_salary ? Math.round(c.exp_salary / 12) : null }, pct: profilePct(c),
+    can_review: require('./care').recruitersOf(c.id).length > 0,
     resume: resumeState(c), missing: profileGaps(c).missing, has_password: hasPassword('candidate', c.id), apps, jobs, next, offer,
     referral: L.link('apply', `?ref=${c.id}`), files: all('SELECT id, type, name, version, at FROM files WHERE record_id=? AND replaced=0', c.id), joining_items: s.templates.joining_checklist.split('\n').filter(Boolean), active: onJob.size,
   };
@@ -849,8 +919,10 @@ route('POST', '/api/crm/inbound', {}, async (ctx) => {
     return require('./mailbox').intakeEmail({ fromName: b.name, fromEmail: b.email, subject: b.subject || '', text: [b.text, b.phone, b.city, b.job].filter(Boolean).join('\n'), attachments: b.cv && b.cv.base64 ? [{ name: b.cv.name, buf: Buffer.from(String(b.cv.base64).replace(/^data:[^,]*,/, ''), 'base64') }] : [] });
   }
   const r = L.receiveReply(b.phone, b.text, b.button, { reply_to: b.reply_to, bot: b.bot, name: b.name, company: b.company, city: b.city, job: b.job, roles: b.roles, hasMedia: !!(b.media && b.media.base64) });
-  // A CV sent as a WhatsApp file is saved on the candidate (PDF, Word, JPG or PNG).
-  if (b.media && b.media.base64 && r.ptype === 'candidate') {
+  // A voice note is saved and written out (in English too); a CV sent as a file is saved on the candidate (PDF, Word, JPG or PNG).
+  const LG = require('./lang');
+  if (b.media && b.media.base64 && LG.AUDIO.test(String(b.media.mime || ''))) { if (r.pid) LG.voiceNote(r.id, b.media, r.pid).catch((e) => console.error('Voice note', r.id, e.message)); }
+  else if (b.media && b.media.base64 && r.ptype === 'candidate') {
     const ext = { 'application/pdf': 'pdf', 'application/msword': 'doc', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx', 'image/jpeg': 'jpg', 'image/png': 'png' }[b.media.mime];
     let name = b.media.name || `whatsapp-file.${ext || 'bin'}`;
     if (ext && !/\.(pdf|docx?|jpe?g|png)$/i.test(name)) name += `.${ext}`;

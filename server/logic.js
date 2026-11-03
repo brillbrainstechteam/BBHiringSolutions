@@ -97,11 +97,11 @@ function stateOf(city) {
 function person(type, id) {
   if (type === 'client') {
     const c = get('SELECT * FROM clients WHERE id=?', id); if (!c) return null;
-    return { type, id, name: c.contact || c.company, company: c.company, phone: c.whatsapp, lang: c.language || 'en', opted_out: c.opted_out, consent: 1, agency_id: c.agency_id, record: c };
+    return { type, id, name: c.contact || c.company, company: c.company, phone: c.whatsapp, lang: require('./lang').pick(c.language), opted_out: c.opted_out, consent: 1, agency_id: c.agency_id, record: c };
   }
   if (type === 'candidate') {
     const c = get('SELECT * FROM candidates WHERE id=?', id); if (!c) return null;
-    return { type, id, name: c.name, phone: c.whatsapp, lang: c.language === 'hi' ? 'hi' : 'en', opted_out: c.opted_out, consent: c.consent_alerts, agency_id: c.agency_id, record: c };
+    return { type, id, name: c.name, phone: c.whatsapp, lang: require('./lang').pick(c.language), opted_out: c.opted_out, consent: c.consent_alerts, agency_id: c.agency_id, record: c };
   }
   if (type === 'user') {
     const u = get('SELECT * FROM users WHERE id=?', id); if (!u) return null;
@@ -187,7 +187,9 @@ function sendWA(o) {
     if (sentToday >= s.daily_limit) return { skipped: `Daily limit of ${s.daily_limit} reached` };
   }
   if (!o.format && !windowOpenUntil(p.type, p.id)) throw httpError(400, 'Only an approved format can be sent: the 24-hour window is closed.');
-  const lang = o.lang || p.lang || 'en';
+  // A format goes in the person's language once it has that text (and Meta has approved it, where we know); else in English.
+  const want = o.lang || p.lang || 'en'; const ms = (fmt && fmt.meta_status) || {};
+  const lang = !fmt || want === 'en' || (fmt[want] && (!Object.keys(ms).length || ms[want] === 'APPROVED')) ? want : 'en';
   const vars = { name: p.name, ...(o.vars || {}) };
   const text = o.format ? fillFormat(o.format, lang, vars) : o.text;
   let scheduled = null;
@@ -945,7 +947,7 @@ function intakeClient(d, o) {
   const repeat = d.email ? get('SELECT id FROM clients WHERE lower(email)=lower(?) AND merged_into IS NULL', d.email) : null;
   const agency = by && by.agency_id ? by.agency_id : null;
   insert('clients', {
-    id, company: d.company || '', contact: d.contact || '', whatsapp: phone, email: d.email || '', city: d.city || '', state: d.state || stateOf(d.city), language: d.language === 'hi' ? 'hi' : 'en',
+    id, company: d.company || '', contact: d.contact || '', whatsapp: phone, email: d.email || '', city: d.city || '', state: d.state || stateOf(d.city), language: require('./lang').pick(d.language),
     business_type: d.business_type || '', need: d.need || '', roles: d.roles || '', source, stage: d.stage || settings().client_stages[0],
     agency_id: agency, owner_id: by && by.uid ? by.uid : null, is_new: by && by.uid ? 0 : 1, kyc: {}, onboarding: {}, extra: d.extra || {},
     industry: settings().default_industry, possible_repeat_of: repeat ? repeat.id : null, needs_check: o.needsCheck || null, old_code: d.old_code || null,
@@ -993,7 +995,7 @@ function intakeCandidate(d, o) {
   const repeat = d.email ? get('SELECT id FROM candidates WHERE lower(email)=lower(?) AND merged_into IS NULL', d.email) : null;
   const agency = by && by.agency_id ? by.agency_id : null;
   insert('candidates', {
-    ...cleanPrefs(d), id, name: d.name, whatsapp: phone, email: d.email || '', city: d.city || '', state: d.state || stateOf(d.city), work_cities: d.work_cities || (d.city ? [d.city] : []), language: d.language === 'hi' ? 'hi' : 'en', industry: d.industry || settings().default_industry || 'Jewellery', exp_business: cleanBusiness(d.exp_business),
+    ...cleanPrefs(d), id, name: d.name, whatsapp: phone, email: d.email || '', city: d.city || '', state: d.state || stateOf(d.city), work_cities: d.work_cities || (d.city ? [d.city] : []), language: require('./lang').pick(d.language), industry: d.industry || settings().default_industry || 'Jewellery', exp_business: cleanBusiness(d.exp_business),
     job_wanted: d.job_wanted || '', department: dept, exp_total: d.exp_total ?? null, exp_jewellery: d.exp_jewellery ?? null,
     cur_salary: d.cur_salary ?? null, exp_salary: d.exp_salary ?? null, notice_days: d.notice_days ?? null, skills: d.skills || [], current_company: d.current_company || '',
     cv_file: d.cv_file || null, source, ...adCols(o.ad), ref_by: d.ref_by || null, tieup_id: d.tieup_id || null, agency_id: agency, recruiter_id: by && by.uid ? by.uid : null,
@@ -1101,6 +1103,7 @@ function receiveReply(phone, text, button, opts = {}) {
   const id = nextId('WA');
   insert('messages', { id, person_type: ptype, person_id: pid, phone: p10, direction: 'in', text: text || button, buttons: [], ap: ref && ref.ap, jb: ref && ref.jb, iv: ref && ref.iv, bl: ref && ref.bl, sent_by: 'them', status: 'received', read_by_us: 0, reply_to: ref ? ref.id : null, at: now() });
   D.setHealth('last_wa_received', now());
+  { const rec = ptype === 'candidate' || ptype === 'client' ? get(`SELECT language FROM ${ptype}s WHERE id=?`, pid) : null; require('./lang').onInbound(id, rec && rec.language); }
   const bot = require('./bot');
   if (opts.bot && (ptype === 'client' || ptype === 'candidate')) { bot.start(p10, ptype, pid, botNew); return { id, ptype, pid, effect: botNew ? `Bot started for new ${ptype} ${pid}` : 'Bot: already known' }; }
   if (bot.session(p10)) return { id, ptype, pid, effect: bot.answer(p10, button || text, opts.hasMedia) };
@@ -1130,6 +1133,7 @@ function receiveReply(phone, text, button, opts = {}) {
   }
   else if (ref && ref.ap && t === "i've joined") { const ap = get('SELECT * FROM applications WHERE id=?', ref.ap); alertUser(ap.owner_id, `${ap.id}: candidate says they have joined. Mark Joined.`, ap.id, 'candidate'); effect = 'Task alert to recruiter'; }
   else if (ref && ref.jb && t === 'interested' && ptype === 'candidate') { try { const a = createApplication(pid, ref.jb, by, 'WhatsApp bot', 'Interested from job alert'); effect = `${a.id} created`; } catch (e) { effect = e.message; } }
+  else if (ref && ref.ap && (ptype === 'candidate' || ptype === 'client') && (effect = require('./care').reply(ref, ptype, t, by) || effect) !== 'Saved in inbox') { /* a check-in answer was saved */ }
   else if (t === 'need help' && ref && ref.ap) { update('applications', ref.ap, { at_risk: 1 }); const ap = get('SELECT * FROM applications WHERE id=?', ref.ap); alertUser(ap.owner_id, `${ap.id} at risk: candidate needs help`, ap.id, 'candidate'); effect = 'Marked at risk'; }
   else if (ref && ref.jb && t === 'not interested' && ptype === 'candidate') { insert('notes', { record_id: pid, text: `Not interested in ${ref.jb} (reply to the job alert)`, author: by.label, at: now() }); effect = `Noted: not interested in ${ref.jb}`; }
   else if (t === 'share details' && ptype === 'candidate') { const c = get('SELECT recruiter_id FROM candidates WHERE id=?', pid) || {}; const ap = ref && ref.ap ? get('SELECT owner_id FROM applications WHERE id=?', ref.ap) : null; const owner = (ap && ap.owner_id) || c.recruiter_id; if (owner) alertUser(owner, `${pid} wants to share their salary and notice details: call or message them`, pid, 'candidate'); sendSystemText('candidate', pid, 'Thank you. Please type your current salary, expected salary and notice period here, and we will update your profile.'); effect = 'Asked for details; recruiter alerted'; }
