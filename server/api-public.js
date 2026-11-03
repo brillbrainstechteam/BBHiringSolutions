@@ -20,7 +20,7 @@ route('GET', '/api/bootstrap', {}, () => {
     closing_reasons: s.closing_reasons, job_close_reasons: s.job_close_reasons, reopen_reasons: s.reopen_reasons, lead_sources: s.lead_sources, src_tags: s.src_tags, industry_list: s.industry_list || ['Jewellery'], default_industry: s.default_industry || 'Jewellery',
     steps: L.STEPS, consent: L.CONSENT_WORDING, fee: s.fee, replacement_days: s.replacement_days, payment_days: s.payment_days, agency_share_pct: s.agency_share_pct, gst: s.gst, match: s.match, quiet: s.quiet, log_deadline: s.log_deadline,
     team_login: teamWays(),
-    test_mode: !s.crm.enabled, languages: require('./lang').active(), lang_names: require('./lang').LANGS, env: D.ENV.name, base_url: s.business.base_url, landing: s.landing || null, landing_roles: s.landing_roles || [], team_sections: L.TEAMS, contact_prefs: L.PREF, looking: L.LOOKING,
+    test_mode: !s.crm.enabled, wa_paused: !!((s.wa_pause || {}).candidates || (s.wa_pause || {}).everyone), languages: require('./lang').active(), lang_names: require('./lang').LANGS, env: D.ENV.name, base_url: s.business.base_url, landing: s.landing || null, landing_roles: s.landing_roles || [], team_sections: L.TEAMS, contact_prefs: L.PREF, looking: L.LOOKING,
   };
 });
 // Home page: open jobs anyone can see (no employer names), and how many there are per field of work.
