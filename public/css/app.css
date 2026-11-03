@@ -1898,3 +1898,5 @@ button.fin-tile.on { border-color: var(--mustard); box-shadow: 0 0 0 1px var(--m
 .fb-form.has-err { border-color: var(--red); box-shadow: 0 0 0 2px var(--red-50); } .fb-form.has-err textarea { border-color: var(--border); background-color: var(--surface); }
 .app-after { padding: 9px 12px; border-radius: 10px; background: var(--surface-2); border: 1px solid var(--border); } .app-after b { color: var(--navy); }
 .pop-hr { border: 0; border-top: 1px solid var(--border); margin: 4px 6px; }
+.tbl td:last-child, .tbl th:last-child { padding-right: 22px; }
+.iv-acts { margin-right: 2px; }
