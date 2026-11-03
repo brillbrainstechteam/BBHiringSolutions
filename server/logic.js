@@ -4,7 +4,7 @@ const D = require('./db');
 const { all, get, run, insert, update, nextId, settings, history, now, httpError } = D;
 
 // Closing reasons the software uses itself (not in the team's pick list).
-const SYSTEM_CLOSE = ['Job closed', 'Position filled', 'Joined elsewhere', 'Requirement not met', 'Rejected at screening'];
+const SYSTEM_CLOSE = ['Job closed', 'Position filled', 'Joined elsewhere', 'Already hired', 'Requirement not met', 'Rejected at screening'];
 // The screening decision on an application. Not met / Rejected close it; Under consideration / Accepted keep it open
 // (reopening one closed by an earlier screening decision), and move it on: Applied -> Screening, Accepted -> Our interview.
 const SCREEN = ['Under consideration', 'Requirement not met', 'Rejected', 'Accepted'];
@@ -352,6 +352,7 @@ function matchScore(c, j, rating) {
 }
 // Open jobs a candidate fits best (for the candidate's page and the note when they come in).
 function jobsFor(c, limit = 5) {
+  if (isPlaced(c.id)) return [];
   const placed = new Set(all("SELECT job_id FROM applications WHERE candidate_id=? AND result IN ('open','Hired')", c.id).map((r) => r.job_id));
   const rating = ratingOf(c.id);
   return all("SELECT * FROM jobs WHERE archived=0 AND status IN ('Open','Sourcing','Interviewing','Offer stage')")
@@ -360,9 +361,13 @@ function jobsFor(c, limit = 5) {
     .filter((m) => m.score >= settings().match.show)
     .sort((a, b) => b.score - a.score).slice(0, limit);
 }
-function isPlaced(candId) {
-  const j = get("SELECT joined_at FROM applications WHERE candidate_id=? AND result='Hired' AND left_date IS NULL ORDER BY joined_at DESC LIMIT 1", candId);
-  return j && j.joined_at && daysBetween(j.joined_at) < 183;
+// Hired through us and still in that job: kept off matching, and any other application closes.
+function placedOn(candId) { return get("SELECT id, job_id FROM applications WHERE candidate_id=? AND result='Hired' AND left_date IS NULL ORDER BY joined_at DESC LIMIT 1", candId) || null; }
+function isPlaced(candId) { return !!placedOn(candId); }
+function closePlacedApps(by = { label: 'System' }) {
+  let n = 0;
+  for (const a of all("SELECT o.id, h.id hired FROM applications o JOIN applications h ON h.candidate_id=o.candidate_id AND h.result='Hired' AND h.left_date IS NULL WHERE o.result='open'")) { closeApplication(a.id, 'Already hired', by, `Hired through us on ${a.hired}`); n++; }
+  return n;
 }
 function bestMatches(job, limit = 10, forAlert = false) {
   const cands = all('SELECT * FROM candidates WHERE archived=0 AND junk=0 AND merged_into IS NULL AND removed=0');
@@ -494,6 +499,7 @@ function createApplication(candId, jobId, by, source, note, ad) {
   appHist(id, 'Applied', by, note || 'Added to job');
   history(actorName(by), 'create', id, null, null, `${cand.name} on ${jobId}`, [candId, jobId]);
   recalcJob(jobId, actorName(by), `${id} added`);
+  const hired = placedOn(candId); if (hired) closeApplication(id, 'Already hired', by, `Hired through us on ${hired.id}`);
   return get('SELECT * FROM applications WHERE id=?', id);
 }
 function moveStep(appId, step, by, note) {
@@ -1179,7 +1185,7 @@ function sendSystemText(ptype, pid, text) {
   insert('messages', { id: nextId('WA'), person_type: ptype, person_id: pid, phone: p.phone, direction: 'out', text, buttons: [], sent_by: 'Auto', status: settings().crm.enabled ? 'sending' : 'would send', read_by_us: 1, auto: 1, at: now() });
 }
 
-module.exports = { adLabel,
+module.exports = { placedOn, closePlacedApps, adLabel,
   STEPS, stepIdx, digits10, validPhone, inr, istDay, istFmt, istTime, istHour, inQuiet, next9am, daysBetween, addDays, hashPassword, checkPassword, newPassword, sha,
   activationState, checkActivation, waHeld, TEAMS, IV_MODES, clientSeesIv, addIvNote, CALL_OUTCOMES, logCall, jobList, deptOf, stateOf, person, fillFormat, windowOpenUntil, sendWA, setDispatcher, alertUser, link, agencyAdmin, superAdmins,
   computeJobStatus, jobStatusReason, recalcJob, filledCount, appsOfJob, matchScore, jobsFor, cleanBusiness, BUSINESS_TYPES, EXP_YEARS, JEW_YEARS, LOOKING, NOT_LOOKING, ratingOf, bestMatches, isPlaced, salaryText, autoJobAlert,

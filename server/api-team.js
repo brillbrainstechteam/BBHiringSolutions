@@ -1163,8 +1163,9 @@ route('POST', '/api/applications/reject-below', T, (ctx) => {
 });
 route('GET', '/api/applications', T, (ctx) => {
   const q = ctx.query; const rows = scoreApps(appRows(q, ctx.user), q);
+  const placed = new Set(all("SELECT candidate_id FROM applications WHERE result='Hired' AND left_date IS NULL").map((r) => r.candidate_id)); for (const r of rows) r.cand_placed = placed.has(r.candidate_id);
   const vis = visibleApps(ctx.user); const counts = { open: vis.filter((a) => a.result === 'open').length, closed: vis.filter((a) => a.result !== 'open').length, joined: vis.filter((a) => a.result === 'Hired').length };
-  return { counts, ...page(ctx, rows, 'applications', ['id', 'candidate_name', 'score', 'job_id', 'job_title', 'client_name', 'step', 'result', 'days_in_step', 'owner_name', 'source', 'ad', 'screen', 'screen_note']), ads: adOptions('applications'), screens: L.SCREEN.filter((x) => x !== 'Requirement not met'),
+  return { counts, ...page(ctx, rows, 'applications', ['id', 'candidate_name', 'cand_placed', 'score', 'job_id', 'job_title', 'client_name', 'step', 'result', 'days_in_step', 'owner_name', 'source', 'ad', 'screen', 'screen_note']), ads: adOptions('applications'), screens: L.SCREEN.filter((x) => x !== 'Requirement not met'),
     // Choices for the filters: the jobs, clients, owners and sources these applications have.
     options: (() => { const vis = visibleApps(ctx.user).map(V.appView); const uniq = (f) => [...new Map(vis.map(f).filter((x) => x && x[0]).map((x) => [x[0], x])).values()].sort((a, b) => String(a[1]).localeCompare(String(b[1])));
       return { titles: [...new Set(vis.map((a) => a.job_title).filter(Boolean))].sort(), jobs: uniq((a) => [a.job_id, `${a.job_title} · ${a.client_name || ''}${a.job_city ? ` · ${a.job_city}` : ''}`]), clients: uniq((a) => [a.client_id, a.client_name]), owners: uniq((a) => [a.owner_id, a.owner_name]), sources: [...new Set(vis.map((a) => a.source).filter(Boolean))].sort() }; })() };
@@ -1202,7 +1203,7 @@ route('GET', '/api/applications/:id', T, (ctx) => {
     files: all('SELECT * FROM files WHERE record_id=? AND replaced=0 ORDER BY at DESC', a.id), notes: all('SELECT * FROM notes WHERE record_id=? ORDER BY at DESC', a.id),
     calls: all("SELECT * FROM calls WHERE app_id=? AND status='Done' ORDER BY at DESC LIMIT 200", a.id), call_outcomes: L.CALL_OUTCOMES, client_city: client.city,
     checklist_items: D.settings().templates.joining_checklist.split('\n').filter(Boolean),
-    replacement_window: (client.replacement_days || D.settings().replacement_days), care: a.result === 'Hired' ? require('./care').forApp(a) : null, verify: require('./verify').badge(a.candidate_id),
+    replacement_window: (client.replacement_days || D.settings().replacement_days), care: a.result === 'Hired' ? require('./care').forApp(a) : null, verify: require('./verify').badge(a.candidate_id), placed_on: ((p) => (p && p.id !== a.id ? p.id : null))(L.placedOn(a.candidate_id)),
     call_plan: { task: get("SELECT f.id, f.at, u.name owner FROM followups f LEFT JOIN users u ON u.id=f.for_user WHERE f.record_id=? AND f.done=0 AND f.note LIKE 'Telephonic round:%' ORDER BY f.at LIMIT 1", a.id) || null, asked: get("SELECT at, status FROM messages WHERE person_type='candidate' AND person_id=? AND format='bbhs_contact_prefs' ORDER BY at DESC LIMIT 1", a.candidate_id) || null },
   };
 });
@@ -1259,6 +1260,7 @@ route('POST', '/api/applications/auto-map', T, (ctx) => {
   const cands = all("SELECT * FROM candidates WHERE merged_into IS NULL AND removed=0 AND junk=0 AND archived=0 AND source != 'Email'").filter((c) => isSuper(u) || c.agency_id === u.agency_id || !c.agency_id);
   for (const c of cands) {
     if (b.ids && !b.ids.includes(c.id)) continue;
+    if (L.isPlaced(c.id)) continue; // hired through us: not matched again
     const m = L.jobsForPerson(c, b.same_city ? { cities: [c.city, ...(c.work_cities || [])].filter(Boolean) } : {});
     for (const j of m.jobs) {
       if (!seeJob(u, j) && j.agency_id !== u.agency_id) continue;
