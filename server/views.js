@@ -16,7 +16,7 @@ function jobView(j, apps) {
   return {
     ...j, status, reason: L.jobStatusReason(j, apps), filled: L.filledCount(apps), client_name: client.company, client_tbc: !!client.placeholder, internal: !!client.internal, recruiter_name: userName(j.recruiter_id), agency_name: agencyName(j.agency_id),
     apps_total: apps.length, apps_open: open.length, days_open: L.daysBetween(j.created_at),
-    reopened: j.reopened_at && L.daysBetween(j.reopened_at) <= 30 ? (j.reopen_tag || 'Reopened') : null,
+    reopened: j.reopened_at && L.daysBetween(j.reopened_at) <= 30 && !(j.replacement_for && !D.get('SELECT 1 FROM applications WHERE id=?', j.replacement_for)) ? (j.reopen_tag || 'Reopened') : null,
     counts: { screening: cnt(['Applied', 'Screening', 'Our interview']), waiting: cnt(['Sent to client']), interviews: cnt(['Client interview']), offers: cnt(['Offer made', 'Offer accepted']) },
     // One line per seat: who holds it (offer accepted or joined), in the order they took it; the rest are open.
     seats: (() => {

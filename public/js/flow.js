@@ -332,7 +332,7 @@
     if (a.step === 'Our interview') return done(`Moved to ${stage}`);
     return F.moveTo(a, { step: 'Our interview', note: `Set by hand: ${stage}`, force: true });
   };
-  F.nextChoices = (a, i) => { const mine = a.rounds.findIndex((r) => r.interview_ids.includes(i.id)); const list = a.rounds.map((r, k) => ({ ...r, k })).filter((r) => r.status === 'To do' && r.k !== mine).map((r) => [r.key, `Schedule ${r.name}`]); return BB.boot.steps.indexOf(a.step) < BB.boot.steps.indexOf('Sent to client') ? [...list, ['client', 'Send to client']] : list; };
+  F.nextChoices = (a, i) => { const mine = a.rounds.findIndex((r) => r.interview_ids.includes(i.id)); const list = a.rounds.map((r, k) => ({ ...r, k })).filter((r) => r.status === 'To do' && r.k !== mine && r.mode !== 'in_person').map((r) => [r.key, r.name]); return BB.boot.steps.indexOf(a.step) < BB.boot.steps.indexOf('Sent to client') ? [...list, ['client', 'Client round (the CV goes to the client)']] : list; };
   F.skipsFor = (a, target, i) => { const rows = a.rounds.filter((r) => !r.interview_ids.includes(i.id)); if (target === 'client') return rows.filter((r) => r.status === 'To do' && r.mode !== 'in_person'); const at = rows.findIndex((r) => r.key === target); return rows.slice(0, Math.max(0, at)).filter((r) => r.status === 'To do'); };
   // Same person, a new direction: found under the new role from now on.
   F.changeRole = async (cid, current, app) => {

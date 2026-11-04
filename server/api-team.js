@@ -689,7 +689,7 @@ route('GET', '/api/jobs/:id', T, (ctx) => {
   const apps = L.appsOfJob(j.id);
   const client = get('SELECT * FROM clients WHERE id=?', j.client_id);
   return {
-    ...V.jobView(j, apps), client, apps: apps.map(V.appView).map((a) => ({ ...a, score: L.matchScore(get('SELECT * FROM candidates WHERE id=?', a.candidate_id), j, L.ratingOf(a.candidate_id)).score })),
+    ...V.jobView(j, apps), client, apps: apps.map(V.appView).map((a) => { const stage = L.stageOfApp(a); return { ...a, stage, next_stage: L.nextStageOf(a, stage), score: L.matchScore(get('SELECT * FROM candidates WHERE id=?', a.candidate_id), j, L.ratingOf(a.candidate_id)).score }; }),
     matches: L.bestMatches(j, 10).map((m) => ({ ...candidateOut(ctx.user, m.c), score: m.score, reasons: m.reasons, gaps: m.gaps, status: V.candStatus(m.c.id) })),
     history: all('SELECT * FROM job_history WHERE job_id=? ORDER BY at DESC, id DESC', j.id), postings: postingRows(j, apps), creative: get('SELECT status, link, by, at FROM creatives WHERE job_id=?', j.id) || null,
     recruiters: all("SELECT id, name FROM users WHERE agency_id=? AND status='On'", j.agency_id), files: all('SELECT * FROM files WHERE record_id=? AND replaced=0', j.id),
@@ -1220,12 +1220,12 @@ route('POST', '/api/applications/reject-below', T, (ctx) => {
 route('GET', '/api/applications', T, (ctx) => {
   const q = ctx.query; const base = appRows(q, ctx.user);
   // The stage of each open application, how many are at each (with the other filters), then the stage picked.
-  for (const r of base) r.stage = L.stageOfApp(r);
+  for (const r of base) { r.stage = L.stageOfApp(r); r.next_stage = L.nextStageOf(r, r.stage); }
   const stage_counts = Object.fromEntries(L.STAGES.map((s) => [s, base.filter((r) => r.stage === s).length]));
   const rows = scoreApps(q.stage ? base.filter((r) => r.stage === q.stage) : base, q);
   const placed = new Set(all("SELECT candidate_id FROM applications WHERE result='Hired' AND left_date IS NULL").map((r) => r.candidate_id)); for (const r of rows) r.cand_placed = placed.has(r.candidate_id);
   const vis = visibleApps(ctx.user); const counts = { open: vis.filter((a) => a.result === 'open').length, closed: vis.filter((a) => a.result !== 'open').length, joined: vis.filter((a) => a.result === 'Hired').length };
-  return { counts, stage_counts, ...page(ctx, rows, 'applications', ['id', 'candidate_name', 'cand_placed', 'stage', 'on_hold', 'candidate_id', 'score', 'job_id', 'job_title', 'client_name', 'step', 'result', 'days_in_step', 'owner_name', 'source', 'ad', 'screen', 'screen_note']), ads: adOptions('applications'), screens: L.SCREEN.filter((x) => x !== 'Requirement not met'),
+  return { counts, stage_counts, ...page(ctx, rows, 'applications', ['id', 'candidate_name', 'cand_placed', 'stage', 'next_stage', 'on_hold', 'candidate_id', 'score', 'job_id', 'job_title', 'client_name', 'step', 'result', 'days_in_step', 'owner_name', 'source', 'ad', 'screen', 'screen_note']), ads: adOptions('applications'), screens: L.SCREEN.filter((x) => x !== 'Requirement not met'),
     // Choices for the filters: the jobs, clients, owners and sources these applications have.
     options: (() => { const vis = visibleApps(ctx.user).map(V.appView); const uniq = (f) => [...new Map(vis.map(f).filter((x) => x && x[0]).map((x) => [x[0], x])).values()].sort((a, b) => String(a[1]).localeCompare(String(b[1])));
       return { titles: [...new Set(vis.map((a) => a.job_title).filter(Boolean))].sort(), jobs: uniq((a) => [a.job_id, `${a.job_title} · ${a.client_name || ''}${a.job_city ? ` · ${a.job_city}` : ''}`]), clients: uniq((a) => [a.client_id, a.client_name]), owners: uniq((a) => [a.owner_id, a.owner_name]), sources: [...new Set(vis.map((a) => a.source).filter(Boolean))].sort() }; })() };

@@ -953,6 +953,15 @@ function stageOfApp(a) {
   if (['Offer made', 'Offer accepted'].includes(a.step)) return 'Offer';
   return 'Joined';
 }
+// The stage an application moves to when the current one is cleared: telephonic -> virtual (or the client when
+// the virtual round is not needed), virtual -> the client, screening -> telephonic, client -> offer.
+function nextStageOf(a, stage = stageOfApp(a)) {
+  if (stage === 'Screening') return 'Telephonic';
+  if (stage === 'Telephonic') { const v = roundsOf(a).find((x) => x.mode === 'video'); return v && !['Not needed', 'Cleared'].includes(v.status) ? 'Virtual' : 'Client'; }
+  if (stage === 'Virtual') return 'Client';
+  if (stage === 'Client') return 'Offer';
+  return '';
+}
 function skipRounds(app, rows, reason, by) {
   if (!rows.length) return; const why = String(reason || '').trim(); if (!why) throw httpError(400, `Give the reason for skipping: ${rows.map((r) => r.name).join(', ')}`, 'skip_reason');
   for (const r of rows) { D.run('INSERT OR REPLACE INTO round_skips (app_id, mode, reason, by, at) VALUES (?, ?, ?, ?, ?)', app.id, r.key, why, actorName(by), now()); appHist(app.id, get('SELECT step FROM applications WHERE id=?', app.id).step, by, `${r.name}: Not needed. ${why}`, 'interview'); }
@@ -1245,7 +1254,7 @@ function sendSystemText(ptype, pid, text) {
   insert('messages', { id: nextId('WA'), person_type: ptype, person_id: pid, phone: p.phone, direction: 'out', text, buttons: [], sent_by: 'Auto', status: settings().crm.enabled ? 'sending' : 'would send', read_by_us: 1, auto: 1, at: now() });
 }
 
-module.exports = { STAGES, stageOfApp, reopenRefilled, adPlanFor, openAdApplications, placedOn, closePlacedApps, adLabel,
+module.exports = { STAGES, stageOfApp, nextStageOf, reopenRefilled, adPlanFor, openAdApplications, placedOn, closePlacedApps, adLabel,
   STEPS, stepIdx, digits10, validPhone, inr, istDay, istFmt, istTime, istHour, inQuiet, next9am, daysBetween, addDays, hashPassword, checkPassword, newPassword, sha,
   activationState, checkActivation, waHeld, TEAMS, IV_MODES, clientSeesIv, addIvNote, CALL_OUTCOMES, logCall, jobList, deptOf, stateOf, person, fillFormat, windowOpenUntil, sendWA, setDispatcher, alertUser, link, agencyAdmin, superAdmins,
   computeJobStatus, jobStatusReason, recalcJob, filledCount, appsOfJob, matchScore, jobsFor, cleanBusiness, BUSINESS_TYPES, EXP_YEARS, JEW_YEARS, LOOKING, NOT_LOOKING, ratingOf, bestMatches, isPlaced, salaryText, autoJobAlert,

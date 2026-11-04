@@ -142,7 +142,7 @@
     const j = await BB.api(`/api/jobs/${id}`); const s = BB.boot; const canAdmin = true;
     const open = j.apps.filter((a) => a.result === 'open'); const closed = j.apps.filter((a) => a.result !== 'open');
     const jd = j.jd || {};
-    const appRow = (a) => `<tr class="click" data-open="application:${a.id}"><td class="mono">${a.id}</td><td>${esc(a.candidate_name)}</td><td><span class="badge b-primary">${esc(a.step)}</span>${a.on_hold ? ' <span class="badge b-outline">on hold</span>' : ''}</td><td>${resultBadge(a.result)}</td><td>${scoreBadge(a.score)}</td><td>${BB.quickScreen(a)}</td><td><span class="days ${a.days_in_step >= 7 && a.result === 'open' ? 'late' : ''}">${a.days_in_step}d</span></td></tr>`;
+    const appRow = (a) => `<tr class="click" data-open="application:${a.id}"><td class="mono">${a.id}</td><td>${esc(a.candidate_name)}</td><td>${BB.stageBadge(a)}${a.on_hold ? ' <span class="badge b-outline">on hold</span>' : ''}<div class="tiny muted">${esc(a.step)}</div></td><td>${scoreBadge(a.score)}</td><td><span class="row nowrap stage-acts" onclick="event.stopPropagation()">${BB.stageActs(a)}</span></td><td><span class="days ${a.days_in_step >= 7 && a.result === 'open' ? 'late' : ''}">${a.days_in_step}d</span></td></tr>`;
     // Links to paste into a Meta ad and a LinkedIn job or ad: each applicant becomes a candidate and an application
     // on this job, with the source and ad names. Applications open only once the job description is approved.
     // The ads this job runs under, and the links to paste: anyone applying from one of these ads becomes an application here.
@@ -175,8 +175,8 @@
           ${['On hold'].includes(j.status) ? '<button type="button" role="menuitem" data-act="resume">Resume</button>' : !['Closed', 'Filled'].includes(j.status) ? '<button type="button" role="menuitem" data-act="hold">Put on hold</button>' : ''}
           ${['Filled', 'Closed'].includes(j.status) ? '<button type="button" role="menuitem" data-act="reopen">Reopen</button>' : ''}
           ${!['Closed'].includes(j.status) ? '<button type="button" role="menuitem" class="danger-item" data-act="close">Close the job</button>' : ''}${canDelete() ? `<button type="button" role="menuitem" class="danger-item" data-delrec="job" data-id="${j.id}">Delete</button>` : ''}</div></details></div></div>
-        <div class="card pad sec job-pipe"><div class="row small"><span>Filled <b>${j.filled}</b> of <b>${j.openings}</b></span><div class="bar grow"><i style="width:${Math.min(100, (j.filled / j.openings) * 100)}%"></i></div></div><div class="seats" style="margin-top:8px">${(j.seats || []).map((s) => s.app_id ? `<span class="seat on" title="${esc(s.app_id)}">Seat ${s.n}: <b>${esc(s.candidate || '')}</b> · ${esc(s.state)}${s.joining_date ? ` ${fmtD(s.joining_date)}` : ''}</span>` : `<span class="seat">Seat ${s.n}: open</span>`).join('')}</div><div class="pipe-steps">${BB.boot.steps.map((st) => { const n = open.filter((a) => a.step === st).length; return `<span class="pipe-step ${n ? 'on' : ''}"><b>${n}</b>${esc(st)}</span>`; }).join('')}</div>
-          <div class="tbl-wrap" style="margin-top:10px"><table class="tbl"><tbody>${open.map((a) => appRow(a).replace(`<td>${resultBadge(a.result)}</td>`, '')).join('') || '<tr><td class="empty">Nobody in process yet. Use + Add a candidate or Job alert to top matches.</td></tr>'}</tbody></table></div>
+        <div class="card pad sec job-pipe"><div class="row small"><span>Filled <b>${j.filled}</b> of <b>${j.openings}</b></span><div class="bar grow"><i style="width:${Math.min(100, (j.filled / j.openings) * 100)}%"></i></div></div><div class="seats" style="margin-top:8px">${(j.seats || []).map((s) => s.app_id ? `<span class="seat on" title="${esc(s.app_id)}">Seat ${s.n}: <b>${esc(s.candidate || '')}</b> · ${esc(s.state)}${s.joining_date ? ` ${fmtD(s.joining_date)}` : ''}</span>` : `<span class="seat">Seat ${s.n}: open</span>`).join('')}</div><div class="pipe-steps">${['Screening', 'Telephonic', 'Virtual', 'Client', 'Offer'].map((st) => { const n = open.filter((a) => a.stage === st).length; return `<a href="#" class="pipe-step ${n ? 'on' : ''}" data-go-stage="${st}"><b>${n}</b>${esc(BB.stageLabel(st))}</a>`; }).join('')}</div>
+          <div class="tbl-wrap" style="margin-top:10px"><table class="tbl"><tbody>${open.map(appRow).join('') || '<tr><td class="empty">Nobody in process yet. Use + Add a candidate or Job alert to top matches.</td></tr>'}</tbody></table></div>
           ${closed.length ? `<details class="sub-more"><summary class="small muted">Closed applications (${closed.length})</summary><div class="tbl-wrap"><table class="tbl"><tbody>${closed.map(appRow).join('')}</tbody></table></div></details>` : ''}</div>
         <div data-flow-screen><div class="sec faint small">Loading screening…</div></div>
         ${jdCard(j)}
@@ -190,7 +190,8 @@
         ${notesBlock(j.id, j.notes)}
         <details class="sec card pad sub-card"><summary><b>Status history</b></summary><div style="margin-top:8px"><div class="hist">${j.history.map((h) => `<div class="h"><span class="t">${fmtDT(h.at)}</span><span class="grow"><b>${esc(h.status)}</b> · ${esc(h.by)}${h.note ? ` — ${esc(h.note)}` : ''}</span></div>`).join('')}</div></div></details>`,
       mount: (el) => {
-        wireCommon(el); BB.wireQuickScreen(el, () => BB.refreshPanel()); BB.flow.jobMount(el, j);
+        wireCommon(el); BB.wireQuickScreen(el, () => BB.refreshPanel()); BB.wireStageActs(el, () => BB.refreshPanel()); BB.flow.jobMount(el, j);
+        $$('[data-go-stage]', el).forEach((b) => (b.onclick = (e) => { e.preventDefault(); BB.closePanels(); BB.go(`team/applications?${BB.qs({ job: j.id, stage: b.dataset.goStage })}`); }));
         $$('[data-act]', el).forEach((b) => (b.onclick = () => jobAct(j, b.dataset.act)));
         $$('[data-add]', el).forEach((b) => (b.onclick = () => run(() => BB.post('/api/applications', { candidate_id: b.dataset.add, job_id: j.id }), 'Added — new application at Applied')));
         el.addEventListener('click', (e) => $$('details.step-menu', el).forEach((d) => { if (!d.contains(e.target) || e.target.closest('[role=menuitem]')) d.open = false; }));
@@ -503,6 +504,20 @@
       } catch (e) { BB.showErr(el, e); }
     };
   };
+  const NEXT_LABEL = { Telephonic: 'Telephonic round', Virtual: 'Virtual round', Client: 'Client round', Offer: 'Offer' };
+  BB.stageActs = (a) => {
+    if (a.result !== 'open') return '';
+    const to = NEXT_LABEL[a.next_stage] || 'Next round';
+    if (a.stage === 'Screening') return `<button class="btn sm" data-sd="Accepted" data-ap="${a.id}" title="Screened in: move to the telephonic round">✓ ${to}</button><button class="btn sm danger" data-sd="Rejected" data-ap="${a.id}">✗ Reject</button>`;
+    if (a.stage === 'Telephonic' || a.stage === 'Virtual') return `<button class="btn sm" data-fbp="Move ahead" data-ap="${a.id}" title="${a.stage === 'Telephonic' ? 'Telephonic' : 'Virtual'} round completed: move to the ${to.toLowerCase()}">✓ ${to}</button><button class="btn sm danger" data-fbp="Not selected" data-ap="${a.id}">✗ Reject</button>`;
+    if (a.stage === 'Client') return `<button class="btn sm" data-fbp="" data-ap="${a.id}">Client feedback</button>`;
+    return '';
+  };
+  BB.wireStageActs = (el, done) => {
+    $$('[data-sd]', el).forEach((b) => (b.onclick = (e) => { e.stopPropagation(); BB.screenDecision(b.dataset.ap, b.dataset.sd, done); }));
+    $$('[data-fbp]', el).forEach((b) => (b.onclick = (e) => { e.stopPropagation(); BB.feedbackFor(b.dataset.ap, { result: b.dataset.fbp }); }));
+  };
+  BB.stageBadge = (a) => (a.result === 'open' ? `<span class="badge ${{ Screening: 'b-outline', Telephonic: 'b-primary', Virtual: 'b-primary', Client: 'b-violet', Offer: 'b-gold' }[a.stage] || 'b-outline'}">${esc(BB.stageLabel(a.stage))}</span>` : resultBadge(a.result));
   BB.feedbackFor = async (appId, preset = {}) => {
     const a = await BB.api(`/api/applications/${appId}`); const S = BB.boot.steps; const client = S.indexOf(a.step) >= S.indexOf('Sent to client');
     const r = a.rounds.filter((x) => (client ? x.mode === 'in_person' : x.mode !== 'in_person')).find((x) => !['Cleared', 'Not needed', 'Not cleared'].includes(x.status));
@@ -516,7 +531,9 @@
     const ours = i.round === 'ours';
     // The client decides Selected or Rejected; another round with them is a next action, not a decision.
     const results = ours ? ['Move ahead', 'On hold', 'Not selected'] : ['Selected', 'Not selected', 'On hold'];
-    const resultLabel = (x) => (ours ? { 'Move ahead': 'Cleared: next round', 'Not selected': 'Not selected' }[x] || x : x === 'Not selected' ? 'Rejected' : x);
+    // Cleared names where they go: "Completed: move to Virtual round" / "… to Client round".
+    const goName = () => { const c = (choices || []).find(([v]) => v === st.next) || (choices || [])[0]; return c ? (c[0] === 'client' ? 'Client round' : c[1]) : 'Client round'; };
+    const resultLabel = (x) => (ours ? { 'Move ahead': `Completed: move to ${goName()}`, 'Not selected': 'Reject', 'On hold': 'On hold' }[x] || x : x === 'Not selected' ? 'Rejected' : x);
     const CLIENT_NEXT = [['offer', 'Record the offer now'], ['round', 'Add another round with the client'], ['later', 'Decide later']];
     const QLANG = [['en', 'English'], ['hinglish', 'Hinglish'], ['hi', 'Hindi']];
     const roundOf = (k) => a.rounds.find((x) => x.key === k);
@@ -539,7 +556,7 @@
       if (!st.result) return '';
       if (st.result === 'Not selected') return `Closed · ${ours ? (i.mode === 'phone' ? 'Rejected at telephonic round' : i.mode === 'video' ? 'Rejected at virtual round' : 'Not suitable') : 'Client rejected'}`;
       if (st.result === 'On hold') return 'On hold';
-      if (ours) return st.next === 'client' || !choices.length ? 'Sent to client' : `Our interview · ${esc(nextName())} next`;
+      if (ours) return st.next === 'client' || !choices.length ? 'With the client (the CV goes to them; book once they give a slot)' : `${esc(nextName())} (book it once the candidate gives a time)`;
       return st.cnext === 'offer' ? 'Offer made (when you record the offer)' : st.cnext === 'round' ? 'Client interview · another round' : 'Client interview · selected, offer to record';
     };
     const jumps = () => (st.result === 'Move ahead' && st.next ? BB.flow.skipsFor(a, st.next, i) : []);
