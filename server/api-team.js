@@ -137,7 +137,9 @@ function agencyStatus(ag) {
 }
 function personRow(u, from, to) {
   const lg = logDots(u.id);
-  return { id: u.id, name: u.name, level: u.level, role: u.role, agency_id: u.agency_id, agency_name: V.agencyName(u.agency_id), status: personStatus(u), last_login: u.last_login, ...perfOf(u.id, from, to), logs: lg, log_pct: Math.round((lg.filter((x) => x.status).length / 7) * 100) };
+  const tk = all('SELECT * FROM tasks WHERE removed=0').filter((t) => L.ownsTask(t, u.id)); const today = L.istDay();
+  const tasks = { tasks_done: tk.filter((t) => t.status === 'Done' && t.done_at && t.done_at >= from && t.done_at <= to).length, tasks_open: tk.filter((t) => t.status !== 'Done').length, tasks_overdue: tk.filter((t) => t.status !== 'Done' && t.due_date && t.due_date < today).length };
+  return { id: u.id, name: u.name, level: u.level, role: u.role, agency_id: u.agency_id, agency_name: V.agencyName(u.agency_id), status: personStatus(u), last_login: u.last_login, ...perfOf(u.id, from, to), ...tasks, logs: lg, log_pct: Math.round((lg.filter((x) => x.status).length / 7) * 100) };
 }
 route('GET', '/api/performance', T, (ctx) => {
   const u = ctx.user; const days = Number(ctx.query.days) || 30;

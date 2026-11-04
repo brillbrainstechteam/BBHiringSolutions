@@ -1288,5 +1288,6 @@ function resumeUse(user, candidateId) {
   history(user.name, 'resume alert', user.id, null, null, `${used} of ${total}`);
 }
 const accountsUsers = () => all("SELECT * FROM users WHERE level='sub' AND team='Accounts' AND status='On'");
-const openTasksOf = (userId) => all("SELECT * FROM tasks WHERE owner_id=? AND removed=0 AND status<>'Done' ORDER BY COALESCE(due_date, '9999'), at", userId);
-Object.assign(module.exports, { prefAnswer, PREF, cleanPrefs, inPreferred, nextPreferred, prefNote, evalView, candidateStory, candidateKnown, startCall, openCall, needsCall, callGateOn, roundsOf, skipRounds, passRounds, openTasksOf, accountsUsers, fixAsk, openAsks, OPEN_ASK, resumeUse, RESUME_DAYS });
+const ownsTask = (t, userId) => t.owner_id === userId || (Array.isArray(t.owners) && t.owners.includes(userId));
+const openTasksOf = (userId) => all("SELECT * FROM tasks WHERE removed=0 AND status<>'Done' ORDER BY COALESCE(due_date, '9999'), at").filter((t) => ownsTask(t, userId));
+Object.assign(module.exports, { ownsTask, prefAnswer, PREF, cleanPrefs, inPreferred, nextPreferred, prefNote, evalView, candidateStory, candidateKnown, startCall, openCall, needsCall, callGateOn, roundsOf, skipRounds, passRounds, openTasksOf, accountsUsers, fixAsk, openAsks, OPEN_ASK, resumeUse, RESUME_DAYS });

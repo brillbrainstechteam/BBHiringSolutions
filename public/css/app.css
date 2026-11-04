@@ -1913,3 +1913,7 @@ button.fin-tile.on { border-color: var(--mustard); box-shadow: 0 0 0 1px var(--m
 .pipe-job { min-width: 200px; }
 a.pipe-step { text-decoration: none; cursor: pointer; } a.pipe-step:hover { border-color: var(--navy); }
 .page-h [data-actions] > .btn, .page-h [data-actions] > a.btn, .page-h [data-actions] > .seg { height: 40px; } .page-h [data-actions] > .btn, .page-h [data-actions] > a.btn { padding: 0 16px; font-size: 13.5px; justify-content: center; }
+.people-pick { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 6px 14px; padding: 4px 0; } .people-pick input { width: auto; }
+.owner-btn { max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .task-bulk { display: flex; align-items: center; gap: 14px; padding: 10px 14px; margin-bottom: 10px; } .task-bulk[hidden] { display: none; }
+.today-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; padding: 0 16px 16px; } .today-sec { border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; } .today-item { font-size: 13px; line-height: 1.35; } .today-item a { color: var(--ink); }
+.mine-tog { display: flex; align-items: center; gap: 6px; margin-left: auto; padding: 0 6px; } .mine-tog input { width: auto; }
