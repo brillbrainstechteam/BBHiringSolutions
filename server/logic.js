@@ -572,7 +572,7 @@ function closeApplication(appId, reason, by, note) {
 // Words that say nothing about the role ("Hiring_Leads_..._Adset_2510 - Copy"), and short forms people write.
 const ROLE_STOP = new Set(['hiring', 'hire', 'leads', 'lead', 'adset', 'ad', 'ads', 'set', 'copy', 'campaign', 'new', 'job', 'jobs', 'vacancy', 'vacancies', 'opening', 'openings', 'recruitment', 'the', 'for', 'and', 'of', 'in', 'at', 'to', 'a', 'an', 'we', 'are', 'urgent', 'required', 'wanted', 'india', 'meta', 'fb', 'ig', 'insta', 'instagram', 'facebook', 'linkedin', 'post', 'creative', 'video', 'image', 'reel', 'carousel', 'static', 'female', 'male', 'role', 'position']);
 const ROLE_SYN = { exec: 'executive', exe: 'executive', ex: 'executive', exective: 'executive', excutive: 'executive', sr: 'senior', jr: 'junior', mgr: 'manager', merchandizer: 'merchandiser', merchandier: 'merchandiser', telecalling: 'telecaller', telesales: 'telecaller', tele: 'telecaller', caller: 'telecaller', designers: 'designer', mis: 'mis' };
-const roleTokens = (t) => String(t || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').split(' ').filter((w) => w && !/^\d+$/.test(w) && !/^v\d+$/.test(w)).map((w) => ROLE_SYN[w] || w).filter((w) => !ROLE_STOP.has(w));
+const roleTokens = (t) => String(t || '').replace(/([a-z])([A-Z])/g, '$1 $2').replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2').toLowerCase().replace(/[^a-z0-9]+/g, ' ').split(' ').filter((w) => w && !/^\d+$/.test(w) && !/^v\d+$/.test(w)).map((w) => ROLE_SYN[w] || w).filter((w) => !ROLE_STOP.has(w));
 const OPEN_STATUSES = ['Open', 'Sourcing', 'Interviewing', 'Offer stage'];
 // The open jobs a role name points to. Every role word of the name is in the job title ("Sales Executive" ->
 // "Senior Sales Executive"), or a job title of two words or more is wholly in the name. A city named in the text
@@ -602,6 +602,22 @@ function jobsForPerson(p, opt = {}) {
   for (const t of [p.ad_set, p.ad_name, p.ad_campaign]) { if (!t) continue; const hit = jobsForRole(t, opt); if (hit.length) return { jobs: hit, by: `ad "${t}"` }; }
   if (p.job_wanted) { const hit = jobsForRole(p.job_wanted, opt); if (hit.length) return { jobs: hit, by: `job wanted "${p.job_wanted}"` }; }
   return { jobs: [], by: '' };
+}
+// Everyone who came from an ad gets an application: candidates with ad names and no open application (from the last
+// 60 days) go onto the open jobs their ad (or the job they asked for) points to, skipping jobs they were already on.
+// No job found: the candidate is flagged so the team picks the job.
+function openAdApplications(by = { label: 'System' }) {
+  const since = new Date(Date.now() - 60 * 86400000).toISOString(); let made = 0;
+  const rows = all(`SELECT c.* FROM candidates c WHERE c.removed=0 AND IFNULL(c.junk,0)=0 AND c.merged_into IS NULL AND (IFNULL(c.ad_set,'')!='' OR IFNULL(c.ad_name,'')!='' OR IFNULL(c.ad_campaign,'')!='') AND IFNULL(c.last_updated, c.created_at) > ? AND NOT EXISTS (SELECT 1 FROM applications a WHERE a.candidate_id=c.id AND a.result='open')`, since);
+  for (const c of rows) {
+    if (isPlaced(c.id)) continue;
+    const had = new Set(all('SELECT job_id FROM applications WHERE candidate_id=?', c.id).map((r) => r.job_id));
+    const m = jobsForPerson(c); const jobs = m.jobs.filter((j) => !had.has(j.id)).slice(0, 3);
+    if (!jobs.length) { if (!m.jobs.length && !c.needs_check) update('candidates', c.id, { needs_check: 'From an ad: pick the job' }); continue; }
+    for (const j of jobs) { try { createApplication(c.id, j.id, by, c.source, `Applied from an ad (matched by ${m.by})`, { campaign: c.ad_campaign, adset: c.ad_set, ad: c.ad_name }); made++; } catch { /* closed meanwhile */ } }
+    if (c.needs_check === 'From an ad: pick the job') update('candidates', c.id, { needs_check: null });
+  }
+  return made;
 }
 function screenApplication(appId, verdict, by, note) {
   if (!SCREEN.includes(verdict)) throw httpError(400, 'Pick a screening decision');
@@ -1185,7 +1201,7 @@ function sendSystemText(ptype, pid, text) {
   insert('messages', { id: nextId('WA'), person_type: ptype, person_id: pid, phone: p.phone, direction: 'out', text, buttons: [], sent_by: 'Auto', status: settings().crm.enabled ? 'sending' : 'would send', read_by_us: 1, auto: 1, at: now() });
 }
 
-module.exports = { placedOn, closePlacedApps, adLabel,
+module.exports = { openAdApplications, placedOn, closePlacedApps, adLabel,
   STEPS, stepIdx, digits10, validPhone, inr, istDay, istFmt, istTime, istHour, inQuiet, next9am, daysBetween, addDays, hashPassword, checkPassword, newPassword, sha,
   activationState, checkActivation, waHeld, TEAMS, IV_MODES, clientSeesIv, addIvNote, CALL_OUTCOMES, logCall, jobList, deptOf, stateOf, person, fillFormat, windowOpenUntil, sendWA, setDispatcher, alertUser, link, agencyAdmin, superAdmins,
   computeJobStatus, jobStatusReason, recalcJob, filledCount, appsOfJob, matchScore, jobsFor, cleanBusiness, BUSINESS_TYPES, EXP_YEARS, JEW_YEARS, LOOKING, NOT_LOOKING, ratingOf, bestMatches, isPlaced, salaryText, autoJobAlert,

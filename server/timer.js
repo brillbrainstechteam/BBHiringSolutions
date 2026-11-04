@@ -94,6 +94,8 @@ function runTimer() {
   const mails = require('./mailer').retryQueued(); if (mails) done.emails_retried = mails;
   // Email inbox door: unread CV emails become candidate leads.
   if (D.ENV.imap.host) require('./mailbox').check().catch((e) => require('./alerts').devAlert('Email inbox check failed', e.message));
+  // Ad applicants without an application get one on the job their ad points to.
+  const adApps = L.openAdApplications(); if (adApps) done.ad_applications = adApps;
   // Anyone hired through us: applications opened since then close.
   const shut = L.closePlacedApps(); if (shut) done.closed_hired = shut;
   // Meta ad spend, once a day (when the token is in .env).
