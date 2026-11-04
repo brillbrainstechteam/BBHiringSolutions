@@ -793,8 +793,14 @@ route('GET', '/api/jobs/:id/jd.pdf', T, (ctx) => {
   const j = get('SELECT * FROM jobs WHERE id=?', ctx.params.id); mustSee(seeJob(ctx.user, j), 'job opening');
   return { __file: { name: `${j.id}-JD.pdf`, mime: 'application/pdf', buf: jdPdf(j) } };
 });
+// The JD the portal shows: the job's own, on top of the JD pool copy for its title (or the standard JD), {job} and
+// {city} filled in. Shared by the PDF and the public page.
+function jdOf(j) {
+  const t = (D.settings().jd_templates || {})[j.title] || D.settings().jd_template || {}; const fill = (x) => (typeof x === 'string' ? x.replace(/\{job\}/g, j.title).replace(/\{city\}/g, j.city || '') : x);
+  return Object.fromEntries(Object.entries({ ...t, ...(j.jd || {}) }).map(([k, x]) => [k, fill(x)]));
+}
 function jdPdf(j) {
-  const jd = j.jd || {}; const c = get('SELECT * FROM clients WHERE id=?', j.client_id);
+  const jd = jdOf(j); const c = get('SELECT * FROM clients WHERE id=?', j.client_id);
   const L2 = [{ text: `${j.title} — ${j.city}`, size: 13, bold: true }, ''];
   if (jewelLine(jd)) jd.jewel_text = jewelLine(jd);
   for (const [k, lab] of [['summary', 'Role summary'], ['duties', 'Duties'], ['jewel_text', 'Jewellery industry experience'], ['must', 'Must-have skills'], ['good', 'Good to have'], ['education', 'Education'], ['languages', 'Languages'], ['salary', 'Salary'], ['timings', 'Timings'], ['benefits', 'Benefits'], ['incentives', 'Incentives'], ['location', 'Location']]) {
@@ -809,7 +815,7 @@ function jdHtml(id) {
   const j = get('SELECT * FROM jobs WHERE id=? AND archived=0 AND is_sample=0', String(id).toUpperCase()); if (!j) return null;
   const v = V.jobView(j); const open = ['Open', 'Sourcing', 'Interviewing', 'Offer stage'].includes(v.status);
   const e = (x) => String(x == null ? '' : x).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-  const jd = { ...(j.jd || {}) }; if (jewelLine(jd)) jd.jewel_text = jewelLine(jd);
+  const jd = jdOf(j); if (jewelLine(jd)) jd.jewel_text = jewelLine(jd);
   const b = D.settings().business; const apply = L.link('apply', `?job=${j.id}`);
   const list = (t) => { const lines = String(t).split('\n').map((x) => x.replace(/^[-•*]\s*/, '').trim()).filter(Boolean); return lines.length > 1 ? `<ul>${lines.map((x) => `<li>${e(x)}</li>`).join('')}</ul>` : `<p>${e(lines[0] || '')}</p>`; };
   // No JD typed in: the uploaded JD document is read, without the client's name, contact, emails or numbers.
