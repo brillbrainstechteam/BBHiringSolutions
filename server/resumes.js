@@ -26,12 +26,15 @@ function named(cname, hay) {
 }
 const NO_CV = "merged_into IS NULL AND removed=0 AND (cv_file IS NULL OR cv_file='')";
 
-// folder path -> the role and department ("Resume - CV/B2C/Sales/Sales Executive/x.pdf" -> Sales Executive, Sales)
+// folder path -> market, department and role. The CV folder is B2B | B2C | Pending Seggregatetion, then the
+// department, then the role: "B2B/Designer/CAD Designer/x.pdf" -> B2B, Designer, CAD Designer. A file directly in a
+// department folder has the department only; anything under Pending (Naukri, Images) has none.
+const MARKET = { B2B: ['Manufacturer', 'Wholesaler'], B2C: ['Retailer'] };
 function roleOf(file) {
   const parts = String(file || '').split('/').slice(0, -1).filter(Boolean);
-  const leaf = parts[parts.length - 1] || ''; const dept = parts[parts.length - 2] || '';
-  if (!leaf || /^(resume|cv|images?|pending|naukri)/i.test(leaf) || /^b2[bc]$/i.test(leaf)) return {};
-  return { job: leaf.replace(/\b\w/g, (c) => c.toUpperCase()), dept: /^b2[bc]$/i.test(dept) ? '' : dept };
+  const at = parts.findIndex((p) => /^b2[bc]$/i.test(p.trim())); if (at < 0) return {};
+  const tc = (s) => String(s || '').trim().replace(/\b\w/g, (c) => c.toUpperCase());
+  return { market: parts[at].trim().toUpperCase(), dept: tc(parts[at + 1]), job: tc(parts[at + 2]) };
 }
 
 // One file. by: who is adding it; source: where it came from (for the note).
@@ -59,9 +62,15 @@ async function attachResume({ file, buf, source = 'Google Drive' }, by) {
     const nm = (ai && ai.name) || fname || '';
     if (!nm && !phone) return { status: 'unmatched', why: 'no name or phone could be read' };
     const role = roleOf(file); const d10 = (v) => { const x = String(v || '').replace(/\D/g, '').slice(-10); return /^[6-9]\d{9}$/.test(x) ? x : ''; };
-    const r = L.intakeCandidate({ name: nm || 'Resume candidate', whatsapp: (ai && d10(ai.whatsapp)) || phone, email: (ai && ai.email) || email, city: (ai && ai.city) || '', job_wanted: role.job || (ai && ai.job_wanted) || '', exp_total: ai ? ai.exp_total : undefined, current_company: ai ? ai.current_company || '' : '' },
+    const r = L.intakeCandidate({ name: nm || 'Resume candidate', whatsapp: (ai && d10(ai.whatsapp)) || phone, email: (ai && ai.email) || email, city: (ai && ai.city) || '', job_wanted: role.job || (ai && ai.job_wanted) || '', department: role.job ? undefined : role.dept || undefined, exp_business: MARKET[role.market] || undefined, exp_total: ai ? ai.exp_total : undefined, current_company: ai ? ai.current_company || '' : '' },
       { source, allowNoPhone: true, consent: false, silent: true, by, needsCheck: (ai && d10(ai.whatsapp)) || phone ? null : 'No phone found' });
     c = r.candidate; made = r.isNew;
+  } else {
+    // someone already here: the folder fills in the role, department and market they do not have yet
+    const role = roleOf(file); const fill = {};
+    if (role.job && !c.job_wanted) { fill.job_wanted = role.job; fill.department = L.deptOf ? L.deptOf(role.job) || role.dept || null : role.dept || null; } else if (role.dept && !c.department) fill.department = role.dept;
+    const biz = Array.isArray(c.exp_business) ? c.exp_business : []; if (MARKET[role.market] && !biz.length) fill.exp_business = MARKET[role.market];
+    if (Object.keys(fill).length) update('candidates', c.id, fill);
   }
   const f = await F.saveFile({ recordId: c.id, type: 'cv', name, base64: buf.toString('base64'), by: by.label || 'Resume import' });
   update('candidates', c.id, { cv_file: String(f.id) }); try { cvparse.fillCandidate(c.id, name, buf, by.label || 'Resume import'); } catch { /* the file is kept even if it cannot be read */ }

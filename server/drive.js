@@ -79,4 +79,28 @@ async function checkNow() {
 // Super admin: read the folder now (Settings -> Health, or after setting it up).
 route('POST', '/api/health/drive', { auth: 'team', levels: ['super'] }, async () => { if (!configured()) throw httpError(400, 'Add GDRIVE_FOLDER_ID and GDRIVE_SA_FILE to the server .env first.'); return check(true); });
 
+// ---------- pushed from Google (Apps Script in the owner's Google account: docs/drive-apps-script.gs) ----------
+// No Google credential on this server: a script inside Google reads the CV folder every 30 minutes and delivers new
+// or changed files here, with the shared code DRIVE_PUSH_SECRET (in .env). The code can only deliver resumes.
+const pushOk = (ctx) => {
+  const want = String(process.env.DRIVE_PUSH_SECRET || ''); const got = String(ctx.req.headers['x-drive-secret'] || '');
+  if (want.length < 20) throw httpError(503, 'Drive delivery is not set up (DRIVE_PUSH_SECRET in .env).');
+  if (got.length !== want.length || !crypto.timingSafeEqual(Buffer.from(got), Buffer.from(want))) throw httpError(403, 'Wrong code');
+};
+// which of the folder's files are new or changed since they were last delivered
+route('POST', '/api/hooks/drive/new', { rate: { key: 'drivehook', max: 60, minutes: 10 } }, (ctx) => {
+  pushOk(ctx);
+  const list = Array.isArray((ctx.body || {}).files) ? ctx.body.files.slice(0, 5000) : [];
+  return { ids: list.filter((f) => { const s = get('SELECT md5 FROM drive_seen WHERE file_id=?', String(f.id)); return !s || s.md5 !== String(f.v); }).map((f) => f.id) };
+});
+// one file: to its candidate, or a new one
+route('POST', '/api/hooks/drive/file', { rate: { key: 'drivefile', max: 400, minutes: 10 } }, async (ctx) => {
+  pushOk(ctx); const b = ctx.body || {};
+  const buf = Buffer.from(String(b.base64 || ''), 'base64'); if (!b.id || !buf.length) throw httpError(400, 'No file');
+  let r; try { r = await require('./resumes').attachResume({ file: String(b.path || b.name || 'resume.pdf'), buf, source: 'Google Drive' }, { label: 'Google Drive' }); } catch (e) { r = { status: 'unmatched', why: e.message }; }
+  D.run('INSERT INTO drive_seen (file_id,md5,path,status,at) VALUES (?,?,?,?,?) ON CONFLICT(file_id) DO UPDATE SET md5=excluded.md5, path=excluded.path, status=excluded.status, at=excluded.at', String(b.id), String(b.v || ''), String(b.path || ''), r.status, now());
+  D.setHealth('last_drive_check', `${now()} · pushed from Google · last file: ${String(b.path || '').split('/').pop()} (${r.status})`);
+  return { status: r.status, why: r.why || '' };
+});
+
 module.exports = { check, configured };
