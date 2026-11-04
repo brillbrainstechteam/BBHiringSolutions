@@ -141,7 +141,7 @@ route('GET', '/api/aftercare', T, (ctx) => {
       const v = V.appView(a); const closed = a.result !== 'open' && a.result !== 'Hired' && !a.joined_at;
       const why = closed ? ((get("SELECT note FROM app_history WHERE app_id=? AND kind='close' ORDER BY at DESC, id DESC LIMIT 1", a.id) || {}).note || '').replace(/^Closed: [^—]*(— )?/, '') : '';
       const status = a.joined_at ? 'Joined' : closed ? 'Not joined' : a.step === 'Offer accepted' ? 'Accepted' : a.step === 'Offer made' ? 'Waiting for answer' : a.step;
-      return { id: a.id, candidate_id: a.candidate_id, candidate_name: v.candidate_name, client_name: v.client_name, job_title: v.job_title, owner_name: v.owner_name, status, reason: closed ? a.result : '', reason_note: why, ctc: a.offer_ctc || 0, joining_date: a.joining_date || null, joined_at: a.joined_at || null, left_date: a.left_date || null, offered_at: offeredAt(a.id), late: !a.joined_at && !closed && !!a.joining_date && a.joining_date < today };
+      return { id: a.id, candidate_id: a.candidate_id, candidate_name: v.candidate_name, client_name: v.client_name, job_title: v.job_title, owner_name: v.owner_name, status, reason: closed ? a.result : '', reason_note: why, ctc: a.offer_ctc || 0, joining_date: a.joining_date || null, joined_at: a.joined_at || null, since: a.joined_at ? L.daysBetween(a.joined_at) : null, left_date: a.left_date || null, offered_at: offeredAt(a.id), late: !a.joined_at && !closed && !!a.joining_date && a.joining_date < today };
     }).filter(match);
   const leftApps = all('SELECT * FROM applications WHERE left_date IS NOT NULL ORDER BY left_date DESC').filter((a) => R.seeApp(u, a) && a.joined_at);
   const asked = all("SELECT b.app_id FROM bills b WHERE b.replacement_requested=1").map((b) => b.app_id);

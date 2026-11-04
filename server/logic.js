@@ -928,6 +928,12 @@ function leftJob(appId, o, by) {
     if (b && b.payout_status !== 'Paid') update('bills', b.id, { payout_hold: 1, payout_status: 'On hold' });
     recalcJob(job.id, actorName(by), `Reopened for replacement of ${appId}`);
     outcome = `Free replacement: ${job.id} reopened with +1 opening, no new fee.`;
+  } else if (o.reopen) {
+    // Not a free replacement, but the client wants the seat filled again: reopened and tagged, billed as usual.
+    update('jobs', job.id, { openings: job.openings + 1, manual: null, manual_reason: null, reopened_at: now(), reopen_tag: `Replacement for ${appId}` });
+    insert('job_history', { job_id: job.id, at: now(), status: 'Reopened', by: actorName(by), note: `+1 opening, replacement for ${appId} (fee applies)` });
+    recalcJob(job.id, actorName(by), `Reopened for replacement of ${appId}`);
+    outcome = `${job.id} reopened with +1 opening as a replacement (the fee applies).`;
   }
   alertUser(job.recruiter_id, `${appId} left the job (${o.reason})`, appId, 'candidate');
   return { outcome };
