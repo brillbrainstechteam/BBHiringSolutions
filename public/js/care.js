@@ -56,11 +56,23 @@
   const stars = (n) => `<span class="stars" title="${n} of 5">${'★'.repeat(Math.round(n))}<span class="faint">${'★'.repeat(5 - Math.round(n))}</span></span>`;
   P.reviews = async ({ el, q, actions }) => {
     const d = await BB.api(`/api/reviews?${BB.qs({ user: q.user })}`);
-    actions.innerHTML = '';
-    el.innerHTML = `<div class="notice small" style="margin-bottom:12px">Only super admins see this page. Candidates rate the recruiters they worked with, in their profile and on WhatsApp 14 days after joining (when that message is switched on). Only the senior team reads it.</div>
+    actions.innerHTML = (d.askable || []).length ? '<button class="btn" data-askc>Ask a client to rate</button>' : '';
+    el.innerHTML = `<div class="notice small" style="margin-bottom:12px">Only super admins see this page. Candidates rate the recruiters they worked with, in their profile and on WhatsApp 14 days after joining (when that message is switched on). Clients rate them after interviewing our candidates. Only the senior team reads it.</div>
       <div class="card" style="margin-bottom:14px"><div class="card-h"><h3>By recruiter</h3></div>${BB.table([{ t: 'Recruiter', f: (r) => `<a href="#" data-ruser="${r.id}"><b>${esc(r.name)}</b></a><div class="tiny muted">${BB.levelName(r.level)}</div>` }, { t: 'Rating', f: (r) => `${stars(r.avg)} <b>${r.avg}</b>` }, { t: 'Reviews', num: 1, f: (r) => r.count }, { t: '1–2 stars', num: 1, f: (r) => r.low }, { t: 'Went to Google', num: 1, f: (r) => r.google }], d.recruiters, { empty: 'No reviews yet.' })}</div>
-      <div class="card"><div class="card-h"><h3>${q.user ? `Reviews of ${esc((d.recruiters.find((r) => r.id === q.user) || {}).name || '')} <a href="#" class="small" data-rall>Show all</a>` : 'All reviews'}</h3></div>${BB.table([{ t: 'Date', f: (r) => fmtD(r.at) }, { t: 'Recruiter', f: (r) => esc(r.user_name) }, { t: 'Candidate', f: (r) => `<a href="#" data-open="candidate:${r.candidate_id}">${esc(r.candidate_name)}</a>` }, { t: 'Stars', f: (r) => stars(r.stars) }, { t: 'Review', f: (r) => esc(r.text || '—') }], d.reviews, { empty: 'No reviews yet.' })}</div>`;
+      <div class="card"><div class="card-h"><h3>${q.user ? `Reviews of ${esc((d.recruiters.find((r) => r.id === q.user) || {}).name || '')} <a href="#" class="small" data-rall>Show all</a>` : 'All reviews'}</h3></div>${BB.table([{ t: 'Date', f: (r) => fmtD(r.at) }, { t: 'Recruiter', f: (r) => esc(r.user_name) }, { t: 'Candidate', f: (r) => `<a href="#" data-open="candidate:${r.candidate_id}">${esc(r.candidate_name)}</a>` }, { t: 'Stars', f: (r) => stars(r.stars) }, { t: 'Review', f: (r) => esc(r.text || '—') }], d.reviews, { empty: 'No reviews yet.' })}</div>
+      <div class="card" style="margin-top:14px"><div class="card-h"><h3>From clients</h3><span class="small muted">Asked on WhatsApp once a client has interviewed our candidates for a job</span></div>${BB.table([{ t: 'Date', f: (r) => fmtD(r.at) }, { t: 'Recruiter', f: (r) => esc(r.user_name) }, { t: 'Client', f: (r) => `<a href="#" data-open="client:${r.client_id}">${esc(r.company || r.client_id)}</a>${r.by_name ? `<div class="tiny muted">${esc(r.by_name)}</div>` : ''}` }, { t: 'Job', f: (r) => esc(r.job_title || r.job_id) }, { t: 'Stars', f: (r) => stars(r.stars) }, { t: 'Review', f: (r) => esc(r.text || '—') }], d.client_reviews || [], { empty: 'No client reviews yet.' })}</div>`;
     $$('[data-ruser]', el).forEach((a) => (a.onclick = (e) => { e.preventDefault(); BB.setQ({ user: a.dataset.ruser }); }));
+    // A client asked by hand: the jobs whose client has interviewed our candidates.
+    const ak = $('[data-askc]', actions); if (ak) ak.onclick = () => BB.ask({ title: 'Ask a client to rate the recruiter', note: 'The client gets the rating link on WhatsApp (and email). Only you see this message and the answer.', fields: [{ name: 'job_id', label: 'Job', type: 'select', options: d.askable.map((j) => [j.id, `${j.title} · ${j.company}${j.answered ? ' (answered)' : j.asked ? ' (asked)' : ''}`]), placeholder: false }], ok: 'Send', submit: (v) => BB.post('/api/reviews/ask-client', v) }).then((r) => { if (!r) return; if (!r.skipped) return BB.toast('Sent to the client');
+      // not sent by the portal (e.g. the message waits for Meta's approval): the link to send yourself
+      const msg = `Hello${r.contact ? ` ${r.contact.split(' ')[0]}` : ''},
+
+Thank you for meeting our candidates for your ${r.job} opening. How did our recruiter do? Please rate them, it takes 30 seconds: ${r.link}
+
+Only our senior team reads it. Thank you.`;
+      const wa = r.whatsapp ? `https://wa.me/91${String(r.whatsapp).replace(/D/g, '').slice(-10)}?text=${encodeURIComponent(msg)}` : '';
+      BB.modal({ title: 'Send the rating link yourself', body: `<p class="small muted">Not sent by the portal: ${esc(r.skipped)}</p><div class="mono small" style="word-break:break-all">${esc(r.link)}</div>`, foot: `<span class="grow"></span><button class="btn" data-cplink>Copy message</button>${wa ? `<a class="btn primary" href="${wa}" target="_blank" rel="noopener">Send on WhatsApp</a>` : ''}`, onMount: (m) => { $('[data-cplink]', m).onclick = () => { BB.copy(msg); BB.toast('Message copied'); }; } });
+    });
     const all = $('[data-rall]', el); if (all) all.onclick = (e) => { e.preventDefault(); BB.setQ({ user: '' }); };
   };
 

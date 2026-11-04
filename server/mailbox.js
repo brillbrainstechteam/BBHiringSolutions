@@ -300,7 +300,7 @@ async function checkNow() {
   return done;
 }
 
-// Resumes missed earlier: every email in the label is read once more (40 a run) and a CV attachment goes to the
+// Resumes missed earlier: every email in the label is read once more (50 a run; cvfix2 = again, with the matching below) and a CV attachment goes to the
 // candidate it belongs to (the sender's address, or the phone or email written in the CV) when they have no resume yet.
 let fixing = null;
 function refetchCvs() { if (fixing || running) return Promise.resolve({ skipped: 'busy' }); fixing = refetchNow().finally(() => { fixing = null; }); return fixing; }
@@ -312,7 +312,7 @@ async function refetchNow() {
   try {
     const sr = await box.cmd('UID SEARCH ALL');
     const uids = (sr.lines.find((l) => l.startsWith('* SEARCH')) || '').replace('* SEARCH', '').trim().split(/\s+/).filter(Boolean)
-      .filter((u) => !D.get('SELECT 1 FROM mail_seen WHERE uid=?', `cvfix:${cfg.user}:${cfg.folder}:${u}`)).slice(0, 40);
+      .filter((u) => !D.get('SELECT 1 FROM mail_seen WHERE uid=?', `cvfix2:${cfg.user}:${cfg.folder}:${u}`)).slice(0, 50);
     const own = ownDomains();
     for (const uid of uids) {
       try {
@@ -321,12 +321,21 @@ async function refetchNow() {
           const { headers, parts } = parseMessage(raw); out.read++;
           const from = decodeWords(headers.from || ''); const fm = /<([^>]+)>/.exec(from); const fromEmail = (fm ? fm[1] : from).trim().toLowerCase();
           const fromOwn = own.includes((fromEmail.split('@')[1] || ''));
-          for (const p of parts.filter((x) => x.name && isCv(x.name) && !/portfolio|work.?sample/i.test(x.name))) {
+          const cvParts = parts.filter((x) => x.name && isCv(x.name) && !/portfolio|work.?sample/i.test(x.name));
+          // The candidates this very email made (their "Email: <subject>" note), still without a resume.
+          const subj = decodeWords(headers.subject || '');
+          const fromThis = subj ? D.all("SELECT DISTINCT c.* FROM candidates c JOIN notes n ON n.record_id=c.id WHERE n.text LIKE ? ESCAPE '\\' AND n.author='Email inbox' AND c.merged_into IS NULL AND c.removed=0 AND (c.cv_file IS NULL OR c.cv_file='')", `Email: ${subj.replace(/[\\%_]/g, (x) => `\\${x}`)}%`) : [];
+          for (const p of cvParts) {
             const t = cvText({ name: p.name, content: p.content }); const ph = findPhone(t); const em = findEmail(t).toLowerCase();
+            // the name written in the file name or the CV ("Resume_Mamta Vichare.pdf"): every part of it, 3+ letters
+            const hay = `${p.name} ${t.slice(0, 3000)}`.toLowerCase().replace(/[^a-z]+/g, ' ');
+            const named = (c) => { const ws = String(c.name || '').toLowerCase().split(/[^a-z]+/).filter((w) => w.length >= 3); return ws.length >= 2 && (ws.every((w) => ` ${hay} `.includes(` ${w} `)) || hay.replace(/ /g, '').includes(ws.join(''))); }; // "MandarRane-Resume.pdf" too
             const c = (!fromOwn && fromEmail ? D.get("SELECT * FROM candidates WHERE lower(email)=? AND merged_into IS NULL AND removed=0 AND (cv_file IS NULL OR cv_file='')", fromEmail) : null)
               || (ph ? D.get("SELECT * FROM candidates WHERE whatsapp=? AND merged_into IS NULL AND removed=0 AND (cv_file IS NULL OR cv_file='')", ph) : null)
-              || (em ? D.get("SELECT * FROM candidates WHERE lower(email)=? AND merged_into IS NULL AND removed=0 AND (cv_file IS NULL OR cv_file='')", em) : null);
-            if (!c) continue;
+              || (em ? D.get("SELECT * FROM candidates WHERE lower(email)=? AND merged_into IS NULL AND removed=0 AND (cv_file IS NULL OR cv_file='')", em) : null)
+              || (cvParts.length === 1 && fromThis.length === 1 ? fromThis[0] : fromThis.find(named))
+              || D.all("SELECT * FROM candidates WHERE source='Email' AND merged_into IS NULL AND removed=0 AND (cv_file IS NULL OR cv_file='')").find(named);
+            if (!c || D.get("SELECT 1 FROM candidates WHERE id=? AND cv_file IS NOT NULL AND cv_file!=''", c.id)) continue; // none, or given one a moment ago
             try {
               const f = await F.saveFile({ recordId: c.id, type: 'cv', name: p.name, base64: p.content.toString('base64'), by: 'Email inbox' });
               D.update('candidates', c.id, { cv_file: String(f.id) }); require('./cvparse').fillCandidate(c.id, p.name, p.content, 'Email inbox');
@@ -334,7 +343,7 @@ async function refetchNow() {
             } catch (e) { out.errors.push(`${uid} ${p.name}: ${e.message}`); }
           }
         }
-        D.run('INSERT OR IGNORE INTO mail_seen (uid,at) VALUES (?,?)', `cvfix:${cfg.user}:${cfg.folder}:${uid}`, D.now());
+        D.run('INSERT OR IGNORE INTO mail_seen (uid,at) VALUES (?,?)', `cvfix2:${cfg.user}:${cfg.folder}:${uid}`, D.now());
       } catch (e) { out.errors.push(`${uid}: ${e.message}`); }
     }
   } finally { box.end(); }

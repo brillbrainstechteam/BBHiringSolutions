@@ -61,7 +61,7 @@
     interviews: 'Everyone screened in, in the round they are in now: telephonic, then virtual, then the client. Open one to record the feedback or log the call. The other tabs list each interview by time.',
     leads: 'New clients from every door (forms, WhatsApp bot, email, Excel), and Partners: institutes and colleges whose students make good candidates.',
     aftercare: 'From the offer to the end of the replacement window: offers waiting to be accepted or joined, weekly then monthly check-ins for 90 days after joining, and every replacement after someone leaves.',
-    reviews: 'What candidates say about each recruiter. Only super admins see this.',
+    reviews: 'What candidates and clients say about each recruiter. Only super admins see this.',
     whatsapp: 'One shared inbox. Replies open a 24-hour window for free typing; otherwise only approved formats can be sent.',
     performance: 'Counted from the history lines every action saves. Nobody types these numbers.',
     logs: 'One log a day: tasks done, problems, plan for tomorrow. Admins approve their sub admins\' logs.',

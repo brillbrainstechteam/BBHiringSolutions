@@ -519,7 +519,7 @@
     $$('[data-sd]', el).forEach((b) => (b.onclick = (e) => { e.stopPropagation(); BB.screenDecision(b.dataset.ap, b.dataset.sd, done); }));
     $$('[data-fbp]', el).forEach((b) => (b.onclick = (e) => { e.stopPropagation(); BB.feedbackFor(b.dataset.ap, { result: b.dataset.fbp }); }));
   };
-  BB.stageBadge = (a) => (a.result === 'open' ? `<span class="badge ${{ Screening: 'b-outline', Telephonic: 'b-primary', Virtual: 'b-primary', Client: 'b-violet', Offer: 'b-gold' }[a.stage] || 'b-outline'}">${esc(BB.stageLabel(a.stage))}</span>` : resultBadge(a.result));
+  BB.stageBadge = (a) => (a.result === 'open' ? `<span class="badge ${{ Screening: 'b-outline', Telephonic: 'b-primary', Virtual: 'b-primary', Client: 'b-violet', Offer: 'b-gold' }[a.stage] || 'b-outline'}">${esc(BB.stageLabel(a.stage))}</span>${a.stage_state && a.stage_state !== 'To screen' ? `<div class="tiny ${a.stage_state === 'Feedback due' ? '' : 'muted'}" style="${a.stage_state === 'Feedback due' ? 'color:var(--amber);font-weight:600' : ''}">${esc(a.stage_state)}</div>` : ''}` : resultBadge(a.result));
   BB.feedbackFor = async (appId, preset = {}) => {
     const a = await BB.api(`/api/applications/${appId}`); const S = BB.boot.steps; const client = S.indexOf(a.step) >= S.indexOf('Sent to client');
     const r = a.rounds.filter((x) => (client ? x.mode === 'in_person' : x.mode !== 'in_person')).find((x) => !['Cleared', 'Not needed', 'Not cleared'].includes(x.status));

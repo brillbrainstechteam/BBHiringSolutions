@@ -235,8 +235,8 @@ route('GET', '/api/people', T, (ctx) => taskOwners(ctx.user).map((x) => ({ id: x
 const setOwners = (ctx, table, rec, mainCol) => {
   if (!['super', 'admin'].includes(ctx.user.level)) throw httpError(403, 'Admins set the owners');
   const team = taskOwners(ctx.user); const ids = [...new Set((Array.isArray(ctx.body.owners) ? ctx.body.owners : []).filter(Boolean))];
-  if (ids.some((id) => !team.some((x) => x.id === id))) throw httpError(400, 'Pick people from your team', 'owners');
   const before = [rec[mainCol], ...(Array.isArray(rec.owners) ? rec.owners : [])].filter(Boolean);
+  if (ids.some((id) => !team.some((x) => x.id === id) && !before.includes(id))) throw httpError(400, 'Pick people from your team', 'owners'); // owners it already has stay allowed
   update(table, rec.id, { owners: ids, [mainCol]: ids[0] || null });
   const name = table === 'clients' ? rec.company : `${rec.title} (${rec.id})`;
   for (const id of ids) if (!before.includes(id) && id !== ctx.user.id) L.alertUser(id, `You now own ${table === 'clients' ? 'the client' : 'the job'} ${name}${table === 'clients' ? ' and its job openings' : ''}`, rec.id, true);
@@ -445,6 +445,8 @@ route('POST', '/api/clients', T, (ctx) => {
   return { id: r.client.id, isNew: r.isNew };
 });
 // A client's past with us at a glance: counts, roles, hires and every interaction, newest first.
+// Clients' ratings of our recruiters are asked for by WhatsApp; only super admins see those messages.
+const msgHide = (u) => (isSuper(u) ? '' : " AND COALESCE(format, '') != 'bbhs_client_review'");
 function clientPast(c, u) {
   const jobs = all('SELECT * FROM jobs WHERE client_id=? ORDER BY created_at DESC', c.id).map((j) => V.jobView(j));
   const apps = all('SELECT a.*, j.title job_title, x.name person FROM applications a JOIN jobs j ON j.id=a.job_id JOIN candidates x ON x.id=a.candidate_id WHERE j.client_id=?', c.id);
@@ -455,7 +457,7 @@ function clientPast(c, u) {
     ...all('SELECT * FROM client_calls WHERE client_id=? AND roles<>\'\'', c.id).map((x) => ({ at: x.at, kind: 'Requirement call', text: x.roles, by: x.by })),
     ...all("SELECT * FROM calls WHERE client_id=? AND status='Done'", c.id).map((x) => ({ at: x.at, kind: x.party === 'client' ? 'Call with client' : 'Call with candidate', text: `${x.outcome}. ${(x.topics || []).join(', ')}. ${x.note || ''}`, by: x.by })),
     ...all("SELECT subject, status, at FROM emails WHERE record_id=? AND status IN ('sent','received')", c.id).map((x) => ({ at: x.at, kind: x.status === 'received' ? 'Client replied' : 'Email sent', text: x.subject })),
-    ...all("SELECT format, text, at, sent_by, direction FROM messages WHERE person_type='client' AND person_id=? AND status NOT IN ('held','failed')", c.id).map((x) => ({ at: x.at, kind: x.direction === 'in' ? 'WhatsApp from client' : 'WhatsApp sent', text: String(x.text || '').slice(0, 90), by: x.sent_by })),
+    ...all(`SELECT format, text, at, sent_by, direction FROM messages WHERE person_type='client' AND person_id=? AND status NOT IN ('held','failed')${msgHide(u)}`, c.id).map((x) => ({ at: x.at, kind: x.direction === 'in' ? 'WhatsApp from client' : 'WhatsApp sent', text: String(x.text || '').slice(0, 90), by: x.sent_by })),
     ...all("SELECT text, author, at FROM notes WHERE record_id=? AND author<>'Email inbox' AND text NOT LIKE 'Client call%' AND text NOT LIKE 'Email %'", c.id).map((x) => ({ at: x.at, kind: 'Note', text: String(x.text).slice(0, 120), by: x.author })),
     ...jobs.map((j) => ({ at: j.created_at, kind: 'Job opening', text: `${j.title}${j.city ? `, ${j.city}` : ''} · ${j.openings} ${j.openings === 1 ? 'opening' : 'openings'}` })),
     ...hired.map((a) => ({ at: a.joined_at || a.step_since, kind: 'Hired', text: `${a.person} as ${a.job_title}` })),
@@ -469,7 +471,7 @@ route('GET', '/api/clients/:id', T, (ctx) => {
   const jobs = all('SELECT * FROM jobs WHERE client_id=? ORDER BY created_at DESC', c.id).map((j) => V.jobView(j));
   return {
     ...V.clientView(c), past: clientPast(c, ctx.user), onboarding_items: V.onboardingView(c), jobs, members: all('SELECT * FROM client_members WHERE client_id=?', c.id),
-    messages: all("SELECT * FROM messages WHERE person_type='client' AND person_id=? ORDER BY at DESC LIMIT 30", c.id),
+    messages: all(`SELECT * FROM messages WHERE person_type='client' AND person_id=?${msgHide(ctx.user)} ORDER BY at DESC LIMIT 30`, c.id),
     files: all('SELECT * FROM files WHERE record_id=? AND replaced=0 ORDER BY at DESC', c.id), notes: all('SELECT * FROM notes WHERE record_id=? ORDER BY at DESC', c.id),
     activation: L.activationState(c), calls: all('SELECT * FROM client_calls WHERE client_id=? ORDER BY at DESC', c.id), call_log: all("SELECT * FROM calls WHERE client_id=? AND status='Done' ORDER BY at DESC LIMIT 200", c.id), call_apps: all("SELECT a.id, a.candidate_id, a.job_id FROM applications a JOIN jobs j ON j.id=a.job_id WHERE j.client_id=? AND a.result='open' ORDER BY a.created_at DESC LIMIT 100", c.id).map(V.appView).map((x) => [x.id, `${x.candidate_name} · ${x.job_title}`]), mails: all('SELECT id, subject, kind, status, at, to_addr FROM emails WHERE record_id=? ORDER BY id DESC LIMIT 20', c.id),
     consents: all("SELECT * FROM consents WHERE person_type='client' AND person_id=? ORDER BY at DESC", c.id), agencies: all(`SELECT id, name FROM agencies${isSuper(ctx.user) ? '' : " WHERE status='Active'"}`), can_allocate: isSuper(ctx.user) || (!c.agency_id && R.canAllocate(ctx.user)),
@@ -1271,12 +1273,15 @@ route('GET', '/api/applications', T, (ctx) => {
   const q = ctx.query; let base = appRows(q, ctx.user);
   if (q.mine === '1') { const om = L.ownerMap(); base = base.filter((a) => L.ownsApp(ctx.user.id, a, om)); }
   // The stage of each open application, how many are at each (with the other filters), then the stage picked.
-  for (const r of base) { r.stage = L.stageOfApp(r); r.next_stage = L.nextStageOf(r, r.stage); }
+  for (const r of base) { r.stage = L.stageOfApp(r); r.next_stage = L.nextStageOf(r, r.stage); r.stage_state = L.stageStateOf(r, r.stage); }
   const stage_counts = Object.fromEntries(L.STAGES.map((s) => [s, base.filter((r) => r.stage === s).length]));
-  const rows = scoreApps(q.stage ? base.filter((r) => r.stage === q.stage) : base, q);
+  // In the stage picked: how many are eligible, scheduled, waiting for feedback…
+  const inStage = q.stage ? base.filter((r) => r.stage === q.stage) : base;
+  const state_counts = {}; if (q.stage) for (const r of inStage) state_counts[r.stage_state] = (state_counts[r.stage_state] || 0) + 1;
+  const rows = scoreApps(q.state ? inStage.filter((r) => r.stage_state === q.state) : inStage, q);
   const placed = new Set(all("SELECT candidate_id FROM applications WHERE result='Hired' AND left_date IS NULL").map((r) => r.candidate_id)); for (const r of rows) r.cand_placed = placed.has(r.candidate_id);
   const vis = visibleApps(ctx.user); const counts = { open: vis.filter((a) => a.result === 'open').length, closed: vis.filter((a) => a.result !== 'open').length, joined: vis.filter((a) => a.result === 'Hired').length };
-  return { counts, stage_counts, ...page(ctx, rows, 'applications', ['id', 'candidate_name', 'cand_placed', 'stage', 'next_stage', 'on_hold', 'exp', 'candidate_id', 'score', 'job_id', 'job_title', 'client_name', 'step', 'result', 'days_in_step', 'owner_name', 'source', 'ad', 'screen', 'screen_note']), ads: adOptions('applications'), screens: L.SCREEN.filter((x) => x !== 'Requirement not met'),
+  return { counts, stage_counts, state_counts, ...page(ctx, rows, 'applications', ['id', 'candidate_name', 'cand_placed', 'stage', 'stage_state', 'next_stage', 'on_hold', 'exp', 'candidate_id', 'score', 'job_id', 'job_title', 'client_name', 'step', 'result', 'days_in_step', 'owner_name', 'source', 'ad', 'screen', 'screen_note']), ads: adOptions('applications'), screens: L.SCREEN.filter((x) => x !== 'Requirement not met'),
     // Choices for the filters: the jobs, clients, owners and sources these applications have.
     options: (() => { const vis = visibleApps(ctx.user).map(V.appView); const uniq = (f) => [...new Map(vis.map(f).filter((x) => x && x[0]).map((x) => [x[0], x])).values()].sort((a, b) => String(a[1]).localeCompare(String(b[1])));
       return { titles: [...new Set(vis.map((a) => a.job_title).filter(Boolean))].sort(), jobs: uniq((a) => [a.job_id, `${a.job_title} · ${a.client_name || ''}${a.job_city ? ` · ${a.job_city}` : ''}`]), clients: uniq((a) => [a.client_id, a.client_name]), owners: uniq((a) => [a.owner_id, a.owner_name]), sources: [...new Set(vis.map((a) => a.source).filter(Boolean))].sort() }; })() };
@@ -1553,8 +1558,8 @@ route('GET', '/api/wa/threads', T, (ctx) => {
   const rows = all('SELECT person_type, person_id, MAX(at) last_at, SUM(CASE WHEN direction=\'in\' AND read_by_us=0 THEN 1 ELSE 0 END) unread FROM messages GROUP BY person_type, person_id ORDER BY last_at DESC')
     .filter((t) => seeThread(u, t.person_type, t.person_id))
     .filter((t) => f === 'All' || (f === 'Clients' && t.person_type === 'client') || (f === 'Candidates' && t.person_type === 'candidate') || (f === 'Team' && t.person_type === 'user') || (f === 'Unread' && t.unread > 0) || (f === 'Failed'))
-    .map((t) => { const last = get('SELECT text, direction, status FROM messages WHERE person_type=? AND person_id=? ORDER BY at DESC LIMIT 1', t.person_type, t.person_id); return { ...t, name: V.threadName(t.person_type, t.person_id), last }; })
-    .filter((t) => like(ctx.query.q, t.name, t.person_id));
+    .map((t) => { const last = get(`SELECT text, direction, status FROM messages WHERE person_type=? AND person_id=?${msgHide(u)} ORDER BY at DESC LIMIT 1`, t.person_type, t.person_id); return { ...t, name: V.threadName(t.person_type, t.person_id), last }; })
+    .filter((t) => t.last && like(ctx.query.q, t.name, t.person_id)); // a thread holding only hidden messages is left out
   const failed = f === 'Failed' ? all("SELECT * FROM messages WHERE status='failed' ORDER BY at DESC").filter((m) => seeThread(u, m.person_type, m.person_id)) : [];
   return { threads: f === 'Failed' ? [] : rows, failed };
 });
@@ -1565,7 +1570,7 @@ route('GET', '/api/wa/thread/:ptype/:pid', T, (ctx) => {
   const showPhone = ptype !== 'candidate' || R.phoneVisible(ctx.user, rec);
   return {
     person: { type: ptype, id: pid, name: V.threadName(ptype, pid), phone: showPhone ? p.phone : R.maskPhone(p.phone), opted_out: p.opted_out, lang: p.lang, window_until: L.windowOpenUntil(ptype, pid) },
-    messages: all('SELECT * FROM messages WHERE person_type=? AND person_id=? ORDER BY at', ptype, pid),
+    messages: all(`SELECT * FROM messages WHERE person_type=? AND person_id=?${msgHide(ctx.user)} ORDER BY at`, ptype, pid),
     quick: ptype === 'client' ? ['bbhs_shortlist_ready', 'bbhs_feedback_request', 'bbhs_payment_reminder'] : ptype === 'candidate' ? ['bbhs_details_request', 'bbhs_interview_reminder', 'bbhs_job_alert'] : ['bbhs_team_task_alert', 'bbhs_log_reminder', 'bbhs_day_summary'],
   };
 });
@@ -1796,7 +1801,7 @@ route('GET', '/api/users/suggest', T, (ctx) => {
   while (get('SELECT 1 FROM users WHERE username=?', n)) n = `${base}${i++}`;
   return { username: n };
 });
-route('POST', '/api/users', T, (ctx) => {
+route('POST', '/api/users', ADMINS, (ctx) => { // super admins anywhere; an agency's admin adds sub admins to their own agency
   const u = ctx.user; const b = ctx.body;
   if (!b.name) throw httpError(400, 'Enter the name', 'name');
   const level = isSuper(u) ? (b.level || 'sub') : 'sub';
@@ -1815,7 +1820,7 @@ route('POST', '/api/users', T, (ctx) => {
   insert('users', { id, name: b.name, whatsapp: phone, email: email || null, level, team, agency_id: level === 'super' || limited ? null : agency, role: b.role || (level === 'admin' ? 'Agency owner' : limited ? team : 'Recruiter'), username, pass_hash: L.hashPassword(pw), status: 'On', must_change: 1, failed: 0, created_by: u.id, created_at: now() });
   D.history(ctx.actor.label, 'create login', id, null, null, `${username} (${level})`);
   L.sendWA({ ptype: 'user', pid: id, format: 'bbhs_team_login', vars: { username, password: pw, link: L.link('team') }, by: ctx.actor, rule: 'team_login', secret: pw, auto: true }); // quietly skipped while Meta has not approved it: the admin sees the password on screen
-  return { id, username, password: pw };
+  return { id, username, password: pw, name: b.name, whatsapp: phone, email: email || null };
 });
 function canManage(u, target) { return isSuper(u) || (u.level === 'admin' && target.agency_id === u.agency_id && target.level === 'sub'); }
 route('POST', '/api/users/:id/reset', ADMINS, (ctx) => {
@@ -1863,7 +1868,7 @@ route('POST', '/api/agencies', SUPER, (ctx) => {
     const pw = L.newPassword(); const uid = D.nextId('U');
     insert('users', { id: uid, name: adminName, whatsapp: phone, email, level: 'admin', agency_id: id, role: 'Agency owner', username, pass_hash: L.hashPassword(pw), status: 'On', must_change: 1, failed: 0, created_by: ctx.user.id, created_at: now() });
     L.sendWA({ ptype: 'user', pid: uid, format: 'bbhs_team_login', vars: { username, password: pw, link: L.link('team') }, by: ctx.actor, rule: 'team_login', secret: pw, auto: true }); // quietly skipped while Meta has not approved it: the admin sees the password on screen
-    admin = { id: uid, username, password: pw };
+    admin = { id: uid, username, password: pw, name: adminName, whatsapp: phone, email };
   }
   return { id, admin };
 });
@@ -1895,7 +1900,8 @@ route('POST', '/api/agencies/:id/delete', SUPER, (ctx) => {
 
 // ---------- tasks: who owns what ----------
 const canTask = (u, t) => isSuper(u) || !t.agency_id || t.agency_id === u.agency_id;
-const taskOwners = (u) => all("SELECT id, name, level, agency_id, team FROM users WHERE status='On'").filter((x) => isSuper(u) || !u.agency_id || x.agency_id === u.agency_id || x.id === u.id);
+// Owners to pick from: the team, not the super admins (they see and do everything already).
+const taskOwners = (u) => all("SELECT id, name, level, agency_id, team FROM users WHERE status='On' AND level != 'super'").filter((x) => isSuper(u) || !u.agency_id || x.agency_id === u.agency_id || x.id === u.id);
 const taskOwnerIds = (t) => [...new Set([t.owner_id, ...(Array.isArray(t.owners) ? t.owners : [])].filter(Boolean))];
 const taskRow = (t) => { const ids = taskOwnerIds(t); return { ...t, owners: ids, owner_name: ids.map((id) => (get('SELECT name FROM users WHERE id=?', id) || {}).name).filter(Boolean).join(', ') }; };
 const loadTask = (ctx) => { const t = get('SELECT * FROM tasks WHERE id=? AND removed=0', ctx.params.id); if (!t || !canTask(ctx.user, t)) throw httpError(404, 'Task not found'); return t; };
@@ -1912,7 +1918,7 @@ const taskFields = (ctx, b, t) => {
   // owners: a list (owner_id alone still works); the first is the main one
   const team = taskOwners(ctx.user);
   const ownersIn = Array.isArray(b.owners) ? b.owners : b.owner_id !== undefined ? (b.owner_id ? [b.owner_id] : []) : t ? taskOwnerIds(t) : [];
-  const owners = [...new Set(ownersIn.filter(Boolean))]; if (owners.some((id) => !team.some((x) => x.id === id))) throw httpError(400, 'Pick people from your team', 'owners');
+  const owners = [...new Set(ownersIn.filter(Boolean))]; if (owners.some((id) => !team.some((x) => x.id === id) && !(t ? taskOwnerIds(t) : []).includes(id))) throw httpError(400, 'Pick people from your team', 'owners');
   const owner = owners[0] || null;
   const status = TASK_STATUS.includes(b.status) ? b.status : (t || {}).status || 'Pending';
   return { title, detail: String(b.detail ?? (t || {}).detail ?? '').trim(), area: String(b.area ?? (t || {}).area ?? '').trim(), owner_id: owner, owners, due_date: b.due_date === undefined ? (t || {}).due_date || null : b.due_date || null, status, done_at: status === 'Done' ? (t && t.done_at) || now() : null, done_by: status === 'Done' ? (t && t.done_by) || ctx.actor.label : null };
@@ -2270,9 +2276,26 @@ route('GET', '/api/reports/:name', T, (ctx) => {
   let rows = []; let cols = null;
   if (name === 'funnel') {
     const clients = all('SELECT * FROM clients WHERE merged_into IS NULL').filter((c) => seeClient(u, c) && inR(c.created_at) && (!q.agency || c.agency_id === q.agency));
-    const steps = [['Client leads', clients.length], ['Clients signed', clients.filter((c) => c.contract).length], ['Candidates added', apps.filter((a) => inR(a.created_at)).length]];
-    for (const st of ['Screening', 'Our interview', 'Sent to client', 'Client interview', 'Offer made', 'Offer accepted', 'Joined']) steps.push([st, new Set(hist.filter((h) => h.step === st).map((h) => h.app_id)).size]);
-    rows = steps.map(([step, n], i) => ({ step, count: n, drop: i > 2 && steps[i - 1][1] ? `${Math.round((1 - n / steps[i - 1][1]) * 100)}%` : '' }));
+    const steps = [['Client leads', clients.length], ['Clients signed', clients.filter((c) => c.contract).length]];
+    // Each application that came in, by how far it got: screened in, telephonic and virtual rounds cleared, the
+    // client's yes, the offer, joined. Rounds marked not needed count as passed.
+    const cohort = apps.filter((a) => inR(a.created_at)); const passed = (r) => r && ['Cleared', 'Not needed'].includes(r.status);
+    const reach = (a) => {
+      const si = L.stepIdx(a.step); const rs = L.roundsOf(a); const ph = rs.find((x) => x.mode === 'phone'); const vd = rs.find((x) => x.mode === 'video'); const cl = rs.find((x) => x.mode === 'in_person');
+      let n = 1; // applied
+      if (a.screen === 'Accepted' || si >= L.stepIdx('Our interview')) n = 2;
+      if (n >= 2 && (passed(ph) || si >= L.stepIdx('Sent to client'))) n = 3;
+      if (n >= 3 && (passed(vd) || si >= L.stepIdx('Sent to client'))) n = 4;
+      if (si >= L.stepIdx('Sent to client')) n = Math.max(n, 4);
+      if ((cl && cl.status === 'Cleared') || si >= L.stepIdx('Offer made')) n = 5;
+      if (si >= L.stepIdx('Offer made')) n = 6;
+      if (si >= L.stepIdx('Offer accepted')) n = 7;
+      if (a.result === 'Hired' || si >= L.stepIdx('Joined')) n = 8;
+      return n;
+    };
+    const got = cohort.map(reach);
+    [['Applications in', 1], ['Screened in (eligible for telephonic)', 2], ['Telephonic round cleared', 3], ['Virtual round cleared (CV to client)', 4], ['Selected by the client', 5], ['Offer made', 6], ['Offer accepted', 7], ['Joined', 8]].forEach(([l, k]) => steps.push([l, got.filter((g) => g >= k).length]));
+    rows = steps.map(([step, n], i) => ({ step, count: n, drop: i > 2 && steps[i - 1][1] ? `${Math.round((n / steps[i - 1][1]) * 100)}% of the step before` : '' }));
   } else if (name === 'clients') {
     rows = all('SELECT * FROM clients WHERE merged_into IS NULL AND removed=0').filter((c) => seeClient(u, c) && (!q.client || c.id === q.client)).map((c) => {
       const js = jobs.filter((j) => j.client_id === c.id).map((j) => V.jobView(j)); const as = apps.filter((a) => js.some((j) => j.id === a.job_id));

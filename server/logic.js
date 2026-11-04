@@ -781,6 +781,8 @@ function recordInterview(ivId, o, by) {
       appHist(app.id, app.step, by, `${ivId} result: ${o.result}`, 'interview');
     }
   } else appHist(app.id, app.step, by, `${ivId}: ${o.status}`, 'interview');
+  // The client has met our candidate: ask them, once for this job, to rate the recruiter (super admins read it).
+  if (o.status === 'Completed' && iv.round !== 'ours') { try { require('./care').askClientReview(app.job_id); } catch (e) { console.error('client review ask', e.message); } }
   return { iv: get('SELECT * FROM interviews WHERE id=?', ivId), next };
 }
 function interviewView(iv) {
@@ -955,6 +957,16 @@ function stageOfApp(a) {
 }
 // The stage an application moves to when the current one is cleared: telephonic -> virtual (or the client when
 // the virtual round is not needed), virtual -> the client, screening -> telephonic, client -> offer.
+// Within a stage: eligible (awaiting the round), scheduled, feedback due (the time has passed), or on hold / no-show.
+// Recording the round completed moves the application to the next stage, eligible again.
+const ROUND_STATE = { 'To do': 'Eligible', Scheduled: 'Scheduled', 'Result pending': 'Feedback due', 'On hold': 'On hold', 'No-show': 'No-show' };
+function stageStateOf(a, stage = stageOfApp(a)) {
+  if (stage === 'Screening') return 'To screen';
+  if (stage === 'Telephonic' || stage === 'Virtual') { const r = roundsOf(a).find((x) => x.mode === (stage === 'Telephonic' ? 'phone' : 'video') && !['Cleared', 'Not needed', 'Not cleared'].includes(x.status)) || roundsOf(a).find((x) => x.mode !== 'in_person' && !['Cleared', 'Not needed', 'Not cleared'].includes(x.status)); return r ? ROUND_STATE[r.status] || 'Eligible' : 'Eligible'; }
+  if (stage === 'Client') { const r = roundsOf(a).find((x) => x.mode === 'in_person' && !['Cleared', 'Not needed', 'Not cleared'].includes(x.status)); return r ? ROUND_STATE[r.status] || 'Eligible' : 'Selected'; }
+  if (stage === 'Offer') return a.step === 'Offer accepted' ? 'Joining' : 'Waiting for answer';
+  return '';
+}
 function nextStageOf(a, stage = stageOfApp(a)) {
   if (stage === 'Screening') return 'Telephonic';
   if (stage === 'Telephonic') { const v = roundsOf(a).find((x) => x.mode === 'video'); return v && !['Not needed', 'Cleared'].includes(v.status) ? 'Virtual' : 'Client'; }
@@ -1266,7 +1278,7 @@ function sendSystemText(ptype, pid, text) {
   insert('messages', { id: nextId('WA'), person_type: ptype, person_id: pid, phone: p.phone, direction: 'out', text, buttons: [], sent_by: 'Auto', status: settings().crm.enabled ? 'sending' : 'would send', read_by_us: 1, auto: 1, at: now() });
 }
 
-module.exports = { ownersOfJob, ownerMap, ownsApp, STAGES, stageOfApp, nextStageOf, reopenRefilled, adPlanFor, openAdApplications, placedOn, closePlacedApps, adLabel,
+module.exports = { stageStateOf, ownersOfJob, ownerMap, ownsApp, STAGES, stageOfApp, nextStageOf, reopenRefilled, adPlanFor, openAdApplications, placedOn, closePlacedApps, adLabel,
   STEPS, stepIdx, digits10, validPhone, inr, istDay, istFmt, istTime, istHour, inQuiet, next9am, daysBetween, addDays, hashPassword, checkPassword, newPassword, sha,
   activationState, checkActivation, waHeld, TEAMS, IV_MODES, clientSeesIv, addIvNote, CALL_OUTCOMES, logCall, jobList, deptOf, stateOf, person, fillFormat, windowOpenUntil, sendWA, setDispatcher, alertUser, link, agencyAdmin, superAdmins,
   computeJobStatus, jobStatusReason, recalcJob, filledCount, appsOfJob, matchScore, jobsFor, cleanBusiness, BUSINESS_TYPES, EXP_YEARS, JEW_YEARS, LOOKING, NOT_LOOKING, ratingOf, bestMatches, isPlaced, salaryText, autoJobAlert,

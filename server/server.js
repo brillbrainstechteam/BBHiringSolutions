@@ -95,6 +95,9 @@ const server = http.createServer(async (req, res) => {
     // A job description page for candidates: /jd/JB-2001.
     const jdm = /^\/jd\/(JB-\d+)\/?$/i.exec(p);
     if (jdm) { const h = require('./api-team').jdHtml(jdm[1]); return send(res, h ? 200 : 404, h || 'This job was not found.', { 'Content-Type': h ? TYPES['.html'] : 'text/plain', 'Cache-Control': 'no-cache' }); }
+    // A client rating our recruiters, from the WhatsApp link: /rate/<code>.
+    const rtm = /^\/rate\/([\w-]{8,40})\/?$/.exec(p);
+    if (rtm) { const h = require('./care').rateHtml(rtm[1]); return send(res, h ? 200 : 404, h || 'This link is not valid any more.', { 'Content-Type': h ? TYPES['.html'] : 'text/plain', 'Cache-Control': 'no-store', 'X-Robots-Tag': 'noindex' }); }
     const page = '/' + (p.split('/')[1] || '');
     if (PAGES.includes(page) || p === '/index.html') return send(res, 200, pageHtml(PAGES.includes(page) ? page : '/'), { 'Content-Type': TYPES['.html'], 'Cache-Control': 'no-cache' }); // the app's own pages, e.g. /my-account/jobs
     const file = path.normalize(path.join(PUBLIC, p));

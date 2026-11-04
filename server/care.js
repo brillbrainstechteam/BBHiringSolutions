@@ -175,7 +175,83 @@ route('GET', '/api/reviews', { auth: 'team', levels: ['super'] }, (ctx) => {
   const rows = all('SELECT r.*, c.name candidate_name, u.name user_name, u.level FROM reviews r JOIN candidates c ON c.id=r.candidate_id JOIN users u ON u.id=r.user_id ORDER BY r.at DESC');
   const per = {};
   for (const r of rows) { const p = (per[r.user_id] = per[r.user_id] || { id: r.user_id, name: r.user_name, level: r.level, count: 0, sum: 0, low: 0, google: 0 }); p.count += 1; p.sum += r.stars; if (r.stars <= 2) p.low += 1; if (r.google) p.google += 1; }
-  return { recruiters: Object.values(per).map((p) => ({ ...p, avg: Math.round((p.sum / p.count) * 10) / 10 })).sort((x, y) => y.avg - x.avg), reviews: rows.filter((r) => !ctx.query.user || r.user_id === ctx.query.user), google_url: googleUrl() };
+  return { recruiters: Object.values(per).map((p) => ({ ...p, avg: Math.round((p.sum / p.count) * 10) / 10 })).sort((x, y) => y.avg - x.avg), reviews: rows.filter((r) => !ctx.query.user || r.user_id === ctx.query.user), google_url: googleUrl(),
+    client_reviews: all('SELECT r.*, u.name user_name, c.company, j.title job_title FROM client_reviews r JOIN users u ON u.id=r.user_id LEFT JOIN clients c ON c.id=r.client_id LEFT JOIN jobs j ON j.id=r.job_id ORDER BY r.at DESC').filter((r) => !ctx.query.user || r.user_id === ctx.query.user),
+    askable: all("SELECT DISTINCT j.id, j.title, c.company, (SELECT MAX(sent_at) FROM client_review_asks k WHERE k.job_id=j.id) asked, (SELECT MAX(done_at) FROM client_review_asks k WHERE k.job_id=j.id) answered FROM interviews i JOIN applications a ON a.id=i.app_id JOIN jobs j ON j.id=a.job_id JOIN clients c ON c.id=j.client_id WHERE i.round != 'ours' AND i.status='Completed' ORDER BY j.id DESC") };
 });
 
-module.exports = { due, reply, record, forApp, recruitersOf, OUTCOMES };
+// ---------- reviews of recruiters by clients: kept for the super admin only ----------
+// Once the client has interviewed our candidates for a job, the client gets a WhatsApp with a link to a short form
+// (/rate/<code>, no login): 1-5 stars and a line for each recruiter on that job. Answers land in Recruiter reviews.
+D.db.exec(`
+CREATE TABLE IF NOT EXISTS client_review_asks (token TEXT PRIMARY KEY, client_id TEXT, job_id TEXT, sent_at TEXT, done_at TEXT);
+CREATE TABLE IF NOT EXISTS client_reviews (id INTEGER PRIMARY KEY AUTOINCREMENT, client_id TEXT, job_id TEXT, user_id TEXT, stars INTEGER, text TEXT, by_name TEXT, at TEXT);
+`);
+function jobRecruiters(jobId) {
+  const j = get('SELECT * FROM jobs WHERE id=?', jobId) || {}; const ids = new Set([j.recruiter_id, ...(Array.isArray(j.owners) ? j.owners : [])]);
+  for (const a of all('SELECT owner_id FROM applications WHERE job_id=?', jobId)) ids.add(a.owner_id);
+  return [...ids].filter(Boolean).map((id) => get(`SELECT id, name FROM users WHERE id=? AND ${STAFF}`, id)).filter(Boolean);
+}
+// by: a super admin asking by hand (sent even if asked before); none: the automatic one after a client interview, once a job.
+function askClientReview(jobId, by) {
+  const j = get('SELECT * FROM jobs WHERE id=?', jobId); if (!j || !j.client_id) return { skipped: 'No client on this job' };
+  if (!jobRecruiters(jobId).length) return { skipped: 'No recruiter on this job yet' };
+  let ask = get('SELECT * FROM client_review_asks WHERE job_id=? AND done_at IS NULL', jobId);
+  if (!ask) { ask = { token: require('crypto').randomBytes(12).toString('base64url'), client_id: j.client_id, job_id: jobId, sent_at: now(), done_at: null }; insert('client_review_asks', ask); }
+  const link = L.link(`rate/${ask.token}`); const cl = get('SELECT contact, whatsapp FROM clients WHERE id=?', j.client_id) || {};
+  // By hand, the link comes back too: while Meta has not approved the message, the super admin sends it themselves.
+  let sent; try { sent = L.sendWA({ ptype: 'client', pid: j.client_id, format: 'bbhs_client_review', vars: { job: j.title, link }, ...(by ? { by } : { auto: true, rule: 'client_review', dedupe: `crev:${jobId}` }) }); } catch (e) { if (!by) throw e; sent = { skipped: e.message }; }
+  if (by && sent && ['held', 'failed'].includes(sent.status)) sent = { skipped: sent.status === 'held' ? `held (${String(sent.error || '').replace(/^Held: /, '')}); it goes by itself once messages are on` : sent.error || 'failed' };
+  return { ...sent, link, contact: cl.contact || '', whatsapp: cl.whatsapp || '', job: j.title };
+}
+const askOf = (token) => { const a = get('SELECT * FROM client_review_asks WHERE token=?', String(token || '')); if (!a) throw httpError(404, 'This link is not valid any more.'); return a; };
+route('GET', '/api/pub/rate/:token', {}, (ctx) => {
+  const a = askOf(ctx.params.token); const j = get('SELECT title FROM jobs WHERE id=?', a.job_id) || {}; const c = get('SELECT company, contact FROM clients WHERE id=?', a.client_id) || {};
+  return { company: c.company, contact: c.contact, job: j.title, done: !!a.done_at, recruiters: jobRecruiters(a.job_id).map((r) => ({ id: r.id, name: r.name })) };
+});
+route('POST', '/api/pub/rate/:token', { rate: { key: 'crate', max: 20, minutes: 60 } }, (ctx) => {
+  const a = askOf(ctx.params.token); const b = ctx.body || {}; const team = jobRecruiters(a.job_id);
+  const given = (Array.isArray(b.ratings) ? b.ratings : []).filter((r) => team.some((t) => t.id === r.user_id) && Number(r.stars) >= 1 && Number(r.stars) <= 5);
+  if (!given.length) throw httpError(400, 'Please give at least one rating (1 to 5 stars).');
+  const by = String(b.name || '').trim().slice(0, 80) || (get('SELECT contact FROM clients WHERE id=?', a.client_id) || {}).contact || '';
+  for (const r of given) {
+    const row = { client_id: a.client_id, job_id: a.job_id, user_id: r.user_id, stars: Math.round(Number(r.stars)), text: String(r.text || '').trim().slice(0, 1500), by_name: by, at: now() };
+    const old = get('SELECT id FROM client_reviews WHERE job_id=? AND user_id=?', a.job_id, r.user_id);
+    if (old) update('client_reviews', old.id, row); else insert('client_reviews', row);
+  }
+  D.run('UPDATE client_review_asks SET done_at=? WHERE token=?', now(), a.token);
+  const company = (get('SELECT company FROM clients WHERE id=?', a.client_id) || {}).company || '';
+  for (const s of L.superAdmins()) insert('alerts', { user_id: s.id, text: `Client review from ${company}: ${given.map((r) => `${r.stars}★`).join(', ')}`, record_id: 'reviews', read: 0, at: now() });
+  return { ok: true };
+});
+// The form a client opens from the WhatsApp: stars and a line for each recruiter, one Send.
+function rateHtml(token) {
+  const a = get('SELECT * FROM client_review_asks WHERE token=?', String(token || '')); if (!a) return null;
+  const e = (x) => String(x == null ? '' : x).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const b = D.settings().business; const j = get('SELECT title FROM jobs WHERE id=?', a.job_id) || {}; const c = get('SELECT company, contact FROM clients WHERE id=?', a.client_id) || {};
+  const people = jobRecruiters(a.job_id);
+  const rows = people.map((p) => `<fieldset data-u="${e(p.id)}"><legend>${e(p.name)}</legend><div class="stars">${[1, 2, 3, 4, 5].map((n) => `<label><input type="radio" name="s_${e(p.id)}" value="${n}"><span>★</span></label>`).join('')}</div><textarea maxlength="1500" placeholder="What went well, what could be better (optional)"></textarea></fieldset>`).join('');
+  const body = a.done_at ? '<div class="done">Thank you! Your rating has reached our senior team.</div>'
+    : people.length ? `<form id="f"><p>Thank you for meeting our candidates for <b>${e(j.title)}</b>. How did our recruiter${people.length > 1 ? 's' : ''} do? Only our senior team reads this.</p>${rows}<label class="nm">Your name<input name="name" value="${e(c.contact || '')}" maxlength="80"></label><button>Send</button><div id="err"></div></form>`
+      : '<div class="done">Thank you. There is nothing to rate on this link yet.</div>';
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>Rate your recruiter · ${e(b.name)}</title>
+<style>:root{--navy:#101a3a;--gold:#d4a017;--ink:#1d2433;--muted:#5d6577;--line:#e6e8ef;--bg:#f6f7fb}*{box-sizing:border-box}body{margin:0;font:16px/1.55 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:var(--ink);background:var(--bg)}
+header{background:var(--navy);color:#fff;padding:18px 16px}header .in,main{max-width:560px;margin:0 auto}header b{font-size:15px}header span{display:block;font-size:12px;opacity:.7}main{padding:20px 16px 40px}
+fieldset{border:1px solid var(--line);background:#fff;border-radius:12px;padding:12px 14px 14px;margin:0 0 12px}legend{font-weight:600;padding:0 4px}
+.stars{display:flex;gap:6px;margin:4px 0 10px}.stars input{position:absolute;opacity:0}.stars span{font-size:32px;color:#d5d8e0;cursor:pointer;line-height:1}.stars label.on span{color:var(--gold)}
+textarea,input[name=name]{width:100%;border:1px solid var(--line);border-radius:8px;padding:10px;font:inherit;background:#fff}textarea{min-height:64px}.nm{display:block;font-size:14px;color:var(--muted);margin:4px 0 14px}
+button{width:100%;background:var(--navy);color:#fff;border:0;border-radius:10px;padding:13px;font:600 16px system-ui;cursor:pointer}button:disabled{opacity:.6}#err{color:#b42318;margin-top:10px;font-size:14px}
+.done{background:#fff;border:1px solid var(--line);border-radius:12px;padding:22px;text-align:center}</style></head>
+<body><header><div class="in"><b>${e(b.name)}</b><span>${e(c.company || '')}</span></div></header><main>${body}</main>
+<script>(function(){var f=document.getElementById('f');if(!f)return;
+f.querySelectorAll('.stars').forEach(function(g){var ls=g.querySelectorAll('label');ls.forEach(function(l,i){l.addEventListener('click',function(){ls.forEach(function(x,k){x.classList.toggle('on',k<=i)})})})});
+f.addEventListener('submit',function(ev){ev.preventDefault();var btn=f.querySelector('button'),err=document.getElementById('err');err.textContent='';
+var ratings=[].map.call(f.querySelectorAll('fieldset'),function(fs){var c=fs.querySelector('input:checked');return{user_id:fs.dataset.u,stars:c?Number(c.value):0,text:fs.querySelector('textarea').value}}).filter(function(r){return r.stars});
+if(!ratings.length){err.textContent='Please tap the stars for at least one person.';return}btn.disabled=true;
+fetch('/api/pub/rate/${e(a.token)}',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:f.name.value,ratings:ratings})}).then(function(r){return r.json().then(function(d){if(!r.ok)throw new Error(d.error||'Could not send');f.outerHTML='<div class="done">Thank you! Your rating has reached our senior team.</div>'})}).catch(function(x){err.textContent=x.message;btn.disabled=false})})})();</script></body></html>`;
+}
+// Super admin: ask a client by hand (the jobs whose client has interviewed our candidates are offered).
+route('POST', '/api/reviews/ask-client', { auth: 'team', levels: ['super'] }, (ctx) => askClientReview(String(ctx.body.job_id || ''), ctx.actor));
+
+
+module.exports = { due, reply, record, forApp, recruitersOf, askClientReview, rateHtml, OUTCOMES };
