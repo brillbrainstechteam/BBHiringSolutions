@@ -229,6 +229,53 @@ route('GET', '/api/dashboard', T, (ctx) => {
 });
 
 // ---------- My day (sub admin home) ----------
+route('GET', '/api/people', T, (ctx) => taskOwners(ctx.user).map((x) => ({ id: x.id, name: x.name, level: x.level })));
+const setOwners = (ctx, table, rec, mainCol) => {
+  if (!['super', 'admin'].includes(ctx.user.level)) throw httpError(403, 'Admins set the owners');
+  const team = taskOwners(ctx.user); const ids = [...new Set((Array.isArray(ctx.body.owners) ? ctx.body.owners : []).filter(Boolean))];
+  if (ids.some((id) => !team.some((x) => x.id === id))) throw httpError(400, 'Pick people from your team', 'owners');
+  const before = [rec[mainCol], ...(Array.isArray(rec.owners) ? rec.owners : [])].filter(Boolean);
+  update(table, rec.id, { owners: ids, [mainCol]: ids[0] || null });
+  const name = table === 'clients' ? rec.company : `${rec.title} (${rec.id})`;
+  for (const id of ids) if (!before.includes(id) && id !== ctx.user.id) L.alertUser(id, `You now own ${table === 'clients' ? 'the client' : 'the job'} ${name}${table === 'clients' ? ' and its job openings' : ''}`, rec.id, true);
+  D.history(ctx.actor.label, 'owners', rec.id, 'owners', before.join(','), ids.join(','));
+  return { ok: true, owners: ids };
+};
+route('POST', '/api/clients/:id/owners', T, (ctx) => { const c = get('SELECT * FROM clients WHERE id=?', ctx.params.id); mustSee(c && seeClient(ctx.user, c), 'client'); return setOwners(ctx, 'clients', c, 'owner_id'); });
+route('POST', '/api/jobs/:id/owners', T, (ctx) => { const j = get('SELECT * FROM jobs WHERE id=?', ctx.params.id); mustSee(seeJob(ctx.user, j), 'job opening'); return setOwners(ctx, 'jobs', j, 'recruiter_id'); });
+// Today: what each person should do now, from everything they own, most urgent first. Each line opens the record
+// or the list it belongs to.
+route('GET', '/api/today', T, (ctx) => {
+  const u = ctx.user; const today = L.istDay(); const om = L.ownerMap();
+  const mine = visibleApps(u).filter((a) => a.result === 'open' && L.ownsApp(u.id, a, om)); const ids = new Set(mine.map((a) => a.id));
+  const view = new Map(mine.map((a) => [a.id, V.appView(a)])); const who = (a) => `${view.get(a.id).candidate_name} · ${view.get(a.id).job_title}`;
+  const stage = new Map(mine.map((a) => [a.id, L.stageOfApp(a)]));
+  const ivs = all("SELECT * FROM interviews WHERE status IN ('Scheduled','Rescheduled') ORDER BY at").filter((i) => ids.has(i.app_id)).map(L.interviewView);
+  const end = new Date(`${today}T23:59:59+05:30`).toISOString();
+  const calls = all('SELECT * FROM followups WHERE done=0 AND at<=? ORDER BY at', end).filter((f) => f.for_user === u.id || ids.has(f.record_id));
+  const it = (text, open, when) => ({ text, open, when: when || null });
+  const appOpen = (a) => ({ type: 'application', id: a.id });
+  const at = (s) => mine.filter((a) => stage.get(a.id) === s);
+  const vids = at('Virtual'); const virtualToBook = vids.filter((a) => !ivs.some((i) => i.app_id === a.id && i.mode === 'video'));
+  const clientApps = at('Client'); const clientToFix = clientApps.filter((a) => !ivs.some((i) => i.app_id === a.id && i.round === 'client'));
+  const offers = at('Offer'); const joining = offers.filter((a) => a.step === 'Offer accepted' && a.joining_date && a.joining_date <= L.istDay(new Date(Date.now() + 7 * 86400000)));
+  const myJobs = all('SELECT * FROM jobs WHERE archived=0').filter((j) => (om.get(j.id) || []).includes(u.id)).map((j) => V.jobView(j)).filter((j) => j.status === 'Draft');
+  const tasks = all("SELECT * FROM tasks WHERE removed=0 AND status!='Done' ORDER BY COALESCE(due_date,'9999')").filter((t) => taskOwnerIds(t).includes(u.id) && (!t.due_date || t.due_date <= today));
+  const sections = [
+    { key: 'calls', title: 'Calls and follow-ups due', items: calls.map((f) => it(f.note, f.record_id && ids.has(f.record_id) ? { type: 'application', id: f.record_id } : null, f.at)) },
+    { key: 'interviews', title: 'Interviews today', items: ivs.filter((i) => L.istDay(i.at) === today && i.view_status !== 'Result pending').map((i) => it(`${i.name}: ${who({ id: i.app_id })}`, { type: 'application', id: i.app_id }, i.at)) },
+    { key: 'feedback', title: 'Feedback to record', items: ivs.filter((i) => i.view_status === 'Result pending').map((i) => it(`${i.name}: ${who({ id: i.app_id })}`, { type: 'application', id: i.app_id }, i.at)) },
+    { key: 'screening', title: 'To screen', link: 'applications?mine=1&stage=Screening', items: at('Screening').map((a) => it(who(a), appOpen(a))) },
+    { key: 'telephonic', title: 'Telephonic round to do', link: 'applications?mine=1&stage=Telephonic', items: at('Telephonic').filter((a) => !ivs.some((i) => i.app_id === a.id && i.mode === 'phone')).map((a) => it(who(a), appOpen(a))) },
+    { key: 'virtual', title: 'Virtual round to book', link: 'applications?mine=1&stage=Virtual', items: virtualToBook.map((a) => { const c = get('SELECT pref_time, pref_days FROM candidates WHERE id=?', a.candidate_id) || {}; return it(`${who(a)}${c.pref_time || c.pref_days ? ' · gave a time' : ' · waiting for their time'}`, appOpen(a)); }) },
+    { key: 'client', title: 'Client round to fix', link: 'applications?mine=1&stage=Client', items: clientToFix.map((a) => it(who(a), appOpen(a))) },
+    { key: 'offers', title: 'Offers waiting for an answer', link: 'applications?mine=1&stage=Offer', items: offers.filter((a) => a.step === 'Offer made').map((a) => it(who(a), appOpen(a))) },
+    { key: 'joining', title: 'Joining in the next 7 days', items: joining.map((a) => it(`${who(a)} · joins ${a.joining_date}`, appOpen(a))) },
+    { key: 'tasks', title: 'Tasks due', link: 'tasks', items: tasks.map((t) => it(t.title, { type: 'task', id: t.id }, t.due_date)) },
+    { key: 'jds', title: 'Job descriptions to finish', items: myJobs.map((j) => it(`${j.title} · ${j.client_name || ''}`, { type: 'job', id: j.id })) },
+  ].map((s) => ({ ...s, count: s.items.length, items: s.items.slice(0, 6) }));
+  return { sections, owned: { clients: all('SELECT id, owner_id, owners FROM clients').filter((c) => c.owner_id === u.id || (Array.isArray(c.owners) && c.owners.includes(u.id))).length, jobs: [...om.values()].filter((x) => x.includes(u.id)).length, applications: mine.length } };
+});
 route('GET', '/api/myday', T, (ctx) => {
   const u = ctx.user; const today = L.istDay();
   const apps = visibleApps(u); const ids = new Set(apps.map((a) => a.id));
@@ -1204,7 +1251,8 @@ function appRows(q, u) {
 // Each application's fit with its job: the AI's score when it has read them, otherwise the matching rules. Best first.
 function scoreApps(rows, q) {
   const flow = require('./flow'); const cands = new Map(all('SELECT * FROM candidates').map((c) => [c.id, c])); const jobs = new Map(all('SELECT * FROM jobs').map((j) => [j.id, j]));
-  const out = rows.map((a) => { const c = cands.get(a.candidate_id); const j = jobs.get(a.job_id); if (!c || !j) return { ...a, score: 0, good: [], gaps: [] }; const f = flow.rowFor(j, c, L.matchScore(c, j, L.ratingOf(c.id)), {}); return { ...a, cv_file: c.cv_file || null, score: f.score, good: f.points || [], gaps: f.gaps || [] }; })
+  const out = rows.map((a) => { const c = cands.get(a.candidate_id); const j = jobs.get(a.job_id); if (!c || !j) return { ...a, score: 0, good: [], gaps: [] }; const f = flow.rowFor(j, c, L.matchScore(c, j, L.ratingOf(c.id)), {}); return { ...a, cv_file: c.cv_file || null, exp: c.exp_total, score: f.score, good: f.points || [], gaps: f.gaps || [] }; })
+    .filter((a) => { if (!q.exp) return true; const e = a.exp; const band = e === null || e === undefined || e === '' ? 'none' : e < 1 ? '0-1' : e < 3 ? '1-3' : e < 5 ? '3-5' : e < 10 ? '5-10' : '10+'; return String(q.exp).split(',').includes(band); })
     .filter((a) => (q.score_min === undefined || q.score_min === '' || a.score >= Number(q.score_min)) && (q.score_max === undefined || q.score_max === '' || a.score <= Number(q.score_max)));
   return q.sort ? sortBy(out, q, ['score', 'candidate_name', 'source', 'job_title', 'step', 'days_in_step']) : [...out].sort((x, y) => y.score - x.score);
 }
@@ -1218,21 +1266,22 @@ route('POST', '/api/applications/reject-below', T, (ctx) => {
   return { done };
 });
 route('GET', '/api/applications', T, (ctx) => {
-  const q = ctx.query; const base = appRows(q, ctx.user);
+  const q = ctx.query; let base = appRows(q, ctx.user);
+  if (q.mine === '1') { const om = L.ownerMap(); base = base.filter((a) => L.ownsApp(ctx.user.id, a, om)); }
   // The stage of each open application, how many are at each (with the other filters), then the stage picked.
   for (const r of base) { r.stage = L.stageOfApp(r); r.next_stage = L.nextStageOf(r, r.stage); }
   const stage_counts = Object.fromEntries(L.STAGES.map((s) => [s, base.filter((r) => r.stage === s).length]));
   const rows = scoreApps(q.stage ? base.filter((r) => r.stage === q.stage) : base, q);
   const placed = new Set(all("SELECT candidate_id FROM applications WHERE result='Hired' AND left_date IS NULL").map((r) => r.candidate_id)); for (const r of rows) r.cand_placed = placed.has(r.candidate_id);
   const vis = visibleApps(ctx.user); const counts = { open: vis.filter((a) => a.result === 'open').length, closed: vis.filter((a) => a.result !== 'open').length, joined: vis.filter((a) => a.result === 'Hired').length };
-  return { counts, stage_counts, ...page(ctx, rows, 'applications', ['id', 'candidate_name', 'cand_placed', 'stage', 'next_stage', 'on_hold', 'candidate_id', 'score', 'job_id', 'job_title', 'client_name', 'step', 'result', 'days_in_step', 'owner_name', 'source', 'ad', 'screen', 'screen_note']), ads: adOptions('applications'), screens: L.SCREEN.filter((x) => x !== 'Requirement not met'),
+  return { counts, stage_counts, ...page(ctx, rows, 'applications', ['id', 'candidate_name', 'cand_placed', 'stage', 'next_stage', 'on_hold', 'exp', 'candidate_id', 'score', 'job_id', 'job_title', 'client_name', 'step', 'result', 'days_in_step', 'owner_name', 'source', 'ad', 'screen', 'screen_note']), ads: adOptions('applications'), screens: L.SCREEN.filter((x) => x !== 'Requirement not met'),
     // Choices for the filters: the jobs, clients, owners and sources these applications have.
     options: (() => { const vis = visibleApps(ctx.user).map(V.appView); const uniq = (f) => [...new Map(vis.map(f).filter((x) => x && x[0]).map((x) => [x[0], x])).values()].sort((a, b) => String(a[1]).localeCompare(String(b[1])));
       return { titles: [...new Set(vis.map((a) => a.job_title).filter(Boolean))].sort(), jobs: uniq((a) => [a.job_id, `${a.job_title} · ${a.client_name || ''}${a.job_city ? ` · ${a.job_city}` : ''}`]), clients: uniq((a) => [a.client_id, a.client_name]), owners: uniq((a) => [a.owner_id, a.owner_name]), sources: [...new Set(vis.map((a) => a.source).filter(Boolean))].sort() }; })() };
 });
 // The hiring pipeline for the dashboard: each open job with how many of its open applications are at each stage.
 route('GET', '/api/pipeline', T, (ctx) => {
-  const apps = visibleApps(ctx.user).filter((a) => a.result === 'open').map(V.appView);
+  const om = L.ownerMap(); const apps = visibleApps(ctx.user).filter((a) => a.result === 'open' && (ctx.query.mine !== '1' || L.ownsApp(ctx.user.id, a, om))).map(V.appView);
   const jobs = new Map();
   for (const a of apps) {
     const st = L.stageOfApp(a); if (!L.STAGES.includes(st)) continue;
@@ -1845,25 +1894,30 @@ route('POST', '/api/agencies/:id/delete', SUPER, (ctx) => {
 // ---------- tasks: who owns what ----------
 const canTask = (u, t) => isSuper(u) || !t.agency_id || t.agency_id === u.agency_id;
 const taskOwners = (u) => all("SELECT id, name, level, agency_id, team FROM users WHERE status='On'").filter((x) => isSuper(u) || !u.agency_id || x.agency_id === u.agency_id || x.id === u.id);
-const taskRow = (t) => ({ ...t, owner_name: t.owner_id ? (get('SELECT name FROM users WHERE id=?', t.owner_id) || {}).name || '' : '' });
+const taskOwnerIds = (t) => [...new Set([t.owner_id, ...(Array.isArray(t.owners) ? t.owners : [])].filter(Boolean))];
+const taskRow = (t) => { const ids = taskOwnerIds(t); return { ...t, owners: ids, owner_name: ids.map((id) => (get('SELECT name FROM users WHERE id=?', id) || {}).name).filter(Boolean).join(', ') }; };
 const loadTask = (ctx) => { const t = get('SELECT * FROM tasks WHERE id=? AND removed=0', ctx.params.id); if (!t || !canTask(ctx.user, t)) throw httpError(404, 'Task not found'); return t; };
 const TASK_STATUS = ['Pending', 'In progress', 'Done'];
 route('GET', '/api/tasks', T, (ctx) => {
   const u = ctx.user; const q = ctx.query; const rows = all('SELECT * FROM tasks WHERE removed=0 ORDER BY status=\'Done\', COALESCE(due_date, \'9999\'), area, at').filter((t) => canTask(u, t)); const owners = taskOwners(u);
-  const list = rows.filter((t) => (!q.owner || (q.owner === 'none' ? !t.owner_id : t.owner_id === q.owner)) && (!q.status || t.status === q.status) && (!q.area || t.area === q.area) && like(q.q, t.title, t.detail, t.area)).map(taskRow);
-  const team = owners.map((x) => ({ ...x, open: rows.filter((t) => t.owner_id === x.id && t.status !== 'Done').length, done: rows.filter((t) => t.owner_id === x.id && t.status === 'Done').length }));
+  const list = rows.filter((t) => (!q.owner || (q.owner === 'none' ? !taskOwnerIds(t).length : taskOwnerIds(t).includes(q.owner))) && (!q.status || t.status === q.status) && (!q.area || t.area === q.area) && like(q.q, t.title, t.detail, t.area)).map(taskRow);
+  const team = owners.map((x) => ({ ...x, open: rows.filter((t) => taskOwnerIds(t).includes(x.id) && t.status !== 'Done').length, done: rows.filter((t) => taskOwnerIds(t).includes(x.id) && t.status === 'Done').length }));
   return { rows: list, owners, team, areas: [...new Set(rows.map((t) => t.area).filter(Boolean))], statuses: TASK_STATUS, can_perf: u.level !== 'sub' };
 });
 route('GET', '/api/tasks/:id', T, (ctx) => taskRow(loadTask(ctx)));
 const taskFields = (ctx, b, t) => {
   const title = String(b.title ?? (t || {}).title ?? '').trim(); if (!title) throw httpError(400, 'Write the task', 'title');
-  const owner = b.owner_id === undefined ? (t || {}).owner_id || null : b.owner_id || null; if (owner && !taskOwners(ctx.user).some((x) => x.id === owner)) throw httpError(400, 'Pick someone from your team', 'owner_id');
+  // owners: a list (owner_id alone still works); the first is the main one
+  const team = taskOwners(ctx.user);
+  const ownersIn = Array.isArray(b.owners) ? b.owners : b.owner_id !== undefined ? (b.owner_id ? [b.owner_id] : []) : t ? taskOwnerIds(t) : [];
+  const owners = [...new Set(ownersIn.filter(Boolean))]; if (owners.some((id) => !team.some((x) => x.id === id))) throw httpError(400, 'Pick people from your team', 'owners');
+  const owner = owners[0] || null;
   const status = TASK_STATUS.includes(b.status) ? b.status : (t || {}).status || 'Pending';
-  return { title, detail: String(b.detail ?? (t || {}).detail ?? '').trim(), area: String(b.area ?? (t || {}).area ?? '').trim(), owner_id: owner, due_date: b.due_date === undefined ? (t || {}).due_date || null : b.due_date || null, status, done_at: status === 'Done' ? (t && t.done_at) || now() : null, done_by: status === 'Done' ? (t && t.done_by) || ctx.actor.label : null };
+  return { title, detail: String(b.detail ?? (t || {}).detail ?? '').trim(), area: String(b.area ?? (t || {}).area ?? '').trim(), owner_id: owner, owners, due_date: b.due_date === undefined ? (t || {}).due_date || null : b.due_date || null, status, done_at: status === 'Done' ? (t && t.done_at) || now() : null, done_by: status === 'Done' ? (t && t.done_by) || ctx.actor.label : null };
 };
-const tellOwner = (ctx, t) => { if (t.owner_id && t.owner_id !== ctx.user.id) L.alertUser(t.owner_id, `New task: ${t.title}`, t.id, true); };
+const tellOwner = (ctx, t, before = []) => { for (const id of taskOwnerIds(t)) if (id !== ctx.user.id && !before.includes(id)) L.alertUser(id, `New task: ${t.title}`, t.id, true); };
 route('POST', '/api/tasks', T, (ctx) => { const id = D.nextId('TK'); const r = { id, ...taskFields(ctx, ctx.body || {}), agency_id: ctx.user.agency_id || null, by: ctx.actor.label, at: now() }; insert('tasks', r); D.history(ctx.actor.label, 'create', id, null, null, r.title); tellOwner(ctx, r); return taskRow(get('SELECT * FROM tasks WHERE id=?', id)); });
-route('PATCH', '/api/tasks/:id', T, (ctx) => { const t = loadTask(ctx); const r = taskFields(ctx, ctx.body || {}, t); update('tasks', t.id, r); D.history(ctx.actor.label, 'task', t.id, 'status', t.status, r.status); if (r.owner_id !== t.owner_id) tellOwner(ctx, { ...t, ...r }); return taskRow(get('SELECT * FROM tasks WHERE id=?', t.id)); });
+route('PATCH', '/api/tasks/:id', T, (ctx) => { const t = loadTask(ctx); const r = taskFields(ctx, ctx.body || {}, t); update('tasks', t.id, r); D.history(ctx.actor.label, 'task', t.id, 'status', t.status, r.status); tellOwner(ctx, { ...t, ...r }, taskOwnerIds(t)); return taskRow(get('SELECT * FROM tasks WHERE id=?', t.id)); });
 route('POST', '/api/tasks/:id/delete', T, (ctx) => { const t = loadTask(ctx); update('tasks', t.id, { removed: 1 }); D.history(ctx.actor.label, 'task removed', t.id); return { ok: true }; });
 
 // ---------- campaigns to candidates on WhatsApp and email ----------

@@ -14,6 +14,7 @@ function jobView(j, apps) {
   const client = get('SELECT company, city, placeholder, internal FROM clients WHERE id=?', j.client_id) || {};
   const cnt = (steps) => open.filter((a) => steps.includes(a.step)).length;
   return {
+    owner_ids: [j.recruiter_id, ...(Array.isArray(j.owners) ? j.owners : [])].filter((x, k, l) => x && l.indexOf(x) === k), owner_names: [j.recruiter_id, ...(Array.isArray(j.owners) ? j.owners : [])].filter((x, k, l) => x && l.indexOf(x) === k).map(userName).filter(Boolean).join(', '),
     ...j, status, reason: L.jobStatusReason(j, apps), filled: L.filledCount(apps), client_name: client.company, client_tbc: !!client.placeholder, internal: !!client.internal, recruiter_name: userName(j.recruiter_id), agency_name: agencyName(j.agency_id),
     apps_total: apps.length, apps_open: open.length, days_open: L.daysBetween(j.created_at),
     reopened: j.reopened_at && L.daysBetween(j.reopened_at) <= 30 && !(j.replacement_for && !D.get('SELECT 1 FROM applications WHERE id=?', j.replacement_for)) ? (j.reopen_tag || 'Reopened') : null,
@@ -46,7 +47,7 @@ function appView(a) {
 }
 function clientView(c) {
   const jobs = all('SELECT * FROM jobs WHERE client_id=? AND archived=0', c.id).map((j) => jobView(j));
-  return { ...c, lifecycle: c.activated_at ? 'Active client' : 'Lead', agency_name: agencyName(c.agency_id), owner_name: userName(c.owner_id), jobs_open: jobs.filter((j) => !['Closed', 'Filled'].includes(j.status)).length, jobs_total: jobs.length };
+  return { ...c, lifecycle: c.activated_at ? 'Active client' : 'Lead', agency_name: agencyName(c.agency_id), owner_name: [c.owner_id, ...(Array.isArray(c.owners) ? c.owners : [])].filter((x, i, l) => x && l.indexOf(x) === i).map(userName).filter(Boolean).join(', ') || userName(c.owner_id), owner_ids: [c.owner_id, ...(Array.isArray(c.owners) ? c.owners : [])].filter((x, i, l) => x && l.indexOf(x) === i), jobs_open: jobs.filter((j) => !['Closed', 'Filled'].includes(j.status)).length, jobs_total: jobs.length };
 }
 const ONBOARDING = [
   { key: 'intro_call', label: 'Intro call', stage: 'Understanding needs' },

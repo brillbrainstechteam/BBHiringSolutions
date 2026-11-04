@@ -154,7 +154,7 @@ function recruitersOf(candId) {
   for (const x of all("SELECT DISTINCT user_id FROM calls WHERE candidate_id=? AND status='Done'", candId)) if (x.user_id) ids.add(x.user_id);
   return [...ids].map((id) => get(`SELECT id, name FROM users WHERE id=? AND ${STAFF}`, id)).filter(Boolean);
 }
-const googleUrl = () => String(D.settings().google_review_url || '').trim();
+const googleUrl = () => ''; // feedback stays with us: candidates rate their recruiter, no public review step
 route('GET', '/api/cand/reviews', { auth: 'candidate' }, (ctx) => {
   const mine = all('SELECT * FROM reviews WHERE candidate_id=?', ctx.candidate.id);
   return { recruiters: recruitersOf(ctx.candidate.id).map((r) => { const x = mine.find((m) => m.user_id === r.id); return { id: r.id, name: r.name.split(' ')[0], stars: x ? x.stars : null, text: x ? x.text : '' }; }), google: !!googleUrl() };

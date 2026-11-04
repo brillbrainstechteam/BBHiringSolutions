@@ -1912,3 +1912,4 @@ button.fin-tile.on { border-color: var(--mustard); box-shadow: 0 0 0 1px var(--m
 .stage-acts { gap: 6px; } .pipe-n { font-weight: 700; text-decoration: none; color: var(--navy); padding: 2px 8px; border-radius: 8px; } .pipe-n:hover { background: var(--surface-2); text-decoration: underline; }
 .pipe-job { min-width: 200px; }
 a.pipe-step { text-decoration: none; cursor: pointer; } a.pipe-step:hover { border-color: var(--navy); }
+.page-h [data-actions] > .btn, .page-h [data-actions] > a.btn, .page-h [data-actions] > .seg { height: 40px; } .page-h [data-actions] > .btn, .page-h [data-actions] > a.btn { padding: 0 16px; font-size: 13.5px; justify-content: center; }

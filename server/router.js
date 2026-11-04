@@ -97,17 +97,18 @@ const isSuper = (u) => u.level === 'super';
 const sharedWith = (u) => !!u.agency_id && D.soleAgency() === u.agency_id;
 const canAllocate = (u) => isSuper(u) || (!D.soleAgency() && !!D.get("SELECT 1 FROM agencies WHERE id=? AND status='Active'", u.agency_id));
 const sameAgency = (u, j) => !!j && ((!!j.agency_id && j.agency_id === u.agency_id) || sharedWith(u));
-function seeClient(u, c) { return c && (isSuper(u) || accountsOnly(u) || (c.agency_id && c.agency_id === u.agency_id) || sharedWith(u) || (!c.agency_id && canAllocate(u))); }
+const owns = (u, rec) => !!rec && (rec.owner_id === u.id || (Array.isArray(rec.owners) && rec.owners.includes(u.id)));
+function seeClient(u, c) { return c && (isSuper(u) || accountsOnly(u) || (c.agency_id && c.agency_id === u.agency_id) || sharedWith(u) || (!c.agency_id && canAllocate(u)) || owns(u, c)); }
 function seeJob(u, j) {
   if (!j) return false;
   if (isSuper(u)) return true;
-  return sameAgency(u, j) || j.recruiter_id === u.id;
+  return sameAgency(u, j) || j.recruiter_id === u.id || owns(u, j) || (j.client_id && owns(u, D.get('SELECT owner_id, owners FROM clients WHERE id=?', j.client_id)));
 }
 function seeApp(u, a, j) {
   if (!a) return false;
   j = j || D.get('SELECT * FROM jobs WHERE id=?', a.job_id);
   if (isSuper(u)) return true;
-  return sameAgency(u, j) || a.owner_id === u.id || (j && j.recruiter_id === u.id);
+  return sameAgency(u, j) || a.owner_id === u.id || (j && seeJob(u, j));
 }
 const phoneVisible = (u, c) => isSuper(u) || (c.agency_id && c.agency_id === u.agency_id);
 function seeBill(u, b) { return isSuper(u) || accountsOnly(u) || sameAgency(u, b); }

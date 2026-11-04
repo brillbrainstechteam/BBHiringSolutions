@@ -962,6 +962,18 @@ function nextStageOf(a, stage = stageOfApp(a)) {
   if (stage === 'Client') return 'Offer';
   return '';
 }
+// Owners: several people can own a client, a job or a task. A client's owners own its jobs and their applications.
+const listOf = (v) => (Array.isArray(v) ? v : []);
+function ownersOfJob(j, clientOf = (id) => get('SELECT owner_id, owners FROM clients WHERE id=?', id)) {
+  if (!j) return []; const c = j.client_id ? clientOf(j.client_id) : null;
+  return [...new Set([j.recruiter_id, ...listOf(j.owners), c && c.owner_id, ...listOf(c && c.owners)].filter(Boolean))];
+}
+// For a whole list at once: job id -> its owners.
+function ownerMap() {
+  const cl = new Map(all('SELECT id, owner_id, owners FROM clients').map((c) => [c.id, c]));
+  return new Map(all('SELECT id, client_id, recruiter_id, owners FROM jobs').map((j) => [j.id, ownersOfJob(j, (id) => cl.get(id))]));
+}
+const ownsApp = (uid, a, map) => a.owner_id === uid || (map.get(a.job_id) || []).includes(uid);
 function skipRounds(app, rows, reason, by) {
   if (!rows.length) return; const why = String(reason || '').trim(); if (!why) throw httpError(400, `Give the reason for skipping: ${rows.map((r) => r.name).join(', ')}`, 'skip_reason');
   for (const r of rows) { D.run('INSERT OR REPLACE INTO round_skips (app_id, mode, reason, by, at) VALUES (?, ?, ?, ?, ?)', app.id, r.key, why, actorName(by), now()); appHist(app.id, get('SELECT step FROM applications WHERE id=?', app.id).step, by, `${r.name}: Not needed. ${why}`, 'interview'); }
@@ -1254,7 +1266,7 @@ function sendSystemText(ptype, pid, text) {
   insert('messages', { id: nextId('WA'), person_type: ptype, person_id: pid, phone: p.phone, direction: 'out', text, buttons: [], sent_by: 'Auto', status: settings().crm.enabled ? 'sending' : 'would send', read_by_us: 1, auto: 1, at: now() });
 }
 
-module.exports = { STAGES, stageOfApp, nextStageOf, reopenRefilled, adPlanFor, openAdApplications, placedOn, closePlacedApps, adLabel,
+module.exports = { ownersOfJob, ownerMap, ownsApp, STAGES, stageOfApp, nextStageOf, reopenRefilled, adPlanFor, openAdApplications, placedOn, closePlacedApps, adLabel,
   STEPS, stepIdx, digits10, validPhone, inr, istDay, istFmt, istTime, istHour, inQuiet, next9am, daysBetween, addDays, hashPassword, checkPassword, newPassword, sha,
   activationState, checkActivation, waHeld, TEAMS, IV_MODES, clientSeesIv, addIvNote, CALL_OUTCOMES, logCall, jobList, deptOf, stateOf, person, fillFormat, windowOpenUntil, sendWA, setDispatcher, alertUser, link, agencyAdmin, superAdmins,
   computeJobStatus, jobStatusReason, recalcJob, filledCount, appsOfJob, matchScore, jobsFor, cleanBusiness, BUSINESS_TYPES, EXP_YEARS, JEW_YEARS, LOOKING, NOT_LOOKING, ratingOf, bestMatches, isPlaced, salaryText, autoJobAlert,
