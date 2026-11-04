@@ -4,7 +4,7 @@ const D = require('./db');
 const { all, get, run, insert, update, nextId, settings, history, now, httpError } = D;
 
 // Closing reasons the software uses itself (not in the team's pick list).
-const SYSTEM_CLOSE = ['Job closed', 'Position filled', 'Joined elsewhere', 'Already hired', 'Requirement not met', 'Rejected at screening'];
+const SYSTEM_CLOSE = ['Job closed', 'Position filled', 'Joined elsewhere', 'Already hired', 'Requirement not met', 'Rejected at screening', 'Rejected at telephonic round', 'Rejected at virtual round'];
 // The screening decision on an application. Not met / Rejected close it; Under consideration / Accepted keep it open
 // (reopening one closed by an earlier screening decision), and move it on: Applied -> Screening, Accepted -> Our interview.
 const SCREEN = ['Under consideration', 'Requirement not met', 'Rejected', 'Accepted'];
@@ -771,7 +771,7 @@ function recordInterview(ivId, o, by) {
         else { const rows = roundsOf(app); const at = rows.findIndex((r) => r.key === o.next); if (at < 0) throw httpError(400, 'Pick where next'); skipRounds(app, rows.slice(0, at).filter((r) => r.status === 'To do'), o.skip_reason, by); next = `SCHEDULE:${o.next}`; }
       } else if (o.result === 'Move ahead' && iv.mode === 'phone') { appHist(app.id, app.step, by, `${ivId} (telephonic) cleared: ${o.remark}`, 'interview'); next = 'Schedule the virtual round'; }
       else if (o.result === 'Move ahead') { moveStep(app.id, 'Sent to client', by, `${ivId}: ${o.remark}`); next = `${app.id} moved to Sent to client`; }
-      else if (o.result === 'Not selected') { closeApplication(app.id, 'Not suitable', by, `${ivId}: ${o.remark}`); next = `${app.id} closed (Not suitable)`; }
+      else if (o.result === 'Not selected') { const why = iv.mode === 'phone' ? 'Rejected at telephonic round' : iv.mode === 'video' ? 'Rejected at virtual round' : 'Not suitable'; closeApplication(app.id, why, by, `${ivId}: ${o.remark}`); next = `${app.id} closed (${why})`; }
       else if (o.result === 'On hold') { update('applications', app.id, { on_hold: 1, hold_reason: o.remark }); appHist(app.id, app.step, by, `On hold after ${ivId}`, 'hold'); next = `${app.id} put on hold`; }
     } else {
       if (o.result === 'Selected') next = 'OPEN_OFFER';
@@ -941,6 +941,17 @@ function roundsOf(app) {
     const status = skip ? 'Not needed' : !last || last.status === 'Cancelled' ? 'To do' : ['Scheduled', 'Rescheduled'].includes(last.status) ? (last.view_status === 'Result pending' ? 'Result pending' : 'Scheduled') : last.status === 'No-show' ? 'No-show' : last.result === 'Not selected' ? 'Not cleared' : last.result === 'On hold' ? 'On hold' : 'Cleared';
     return { ...r, status, interview_ids: own.map((i) => i.id), at: last ? last.at : null, skip_reason: skip ? skip.reason : '', skip_by: skip ? skip.by : '', skip_at: skip ? skip.at : null };
   });
+}
+// Where an open application is in the hiring flow, as the team works it: screening, the telephonic round, the
+// virtual round, with the client, the offer, joined. Our interview splits into its two rounds.
+const STAGES = ['Screening', 'Telephonic', 'Virtual', 'Client', 'Offer'];
+function stageOfApp(a) {
+  if (a.result === 'Hired') return 'Joined'; if (a.result !== 'open') return 'Closed';
+  if (['Applied', 'Screening'].includes(a.step)) return 'Screening';
+  if (a.step === 'Our interview') { const r = roundsOf(a).find((x) => x.mode !== 'in_person' && !['Cleared', 'Not needed', 'Not cleared'].includes(x.status)); return r && r.mode === 'phone' ? 'Telephonic' : 'Virtual'; }
+  if (['Sent to client', 'Client interview'].includes(a.step)) return 'Client';
+  if (['Offer made', 'Offer accepted'].includes(a.step)) return 'Offer';
+  return 'Joined';
 }
 function skipRounds(app, rows, reason, by) {
   if (!rows.length) return; const why = String(reason || '').trim(); if (!why) throw httpError(400, `Give the reason for skipping: ${rows.map((r) => r.name).join(', ')}`, 'skip_reason');
@@ -1234,7 +1245,7 @@ function sendSystemText(ptype, pid, text) {
   insert('messages', { id: nextId('WA'), person_type: ptype, person_id: pid, phone: p.phone, direction: 'out', text, buttons: [], sent_by: 'Auto', status: settings().crm.enabled ? 'sending' : 'would send', read_by_us: 1, auto: 1, at: now() });
 }
 
-module.exports = { reopenRefilled, adPlanFor, openAdApplications, placedOn, closePlacedApps, adLabel,
+module.exports = { STAGES, stageOfApp, reopenRefilled, adPlanFor, openAdApplications, placedOn, closePlacedApps, adLabel,
   STEPS, stepIdx, digits10, validPhone, inr, istDay, istFmt, istTime, istHour, inQuiet, next9am, daysBetween, addDays, hashPassword, checkPassword, newPassword, sha,
   activationState, checkActivation, waHeld, TEAMS, IV_MODES, clientSeesIv, addIvNote, CALL_OUTCOMES, logCall, jobList, deptOf, stateOf, person, fillFormat, windowOpenUntil, sendWA, setDispatcher, alertUser, link, agencyAdmin, superAdmins,
   computeJobStatus, jobStatusReason, recalcJob, filledCount, appsOfJob, matchScore, jobsFor, cleanBusiness, BUSINESS_TYPES, EXP_YEARS, JEW_YEARS, LOOKING, NOT_LOOKING, ratingOf, bestMatches, isPlaced, salaryText, autoJobAlert,

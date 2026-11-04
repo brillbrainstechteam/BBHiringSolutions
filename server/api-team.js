@@ -1218,13 +1218,31 @@ route('POST', '/api/applications/reject-below', T, (ctx) => {
   return { done };
 });
 route('GET', '/api/applications', T, (ctx) => {
-  const q = ctx.query; const rows = scoreApps(appRows(q, ctx.user), q);
+  const q = ctx.query; const base = appRows(q, ctx.user);
+  // The stage of each open application, how many are at each (with the other filters), then the stage picked.
+  for (const r of base) r.stage = L.stageOfApp(r);
+  const stage_counts = Object.fromEntries(L.STAGES.map((s) => [s, base.filter((r) => r.stage === s).length]));
+  const rows = scoreApps(q.stage ? base.filter((r) => r.stage === q.stage) : base, q);
   const placed = new Set(all("SELECT candidate_id FROM applications WHERE result='Hired' AND left_date IS NULL").map((r) => r.candidate_id)); for (const r of rows) r.cand_placed = placed.has(r.candidate_id);
   const vis = visibleApps(ctx.user); const counts = { open: vis.filter((a) => a.result === 'open').length, closed: vis.filter((a) => a.result !== 'open').length, joined: vis.filter((a) => a.result === 'Hired').length };
-  return { counts, ...page(ctx, rows, 'applications', ['id', 'candidate_name', 'cand_placed', 'score', 'job_id', 'job_title', 'client_name', 'step', 'result', 'days_in_step', 'owner_name', 'source', 'ad', 'screen', 'screen_note']), ads: adOptions('applications'), screens: L.SCREEN.filter((x) => x !== 'Requirement not met'),
+  return { counts, stage_counts, ...page(ctx, rows, 'applications', ['id', 'candidate_name', 'cand_placed', 'stage', 'on_hold', 'candidate_id', 'score', 'job_id', 'job_title', 'client_name', 'step', 'result', 'days_in_step', 'owner_name', 'source', 'ad', 'screen', 'screen_note']), ads: adOptions('applications'), screens: L.SCREEN.filter((x) => x !== 'Requirement not met'),
     // Choices for the filters: the jobs, clients, owners and sources these applications have.
     options: (() => { const vis = visibleApps(ctx.user).map(V.appView); const uniq = (f) => [...new Map(vis.map(f).filter((x) => x && x[0]).map((x) => [x[0], x])).values()].sort((a, b) => String(a[1]).localeCompare(String(b[1])));
       return { titles: [...new Set(vis.map((a) => a.job_title).filter(Boolean))].sort(), jobs: uniq((a) => [a.job_id, `${a.job_title} · ${a.client_name || ''}${a.job_city ? ` · ${a.job_city}` : ''}`]), clients: uniq((a) => [a.client_id, a.client_name]), owners: uniq((a) => [a.owner_id, a.owner_name]), sources: [...new Set(vis.map((a) => a.source).filter(Boolean))].sort() }; })() };
+});
+// The hiring pipeline for the dashboard: each open job with how many of its open applications are at each stage.
+route('GET', '/api/pipeline', T, (ctx) => {
+  const apps = visibleApps(ctx.user).filter((a) => a.result === 'open').map(V.appView);
+  const jobs = new Map();
+  for (const a of apps) {
+    const st = L.stageOfApp(a); if (!L.STAGES.includes(st)) continue;
+    const j = jobs.get(a.job_id) || { job_id: a.job_id, title: a.job_title, client: a.client_name, city: a.job_city, counts: Object.fromEntries(L.STAGES.map((s) => [s, 0])), total: 0, oldest: 0 };
+    j.counts[st]++; j.total++; j.oldest = Math.max(j.oldest, a.days_in_step || 0); jobs.set(a.job_id, j);
+  }
+  const rows = [...jobs.values()].map((j) => { const jr = get('SELECT priority FROM jobs WHERE id=?', j.job_id) || {}; return { ...j, priority: jr.priority || 'Medium' }; })
+    .sort((a, b) => ({ High: 0, Medium: 1, Low: 2 }[a.priority] ?? 1) - ({ High: 0, Medium: 1, Low: 2 }[b.priority] ?? 1) || b.total - a.total);
+  const totals = Object.fromEntries(L.STAGES.map((s) => [s, rows.reduce((t, r) => t + r.counts[s], 0)]));
+  return { stages: L.STAGES, rows, totals };
 });
 route('GET', '/api/board', T, (ctx) => {
   const q = ctx.query;

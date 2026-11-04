@@ -449,11 +449,12 @@ BB.adParams = () => {
 BB.quickScreen = (a) => {
   if (a.screen && a.screen !== 'Under consideration') return `<span class="badge ${{ 'Requirement not met': 'b-amber', Rejected: 'b-red', Accepted: 'b-green' }[a.screen] || 'b-outline'}">${BB.esc(a.screen)}</span>`;
   if (a.result && a.result !== 'open') return '<span class="faint small">—</span>';
-  return `<span class="row nowrap" onclick="event.stopPropagation()"><button class="btn sm" data-qs="Accepted" data-ap="${a.id}" title="Resume accepted: moves to Our interview">✓ Accept</button><button class="btn sm danger" data-qs="Rejected" data-ap="${a.id}" title="Resume rejected: closes the application">✗ Reject</button></span>`;
+  return `<span class="row nowrap" onclick="event.stopPropagation()"><button class="btn sm" data-qs="Accepted" data-ap="${a.id}" title="Move to the telephonic round">✓ Telephonic</button><button class="btn sm danger" data-qs="Rejected" data-ap="${a.id}" title="Resume rejected: closes the application">✗ Reject</button></span>`;
 };
 BB.wireQuickScreen = (el, after) => {
   BB.$$('[data-qs]', el).forEach((b) => (b.onclick = async (e) => {
     e.stopPropagation(); const v = b.dataset.qs;
+    if (BB.screenDecision) return BB.screenDecision(b.dataset.ap, v, after || (() => BB.refreshPage())); // the same screening form everywhere
     let note = '';
     if (v === 'Rejected') { const x = await BB.ask({ title: 'Reject this resume', fields: [{ name: 'note', label: 'Why (kept on the application)', type: 'select', options: ['Not enough experience', 'Wrong role', 'Location does not fit', 'Salary does not fit', 'Not a jewellery background', 'Other'], placeholder: false }, { name: 'more', label: 'Note', opt: true }], ok: 'Reject' }); if (!x) return; note = [x.note, x.more].filter(Boolean).join(' — '); }
     try { await BB.post(`/api/applications/${b.dataset.ap}/screen`, { verdict: v, note }); BB.toast(v === 'Accepted' ? 'Accepted: moved to Our interview' : 'Rejected'); after ? after() : BB.refreshPage(); } catch (er) { BB.fail(er); }

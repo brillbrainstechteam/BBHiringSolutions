@@ -299,7 +299,7 @@
       <div class="small">${fmtDT(i.at)} · ${esc(i.place)}${i.link ? ` · <a href="${esc(i.link)}" target="_blank" rel="noopener">join link</a>` : ''} · ${esc(i.interviewer || '—')} ${i.confirmed ? '<span class="badge b-green">Confirmed</span>' : '<span class="badge b-outline">Not confirmed</span>'} <a class="small" href="${BB.gcal(i, `Interview: ${a.candidate_name} — ${a.job_title} (${i.name})`, `${i.name} · ${a.id}`)}" target="_blank" rel="noopener">+ Google Calendar</a></div>
       ${ivNotes(i.notes)}<div><button class="btn sm ghost" data-ivnote="${i.id}">+ Interview note</button></div>
       ${i.result ? `<div class="small"><b>${esc(i.round === 'client' && i.result === 'Not selected' ? 'Rejected' : i.result)}</b>${i.rating ? ` · ${'★'.repeat(i.rating)}` : ''} — ${esc(i.remark || '')}</div>` : ''}${fbView(i)}${(i.qa || []).map((q) => `<div class="small faint">Q: ${esc(q.q)} — A: ${esc(q.a)}</div>`).join('')}
-      ${['Scheduled', 'Rescheduled'].includes(i.status) && open ? `<div class="row"><button class="btn sm primary" data-result="${i.id}">${i.round === 'client' ? 'Client feedback' : 'Interview feedback'}</button><select class="mini" data-ivstep aria-label="Move to step" style="width:auto"><option value="">Move to step…</option>${BB.stageOptions(BB.stageOf(a))}</select>${i.id === nowIv ? '' : `${i.confirmed ? '' : `<button class="btn sm" data-confirm="${i.id}">Mark confirmed</button>`}${waBtn({ ptype: 'candidate', pid: a.candidate_id, ap: a.id, iv: i.id, format: 'bbhs_interview_reminder' }, 'Remind candidate')}`}${i.round === 'client' && i.id !== nowIv ? waBtn({ ptype: 'client', pid: a.client_id, ap: a.id, iv: i.id, format: i.view_status === 'Result pending' ? 'bbhs_feedback_request' : 'bbhs_interview_reminder' }, i.view_status === 'Result pending' ? 'Ask client for feedback' : 'Remind client') : ''}</div>` : ''}</div>`;
+      ${['Scheduled', 'Rescheduled'].includes(i.status) && open ? `<div class="row">${i.id === nowIv ? '' : `<button class="btn sm primary" data-result="${i.id}">${i.round === 'client' ? 'Client feedback' : 'Interview feedback'}</button>`}${i.id === nowIv ? '' : `${i.confirmed ? '' : `<button class="btn sm" data-confirm="${i.id}">Mark confirmed</button>`}${waBtn({ ptype: 'candidate', pid: a.candidate_id, ap: a.id, iv: i.id, format: 'bbhs_interview_reminder' }, 'Remind candidate')}`}${i.round === 'client' && i.id !== nowIv ? waBtn({ ptype: 'client', pid: a.client_id, ap: a.id, iv: i.id, format: i.view_status === 'Result pending' ? 'bbhs_feedback_request' : 'bbhs_interview_reminder' }, i.view_status === 'Result pending' ? 'Ask client for feedback' : 'Remind client') : ''}</div>` : ''}</div>`;
     // Screening: the decision on this application, and the candidate set against what the job needs.
     const SCREEN_BADGE = { 'Under consideration': 'b-primary', 'Requirement not met': 'b-amber', Rejected: 'b-red', Accepted: 'b-green' };
     const screenBlock = (a, asNow) => {
@@ -355,7 +355,7 @@
     const roundBox = (r, client) => {
       const i = liveOf(r); const st = r.status;
       const when = i ? `${fmtDT(i.at)}${i.place ? ` · ${esc(i.place)}` : ''}${i.link ? ` · <a href="${esc(i.link)}" target="_blank" rel="noopener">Join link</a>` : ''}${i.interviewer ? ` · ${esc(i.interviewer)}` : ''}${i.confirmed ? ' · confirmed' : ''}`
-        : r.mode === 'phone' ? (pf.note ? `Best time to call: ${esc(pf.note)}${pf.now_ok ? ' · now is good' : ''}` : `No best time from them yet${c.whatsapp ? ` <button type="button" class="btn sm ghost" data-askprefs="${esc(c.id)}">Ask on WhatsApp</button>` : ''}`)
+        : !client ? (pf.note ? `Best time ${r.mode === 'phone' ? 'to call' : 'for the video call'}: ${esc(pf.note)}${pf.now_ok ? ' · now is good' : ''}` : `No best time from them yet`)
         : client ? 'Not fixed with the client yet' : 'Not scheduled yet';
       const wa = (party, format, label, cls) => waBtn({ ptype: party, pid: party === 'client' ? a.client_id : a.candidate_id, ap: a.id, iv: i && i.id, format }, label, cls);
       const due = i && i.view_status === 'Result pending'; const confirm = i && !i.confirmed ? `<button class="btn" data-confirm="${i.id}">Mark confirmed</button>` : '';
@@ -365,7 +365,8 @@
         : i ? { main: `<button class="btn primary" data-result="${i.id}">${fb}</button>`, side: [confirm || wa('candidate', 'bbhs_interview_reminder', 'Remind candidate', 'btn'), '<button class="btn" data-logcall>Log a call</button>'], more: [confirm ? wa('candidate', 'bbhs_interview_reminder', 'Remind candidate', '') : ''] }
         : client ? { main: '<button class="btn primary" data-fslots>Ask client for a slot</button>', side: [`<button class="btn" data-rsched="${esc(r.key)}">Schedule</button>`, '<button class="btn" data-fcvmail>Email CV to client</button>'], more: [mi('data-offer', 'Record the offer (no interview needed)')] }
         // Telephonic: call at their best time, then record. Virtual: book it first.
-        : r.mode === 'phone' ? { main: `<button class="btn primary" data-fbnow="${esc(r.key)}">${fb}</button>`, side: [`<button class="btn" data-rsched="${esc(r.key)}">Schedule the call</button>`, '<button class="btn" data-logcall>Log a call</button>'], more: [mi(`data-rskip="${esc(r.key)}"`, 'Not needed')] }
+        : r.mode === 'phone' ? { main: `<button class="btn primary" data-fbnow="${esc(r.key)}">${fb}</button>`, side: [`<button class="btn" data-rsched="${esc(r.key)}">Schedule the call</button>`, '<button class="btn" data-logcall>Log a call</button>'], more: [!pf.note && c.whatsapp ? mi(`data-askprefs="${esc(c.id)}"`, 'Ask their best time on WhatsApp') : '', mi(`data-rskip="${esc(r.key)}"`, 'Not needed')] }
+        : !pf.note && c.whatsapp && !(a.candidate || {}).phone_hidden ? { main: `<button class="btn primary" data-askprefs="${esc(c.id)}">Ask candidate for a time</button>`, side: [`<button class="btn" data-rsched="${esc(r.key)}">Schedule</button>`, `<button class="btn" data-fbnow="${esc(r.key)}">${fb}</button>`], more: ['<button type="button" role="menuitem" data-logcall>Log a call</button>', mi(`data-rskip="${esc(r.key)}"`, 'Not needed')] }
         : { main: `<button class="btn primary" data-rsched="${esc(r.key)}">Schedule</button>`, side: [`<button class="btn" data-fbnow="${esc(r.key)}">${fb}</button>`, '<button class="btn" data-logcall>Log a call</button>'], more: [mi(`data-rskip="${esc(r.key)}"`, 'Not needed')] };
       const body = client ? `${BB.flow.appSlots(a)}${BB.flow.appQuestions(a)}` : `${prep()}${BB.flow.appQuestions(a)}`;
       return box(esc(r.name), rBadge(st), when, acts, body);
@@ -411,7 +412,7 @@
         <div data-apane="talk" ${firstTab === 'talk' ? '' : 'hidden'}>${callPlan}${BB.callsBlock({ party: 'candidate', candidate_id: a.candidate_id, app_id: a.id, prefs: { pref_channel: a.known.prefs.channel, pref_time: a.known.prefs.time, pref_days: a.known.prefs.days }, prefwarn: a.known.prefs.now_ok ? '' : `They prefer ${a.known.prefs.note}.`, recent: ((k) => (k && k.days <= 3 ? `${k.by} spoke to them on ${fmtD(k.at)}: ${k.note}` : ''))(a.known.last_call) }, a.calls, (a.candidate || {}).phone_hidden ? '' : (a.candidate || {}).whatsapp)}<div class="sec"><h3>WhatsApp on this application</h3>${msgList(a.messages)}</div></div>
         <div data-apane="rounds" ${firstTab === 'rounds' ? '' : 'hidden'}>${BB.flow.appRounds(a, iv)}${inNow.slots ? '' : BB.flow.appSlots(a)}${inNow.questions ? '' : BB.flow.appQuestions(a)}</div>
         <div data-apane="papers" ${firstTab === 'papers' ? '' : 'hidden'}>${a.offer_ctc ? `<div class="sec card pad"><h3 style="margin-bottom:6px">Offer</h3><dl class="kv"><dt>Yearly CTC</dt><dd><b>${inr(a.offer_ctc)}</b></dd><dt>Joining date</dt><dd>${fmtD(a.joining_date)}</dd><dt>Reporting to</dt><dd>${esc(a.reporting_to || '—')}</dd><dt>Offer letter</dt><dd>${a.offer_letter ? `<button class="btn sm" data-file="${a.offer_letter}">Open PDF</button> ${a.offer_sent ? '<span class="badge b-green">sent</span>' : '<span class="badge b-outline">client to check</span>'}` : '—'}</dd>${a.bill ? `<dt>Bill</dt><dd><a href="#" data-open="bill:${a.bill.id}">${esc(a.bill.bill_no || a.bill.id)}</a> · ${inr(a.bill.total)} · ${esc(a.bill.view_status)}</dd>` : ''}</dl></div>` : ''}${a.result === 'Hired' ? joining() : ''}${filesBlock(a.id, a.files, [['offer_letter', 'Offer letter'], ['offer_signed', 'Signed offer letter'], ['joining_doc', 'Joining document'], ['file', 'Other']])}${notesBlock(a.id, a.notes)}</div>
-        <div data-apane="hist" ${firstTab === 'hist' ? '' : 'hidden'}>${BB.flow.known(a.known, a.candidate || {}, a.next)}${inNow.screen ? '' : screenBlock(a)}${inNow.screen && !ev ? '' : BB.flow.evalBlock(a)}${BB.flow.appOthers(a)}<details class="sec card pad"><summary><b>Candidate history</b> <span class="muted">${a.story.length}</span></summary><div style="margin-top:8px">${BB.flow.story(a.story)}</div></details><details class="sec card pad"><summary><b>Steps on this application</b> <span class="muted">${a.history.length}</span></summary><div style="margin-top:8px"><div class="sec"><div class="hist">${a.history.map((h) => `<div class="h"><span class="t">${fmtDT(h.at)}</span><span class="grow"><b>${esc(h.step)}</b> · ${esc(h.by)}${h.note ? ` — ${esc(h.note)}` : ''}</span></div>`).join('')}</div></div></div></details></div>`,
+        <div data-apane="hist" ${firstTab === 'hist' ? '' : 'hidden'}>${BB.flow.known(a.known, a.candidate || {}, a.next)}${inNow.screen ? '' : screenBlock(a)}${ev ? BB.flow.evalBlock(a) : ''}${BB.flow.appOthers(a)}${a.story.length ? `<details class="sec card pad"><summary><b>Candidate history</b> <span class="muted">${a.story.length}</span></summary><div style="margin-top:8px">${BB.flow.story(a.story)}</div></details>` : ''}<details class="sec card pad"><summary><b>Steps on this application</b> <span class="muted">${a.history.length}</span></summary><div style="margin-top:8px"><div class="sec"><div class="hist">${a.history.map((h) => `<div class="h"><span class="t">${fmtDT(h.at)}</span><span class="grow"><b>${esc(h.step)}</b> · ${esc(h.by)}${h.note ? ` — ${esc(h.note)}` : ''}</span></div>`).join('')}</div></div></div></details></div>`,
       mount: (el) => {
         wireCommon(el); BB.flow.appMount(el, a);
         const on = (sel, fn) => $$(sel, el).forEach((b) => (b.onclick = fn));
@@ -465,16 +466,53 @@
   // Interview record pop-up.
   // Interview feedback for the round an application is in now, from any list: the booked interview if there is
   // one, otherwise the round is saved as held now (no message to the candidate) and its feedback opens.
-  BB.feedbackFor = async (appId) => {
+  // Screening from any list: move to the telephonic round or reject, with a note and (optional) detailed feedback
+  // on the same points as interview feedback. The feedback is saved with the candidate's evaluation.
+  const STAGE_LABEL = { Screening: 'Screening', Telephonic: 'Telephonic round', Virtual: 'Virtual round', Client: 'With the client', Offer: 'Offer', Joined: 'Joined', Closed: 'Closed' };
+  BB.stageLabel = (s) => STAGE_LABEL[s] || s || '';
+  BB.screenDecision = async (appId, verdict, done) => {
+    let a; try { a = await BB.api(`/api/applications/${appId}`); } catch (e) { return BB.fail(e); }
+    const c = a.candidate || {}; const sc = a.score || {}; const pmo = (y) => (y ? `${inr(y / 12)}/mo` : '');
+    const crit = a.eval_criteria || []; const groups = {}; for (const x of crit) { const g = x.includes('|') ? x.split('|')[0].trim() : ''; (groups[g] = groups[g] || []).push(x); }
+    const pts = Object.fromEntries((a.eval_na || []).map((k) => [k, 'N/A'])); const st = { v: verdict, reason: 'Not enough experience', note: '' };
+    const REASONS = ['Not enough experience', 'Wrong role', 'Location does not fit', 'Salary does not fit', 'Not a jewellery background', 'Other'];
+    const m = BB.modal({ title: `Screening · ${esc(a.candidate_name)}`, wide: true, body: '<div data-b></div>', foot: '<button class="btn" data-c>Cancel</button><button class="btn primary" data-s>Save</button>' });
+    const el = m.el;
+    const keep = () => { $$('[data-sfb]:checked', el).forEach((r) => (pts[r.dataset.sfb] = r.value)); const n = $('[name=note]', el); if (n) st.note = n.value; const rs = $('[name=reason]', el); if (rs) st.reason = rs.value; };
+    const draw = () => {
+      const facts = [c.job_wanted, c.exp_total != null && `${c.exp_total} yrs`, c.city, c.exp_salary && `expects ${pmo(c.exp_salary)}`, c.notice_days != null && `${c.notice_days} days notice`].filter(Boolean);
+      $('[data-b]', el).innerHTML = `<div class="stack"><div class="small muted">${esc(a.job_title)} · ${esc(facts.join(' · '))}${sc.score !== undefined ? ` · fit <b>${sc.score}</b>` : ''}</div>
+        ${(sc.reasons || []).length || (sc.gaps || []).length ? `<div class="small">${(sc.reasons || []).slice(0, 4).map((x) => `<span class="fit-good">✓ ${esc(x)}</span>`).join(' ')} ${(sc.gaps || []).slice(0, 3).map((x) => `<span class="fit-gap">✗ ${esc(x)}</span>`).join(' ')}</div>` : ''}
+        <label class="field"><span class="lab">Decision</span><div class="choice">${[['Accepted', 'Move to telephonic round'], ['Rejected', 'Reject']].map(([v, l]) => `<label><input type="radio" name="v" value="${v}" ${st.v === v ? 'checked' : ''}> ${l}</label>`).join('')}</div></label>
+        ${st.v === 'Rejected' ? `<label class="field" data-f="reason"><span class="lab">Why</span><select name="reason">${REASONS.map((x) => `<option ${x === st.reason ? 'selected' : ''}>${x}</option>`).join('')}</select></label>` : ''}
+        <label class="field" data-f="note"><span class="lab">Note <span class="faint">(optional)</span></span><div class="inp-wrap"><textarea name="note" data-voice>${esc(st.note)}</textarea></div></label>
+        ${crit.length ? `<details class="sub-more" ${Object.values(pts).some((x) => x !== 'N/A') ? 'open' : ''}><summary class="small"><b>Detailed feedback</b> <span class="muted">(optional, saved with the candidate's evaluation)</span></summary><div class="fb-form" style="margin-top:8px">${Object.entries(groups).map(([g, list]) => `<div class="eval-group">${g ? `<h4>${esc(g)}</h4>` : ''}${list.map((k) => `<div class="eval-row"><span>${esc(k.split('|').pop().trim())}</span><span class="eval-pick">${['Strong', 'OK', 'Weak', 'N/A'].map((o) => `<label class="${o === 'N/A' ? 'na' : ''}"><input type="radio" name="sfb:${esc(k)}" data-sfb="${esc(k)}" value="${o}" ${pts[k] === o ? 'checked' : ''}> ${o === 'N/A' ? 'Not relevant' : o}</label>`).join('')}</span></div>`).join('')}</div>`).join('')}</div></details>` : ''}
+        <div class="app-after small">After saving: <b>${st.v === 'Accepted' ? 'Telephonic round (they are asked on WhatsApp for their best time to call)' : 'Closed · Rejected at screening'}</b></div></div>`;
+      BB.attachMics(el);
+      $$('[name=v]', el).forEach((r) => (r.onchange = () => { keep(); st.v = r.value; draw(); }));
+    };
+    draw();
+    $('[data-c]', el).onclick = m.close;
+    $('[data-s]', el).onclick = async () => {
+      keep(); const note = st.v === 'Rejected' ? `${st.reason}${st.note ? ` — ${st.note}` : ''}` : st.note;
+      try {
+        await BB.post(`/api/applications/${a.id}/screen`, { verdict: st.v, note });
+        const scores = Object.fromEntries(Object.entries(pts).filter(([k]) => crit.includes(k)));
+        if (Object.values(scores).some((x) => x !== 'N/A')) await BB.post(`/api/candidates/${a.candidate_id}/evaluation`, { scores, note: `Screening: ${note || st.v}`, app_id: a.id });
+        m.close(); BB.toast(st.v === 'Accepted' ? 'Moved to the telephonic round' : 'Rejected at screening'); if (done) done(); else after();
+      } catch (e) { BB.showErr(el, e); }
+    };
+  };
+  BB.feedbackFor = async (appId, preset = {}) => {
     const a = await BB.api(`/api/applications/${appId}`); const S = BB.boot.steps; const client = S.indexOf(a.step) >= S.indexOf('Sent to client');
     const r = a.rounds.filter((x) => (client ? x.mode === 'in_person' : x.mode !== 'in_person')).find((x) => !['Cleared', 'Not needed', 'Not cleared'].includes(x.status));
     if (!r) return BB.toast(client ? 'The client round is done: record the offer on the application' : 'Our rounds are done: send the candidate to the client', true);
     let iv = r.interview_ids.map((id) => a.interviews.find((i) => i.id === id)).find((i) => i && ['Scheduled', 'Rescheduled'].includes(i.status));
-    if (!iv) { try { const n = await BB.post('/api/interviews', { app_id: a.id, mode: r.mode, round: r.mode === 'in_person' ? 'client' : 'ours', round_key: r.extra_id ? r.key : undefined, name: r.name, at: new Date().toISOString(), interviewer: me().name, now: true }); const a2 = await BB.api(`/api/applications/${a.id}`); return BB.recordResult(a2.interviews.find((i) => i.id === n.id), a2); } catch (e) { return BB.fail(e); } }
-    BB.recordResult(iv, a);
+    if (!iv) { try { const n = await BB.post('/api/interviews', { app_id: a.id, mode: r.mode, round: r.mode === 'in_person' ? 'client' : 'ours', round_key: r.extra_id ? r.key : undefined, name: r.name, at: new Date().toISOString(), interviewer: me().name, now: true }); const a2 = await BB.api(`/api/applications/${a.id}`); return BB.recordResult(a2.interviews.find((i) => i.id === n.id), a2, preset); } catch (e) { return BB.fail(e); } }
+    BB.recordResult(iv, a, preset);
   };
   BB.stepFor = async (appId, step) => { const a = await BB.api(`/api/applications/${appId}`); if (a.result !== 'open') return BB.toast('This application is closed', true); return BB.flow.moveToStage(a, step); };
-  BB.recordResult = (i, a) => {
+  BB.recordResult = (i, a, preset = {}) => {
     const ours = i.round === 'ours';
     // The client decides Selected or Rejected; another round with them is a next action, not a decision.
     const results = ours ? ['Move ahead', 'On hold', 'Not selected'] : ['Selected', 'Not selected', 'On hold'];
@@ -489,17 +527,17 @@
     const groups = {}; for (const x of points) { const g = x.includes('|') ? x.split('|')[0].trim() : ''; (groups[g] = groups[g] || []).push(x); }
     const fbForm = () => `<div class="fb-form" data-f="fb"><div class="row between"><b>${ours ? 'Interview feedback' : 'Client feedback'}</b><span class="tiny muted">${ours ? 'Mark what you checked' : 'Ask the client about each point'}</span></div>${Object.entries(groups).map(([g, list]) => `<div class="eval-group">${g ? `<h4>${esc(g)}</h4>` : ''}${list.map((k) => `<div class="eval-row"><span>${esc(k.split('|').pop().trim())}</span><span class="eval-pick">${['Strong', 'OK', 'Weak', 'N/A'].map((o) => `<label class="${o === 'N/A' ? 'na' : ''}"><input type="radio" name="fb:${esc(k)}" data-fb="${esc(k)}" value="${o}" ${pts[k] === o ? 'checked' : ''}> ${o === 'N/A' ? 'Not relevant' : o}</label>`).join('')}</span></div>`).join('')}</div>`).join('')}
       <div class="grid g2">${BB.field({ name: 'fb_liked', label: ours ? 'Strengths' : 'What the client liked', type: 'textarea', opt: true, value: st.liked ?? fbWas.liked ?? '' })}${BB.field({ name: 'fb_concerns', label: ours ? 'Concerns' : 'The client\'s concerns', type: 'textarea', opt: true, value: st.concerns ?? fbWas.concerns ?? '' })}</div></div>`;
-    const choices = ours ? BB.flow.nextChoices(a, i) : []; const nextText = { 'Move ahead': '', 'Not selected': `This closes ${a.id} (${ours ? 'Not suitable' : 'Client rejected'}).`, 'On hold': `This puts ${a.id} on hold.`, Selected: '', 'Another round': 'Schedule the next round after saving.' };
+    const choices = ours ? BB.flow.nextChoices(a, i) : []; const nextText = { 'Move ahead': '', 'Not selected': `This closes ${a.id} (${ours ? (i.mode === 'phone' ? 'Rejected at telephonic round' : i.mode === 'video' ? 'Rejected at virtual round' : 'Not suitable') : 'Client rejected'}).`, 'On hold': `This puts ${a.id} on hold.`, Selected: '', 'Another round': 'Schedule the next round after saving.' };
     let qa = (i.qa || []).length ? i.qa.slice() : [{ q: '', a: '' }]; let rating = i.rating || 0;
     const m = BB.modal({ title: `${ours ? 'Interview feedback' : 'Client feedback'} · ${esc(i.name || i.id)}`, wide: true, body: '<div data-b></div>', foot: '<button class="btn" data-c>Cancel</button><button class="btn primary" data-s>Save</button>' });
-    const el = m.el; const st = { status: 'Completed', result: '', next: choices.length ? choices[0][0] : '', cnext: 'offer', mkq: true, qlang: (a.questions && a.questions.lang) || 'en' };
+    const el = m.el; const st = { status: 'Completed', result: preset.result || '', next: choices.length ? choices[0][0] : '', cnext: 'offer', mkq: true, qlang: (a.questions && a.questions.lang) || 'en' };
     const nextName = () => (st.next === 'client' ? '' : ((a.rounds.find((x) => x.key === st.next) || {}).name || ''));
     const appAfter = () => {
       if (st.status === 'No-show') return 'stays where it is; book the round again';
       if (st.status === 'Rescheduled') return 'stays where it is; the interview moves to the new time';
       if (st.status === 'Cancelled') return 'stays where it is';
       if (!st.result) return '';
-      if (st.result === 'Not selected') return `Closed · ${ours ? 'Not suitable' : 'Client rejected'}`;
+      if (st.result === 'Not selected') return `Closed · ${ours ? (i.mode === 'phone' ? 'Rejected at telephonic round' : i.mode === 'video' ? 'Rejected at virtual round' : 'Not suitable') : 'Client rejected'}`;
       if (st.result === 'On hold') return 'On hold';
       if (ours) return st.next === 'client' || !choices.length ? 'Sent to client' : `Our interview · ${esc(nextName())} next`;
       return st.cnext === 'offer' ? 'Offer made (when you record the offer)' : st.cnext === 'round' ? 'Client interview · another round' : 'Client interview · selected, offer to record';
@@ -532,10 +570,10 @@
       try {
         const r = await BB.post(`/api/interviews/${i.id}/result`, { status: st.status, result: st.result, remark: st.remark, feedback: st.status === 'Completed' ? { points: Object.fromEntries(Object.entries(pts).filter(([k]) => points.includes(k))), liked: st.liked || '', concerns: st.concerns || '' } : undefined, next: st.result === 'Move ahead' ? st.next : undefined, skip_reason: st.skip_reason, rating: rating || null, qa: qa.filter((x) => x.q || x.a), new_at: na ? BB.fromLocalInput(na.value) : undefined });
         m.close(); const go = String(r.next || '').startsWith('SCHEDULE:') ? a.rounds.find((x) => x.key === r.next.slice(9)) : null; const sel = r.next === 'OPEN_OFFER';
-        BB.toast(sel ? 'Selected' : go ? 'Saved' : r.next); after();
-        // The questions for the next round are written while you book it.
+        // Moving on only changes the stage: the next round is booked once the candidate (or the client) gives a time.
+        BB.toast(sel ? 'Selected' : go ? `Moved to ${go.name}. Book it when they give a time.` : r.next); after();
+        // The questions for the next round are written meanwhile.
         if (go && st.mkq && (a.candidate || {}).cv_file && go.mode !== 'in_person') BB.post(`/api/applications/${a.id}/questions`, { round: go.mode, lang: st.qlang }).then(() => { BB.toast(`Questions ready for ${go.name}`); after(); }, (e) => BB.fail(e));
-        if (go) BB.schedule(a, go.mode, go);
         if (sel && st.cnext === 'offer') BB.recordOffer(a); else if (sel && st.cnext === 'round') BB.flow.addRound(a, { mode: 'in_person', name: 'Second client round' });
       } catch (e) { BB.showErr(el, e); }
     };
