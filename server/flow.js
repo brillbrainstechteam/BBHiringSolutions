@@ -546,9 +546,11 @@ route('GET', '/api/accounts/home', ACC, (ctx) => {
 const INV = { auth: 'team', levels: ['super', 'admin'], accounts: true };
 route('GET', '/api/accounts/invoice-options', INV, (ctx) => {
   const clients = all('SELECT id, company, city FROM clients WHERE removed=0 AND junk=0 AND placeholder=0 AND merged_into IS NULL AND COALESCE(internal,0)=0 ORDER BY company').filter((c) => R.seeClient(ctx.user, get('SELECT * FROM clients WHERE id=?', c.id)));
-  const apps = all("SELECT a.* FROM applications a JOIN jobs j ON j.id=a.job_id WHERE a.result IN ('open','Hired') AND a.step IN ('Offer made','Offer accepted','Joined') ORDER BY a.created_at DESC")
+  const later = ['Offer made', 'Offer accepted', 'Joined'];
+  const apps = all("SELECT a.* FROM applications a JOIN jobs j ON j.id=a.job_id WHERE a.result IN ('open','Hired') ORDER BY a.created_at DESC")
     .filter((a) => !get("SELECT 1 FROM bills WHERE app_id=? AND credit_of IS NULL AND status!='Cancelled'", a.id))
-    .map((a) => { const v = V.appView(a); return { id: a.id, client_id: v.client_id, label: `${v.candidate_name} · ${v.job_title}`, ctc: a.offer_ctc || null, joining_date: a.joining_date || null }; });
+    .map((a) => { const v = V.appView(a); return { id: a.id, client_id: v.client_id, label: `${v.candidate_name} · ${v.job_title} · ${a.result === 'Hired' ? 'Joined' : a.step}`, ctc: a.offer_ctc || null, joining_date: a.joining_date || null, late: later.includes(a.step) || a.result === 'Hired' }; })
+    .sort((x, y) => Number(y.late) - Number(x.late)); // offered and joined first
   return { clients, apps };
 });
 route('POST', '/api/accounts/invoices', INV, (ctx) => {

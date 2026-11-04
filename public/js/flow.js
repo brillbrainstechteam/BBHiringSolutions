@@ -458,12 +458,12 @@
   F.newInvoice = async () => {
     let o; try { o = await BB.api('/api/accounts/invoice-options'); } catch (e) { return BB.fail(e); }
     if (!o.clients.length) return BB.toast('No clients to invoice yet', true);
-    const c = await BB.ask({ title: 'New invoice', note: 'Pick the client to invoice.', fields: [{ name: 'client_id', label: 'Client', type: 'select', options: o.clients.map((x) => [x.id, `${x.company}${x.city ? ` · ${x.city}` : ''}`]) }], ok: 'Next' });
+    const c = await BB.ask({ title: 'New invoice', fields: [{ name: 'client_id', label: 'Client', type: 'select', options: o.clients.map((x) => [x.id, `${x.company}${x.city ? ` · ${x.city}` : ''}`]) }], ok: 'Next' });
     if (!c || !c.client_id) return;
     const apps = o.apps.filter((a) => a.client_id === c.client_id);
-    const v = await BB.ask({ title: `New invoice · ${esc((o.clients.find((x) => x.id === c.client_id) || {}).company || '')}`, note: "Leave the fee empty to use the client's agreed fee. GST is added by the client's state.", fields: [
-      { name: 'app_id', label: 'Candidate', type: 'select', options: [...apps.map((a) => [a.id, a.label]), ['', 'Someone not in the portal (type below)']], value: apps[0] ? apps[0].id : '', placeholder: false },
-      `<div class="grid g2">${field({ name: 'person_name', label: 'Candidate name (if not in the portal)', opt: true })}${field({ name: 'job_name', label: 'Position', opt: true })}</div>`,
+    const v = await BB.ask({ title: `New invoice · ${esc((o.clients.find((x) => x.id === c.client_id) || {}).company || '')}`, fields: [
+      { name: 'app_id', label: 'Candidate', type: 'select', options: [...apps.map((a) => [a.id, a.label]), ['', 'Someone not in the portal (type below)']], value: apps[0] ? apps[0].id : '', placeholder: false, hint: apps.length ? `${apps.length} candidate${apps.length === 1 ? '' : 's'} on this client's jobs` : 'Nobody on this client\'s jobs yet: type the name below' },
+      `<div class="grid g2">${field({ name: 'person_name', label: 'Name, if not in the list', placeholder: 'Only for someone not in the portal' })}${field({ name: 'job_name', label: 'Position', placeholder: 'Only for someone not in the portal' })}</div>`,
       `<div class="grid g2">${field({ name: 'ctc', label: 'Yearly CTC (₹)', type: 'number', value: apps[0] && apps[0].ctc ? apps[0].ctc : '' })}${field({ name: 'joining_date', label: 'Joining date', type: 'date', value: apps[0] && apps[0].joining_date ? apps[0].joining_date : '' })}</div>`,
       `<div class="grid g2">${field({ name: 'fee_pct', label: 'Fee % of CTC', type: 'number', opt: true })}${field({ name: 'fee_amount', label: 'or Fee amount (₹, before GST)', type: 'number', opt: true })}</div>`,
     ], ok: 'Create invoice', submit: (x) => BB.post('/api/accounts/invoices', { ...x, client_id: c.client_id }) });

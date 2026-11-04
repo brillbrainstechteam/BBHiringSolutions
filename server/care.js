@@ -124,11 +124,11 @@ route('GET', '/api/aftercare', T, (ctx) => {
     const v = V.appView(a); const sch = scheduleOf(a); const since = L.daysBetween(a.joined_at); const win = windowOf(a);
     // Left: how many days they stayed; within 90 days counts as left early. Still there after 90 days: retained.
     const stay = a.left_date ? L.daysBetween(a.joined_at, new Date(a.left_date).toISOString()) : null;
-    const status90 = a.left_date ? (stay <= 90 ? 'Left' : 'Retained') : since >= 90 ? 'Retained' : 'In 90 days';
+    const status90 = a.left_date ? (stay <= 90 ? 'Left' : 'Retained') : since >= 90 || a.retained_at ? 'Retained' : 'In 90 days';
     const todo = a.left_date ? [] : sch.filter((x) => x.day <= since && x.parties.some((p) => ['To do', 'Waiting for answer', 'Missed'].includes(p.status)));
     const next = a.left_date || since > last ? null : sch.find((x) => x.day > since);
     const done = all("SELECT * FROM care_checks WHERE app_id=? AND status='Done' ORDER BY at DESC LIMIT 1", a.id)[0];
-    return { id: a.id, candidate_id: a.candidate_id, candidate_name: v.candidate_name, client_name: v.client_name, job_title: v.job_title, owner_name: v.owner_name, joined_at: a.joined_at, left_date: a.left_date || null, left_reason: a.left_reason || '', stay, status90, ctc: a.offer_ctc || 0, joining_date: a.joining_date || null, offered_at: offeredAt(a.id), invoice: invoiceOf(a.id), since, at_risk: !!a.at_risk, schedule: sch, todo: todo.map((x) => x.day), next: next ? { day: next.day, date: next.date } : null, last: done ? { day: done.day, party: done.party, outcome: done.outcome, note: done.note, at: done.at } : null, window_left: Math.max(0, win - since) };
+    return { id: a.id, candidate_id: a.candidate_id, candidate_name: v.candidate_name, client_name: v.client_name, job_title: v.job_title, owner_name: v.owner_name, joined_at: a.joined_at, left_date: a.left_date || null, left_reason: a.left_reason === 'Removed by client' ? 'Removed by company' : a.left_reason || '', retained_at: a.retained_at || null, stay, status90, ctc: a.offer_ctc || 0, joining_date: a.joining_date || null, offered_at: offeredAt(a.id), invoice: invoiceOf(a.id), since, at_risk: !!a.at_risk, schedule: sch, todo: todo.map((x) => x.day), next: next ? { day: next.day, date: next.date } : null, last: done ? { day: done.day, party: done.party, outcome: done.outcome, note: done.note, at: done.at } : null, window_left: Math.max(0, win - since) };
   }).filter(match);
   const today = new Date().toISOString().slice(0, 10);
   const offers = all("SELECT * FROM applications WHERE result='open' AND step IN ('Offer made','Offer accepted') ORDER BY joining_date").filter((a) => R.seeApp(u, a)).map((a) => {
@@ -270,6 +270,33 @@ route('POST', '/api/reviews/ask-client', { auth: 'team', levels: ['super'] }, (c
 
 // From the Offer page: an offer that did not turn into a joining (with why), and the CTC someone joined at.
 const offerApp = (ctx) => { const a = get('SELECT * FROM applications WHERE id=?', ctx.params.id); if (!a || !R.seeApp(ctx.user, a)) throw httpError(404, 'Application not found'); return a; };
+const OFFER_OUT = ['Offer declined', 'Did not join', 'Candidate withdrew'];
+const LEFT_AS = { 'Left on their own': 'Left on their own', 'Removed by company': 'Removed by client', Absconded: 'Absconded', Other: 'Other' };
+route('POST', '/api/aftercare/:id/status', T, (ctx) => {
+  const a = offerApp(ctx); const b = ctx.body || {}; const st = String(b.status || ''); const note = String(b.note || '').trim(); const by = ctx.actor;
+  if (OFFER_OUT.includes(st)) { // the offer did not turn into a joining
+    if (a.result !== 'open') throw httpError(400, 'This offer is already closed.');
+    if (!note) throw httpError(400, 'Write the reason', 'note');
+    L.closeApplication(a.id, st, by, note); return { ok: true, outcome: `${a.id} closed (${st}). The seat on the job is open again.` };
+  }
+  if (st === 'Accepted' || st === 'Joined') {
+    if (a.result !== 'open' || !['Offer made', 'Offer accepted'].includes(a.step)) throw httpError(400, 'Only an open offer can be marked accepted or joined.');
+    const keep = {}; const ctc = Math.round(Number(b.ctc) || 0); if (ctc) keep.offer_ctc = ctc; if (/^\d{4}-\d{2}-\d{2}$/.test(b.date || '')) keep.joining_date = b.date; if (Object.keys(keep).length) update('applications', a.id, keep);
+    if (a.step === 'Offer made') L.moveStep(a.id, 'Offer accepted', by, note || 'Offer accepted');
+    if (st === 'Joined') L.moveStep(a.id, 'Joined', by, note || 'Marked joined');
+    return { ok: true, outcome: st === 'Joined' ? 'Marked joined' : 'Offer accepted' };
+  }
+  if (st === 'Retained') { // someone who joined is still there (confirmed by a call or the client)
+    if (!a.joined_at || a.left_date) throw httpError(400, 'Only someone who joined and is still there can be marked retained.');
+    update('applications', a.id, { retained_at: now() }); L.appHist(a.id, a.step, by, `Retained${note ? `: ${note}` : ''}`, 'care'); return { ok: true, outcome: 'Marked retained' };
+  }
+  if (LEFT_AS[st]) { // left within (or after) 90 days: when, why, and whether the job opens again as a replacement
+    if (!a.joined_at || a.left_date) throw httpError(400, 'Only someone who joined and is still there can be marked as left.');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(b.date || '')) throw httpError(400, 'Enter the last working day', 'date');
+    return L.leftJob(a.id, { date: b.date, reason: LEFT_AS[st], note, reopen: !!b.reopen }, by);
+  }
+  throw httpError(400, 'Pick a status', 'status');
+});
 route('POST', '/api/aftercare/:id/not-joined', T, (ctx) => {
   const a = offerApp(ctx); const b = ctx.body || {}; if (a.result !== 'open') throw httpError(400, 'This offer is already closed.');
   const reason = ['Offer declined', 'Did not join'].includes(b.reason) ? b.reason : null; if (!reason) throw httpError(400, 'Pick: offer declined or did not join', 'reason');

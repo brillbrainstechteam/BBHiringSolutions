@@ -1572,6 +1572,7 @@ html[lang="hi"] .ss-g { letter-spacing: 0; }
 .job-search input { width: 100%; height: 44px; padding: 0 16px 0 44px; border-radius: 999px; }
 .job-chips { display: flex; flex-wrap: nowrap; gap: 6px; }
 .job-chips .chip { flex: 1 1 auto; justify-content: center; height: 36px; padding: 0 8px; font-size: 12.5px; white-space: nowrap; }
+.job-prio { gap: 8px; } .job-prio select { width: auto; } /* minimum CTC and sort by priority */
 @media (max-width: 1180px) { .job-chips { flex-wrap: wrap; } }
 .bulk-card { padding: 16px; margin-bottom: 12px; display: grid; gap: 12px; }
 .bulk-head { display: flex; align-items: center; gap: 12px; }

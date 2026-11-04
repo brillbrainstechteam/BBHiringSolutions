@@ -526,11 +526,17 @@ route('GET', '/api/jobs', T, (ctx) => {
   const q = ctx.query; const u = ctx.user;
   const reach = new Map(all("SELECT job_id, SUM(CASE WHEN status='Done' THEN 1 ELSE 0 END) d, SUM(CASE WHEN status='Not needed' THEN 0 ELSE 1 END) n FROM postings WHERE ckey IS NOT NULL GROUP BY job_id").map((r) => [r.job_id, r]));
   const creative = new Map(all('SELECT job_id, status FROM creatives').map((r) => [r.job_id, r.status]));
-  let rows = visibleJobs(u).map((j) => ({ ...V.jobView(j), reach_done: (reach.get(j.id) || {}).d || 0, reach_total: (reach.get(j.id) || {}).n || 0, creative: creative.get(j.id) || '' }));
+  // Priority: a high CTC and a client who has given us many openings over time both push a job up. Each is ranked
+  // against the jobs in this list (0-1) and the two count equally: score 0-100.
+  const clientOpenings = new Map(all('SELECT client_id, SUM(COALESCE(openings, 1)) n, COUNT(*) jobs FROM jobs GROUP BY client_id').map((r) => [r.client_id, r]));
+  let rows = visibleJobs(u).map((j) => { const co = clientOpenings.get(j.client_id) || {}; return { ...V.jobView(j), reach_done: (reach.get(j.id) || {}).d || 0, reach_total: (reach.get(j.id) || {}).n || 0, creative: creative.get(j.id) || '', ctc: j.sal_to || j.sal_from || null, client_openings: co.n || 0, client_jobs: co.jobs || 0 }; });
+  const rankOf = (list) => { const v = list.filter((x) => x > 0).sort((a, b) => a - b); return (x) => (x > 0 && v.length ? v.filter((y) => y <= x).length / v.length : 0); };
+  const ctcRank = rankOf(rows.map((j) => j.ctc || 0)); const volRank = rankOf(rows.map((j) => j.client_openings));
+  for (const j of rows) j.pscore = Math.round(50 * ctcRank(j.ctc || 0) + 50 * volRank(j.client_openings));
   const counts = { All: rows.length, Active: rows.filter((j) => ['Open', 'Sourcing', 'Interviewing', 'Offer stage'].includes(j.status)).length };
   for (const s of ['Draft', 'Open', 'Sourcing', 'Interviewing', 'Offer stage', 'Filled', 'On hold', 'Closed']) counts[s] = rows.filter((j) => j.status === s).length;
-  rows = rows.filter((j) => (!q.status || q.status === 'All' || (q.status === 'Active' ? ['Open', 'Sourcing', 'Interviewing', 'Offer stage'].includes(j.status) : j.status === q.status)) && (!q.client || j.client_id === q.client) && like(q.q, j.id, j.title, j.client_name, j.city, j.old_code, j.recruiter_name, j.reopen_tag, j.reopen_tag ? 'replacement' : ''));
-  const p = page(ctx, sortBy(rows, q, ['title', 'client_name', 'filled', 'apps_total', 'reach_done', 'status', 'recruiter_name', 'days_open']), 'job-openings', ['id', 'title', 'client_name', 'city', 'openings', 'filled', 'apps_total', 'status', 'recruiter_name', 'days_open', 'old_code']);
+  rows = rows.filter((j) => (!q.status || q.status === 'All' || (q.status === 'Active' ? ['Open', 'Sourcing', 'Interviewing', 'Offer stage'].includes(j.status) : j.status === q.status)) && (!q.client || j.client_id === q.client) && (!Number(q.ctc_min) || (j.ctc || 0) >= Number(q.ctc_min)) && like(q.q, j.id, j.title, j.client_name, j.city, j.old_code, j.recruiter_name, j.reopen_tag, j.reopen_tag ? 'replacement' : ''));
+  const p = page(ctx, sortBy(rows, q, ['title', 'client_name', 'ctc', 'pscore', 'client_openings', 'filled', 'apps_total', 'reach_done', 'status', 'recruiter_name', 'days_open']), 'job-openings', ['id', 'title', 'client_name', 'city', 'ctc', 'client_openings', 'pscore', 'openings', 'filled', 'apps_total', 'status', 'recruiter_name', 'days_open', 'old_code']);
   return p.__file ? p : { ...p, counts };
 });
 // One "Client to be confirmed" per agency (the super admin's has no agency), made the first time it is needed. No
