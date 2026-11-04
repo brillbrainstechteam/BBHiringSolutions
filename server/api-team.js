@@ -855,7 +855,7 @@ section{margin-top:22px}.doc h2{margin-top:20px}.doc p{margin:0 0 8px}h2{font-si
 <body><header><div class="in"><b>${e(b.name)}</b><span>Jobs in jewellery</span></div></header><main><div class="card">
 ${open ? '' : '<div class="closed">This job is no longer taking applications. <a href="/">See open jobs</a></div>'}
 <h1>${e(j.title)}</h1><p class="where">${e(j.city)}${j.department ? ` · ${e(j.department)}` : ''}</p><div class="facts">${facts.map(([l, x]) => `<span>${l}: <b>${e(x)}</b></span>`).join('')}</div>
-${secs || (jd.text ? `<section>${list(jd.text)}</section>` : ((d) => (d ? `<section class="doc">${docHtml(d)}</section>` : '<section><p>Apply to hear more about this job.</p></section>'))(docText()))}
+${((own, doc) => (own ? secs : doc ? `<section class="doc">${docHtml(doc)}</section>` : secs || '<section><p>Apply to hear more about this job.</p></section>'))(['summary', 'duties', 'must', 'good', 'education'].some((k) => String((j.jd || {})[k] || '').trim()), docText())}
 </div></main>${open ? `<div class="apply"><a href="${e(apply)}">Apply for this job</a></div>` : ''}</body></html>`;
 }
 module.exports.jdHtml = jdHtml;
