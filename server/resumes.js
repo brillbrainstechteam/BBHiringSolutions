@@ -25,6 +25,43 @@ function named(cname, hay) {
   const h = ` ${words(hay)} `; return ws.every((w) => h.includes(` ${w} `)) || h.replace(/ /g, '').includes(ws.join(''));
 }
 const NO_CV = "merged_into IS NULL AND removed=0 AND (cv_file IS NULL OR cv_file='')";
+const onDisk = (f) => { try { return !!f.path && require('fs').existsSync(path.join(D.DATA_DIR, 'files', f.path)); } catch { return false; } };
+
+// Once (5 Nov 2026): candidates whose resume was saved but never linked as their resume get it linked; a resume
+// link to a file that is not on disk is cleared (so the file can come again); and Drive files that were skipped or
+// matched nobody are asked for once more by the Drive script.
+D.db.exec('CREATE TABLE IF NOT EXISTS drive_seen (file_id TEXT PRIMARY KEY, md5 TEXT, path TEXT, status TEXT, at TEXT)');
+(() => {
+  const once = D.settings().done_once || []; if (once.includes('cv_link_repair_1')) return;
+  let linked = 0; let cleared = 0;
+  for (const c of all("SELECT id, cv_file FROM candidates WHERE merged_into IS NULL AND removed=0")) {
+    const cur = c.cv_file ? get('SELECT * FROM files WHERE id=?', c.cv_file) : null;
+    if (c.cv_file && cur && onDisk(cur)) continue;
+    const f = all("SELECT * FROM files WHERE record_id=? AND type IN ('cv','file') AND replaced=0 ORDER BY (type='cv') DESC, id DESC", c.id).find((x) => CV_EXT.test(x.name || '') && onDisk(x));
+    if (f) { update('candidates', c.id, { cv_file: String(f.id) }); linked++; } else if (c.cv_file) { update('candidates', c.id, { cv_file: null }); cleared++; }
+  }
+  let resend = 0; try { resend = D.run("DELETE FROM drive_seen WHERE status IN ('skipped','unmatched','error')").changes || 0; } catch { /* no Drive yet */ }
+  D.setSetting('done_once', [...once, 'cv_link_repair_1']);
+  D.setHealth('cv_link_repair', `${now()} · ${linked} resumes linked · ${cleared} broken links cleared · ${resend} Drive files to send again`);
+  console.log(`Resume repair: ${linked} linked, ${cleared} broken links cleared, ${resend} Drive files to send again`);
+})();
+
+// Once (5 Nov 2026): the people from the Naukri exports in the Drive folder get the source "Google Drive - Naukri",
+// told apart from the resumes. The 2 Nov import wrote their IDs to was-naukri-ids-2026-11-02.txt in the data folder;
+// without that list, a Drive candidate with no resume file at all is one of them (the Naukri rows had no files).
+(() => {
+  const once = D.settings().done_once || []; if (once.includes('naukri_source_1')) return;
+  const NAUKRI = 'Google Drive - Naukri'; let ids = null;
+  try { ids = [...new Set((require('fs').readFileSync(path.join(D.DATA_DIR, 'was-naukri-ids-2026-11-02.txt'), 'utf8').match(/CA-\d+/g) || []))]; } catch { ids = null; }
+  const rows = ids && ids.length ? ids.map((id) => get("SELECT id FROM candidates WHERE id=? AND source='Google Drive'", id)).filter(Boolean)
+    : all("SELECT id FROM candidates WHERE source='Google Drive' AND (cv_file IS NULL OR cv_file='') AND NOT EXISTS (SELECT 1 FROM files f WHERE f.record_id=candidates.id)");
+  for (const r of rows) update('candidates', r.id, { source: NAUKRI });
+  const s = D.settings(); const add = ['Google Drive', NAUKRI].filter((x) => !(s.lead_sources || []).includes(x));
+  if (add.length) D.setSetting('lead_sources', [...(s.lead_sources || []), ...add]);
+  D.setSetting('done_once', [...(D.settings().done_once || []), 'naukri_source_1']);
+  D.history('System', 'source', null, 'source', 'Google Drive', `${NAUKRI}: ${rows.length} candidates from the Naukri exports (${ids && ids.length ? 'from the import list' : 'Drive candidates with no resume file'})`);
+  console.log(`Naukri source: ${rows.length} candidates now "${NAUKRI}" (${ids && ids.length ? 'from the import list' : 'no list found: Drive candidates with no file'})`);
+})();
 
 // folder path -> market, department and role. The CV folder is B2B | B2C | Pending Seggregatetion, then the
 // department, then the role: "B2B/Designer/CAD Designer/x.pdf" -> B2B, Designer, CAD Designer. A file directly in a
@@ -47,11 +84,15 @@ async function attachResume({ file, buf, source = 'Google Drive' }, by) {
   if (!text.trim() && /\.doc$/i.test(name)) text = [...buf.toString('latin1').matchAll(/[\x20-\x7E]{4,}/g), ...buf.toString('utf16le').matchAll(/[\x20-\x7E]{4,}/g)].map((m) => m[0]).join('\n');
   const phone = mail.findPhone(text); const email = (/[\w.+-]+@[\w-]+(\.[\w-]+)+/.exec(text) || [''])[0].replace(/\.$/, '').toLowerCase();
   const fname = nameFromFile(file); const hay = `${name} ${fname} ${text.slice(0, 3000)}`;
-  // already attached (the same file name on someone): nothing to do
-  if (get("SELECT 1 FROM files WHERE name=? AND type='cv' AND replaced=0", name)) return { status: 'skipped', why: 'already attached' };
+  // The same file already on someone. Linked as their resume (and really on disk): nothing to do. Kept on their
+  // record but never linked as the resume (how the 2 Nov import left them): link it now.
+  const same = all("SELECT f.*, c.cv_file FROM files f LEFT JOIN candidates c ON c.id=f.record_id WHERE f.name=? AND f.type IN ('cv','file') AND f.replaced=0 ORDER BY f.id DESC", name);
+  if (same.some((f) => String(f.cv_file || '') === String(f.id) && onDisk(f))) return { status: 'skipped', why: 'already attached' };
+  const kept = same.find((f) => f.record_id && !f.cv_file && onDisk(f));
+  if (kept) { update('candidates', kept.record_id, { cv_file: String(kept.id) }); insert('notes', { record_id: kept.record_id, text: `Resume ${name} linked (it was on file from ${source} but not shown as the resume).`, author: by.label || 'Resume import', at: now() }); return { status: 'attached', id: kept.record_id }; }
   let c = (phone ? get(`SELECT * FROM candidates WHERE whatsapp=? AND ${NO_CV}`, phone) : null)
     || (email ? get(`SELECT * FROM candidates WHERE lower(email)=? AND ${NO_CV}`, email) : null)
-    || all(`SELECT * FROM candidates WHERE source='Google Drive' AND ${NO_CV}`).find((x) => named(x.name, hay))
+    || all(`SELECT * FROM candidates WHERE source LIKE 'Google Drive%' AND ${NO_CV}`).find((x) => named(x.name, hay))
     || all(`SELECT * FROM candidates WHERE ${NO_CV}`).find((x) => named(x.name, hay));
   let made = false;
   if (!c) {
