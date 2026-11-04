@@ -95,9 +95,9 @@ function runTimer() {
   // Email inbox door: unread CV emails become candidate leads.
   if (D.ENV.imap.host) require('./mailbox').check().catch((e) => require('./alerts').devAlert('Email inbox check failed', e.message));
   // Ad applicants without an application get one on the job their ad points to.
-  const adApps = L.openAdApplications(); if (adApps) done.ad_applications = adApps;
+  try { const adApps = L.openAdApplications(); if (adApps) done.ad_applications = adApps; } catch (e) { require('./alerts').devAlert('Ad applications sweep failed', e.message); }
   // Anyone hired through us: applications opened since then close.
-  const shut = L.closePlacedApps(); if (shut) done.closed_hired = shut;
+  try { const shut = L.closePlacedApps(); if (shut) done.closed_hired = shut; } catch (e) { require('./alerts').devAlert('Hired sweep failed', e.message); }
   // Meta ad spend, once a day (when the token is in .env).
   require('./adspend').daily();
   D.setHealth('timer_last_run', now());

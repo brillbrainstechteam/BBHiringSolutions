@@ -606,21 +606,31 @@ function jobsForPerson(p, opt = {}) {
 // Everyone who came from an ad or a job platform gets an application: candidates with no open application (from the last
 // 60 days) go onto the open jobs their ad (or the job they asked for) points to, skipping jobs they were already on.
 // No job found: the candidate is flagged so the team picks the job.
-function openAdApplications(by = { label: 'System' }) {
-  const since = new Date(Date.now() - 60 * 86400000).toISOString(); let made = 0;
+function openAdApplications(by = { label: 'System' }, o = {}) {
+  const since = new Date(Date.now() - (o.days || 90) * 86400000).toISOString(); let made = 0; const report = [];
   // From an ad (ad names on the link) or from an ad / job platform (the source), with no open application.
   const AD_SOURCE = /instagram|facebook|meta|linkedin|naukri|apna|indeed|job post|google ad|youtube/i;
-  const rows = all(`SELECT c.* FROM candidates c WHERE c.removed=0 AND IFNULL(c.junk,0)=0 AND c.merged_into IS NULL AND IFNULL(c.last_updated, c.created_at) > ? AND NOT EXISTS (SELECT 1 FROM applications a WHERE a.candidate_id=c.id AND a.result='open')`, since)
+  const rows = all(`SELECT c.* FROM candidates c WHERE c.removed=0 AND IFNULL(c.junk,0)=0 AND c.merged_into IS NULL AND IFNULL(c.last_updated, c.created_at) > ? AND NOT EXISTS (SELECT 1 FROM applications a WHERE a.candidate_id=c.id AND a.result='open') ORDER BY c.created_at DESC`, since)
     .filter((c) => c.ad_set || c.ad_name || c.ad_campaign || AD_SOURCE.test(c.source || ''));
   for (const c of rows) {
-    if (isPlaced(c.id)) continue;
+    const line = { id: c.id, name: c.name, source: c.source, ad: [c.ad_campaign, c.ad_set, c.ad_name].filter(Boolean).join(' › '), job_wanted: c.job_wanted, jobs: [], result: '' };
+    report.push(line);
+    const hired = placedOn(c.id); if (hired) { line.result = `Hired on ${hired.id}`; continue; }
     const had = new Set(all('SELECT job_id FROM applications WHERE candidate_id=?', c.id).map((r) => r.job_id));
-    const m = jobsForPerson(c); const jobs = m.jobs.filter((j) => !had.has(j.id)).slice(0, 3);
-    if (!jobs.length) { if (!m.jobs.length && !c.needs_check) update('candidates', c.id, { needs_check: 'From an ad: pick the job' }); continue; }
-    for (const j of jobs) { try { createApplication(c.id, j.id, by, c.source, `Applied from an ad (matched by ${m.by})`, { campaign: c.ad_campaign, adset: c.ad_set, ad: c.ad_name }); made++; } catch { /* closed meanwhile */ } }
-    if (c.needs_check === 'From an ad: pick the job') update('candidates', c.id, { needs_check: null });
+    const m = jobsForPerson(c); const jobs = m.jobs.filter((x) => !had.has(x.id)).slice(0, 3);
+    if (!jobs.length) {
+      line.result = m.jobs.length ? `Already applied to ${m.jobs.map((x) => x.id).join(', ')} (closed)` : 'No open job matches the ad or the job they want';
+      if (!o.dry && !m.jobs.length && !c.needs_check) update('candidates', c.id, { needs_check: 'From an ad: pick the job' });
+      continue;
+    }
+    line.jobs = jobs.map((x) => `${x.id} ${x.title}`); line.by = m.by;
+    if (o.dry) { line.result = `Will open on ${line.jobs.join(', ')}`; continue; }
+    const done = [];
+    for (const x of jobs) { try { createApplication(c.id, x.id, by, c.source, `Applied from an ad (matched by ${m.by})`, { campaign: c.ad_campaign, adset: c.ad_set, ad: c.ad_name }); made++; done.push(x.id); } catch (e) { line.error = e.message; } }
+    line.result = done.length ? `Opened on ${done.join(', ')}` : `Could not open: ${line.error}`;
+    if (done.length && c.needs_check === 'From an ad: pick the job') update('candidates', c.id, { needs_check: null });
   }
-  return made;
+  return o.report ? { made, rows: report } : made;
 }
 function screenApplication(appId, verdict, by, note) {
   if (!SCREEN.includes(verdict)) throw httpError(400, 'Pick a screening decision');

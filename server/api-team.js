@@ -1254,6 +1254,13 @@ route('POST', '/api/applications/:id/rounds/:rid/delete', T, (ctx) => {
 route('POST', '/api/applications/:id/close', T, (ctx) => { const a = loadApp(ctx); return L.closeApplication(a.id, ctx.body.reason, ctx.actor, ctx.body.note); });
 // Match candidates to jobs: every candidate (that this login can see) gets an application on each open job their ad
 // names or "Job you want" point to, unless they already have one there (open or closed). dry=true only shows it.
+// Ad applicants without an open application: what happens to each (dry), and open them now.
+route('POST', '/api/applications/ad-applicants', T, (ctx) => {
+  if (!['super', 'admin'].includes(ctx.user.level)) throw httpError(403, 'For admins');
+  const r = L.openAdApplications(ctx.actor, { dry: !!(ctx.body || {}).dry, report: true });
+  if (!(ctx.body || {}).dry) D.history(ctx.actor.label, 'ad applications opened', null, null, null, `${r.made} opened`, null, ctx.ip);
+  return r;
+});
 route('POST', '/api/applications/auto-map', T, (ctx) => {
   const u = ctx.user; const b = ctx.body || {}; const plan = [];
   // Email candidates stay candidates only: the team picks their jobs by hand.

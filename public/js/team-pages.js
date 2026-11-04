@@ -524,8 +524,15 @@
   // ---------- Applications: board / list ----------
   P.applications = async ({ el, actions, q, me }) => {
     const view = q.view === 'board' ? 'board' : 'list'; // List first; Board when asked
-    actions.innerHTML = `<button class="btn" data-automap>Match candidates to jobs</button><div class="seg"><button data-v="board" class="${view === 'board' ? 'on' : ''}">Board</button><button data-v="list" class="${view === 'list' ? 'on' : ''}">List</button></div>${view === 'list' ? dl(`/api/applications?${BB.qs(q, { format: 'xlsx', view: undefined })}`) : ''}`;
+    actions.innerHTML = `${['super', 'admin'].includes(me.level) ? '<button class="btn" data-adapps>Ad applicants</button>' : ''}<button class="btn" data-automap>Match candidates to jobs</button><div class="seg"><button data-v="board" class="${view === 'board' ? 'on' : ''}">Board</button><button data-v="list" class="${view === 'list' ? 'on' : ''}">List</button></div>${view === 'list' ? dl(`/api/applications?${BB.qs(q, { format: 'xlsx', view: undefined })}`) : ''}`;
     $$('[data-v]', actions).forEach((b) => (b.onclick = () => BB.setQ({ view: b.dataset.v === 'list' ? '' : b.dataset.v })));
+    const adb = $('[data-adapps]', actions); if (adb) adb.onclick = async () => {
+      let d; try { d = await BB.post('/api/applications/ad-applicants', { dry: true }); } catch (e) { return BB.fail(e); }
+      const will = d.rows.filter((x) => x.jobs.length && !/^Hired/.test(x.result)).length;
+      BB.modal({ title: 'Ad applicants without an open application', wide: true, body: `<p class="small muted" style="margin-top:0">Candidates from an ad or a job platform in the last 90 days. Each one goes onto the open job their ad (or the job they asked for) points to. This also runs by itself every 10 minutes.</p><div class="card tbl-wrap" style="max-height:55vh;overflow:auto"><table class="tbl"><thead><tr><th>Candidate</th><th>Ad / source</th><th>Wants</th><th>What happens</th></tr></thead><tbody>${d.rows.map((x) => `<tr><td><a href="#" data-open="candidate:${esc(x.id)}">${esc(x.name || x.id)}</a><div class="tiny muted mono">${esc(x.id)}</div></td><td class="small">${esc(x.ad || '—')}<div class="tiny muted">${esc(x.source || '')}</div></td><td class="small">${esc(x.job_wanted || '—')}</td><td class="small">${esc(x.result)}</td></tr>`).join('') || '<tr><td class="empty" colspan="4">Every ad applicant already has an open application.</td></tr>'}</tbody></table></div>`,
+        foot: `<button class="btn" data-adx>Close</button>${will ? `<button class="btn primary" data-adgo>Open ${will} application${will === 1 ? '' : 's'} now</button>` : ''}`,
+        onMount: (mm, close) => { $('[data-adx]', mm).onclick = close; const g = $('[data-adgo]', mm); if (g) g.onclick = async () => { g.disabled = true; try { const r = await BB.post('/api/applications/ad-applicants', {}); close(); BB.toast(`${r.made} application${r.made === 1 ? '' : 's'} opened`); BB.refreshPage(); } catch (e) { BB.fail(e); g.disabled = false; } }; } });
+    };
     $('[data-automap]', actions).onclick = () => autoMap();
     wireDl(actions);
     if (view === 'board') {
