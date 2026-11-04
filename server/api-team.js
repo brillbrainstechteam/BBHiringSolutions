@@ -1660,7 +1660,7 @@ route('POST', '/api/logs/:id/approve', SUPER, (ctx) => {
 
 // ---------- bills, payments, payouts (16) ----------
 // A bill added by hand has no application behind it: its names are kept on the bill.
-const billApp = (b) => (b.app_id ? V.appView(get('SELECT * FROM applications WHERE id=?', b.app_id)) : { candidate_name: b.person_name || '', job_title: b.job_name || '', joining_date: null });
+const billApp = (b) => (b.app_id ? V.appView(get('SELECT * FROM applications WHERE id=?', b.app_id)) : { candidate_name: b.person_name || '', job_title: b.job_name || '', joining_date: b.joining_on || null });
 const billDay = (b) => String(b.issued_at || b.date || b.created_at || '').slice(0, 10);
 route('GET', '/api/bills', { ...T, accounts: true }, (ctx) => {
   const q = ctx.query;

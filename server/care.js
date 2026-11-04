@@ -113,22 +113,36 @@ function replacementOf(a) {
   const status = !used ? 'Not covered' : next && next.result === 'Hired' ? 'Replaced' : by ? 'In progress' : 'To find';
   return { status, free: used, why: used ? '' : stay > win ? `Left after ${stay} days (window ${win})` : a.left_reason || 'Not a free replacement', stay, by: by ? { id: by.id, name: (get('SELECT name FROM candidates WHERE id=?', by.candidate_id) || {}).name, step: by.step, result: by.result } : null };
 }
+// When the offer was made, and the invoice raised for this person (if any).
+const offeredAt = (appId) => (get("SELECT MIN(at) at FROM app_history WHERE app_id=? AND step='Offer made'", appId) || {}).at || null;
+const invoiceOf = (appId) => { const b = get("SELECT * FROM bills WHERE app_id=? AND credit_of IS NULL AND status!='Cancelled' ORDER BY created_at DESC LIMIT 1", appId); return b ? { id: b.id, no: b.bill_no, status: L.billView(b).view_status, total: b.total } : null; };
 route('GET', '/api/aftercare', T, (ctx) => {
   const u = ctx.user; const q = ctx.query; const s = txt(q.q); const last = Math.max(...marks());
   const match = (v) => !s || [v.candidate_name, v.client_name, v.job_title, v.id].some((x) => txt(x).includes(s));
-  const joined = all("SELECT * FROM applications WHERE result='Hired' AND joined_at IS NOT NULL AND left_date IS NULL").filter((a) => R.seeApp(u, a) && L.daysBetween(a.joined_at) <= last + 7);
+  const joined = all('SELECT * FROM applications WHERE joined_at IS NOT NULL').filter((a) => R.seeApp(u, a) && L.daysBetween(a.joined_at) <= 180);
   const active = joined.map((a) => {
     const v = V.appView(a); const sch = scheduleOf(a); const since = L.daysBetween(a.joined_at); const win = windowOf(a);
-    const todo = sch.filter((x) => x.day <= since && x.parties.some((p) => ['To do', 'Waiting for answer', 'Missed'].includes(p.status)));
-    const next = sch.find((x) => x.day > since);
+    // Left: how many days they stayed; within 90 days counts as left early. Still there after 90 days: retained.
+    const stay = a.left_date ? L.daysBetween(a.joined_at, new Date(a.left_date).toISOString()) : null;
+    const status90 = a.left_date ? (stay <= 90 ? 'Left' : 'Retained') : since >= 90 ? 'Retained' : 'In 90 days';
+    const todo = a.left_date ? [] : sch.filter((x) => x.day <= since && x.parties.some((p) => ['To do', 'Waiting for answer', 'Missed'].includes(p.status)));
+    const next = a.left_date || since > last ? null : sch.find((x) => x.day > since);
     const done = all("SELECT * FROM care_checks WHERE app_id=? AND status='Done' ORDER BY at DESC LIMIT 1", a.id)[0];
-    return { id: a.id, candidate_id: a.candidate_id, candidate_name: v.candidate_name, client_name: v.client_name, job_title: v.job_title, owner_name: v.owner_name, joined_at: a.joined_at, since, at_risk: !!a.at_risk, schedule: sch, todo: todo.map((x) => x.day), next: next ? { day: next.day, date: next.date } : null, last: done ? { day: done.day, party: done.party, outcome: done.outcome, note: done.note, at: done.at } : null, window_left: Math.max(0, win - since) };
+    return { id: a.id, candidate_id: a.candidate_id, candidate_name: v.candidate_name, client_name: v.client_name, job_title: v.job_title, owner_name: v.owner_name, joined_at: a.joined_at, left_date: a.left_date || null, left_reason: a.left_reason || '', stay, status90, ctc: a.offer_ctc || 0, joining_date: a.joining_date || null, offered_at: offeredAt(a.id), invoice: invoiceOf(a.id), since, at_risk: !!a.at_risk, schedule: sch, todo: todo.map((x) => x.day), next: next ? { day: next.day, date: next.date } : null, last: done ? { day: done.day, party: done.party, outcome: done.outcome, note: done.note, at: done.at } : null, window_left: Math.max(0, win - since) };
   }).filter(match);
   const today = new Date().toISOString().slice(0, 10);
   const offers = all("SELECT * FROM applications WHERE result='open' AND step IN ('Offer made','Offer accepted') ORDER BY joining_date").filter((a) => R.seeApp(u, a)).map((a) => {
     const v = V.appView(a); const late = !!a.joining_date && a.joining_date < today;
-    return { id: a.id, candidate_id: a.candidate_id, candidate_name: v.candidate_name, client_name: v.client_name, job_title: v.job_title, owner_name: v.owner_name, step: a.step, ctc: a.offer_ctc || 0, joining_date: a.joining_date || null, late, days: a.joining_date ? L.daysBetween(today + 'T00:00:00Z', a.joining_date + 'T00:00:00Z') : null };
+    return { id: a.id, candidate_id: a.candidate_id, candidate_name: v.candidate_name, client_name: v.client_name, job_title: v.job_title, owner_name: v.owner_name, step: a.step, ctc: a.offer_ctc || 0, joining_date: a.joining_date || null, offered_at: offeredAt(a.id), late, days: a.joining_date ? L.daysBetween(today + 'T00:00:00Z', a.joining_date + 'T00:00:00Z') : null };
   }).filter(match);
+  const offeredIds = new Set(all("SELECT DISTINCT app_id FROM app_history WHERE step IN ('Offer made','Offer accepted','Joined')").map((r) => r.app_id));
+  const offered = all('SELECT * FROM applications ORDER BY created_at DESC').filter((a) => (a.offer_ctc != null || a.joined_at || offeredIds.has(a.id)) && (a.result !== 'open' || ['Offer made', 'Offer accepted', 'Joined'].includes(a.step)) && R.seeApp(u, a))
+    .map((a) => {
+      const v = V.appView(a); const closed = a.result !== 'open' && a.result !== 'Hired' && !a.joined_at;
+      const why = closed ? ((get("SELECT note FROM app_history WHERE app_id=? AND kind='close' ORDER BY at DESC, id DESC LIMIT 1", a.id) || {}).note || '').replace(/^Closed: [^—]*(— )?/, '') : '';
+      const status = a.joined_at ? 'Joined' : closed ? 'Not joined' : a.step === 'Offer accepted' ? 'Accepted' : a.step === 'Offer made' ? 'Waiting for answer' : a.step;
+      return { id: a.id, candidate_id: a.candidate_id, candidate_name: v.candidate_name, client_name: v.client_name, job_title: v.job_title, owner_name: v.owner_name, status, reason: closed ? a.result : '', reason_note: why, ctc: a.offer_ctc || 0, joining_date: a.joining_date || null, joined_at: a.joined_at || null, left_date: a.left_date || null, offered_at: offeredAt(a.id), late: !a.joined_at && !closed && !!a.joining_date && a.joining_date < today };
+    }).filter(match);
   const leftApps = all('SELECT * FROM applications WHERE left_date IS NOT NULL ORDER BY left_date DESC').filter((a) => R.seeApp(u, a) && a.joined_at);
   const asked = all("SELECT b.app_id FROM bills b WHERE b.replacement_requested=1").map((b) => b.app_id);
   const replacements = [
@@ -136,11 +150,11 @@ route('GET', '/api/aftercare', T, (ctx) => {
     ...leftApps.map((a) => ({ a, r: replacementOf(a) })),
   ].map(({ a, r }) => { const v = V.appView(a); return { id: a.id, candidate_id: a.candidate_id, candidate_name: v.candidate_name, client_name: v.client_name, job_id: a.job_id, job_title: v.job_title, owner_name: v.owner_name, joined_at: a.joined_at, left_date: a.left_date, left_reason: a.left_reason, ...r }; }).filter(match);
   return {
-    offers,
+    offers, offered,
     // For recording an offer by hand: everyone in an interview round, not yet at the offer.
     can_offer: all("SELECT * FROM applications WHERE result='open' AND step IN ('Our interview','Sent to client','Client interview')").filter((a) => R.seeApp(u, a)).map((a) => { const v = V.appView(a); return { id: a.id, label: `${v.candidate_name} · ${v.job_title} · ${v.client_name || ''}` }; }).sort((x, y) => x.label.localeCompare(y.label)),
     active: active.sort((x, y) => y.todo.length - x.todo.length || Number(y.at_risk) - Number(x.at_risk) || x.since - y.since), replacements,
-    counts: { offers: offers.length, late: offers.filter((x) => x.late).length, active: active.length, todo: active.filter((x) => x.todo.length).length, at_risk: active.filter((x) => x.at_risk).length, to_find: replacements.filter((x) => ['To find', 'Client asked'].includes(x.status)).length, in_progress: replacements.filter((x) => x.status === 'In progress').length },
+    counts: { offered: offered.length, waiting: offered.filter((x) => ['Waiting for answer', 'Accepted'].includes(x.status)).length, joined: offered.filter((x) => x.status === 'Joined').length, not_joined: offered.filter((x) => x.status === 'Not joined').length, left90: active.filter((x) => x.status90 === 'Left').length, retained: active.filter((x) => x.status90 === 'Retained').length, in90: active.filter((x) => x.status90 === 'In 90 days').length, offers: offers.length, late: offers.filter((x) => x.late).length, active: active.length, todo: active.filter((x) => x.todo.length).length, at_risk: active.filter((x) => x.at_risk).length, to_find: replacements.filter((x) => ['To find', 'Client asked'].includes(x.status)).length, in_progress: replacements.filter((x) => x.status === 'In progress').length },
     marks: marks(), plan: plan(), outcomes: OUTCOMES,
   };
 });
@@ -253,5 +267,18 @@ fetch('/api/pub/rate/${e(a.token)}',{method:'POST',headers:{'Content-Type':'appl
 // Super admin: ask a client by hand (the jobs whose client has interviewed our candidates are offered).
 route('POST', '/api/reviews/ask-client', { auth: 'team', levels: ['super'] }, (ctx) => askClientReview(String(ctx.body.job_id || ''), ctx.actor));
 
+
+// From the Offer page: an offer that did not turn into a joining (with why), and the CTC someone joined at.
+const offerApp = (ctx) => { const a = get('SELECT * FROM applications WHERE id=?', ctx.params.id); if (!a || !R.seeApp(ctx.user, a)) throw httpError(404, 'Application not found'); return a; };
+route('POST', '/api/aftercare/:id/not-joined', T, (ctx) => {
+  const a = offerApp(ctx); const b = ctx.body || {}; if (a.result !== 'open') throw httpError(400, 'This offer is already closed.');
+  const reason = ['Offer declined', 'Did not join'].includes(b.reason) ? b.reason : null; if (!reason) throw httpError(400, 'Pick: offer declined or did not join', 'reason');
+  const note = String(b.note || '').trim(); if (!note) throw httpError(400, 'Write why they did not join', 'note');
+  L.closeApplication(a.id, reason, ctx.actor, note); return { ok: true };
+});
+route('POST', '/api/aftercare/:id/ctc', T, (ctx) => {
+  const a = offerApp(ctx); const ctc = Math.round(Number((ctx.body || {}).ctc) || 0); if (ctc < 10000) throw httpError(400, 'Enter the yearly CTC in rupees', 'ctc');
+  update('applications', a.id, { offer_ctc: ctc }); D.history(ctx.actor.label, 'joining CTC', a.id, 'offer_ctc', a.offer_ctc, ctc); return { ok: true };
+});
 
 module.exports = { due, reply, record, forApp, recruitersOf, askClientReview, rateHtml, OUTCOMES };

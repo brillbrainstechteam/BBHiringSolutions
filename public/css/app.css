@@ -1784,7 +1784,7 @@ button.fin-tile.on { border-color: var(--mustard); box-shadow: 0 0 0 1px var(--m
 /* After joining, reviews, languages */
 .login-ways { display: flex; width: 100%; margin-bottom: 14px; }
 .login-ways button { flex: 1; }
-.care-dots { display: inline-flex; gap: 3px; flex-wrap: wrap; }
+.care-dots { display: inline-flex; gap: 3px; flex-wrap: nowrap; }
 .care-dot { min-width: 24px; height: 20px; padding: 0 4px; border-radius: 6px; border: 1px solid var(--border); font: 600 10px/18px var(--font); text-align: center; color: var(--muted); background: var(--surface); }
 .care-dot.ok { background: #E6F6EC; border-color: #9BD3AE; color: #1E6B3A; }
 .care-dot.due { background: #FFF4DB; border-color: #F0C66B; color: #7A5300; }
@@ -1883,6 +1883,9 @@ button.fin-tile.on { border-color: var(--mustard); box-shadow: 0 0 0 1px var(--m
 
 .name-link { color: inherit; text-decoration: none; } .name-link:hover { text-decoration: underline; }
 .iv-acts { flex-direction: column; align-items: stretch; gap: 6px; min-width: 150px; } .iv-acts .btn { justify-content: center; } .iv-acts .mini { width: 100%; }
+.iv-job { max-width: 240px; min-width: 120px; } .iv-job .ellipsis { display: block; } /* job over client, one line each */
+.iv-wa { flex-direction: column; align-items: stretch; gap: 6px; } .iv-wa .btn { justify-content: center; } /* WhatsApp buttons stacked, like the actions */
+.iv-list .tbl th, .iv-list .tbl td { padding-left: 10px; padding-right: 10px; } .iv-list .iv-acts { min-width: 136px; } .iv-list .iv-job { max-width: 200px; } /* interviews: a little tighter so the list fits */
 .now .now-acts > .btn, .now .now-acts > .step-menu > summary.btn { height: 38px; }
 .calls-top { margin-bottom: 12px; } .calls-top > .sec { margin: 0; padding: 0; border: 0; }
 .ad-more { display: inline-block; margin-left: 4px; } .ad-more > summary { font-size: 12px; color: var(--muted); text-decoration: underline dotted; } .ad-more > summary::after { width: 5px; height: 5px; } .ad-pop { width: 280px; display: grid; gap: 8px; padding: 10px 12px; } .ad-pop .small { overflow-wrap: anywhere; }

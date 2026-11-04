@@ -531,7 +531,7 @@ route('POST', '/api/applications/:id/prep/share', T, (ctx) => {
 
 // ---------- the Accounts desk: invoices to raise, to send, and payments to follow up ----------
 const ACC = { auth: 'team', accounts: true };
-const billFacts = (b) => { const c = get('SELECT * FROM clients WHERE id=?', b.client_id) || {}; const a = b.app_id ? V.appView(get('SELECT * FROM applications WHERE id=?', b.app_id)) : { candidate_name: b.person_name || '', job_title: b.job_name || '' }; return { id: b.id, bill_no: b.bill_no, client_id: b.client_id, client_name: c.company, gstin: (c.kyc || {}).gstin || '', client_email: clientEmail(c), client_phone: c.whatsapp || '', candidate_name: a.candidate_name, job_title: a.job_title, joining_date: a.joining_date || null, ctc: b.ctc, fee: b.fee, gst: b.gst, total: b.total, asked_at: b.accounts_asked_at, invoice_file: b.invoice_file, sent_at: b.sent_at, sent_via: b.sent_via, due_date: b.due_date, balance: b.balance, stage: b.stage }; };
+const billFacts = (b) => { const c = get('SELECT * FROM clients WHERE id=?', b.client_id) || {}; const a = b.app_id ? V.appView(get('SELECT * FROM applications WHERE id=?', b.app_id)) : { candidate_name: b.person_name || '', job_title: b.job_name || '', joining_date: b.joining_on || null }; return { id: b.id, bill_no: b.bill_no, client_id: b.client_id, client_name: c.company, gstin: (c.kyc || {}).gstin || '', client_email: clientEmail(c), client_phone: c.whatsapp || '', candidate_name: a.candidate_name, job_title: a.job_title, joining_date: a.joining_date || null, ctc: b.ctc, fee: b.fee, gst: b.gst, total: b.total, asked_at: b.accounts_asked_at, invoice_file: b.invoice_file, sent_at: b.sent_at, sent_via: b.sent_via, due_date: b.due_date, balance: b.balance, stage: b.stage }; };
 route('GET', '/api/accounts/home', ACC, (ctx) => {
   const bills = all("SELECT * FROM bills WHERE credit_of IS NULL AND status IN ('Draft','Issued')").filter((b) => R.seeBill(ctx.user, b)).map(L.billView); const today = L.istDay();
   const to_raise = bills.filter((b) => b.status === 'Draft').map(billFacts);
@@ -539,6 +539,40 @@ route('GET', '/api/accounts/home', ACC, (ctx) => {
   const followups = bills.filter((b) => b.status === 'Issued' && b.sent_at && b.balance > 0).map((b) => { const f = get('SELECT * FROM bill_followups WHERE bill_id=? ORDER BY id DESC LIMIT 1', b.id) || {}; return { ...billFacts(b), last_note: f.note || '', last_at: f.at || null, next_at: f.next_at || null, days_overdue: b.due_date && b.due_date < today ? Math.round((Date.parse(today) - Date.parse(b.due_date)) / 86400000) : 0 }; }).sort((x, y) => String(x.next_at || x.due_date).localeCompare(String(y.next_at || y.due_date)));
   const offers = all("SELECT * FROM applications WHERE offer_ctc IS NOT NULL AND result IN ('open','Hired') ORDER BY created_at DESC").filter((a) => R.seeApp(ctx.user, a) || R.accountsOnly(ctx.user)).map((a) => { const v = V.appView(a); const job = get('SELECT * FROM jobs WHERE id=?', a.job_id); const c = get('SELECT * FROM clients WHERE id=?', job.client_id); const b = get("SELECT * FROM bills WHERE app_id=? AND credit_of IS NULL AND status!='Cancelled'", a.id); const est = L.feeFor(c, job.agency_id || D.soleAgency(), a.offer_ctc); const g = L.gstFor(c.state || L.stateOf(c.city), est.fee); return { id: a.id, candidate_name: v.candidate_name, job_title: v.job_title, client_name: c.company, ctc: a.offer_ctc, joining_date: a.joining_date, step: a.step, letter_at: a.letter_at, bill_id: b ? b.id : null, bill_status: b ? b.status : '', fee: b ? b.fee : est.fee, total: b ? b.total : est.fee + g.gst }; });
   return { to_raise, to_send, followups, offers, due: followups.reduce((t, b) => t + b.balance, 0) };
+});
+// ---------- an invoice made by hand (Invoicing -> New invoice) ----------
+// For a candidate on one of the client's jobs (their offer CTC and joining date are kept on the application), or for
+// someone not in the portal (name and position typed). It starts as a draft under "To raise": issue and send it as usual.
+const INV = { auth: 'team', levels: ['super', 'admin'], accounts: true };
+route('GET', '/api/accounts/invoice-options', INV, (ctx) => {
+  const clients = all('SELECT id, company, city FROM clients WHERE removed=0 AND junk=0 AND placeholder=0 AND merged_into IS NULL AND COALESCE(internal,0)=0 ORDER BY company').filter((c) => R.seeClient(ctx.user, get('SELECT * FROM clients WHERE id=?', c.id)));
+  const apps = all("SELECT a.* FROM applications a JOIN jobs j ON j.id=a.job_id WHERE a.result IN ('open','Hired') AND a.step IN ('Offer made','Offer accepted','Joined') ORDER BY a.created_at DESC")
+    .filter((a) => !get("SELECT 1 FROM bills WHERE app_id=? AND credit_of IS NULL AND status!='Cancelled'", a.id))
+    .map((a) => { const v = V.appView(a); return { id: a.id, client_id: v.client_id, label: `${v.candidate_name} · ${v.job_title}`, ctc: a.offer_ctc || null, joining_date: a.joining_date || null }; });
+  return { clients, apps };
+});
+route('POST', '/api/accounts/invoices', INV, (ctx) => {
+  const b = ctx.body || {}; const c = get('SELECT * FROM clients WHERE id=?', b.client_id); if (!c || !R.seeClient(ctx.user, c)) throw httpError(400, 'Pick the client', 'client_id');
+  const ctc = Math.round(Number(b.ctc) || 0); const joining = /^\d{4}-\d{2}-\d{2}$/.test(b.joining_date || '') ? b.joining_date : null;
+  const pct = b.fee_pct === '' || b.fee_pct == null ? null : Number(b.fee_pct); const amt = b.fee_amount === '' || b.fee_amount == null ? null : Math.round(Number(b.fee_amount));
+  if (pct !== null && !(pct > 0 && pct <= 100)) throw httpError(400, 'Fee % should be between 0 and 100', 'fee_pct');
+  if (amt !== null && !(amt > 0)) throw httpError(400, 'Enter the fee amount', 'fee_amount');
+  const agency = c.agency_id || D.soleAgency() || null; const base = L.feeFor(c, agency, ctc);
+  const fee = amt !== null ? amt : pct !== null ? Math.round((ctc * pct) / 100) : base.fee;
+  if (!(fee > 0)) throw httpError(400, ctc ? 'Enter the fee (% of CTC or an amount)' : 'Enter the yearly CTC, or the fee amount', ctc ? 'fee_pct' : 'ctc');
+  const g = L.gstFor(c.state || L.stateOf(c.city), fee); const share = base.sharePct ? Math.round((fee * base.sharePct) / 100) : 0;
+  const note = amt !== null ? 'Fee typed in' : pct !== null ? `${pct}% of CTC` : base.note;
+  let app = null;
+  if (b.app_id) {
+    app = get('SELECT a.* FROM applications a JOIN jobs j ON j.id=a.job_id WHERE a.id=? AND j.client_id=?', b.app_id, c.id); if (!app) throw httpError(400, 'Pick a candidate on this client\'s jobs', 'app_id');
+    if (get("SELECT 1 FROM bills WHERE app_id=? AND credit_of IS NULL AND status!='Cancelled'", app.id)) throw httpError(400, 'This candidate already has an invoice. Open it from Invoicing.', 'app_id');
+    const keep = {}; if (ctc) keep.offer_ctc = ctc; if (joining) keep.joining_date = joining; if (Object.keys(keep).length) D.update('applications', app.id, keep);
+  } else if (!String(b.person_name || '').trim()) throw httpError(400, 'Pick the candidate, or type their name', 'person_name');
+  const id = D.nextId('BL');
+  D.insert('bills', { id, app_id: app ? app.id : null, client_id: c.id, agency_id: agency, bill_no: null, ctc, fee, gst: g.gst, cgst: g.cgst, sgst: g.sgst, igst: g.igst, total: fee + g.gst, fee_note: note, status: 'Draft', date: L.istDay(), due_date: null, is_replacement: 0, share_pct: base.sharePct || 0, agency_share: share, payout_status: 'Not due', created_at: now(),
+    person_name: app ? null : String(b.person_name).trim().slice(0, 80), job_name: app ? null : String(b.job_name || '').trim().slice(0, 80), joining_on: app ? null : joining });
+  D.history(ctx.actor.label, 'create', id, null, null, `Invoice made by hand: ${L.inr(fee + g.gst)} for ${c.company}`);
+  return { ok: true, id };
 });
 const q_ = (v) => String(v || '').trim().toLowerCase();
 route('GET', '/api/accounts/clients', { ...ACC, levels: ['super'] }, (ctx) => {
@@ -551,7 +585,9 @@ route('GET', '/api/accounts/clients/:id', { ...ACC, levels: ['super'] }, (ctx) =
 });
 route('GET', '/api/accounts/candidates', { ...ACC, levels: ['super'] }, (ctx) => {
   const f = q_(ctx.query.q); const rows = all("SELECT a.*, c.name cname, c.city ccity FROM applications a JOIN candidates c ON c.id=a.candidate_id WHERE a.offer_ctc IS NOT NULL ORDER BY a.created_at DESC");
-  return rows.map((a) => { const v = V.appView(a); return { id: a.id, name: a.cname, city: a.ccity, job_title: v.job_title, client_name: v.client_name, ctc: a.offer_ctc, joining_date: a.joining_date, step: a.step, result: a.result }; }).filter((x) => !f || [x.name, x.city, x.job_title, x.client_name].join(' ').toLowerCase().includes(f)).slice(0, 300);
+  return rows.map((a) => { const v = V.appView(a); const bill = get("SELECT * FROM bills WHERE app_id=? AND credit_of IS NULL AND status!='Cancelled' ORDER BY created_at DESC LIMIT 1", a.id);
+    return { id: a.id, name: a.cname, city: a.ccity, job_title: v.job_title, client_name: v.client_name, ctc: a.offer_ctc, joining_date: a.joining_date, joined_at: a.joined_at, left_date: a.left_date, step: a.step, result: a.result,
+      offered_at: (get("SELECT MIN(at) at FROM app_history WHERE app_id=? AND step='Offer made'", a.id) || {}).at || null, bill: bill ? { id: bill.id, no: bill.bill_no, fee: bill.fee, total: bill.total, status: L.billView(bill).view_status } : null }; }).filter((x) => !f || [x.name, x.city, x.job_title, x.client_name].join(' ').toLowerCase().includes(f)).slice(0, 300);
 });
 function noticeAccounts(text, id) { for (const u of [...L.accountsUsers(), ...L.superAdmins()]) L.alertUser(u.id, text, id, false); }
 route('POST', '/api/bills/:id/send', { ...ADMINS, accounts: true }, (ctx) => {

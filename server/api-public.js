@@ -531,7 +531,7 @@ route('GET', '/api/client/me', C, (ctx) => {
   const ivs = all("SELECT i.* FROM interviews i JOIN applications a ON a.id=i.app_id JOIN jobs j ON j.id=a.job_id WHERE j.client_id=? AND (i.round='client' OR i.client_joins=1) ORDER BY i.at DESC", c.id).map(L.interviewView)
     .map((i) => { const a = apps.find((x) => x.id === i.app_id); const cand = get('SELECT name FROM candidates WHERE id=?', a.candidate_id); return { ...i, candidate: cand.name, job: get('SELECT title FROM jobs WHERE id=?', a.job_id).title }; });
   const bills = perms.bills ? all("SELECT * FROM bills WHERE client_id=? AND status!='Draft' ORDER BY created_at DESC", c.id).map(L.billView).map((b) => {
-    const ap = b.app_id ? get('SELECT * FROM applications WHERE id=?', b.app_id) : {}; const a = b.app_id ? V.appView(ap) : { candidate_name: b.person_name || '', job_title: b.job_name || '' };
+    const ap = b.app_id ? get('SELECT * FROM applications WHERE id=?', b.app_id) : {}; const a = b.app_id ? V.appView(ap) : { candidate_name: b.person_name || '', job_title: b.job_name || '', joining_date: b.joining_on || null };
     const win = c.replacement_days || D.settings().replacement_days;
     return { ...b, candidate: a.candidate_name, job: a.job_title, joining_date: a.joining_date, upi: L.upiLink(b.balance, b.bill_no), can_replace: !!(ap.joined_at && L.daysBetween(ap.joined_at) <= win && !ap.replacement_used && !b.is_replacement && !b.replacement_requested), replacement_requested: b.replacement_requested, left_date: ap.left_date };
   }) : [];

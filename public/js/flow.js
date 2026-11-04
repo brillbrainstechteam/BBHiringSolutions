@@ -453,7 +453,24 @@
     if (v) done(`Sent by ${v.sent.join(' and ')}`);
   };
   const billRows = { Client: (b) => `<b>${esc(b.client_name)}</b>${b.gstin ? `<div class="tiny muted">GSTIN ${esc(b.gstin)}</div>` : ''}`, Candidate: (b) => `${esc(b.candidate_name || '—')}${b.job_title ? `<div class="tiny muted">${esc(b.job_title)}</div>` : ''}` };
-  P.accounts = async ({ el, q }) => {
+  // A new invoice by hand: the client first, then the candidate (one with an offer on its jobs, or typed in), CTC,
+  // joining date and the fee (the client's agreed fee unless a % or an amount is given). It lands in "To raise".
+  F.newInvoice = async () => {
+    let o; try { o = await BB.api('/api/accounts/invoice-options'); } catch (e) { return BB.fail(e); }
+    if (!o.clients.length) return BB.toast('No clients to invoice yet', true);
+    const c = await BB.ask({ title: 'New invoice', note: 'Pick the client to invoice.', fields: [{ name: 'client_id', label: 'Client', type: 'select', options: o.clients.map((x) => [x.id, `${x.company}${x.city ? ` · ${x.city}` : ''}`]) }], ok: 'Next' });
+    if (!c || !c.client_id) return;
+    const apps = o.apps.filter((a) => a.client_id === c.client_id);
+    const v = await BB.ask({ title: `New invoice · ${esc((o.clients.find((x) => x.id === c.client_id) || {}).company || '')}`, note: "Leave the fee empty to use the client's agreed fee. GST is added by the client's state.", fields: [
+      { name: 'app_id', label: 'Candidate', type: 'select', options: [...apps.map((a) => [a.id, a.label]), ['', 'Someone not in the portal (type below)']], value: apps[0] ? apps[0].id : '', placeholder: false },
+      `<div class="grid g2">${field({ name: 'person_name', label: 'Candidate name (if not in the portal)', opt: true })}${field({ name: 'job_name', label: 'Position', opt: true })}</div>`,
+      `<div class="grid g2">${field({ name: 'ctc', label: 'Yearly CTC (₹)', type: 'number', value: apps[0] && apps[0].ctc ? apps[0].ctc : '' })}${field({ name: 'joining_date', label: 'Joining date', type: 'date', value: apps[0] && apps[0].joining_date ? apps[0].joining_date : '' })}</div>`,
+      `<div class="grid g2">${field({ name: 'fee_pct', label: 'Fee % of CTC', type: 'number', opt: true })}${field({ name: 'fee_amount', label: 'or Fee amount (₹, before GST)', type: 'number', opt: true })}</div>`,
+    ], ok: 'Create invoice', submit: (x) => BB.post('/api/accounts/invoices', { ...x, client_id: c.client_id }) });
+    if (v) { BB.toast('Invoice created under To raise'); BB.refreshPage(); BB.open('bill', v.id); }
+  };
+  P.accounts = async ({ el, q, actions }) => {
+    if (actions) { actions.innerHTML = '<button class="btn primary" data-newinv>+ New invoice</button>'; $('[data-newinv]', actions).onclick = () => F.newInvoice(); }
     const d = await BB.api('/api/accounts/home'); const tab = q.tab || 'raise';
     const tabs = [['raise', 'To raise', d.to_raise.length], ['send', 'To send', d.to_send.length], ['follow', 'Payment follow-up', d.followups.length], ['offers', 'Offers', d.offers.length]];
     const sums = (l) => l.reduce((t, x) => t + x.total, 0);
@@ -472,7 +489,10 @@
     let t; $('[data-q]', el).oninput = (e) => { clearTimeout(t); t = setTimeout(() => BB.setQ({ q: e.target.value }), 350); };
   };
   P.acclients = searchPage('/api/accounts/clients', (rows) => BB.table([{ t: 'Client', f: (c) => `<b>${esc(c.company)}</b><div class="tiny muted">${esc(c.contact || '')}</div>` }, { t: 'City', f: (c) => esc(c.city || '—') }, { t: 'Contact', f: (c) => `${esc(c.whatsapp || '—')}<div class="tiny muted">${esc(c.email || '')}</div>` }, { t: 'GSTIN', f: (c) => esc(c.gstin || '—') }, { t: 'Billed', num: 1, f: (c) => inr(c.billed) }, { t: 'Pending', num: 1, f: (c) => `<b>${inr(c.outstanding)}</b>` }], rows, { open: (c) => `accclient:${c.id}`, empty: 'No clients found.' }));
-  P.accandidates = searchPage('/api/accounts/candidates', (rows) => BB.table([{ t: 'Candidate', f: (x) => `<b>${esc(x.name)}</b><div class="tiny muted">${esc(x.city || '')}</div>` }, { t: 'Position', f: (x) => esc(x.job_title) }, { t: 'Client', f: (x) => esc(x.client_name) }, { t: 'Step', f: (x) => esc(x.result === 'open' ? x.step : x.result) }, { t: 'Joining', f: (x) => (x.joining_date ? fmtD(x.joining_date) : '—') }, { t: 'CTC', num: 1, f: (x) => inr(x.ctc) }], rows, { empty: 'No candidates with an offer yet.' }));
+  P.accandidates = searchPage('/api/accounts/candidates', (rows) => BB.table([{ t: 'Candidate', f: (x) => `<b>${esc(x.name)}</b><div class="tiny muted">${esc(x.city || '')}</div>` }, { t: 'Position', f: (x) => `${esc(x.job_title)}<div class="tiny muted">${esc(x.client_name)}</div>` },
+    { t: 'Status', f: (x) => { const st = x.left_date ? 'Left' : x.result === 'Hired' || x.joined_at ? 'Joined' : x.result === 'open' ? x.step : x.result; return `<span class="badge ${st === 'Joined' ? 'b-green' : st === 'Offer accepted' ? 'b-primary' : st === 'Left' ? 'b-red' : 'b-amber'}">${esc(st)}</span>`; } },
+    { t: 'Offered on', f: (x) => (x.offered_at ? `<span class="nw">${fmtD(x.offered_at)}</span>` : '—') }, { t: 'Yearly CTC', num: 1, f: (x) => inr(x.ctc) }, { t: 'Joining date', f: (x) => (x.joining_date ? `<span class="nw">${fmtD(x.joining_date)}</span>` : '—') }, { t: 'Joined on', f: (x) => (x.joined_at ? `<span class="nw">${fmtD(x.joined_at)}</span>` : '—') },
+    { t: 'Invoice', f: (x) => (x.bill ? `<a href="#" data-open="bill:${x.bill.id}">${esc(x.bill.no || 'To raise')}</a><div class="tiny muted">${esc(x.bill.status)} · ${inr(x.bill.total)}</div>` : '<span class="faint">Not raised</span>') }], rows, { empty: 'No candidates with an offer yet.' }));
   BB.panels.accclient = async (id) => {
     const c = await BB.api(`/api/accounts/clients/${id}`);
     return { head: `<div class="row"><h2>${esc(c.company)}</h2></div>`, body: `<div class="card pad sec"><dl class="kv"><dt>Contact</dt><dd>${esc(c.contact || '—')}</dd><dt>WhatsApp</dt><dd>${esc(c.whatsapp || '—')}</dd><dt>Email</dt><dd>${esc(c.email || '—')}</dd><dt>City</dt><dd>${esc([c.city, c.state].filter(Boolean).join(', ') || '—')}</dd><dt>GSTIN</dt><dd>${esc(c.gstin || '—')}</dd><dt>Payment days</dt><dd>${c.payment_days}</dd></dl>${c.kyc.length ? `<div class="row" style="margin-top:10px">${c.kyc.map((k) => `<button class="btn sm" data-file="${esc(k.file)}">${esc(k.label)}</button>`).join('')}</div>` : ''}</div>
