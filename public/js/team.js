@@ -162,6 +162,7 @@
     };
     document.addEventListener('click', (e) => { if (!e.target.closest('.bell')) drop.classList.add('hidden'); });
   }
+  BB.quickLead = () => quickLead();
   function quickLead() {
     BB.ask({ title: 'Quick add lead', ok: 'Add lead', fields: [
       { name: 'type', label: 'This is a', type: 'choice', options: [['candidate', 'Candidate'], ['client', 'Client']], value: 'candidate' },

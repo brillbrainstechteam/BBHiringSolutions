@@ -7,14 +7,33 @@ const D = require('./db');
 
 const ALLOWED = { pdf: 'application/pdf', doc: 'application/msword', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png' };
 const MAX = 10 * 1024 * 1024;
+const CV_MAX = 25 * 1024 * 1024; // resumes: design CVs and portfolios run large
 
 // Checks type by extension and by the first bytes, size up to 10 MB, virus scan. Old versions are kept.
+// What a file really is, from its first bytes (job portals send web pages and zips named ".doc").
+function realType(buf) {
+  const magic = buf.slice(0, 4).toString('hex'); const head = buf.slice(0, 1024).toString('latin1');
+  if (head.includes('%PDF')) return 'pdf'; if (magic.startsWith('ffd8')) return 'jpg'; if (magic === '89504e47') return 'png';
+  if (magic === '504b0304') return 'docx'; if (magic === 'd0cf11e0' || head.startsWith('{\\rtf')) return 'doc';
+  if (/^\s*(<!doctype html|<html|<\?xml[^>]*>\s*<html|<head|<body|<table|<div|<p[\s>])/i.test(head) || /<html[\s>]/i.test(head)) return 'html';
+  return '';
+}
+// A web page saved as a Word file: its text as a PDF, so the resume can still be kept and opened.
+function htmlToPdf(title, buf) {
+  const t = buf.toString('utf8').replace(/<(script|style)[\s\S]*?<\/\1>/gi, ' ').replace(/<br\s*\/?>|<\/(p|div|tr|li|h\d)>/gi, '\n').replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'");
+  return makePdf(title, t.split('\n').map((l) => l.replace(/\s+/g, ' ').trim()).filter(Boolean).slice(0, 400));
+}
 async function saveFile({ recordId, type, name, base64, by }) {
-  const ext = String(name || '').split('.').pop().toLowerCase();
+  let ext = String(name || '').split('.').pop().toLowerCase();
   if (!ALLOWED[ext]) throw D.httpError(400, 'Only PDF, Word, JPG and PNG files are allowed.');
-  const buf = Buffer.from(String(base64 || '').replace(/^data:[^,]*,/, ''), 'base64');
+  let buf = Buffer.from(String(base64 || '').replace(/^data:[^,]*,/, ''), 'base64');
   if (!buf.length) throw D.httpError(400, 'The file is empty.');
-  if (buf.length > MAX) throw D.httpError(400, 'The file is bigger than 10 MB.');
+  if (buf.length > (type === 'cv' ? CV_MAX : MAX)) throw D.httpError(400, `The file is bigger than ${type === 'cv' ? 25 : 10} MB.`);
+  // the name says one thing, the bytes another: go by the bytes (a web page becomes a PDF of its text)
+  const real = realType(buf); const base = String(name).replace(/\.[^.]+$/, '');
+  if (real === 'html' && ['doc', 'docx'].includes(ext)) { buf = htmlToPdf(base, buf); ext = 'pdf'; name = `${base}.pdf`; }
+  else if (real && real !== 'html' && real !== (ext === 'jpeg' ? 'jpg' : ext) && !(ext === 'doc' && real === 'docx')) { ext = real; name = `${base}.${real}`; }
   const magic = buf.slice(0, 4).toString('hex');
   const ok = (ext === 'pdf' && buf.slice(0, 1024).toString('latin1').includes('%PDF')) || (['jpg', 'jpeg'].includes(ext) && magic.startsWith('ffd8')) || (ext === 'png' && magic === '89504e47') ||
     (ext === 'docx' && magic === '504b0304') || (ext === 'doc' && (magic === 'd0cf11e0' || magic === '504b0304' || buf.slice(0, 5).toString() === '{\\rtf'));

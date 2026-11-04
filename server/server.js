@@ -70,7 +70,7 @@ function send(res, code, body, headers = {}) {
 function readBody(req) {
   return new Promise((resolve, reject) => {
     const chunks = []; let size = 0;
-    req.on('data', (c) => { size += c.length; if (size > 25 * 1024 * 1024) { reject(D.httpError(413, 'Upload too large')); req.destroy(); } else chunks.push(c); });
+    req.on('data', (c) => { size += c.length; if (size > 40 * 1024 * 1024) { reject(D.httpError(413, 'Upload too large')); req.destroy(); } else chunks.push(c); });
     req.on('end', () => { const s = Buffer.concat(chunks).toString('utf8'); if (!s) return resolve({}); try { resolve(JSON.parse(s)); } catch { reject(D.httpError(400, 'Bad request')); } });
     req.on('error', reject);
   });

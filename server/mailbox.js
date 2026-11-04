@@ -105,6 +105,11 @@ function parseMessage(buf) {
     const EXT = { 'application/pdf': 'pdf', 'application/msword': 'doc', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx' };
     let name = param(h['content-disposition'], 'filename') || param(ct, 'name');
     if (!name && EXT[type] && /attachment|inline/i.test(h['content-disposition'] || 'attachment')) name = `resume.${EXT[type]}`;
+    // no name and a generic type: a PDF or old Word file by its first bytes is taken as the resume
+    if (!name && type === 'application/octet-stream' && /attachment/i.test(h['content-disposition'] || '')) {
+      const head = decodeBody(body, h['content-transfer-encoding']).subarray(0, 8);
+      if (head.toString('latin1').startsWith('%PDF')) name = 'resume.pdf'; else if (head.toString('hex').startsWith('d0cf11e0')) name = 'resume.doc';
+    }
     // a CV sent with a generic type (application/octet-stream) but a .pdf / .docx name is kept as it is
     parts.push({ type, name, content: decodeBody(body, h['content-transfer-encoding']) });
     return h;
@@ -139,6 +144,16 @@ function findName(text) {
 
 // A CV attachment: any PDF or Word file; an image only when named like a resume (logos and signatures are not).
 const isCv = (n) => /\.(pdf|docx?)$/i.test(n || '') || (/\.(jpe?g|png)$/i.test(n || '') && /cv|resume|bio.?data|profile/i.test(n || ''));
+// The resumes in an email. A photo or scan sent as the resume ("IMG-20260320-WA0002.jpg") counts when the email has
+// no PDF or Word CV and is not about joining papers: the biggest picture that is not an ID card, certificate or logo.
+const PAPERS = /aadha?ar|adhar|pan ?card|pancard|cheque|sslc|hsc|marksheet|mark sheet|certificate|passport|voter|licen[cs]e|payslip|salary slip|offer letter|relieving|experience letter|signature|logo/i;
+function cvFiles(atts, subject) {
+  const docs = atts.filter((a) => isCv(a.name));
+  if (docs.some((a) => /\.(pdf|docx?)$/i.test(a.name)) || docs.length) return docs;
+  if (/document|joining|offer letter|academic|kyc|aadha?ar|pan card|usage report|business proposal/i.test(subject || '')) return [];
+  const size = (a) => (a.buf || a.content || []).length;
+  return atts.filter((a) => /\.(jpe?g|png)$/i.test(a.name || '') && size(a) >= 50 * 1024 && !PAPERS.test(a.name)).sort((x, y) => size(y) - size(x)).slice(0, 1);
+}
 // One email → one candidate lead (or an update to the same number).
 // Your own addresses (the mailbox's domain, the business website's, the team's): their mail is not a candidate's.
 function ownDomains() {
@@ -151,7 +166,7 @@ function ownDomains() {
 }
 async function intakeEmail({ fromName, fromEmail, subject, text, attachments }) {
   const L = require('./logic');
-  const cvs = (attachments || []).filter((a) => isCv(a.name));
+  const cvs = cvFiles(attachments || [], subject);
   const texts = cvs.map((a) => cvText({ name: a.name, content: a.buf }));
   const cvTextAll = texts.join('\n');
   const unread = cvs.filter((a, i) => String(texts[i] || '').replace(/\s/g, '').length < 100 && /\.(pdf|jpe?g|png)$/i.test(a.name)).slice(0, 2); // design PDFs, photos: the AI reads the file
@@ -266,7 +281,7 @@ async function checkNow() {
           const text = parts.filter((p) => p.type === 'text/plain' && !p.name).map((p) => p.content.toString('utf8')).join('\n')
             || parts.filter((p) => p.type === 'text/html' && !p.name).map((p) => p.content.toString('utf8').replace(/<[^>]+>/g, ' ')).join('\n');
           const attachments = parts.filter((p) => p.name).map((p) => ({ name: p.name, buf: p.content }));
-          const fromEmail = fm ? fm[2] : from; const hasCv = attachments.some((a) => isCv(a.name));
+          const fromEmail = fm ? fm[2] : from; const hasCv = cvFiles(attachments, decodeWords(headers.subject || '')).length > 0;
           const own = ownDomains().includes((String(fromEmail).split('@')[1] || '').toLowerCase());
           const subj = decodeWords(headers.subject || '');
           // The team's own replies in a thread are not candidates; a CV they forward is (read from the CV, not the sender).
@@ -276,7 +291,7 @@ async function checkNow() {
           else if (hasCv || require('./llm').available() || /cv|resume|bio.?data|job|appl|position|profile|candidate|opening|vacanc|interview|portfolio|work experience/i.test(subj)) {
             // Several CVs with different phone numbers are different people (an agency sending profiles): one
             // candidate per CV, read from the CV alone. One person's CV + portfolio stays one candidate.
-            const cvAtts = attachments.filter((a) => isCv(a.name) && !/portfolio|work.?sample/i.test(a.name));
+            const cvAtts = cvFiles(attachments, subj).filter((a) => !/portfolio|work.?sample/i.test(a.name));
             const phones = new Set(cvAtts.map((a) => findPhone(cvText({ name: a.name, content: a.buf }))).filter(Boolean));
             const batches = cvAtts.length > 1 && phones.size > 1
               ? cvAtts.map((a) => ({ fromName: '', fromEmail: '', subject: subj, text: '', attachments: [a] }))
@@ -312,7 +327,7 @@ async function refetchNow() {
   try {
     const sr = await box.cmd('UID SEARCH ALL');
     const uids = (sr.lines.find((l) => l.startsWith('* SEARCH')) || '').replace('* SEARCH', '').trim().split(/\s+/).filter(Boolean)
-      .filter((u) => !D.get('SELECT 1 FROM mail_seen WHERE uid=?', `cvfix2:${cfg.user}:${cfg.folder}:${u}`)).slice(0, 50);
+      .filter((u) => !D.get('SELECT 1 FROM mail_seen WHERE uid=?', `cvfix3:${cfg.user}:${cfg.folder}:${u}`)).slice(0, 50);
     const own = ownDomains();
     for (const uid of uids) {
       try {
@@ -321,7 +336,7 @@ async function refetchNow() {
           const { headers, parts } = parseMessage(raw); out.read++;
           const from = decodeWords(headers.from || ''); const fm = /<([^>]+)>/.exec(from); const fromEmail = (fm ? fm[1] : from).trim().toLowerCase();
           const fromOwn = own.includes((fromEmail.split('@')[1] || ''));
-          const cvParts = parts.filter((x) => x.name && isCv(x.name) && !/portfolio|work.?sample/i.test(x.name));
+          const cvParts = cvFiles(parts.filter((x) => x.name), decodeWords(headers.subject || '')).filter((x) => !/portfolio|work.?sample/i.test(x.name));
           // The candidates this very email made (their "Email: <subject>" note), still without a resume.
           const subj = decodeWords(headers.subject || '');
           const fromThis = subj ? D.all("SELECT DISTINCT c.* FROM candidates c JOIN notes n ON n.record_id=c.id WHERE n.text LIKE ? ESCAPE '\\' AND n.author='Email inbox' AND c.merged_into IS NULL AND c.removed=0 AND (c.cv_file IS NULL OR c.cv_file='')", `Email: ${subj.replace(/[\\%_]/g, (x) => `\\${x}`)}%`) : [];
@@ -343,7 +358,7 @@ async function refetchNow() {
             } catch (e) { out.errors.push(`${uid} ${p.name}: ${e.message}`); }
           }
         }
-        D.run('INSERT OR IGNORE INTO mail_seen (uid,at) VALUES (?,?)', `cvfix2:${cfg.user}:${cfg.folder}:${uid}`, D.now());
+        D.run('INSERT OR IGNORE INTO mail_seen (uid,at) VALUES (?,?)', `cvfix3:${cfg.user}:${cfg.folder}:${uid}`, D.now());
       } catch (e) { out.errors.push(`${uid}: ${e.message}`); }
     }
   } finally { box.end(); }

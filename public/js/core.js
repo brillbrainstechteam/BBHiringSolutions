@@ -149,7 +149,7 @@ BB.confirm = (title, text, ok = 'Yes') => new Promise((resolve) => {
 });
 BB.pickFile = (accept = '.pdf,.doc,.docx,.jpg,.jpeg,.png') => new Promise((resolve) => {
   const i = document.createElement('input'); i.type = 'file'; i.accept = accept;
-  i.onchange = () => { const f = i.files[0]; if (!f) return resolve(null); if (f.size > 10 * 1024 * 1024 && !/\.(xlsx|csv)$/i.test(f.name)) { BB.toast('The file is bigger than 10 MB.', true); return resolve(null); } const r = new FileReader(); r.onload = () => resolve({ name: f.name, base64: r.result, size: f.size }); r.readAsDataURL(f); };
+  i.onchange = () => { const f = i.files[0]; if (!f) return resolve(null); const lim = /\.zip$/i.test(f.name) ? 28 : 10; if (f.size > lim * 1024 * 1024 && !/\.(xlsx|csv)$/i.test(f.name)) { BB.toast(`The file is bigger than ${lim} MB.`, true); return resolve(null); } const r = new FileReader(); r.onload = () => resolve({ name: f.name, base64: r.result, size: f.size }); r.readAsDataURL(f); };
   i.click();
 });
 BB.copy = (text) => { (navigator.clipboard ? navigator.clipboard.writeText(text) : Promise.reject()).then(() => BB.toast('Copied'), () => { prompt('Copy this:', text); }); };

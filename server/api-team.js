@@ -976,7 +976,7 @@ route('GET', '/api/candidates', T, (ctx) => {
   const open = all('SELECT is_new, agency_id, skills, needs_check, possible_repeat_of FROM candidates WHERE merged_into IS NULL AND removed=0 AND junk=0 AND archived=0');
   // Skills to filter by: the ones candidates really have, most common first.
   const tally = {}; for (const c of open) for (const s of c.skills || []) { const k = String(s).trim(); if (k) tally[k] = (tally[k] || 0) + 1; }
-  ctx.quick = { new: open.filter((c) => c.is_new && !c.agency_id).length, unassigned: open.filter((c) => !c.agency_id).length, check: open.filter((c) => c.needs_check || c.possible_repeat_of).length, skills: Object.entries(tally).sort((a, b) => b[1] - a[1]).slice(0, 300).map(([k]) => k) };
+  ctx.quick = { all: open.length, new: open.filter((c) => c.is_new && !c.agency_id).length, unassigned: open.filter((c) => !c.agency_id).length, check: open.filter((c) => c.needs_check || c.possible_repeat_of).length, skills: Object.entries(tally).sort((a, b) => b[1] - a[1]).slice(0, 300).map(([k]) => k) };
   ctx.designations = [...new Set(all('SELECT industry, job_wanted, also_roles FROM candidates WHERE merged_into IS NULL AND removed=0 AND junk=0').filter(inInd).flatMap((c) => [c.job_wanted, ...(c.also_roles || [])]).filter(Boolean))].sort();
   // Only the super admin downloads candidates (as filtered on screen); agencies and recruiters work in the portal.
   if (['csv', 'xlsx'].includes(ctx.query.format) && !isSuper(u)) throw httpError(403, 'Only the super admin can download candidates.');
@@ -2356,6 +2356,8 @@ route('GET', '/api/reports/:name', T, (ctx) => {
   return { rows };
 });
 module.exports.removePerson = removePerson;
+require('./resumes'); // resumes from a zip of the Drive folder (Candidates -> Attach resumes)
+require('./drive'); // the Google Drive CV folder, read on the timer
 require('./trash'); // delete with a recycle bin (Settings -> Deleted items)
 require('./lang'); // translation, voice notes and recordings
 require('./care'); // check-ins after joining, replacements, recruiter reviews
