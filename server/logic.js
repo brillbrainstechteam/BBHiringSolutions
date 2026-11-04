@@ -603,12 +603,15 @@ function jobsForPerson(p, opt = {}) {
   if (p.job_wanted) { const hit = jobsForRole(p.job_wanted, opt); if (hit.length) return { jobs: hit, by: `job wanted "${p.job_wanted}"` }; }
   return { jobs: [], by: '' };
 }
-// Everyone who came from an ad gets an application: candidates with ad names and no open application (from the last
+// Everyone who came from an ad or a job platform gets an application: candidates with no open application (from the last
 // 60 days) go onto the open jobs their ad (or the job they asked for) points to, skipping jobs they were already on.
 // No job found: the candidate is flagged so the team picks the job.
 function openAdApplications(by = { label: 'System' }) {
   const since = new Date(Date.now() - 60 * 86400000).toISOString(); let made = 0;
-  const rows = all(`SELECT c.* FROM candidates c WHERE c.removed=0 AND IFNULL(c.junk,0)=0 AND c.merged_into IS NULL AND (IFNULL(c.ad_set,'')!='' OR IFNULL(c.ad_name,'')!='' OR IFNULL(c.ad_campaign,'')!='') AND IFNULL(c.last_updated, c.created_at) > ? AND NOT EXISTS (SELECT 1 FROM applications a WHERE a.candidate_id=c.id AND a.result='open')`, since);
+  // From an ad (ad names on the link) or from an ad / job platform (the source), with no open application.
+  const AD_SOURCE = /instagram|facebook|meta|linkedin|naukri|apna|indeed|job post|google ad|youtube/i;
+  const rows = all(`SELECT c.* FROM candidates c WHERE c.removed=0 AND IFNULL(c.junk,0)=0 AND c.merged_into IS NULL AND IFNULL(c.last_updated, c.created_at) > ? AND NOT EXISTS (SELECT 1 FROM applications a WHERE a.candidate_id=c.id AND a.result='open')`, since)
+    .filter((c) => c.ad_set || c.ad_name || c.ad_campaign || AD_SOURCE.test(c.source || ''));
   for (const c of rows) {
     if (isPlaced(c.id)) continue;
     const had = new Set(all('SELECT job_id FROM applications WHERE candidate_id=?', c.id).map((r) => r.job_id));
