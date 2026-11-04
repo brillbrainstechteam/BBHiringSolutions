@@ -53,8 +53,11 @@ const countsOf = (bag) => Object.fromEntries(Object.entries(bag).map(([t, rows])
 function deleteOne(u, actor, kind, id, dry) {
   const t = target(u, kind, id); const rid = t.rec.id; const bag = gather(kind, rid);
   const appIds = (bag.applications || []).map((a) => a.id);
-  const billed = all(`SELECT id, bill_no FROM bills WHERE ${kind === 'client' ? 'client_id=? OR ' : ''}app_id IN (${appIds.map(() => '?').join(',') || "''"})`, ...(kind === 'client' ? [rid] : []), ...appIds);
-  if (billed.length) throw httpError(400, `This has bills (${billed.map((b) => b.bill_no || b.id).join(', ')}), so it stays for the accounts. Close it instead.`);
+  const billed = all(`SELECT * FROM bills WHERE ${kind === 'client' ? 'client_id=? OR ' : ''}app_id IN (${appIds.map(() => '?').join(',') || "''"})`, ...(kind === 'client' ? [rid] : []), ...appIds);
+  // A draft bill was never issued: it goes into Deleted items with the record. An issued bill keeps the record.
+  const issued = billed.filter((b) => b.status !== 'Draft');
+  if (issued.length) throw httpError(400, `This has bills (${issued.map((b) => b.bill_no || b.id).join(', ')}), so it stays for the accounts. Close it instead.`);
+  if (billed.length) bag.bills = billed;
   const counts = countsOf(bag);
   if (dry) return { kind, id: rid, label: t.label, counts };
   insert('trash', { kind, ref_id: rid, label: t.label, agency_id: t.agency || null, rows: JSON.stringify(bag), counts: JSON.stringify(counts), deleted_by: actor.label, deleted_at: now() });

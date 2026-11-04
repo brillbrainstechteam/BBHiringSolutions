@@ -606,6 +606,23 @@ function jobsForPerson(p, opt = {}) {
 // Everyone who came from an ad or a job platform gets an application: candidates with no open application (from the last
 // 60 days) go onto the open jobs their ad (or the job they asked for) points to, skipping jobs they were already on.
 // No job found: the candidate is flagged so the team picks the job.
+// A job open again (a seat added, a replacement, reopened): applications that were closed only because the job
+// filled or closed come back, as they were. Not for anyone hired through us, or already open on that job again.
+function reopenRefilled(by = { label: 'System' }, o = {}) {
+  let n = 0; const out = [];
+  for (const j of all("SELECT * FROM jobs WHERE archived=0 AND is_sample=0")) {
+    if (!OPEN_STATUSES.includes(computeJobStatus(j, appsOfJob(j.id)))) continue;
+    for (const a of all("SELECT * FROM applications WHERE job_id=? AND result IN ('Position filled','Job closed') AND (? IS NULL OR candidate_id=?) ORDER BY created_at", j.id, o.only || null, o.only || null)) {
+      if (isPlaced(a.candidate_id)) continue;
+      if (get("SELECT 1 FROM applications WHERE candidate_id=? AND job_id=? AND result='open'", a.candidate_id, j.id)) continue;
+      if (!OPEN_STATUSES.includes(computeJobStatus(j, appsOfJob(j.id)))) break; // the seats ran out again
+      out.push({ app: a.id, job: j.id, was: a.result });
+      if (o.dry) continue;
+      try { reopenApplication(a.id, by); appHist(a.id, a.step, by, `Reopened: ${j.id} has open seats again (it was closed as ${a.result})`, 'reopen'); n++; } catch { /* seats or a duplicate */ }
+    }
+  }
+  return o.dry ? out : n;
+}
 function adPlanFor(candId) { const r = openAdApplications({ label: 'System' }, { dry: true, report: true, only: candId, days: 365 }); return r.rows[0] || null; }
 function openAdApplications(by = { label: 'System' }, o = {}) {
   const since = new Date(Date.now() - (o.days || 90) * 86400000).toISOString(); let made = 0; const report = [];
@@ -620,7 +637,9 @@ function openAdApplications(by = { label: 'System' }, o = {}) {
     const had = new Set(all('SELECT job_id FROM applications WHERE candidate_id=?', c.id).map((r) => r.job_id));
     const m = jobsForPerson(c); const jobs = m.jobs.filter((x) => !had.has(x.id)).slice(0, 3);
     if (!jobs.length) {
-      line.result = m.jobs.length ? `Already applied to ${m.jobs.map((x) => x.id).join(', ')} (closed)` : 'No open job matches the ad or the job they want';
+      const back = m.jobs.length ? all(`SELECT id, job_id, result FROM applications WHERE candidate_id=? AND result IN ('Position filled','Job closed') AND job_id IN (${m.jobs.map(() => '?').join(',')})`, c.id, ...m.jobs.map((x) => x.id)) : [];
+      line.result = back.length ? `${back.map((x) => x.id).join(', ')} was closed as ${back[0].result}: it reopens now that ${back[0].job_id} has open seats` : m.jobs.length ? `Already applied to ${m.jobs.map((x) => x.id).join(', ')} (closed)` : 'No open job matches the ad or the job they want';
+      if (back.length) line.jobs = back.map((x) => x.job_id);
       if (!o.dry && !m.jobs.length && !c.needs_check) update('candidates', c.id, { needs_check: 'From an ad: pick the job' });
       continue;
     }
@@ -1215,7 +1234,7 @@ function sendSystemText(ptype, pid, text) {
   insert('messages', { id: nextId('WA'), person_type: ptype, person_id: pid, phone: p.phone, direction: 'out', text, buttons: [], sent_by: 'Auto', status: settings().crm.enabled ? 'sending' : 'would send', read_by_us: 1, auto: 1, at: now() });
 }
 
-module.exports = { adPlanFor, openAdApplications, placedOn, closePlacedApps, adLabel,
+module.exports = { reopenRefilled, adPlanFor, openAdApplications, placedOn, closePlacedApps, adLabel,
   STEPS, stepIdx, digits10, validPhone, inr, istDay, istFmt, istTime, istHour, inQuiet, next9am, daysBetween, addDays, hashPassword, checkPassword, newPassword, sha,
   activationState, checkActivation, waHeld, TEAMS, IV_MODES, clientSeesIv, addIvNote, CALL_OUTCOMES, logCall, jobList, deptOf, stateOf, person, fillFormat, windowOpenUntil, sendWA, setDispatcher, alertUser, link, agencyAdmin, superAdmins,
   computeJobStatus, jobStatusReason, recalcJob, filledCount, appsOfJob, matchScore, jobsFor, cleanBusiness, BUSINESS_TYPES, EXP_YEARS, JEW_YEARS, LOOKING, NOT_LOOKING, ratingOf, bestMatches, isPlaced, salaryText, autoJobAlert,

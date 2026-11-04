@@ -94,6 +94,8 @@ function runTimer() {
   const mails = require('./mailer').retryQueued(); if (mails) done.emails_retried = mails;
   // Email inbox door: unread CV emails become candidate leads.
   if (D.ENV.imap.host) require('./mailbox').check().then(() => require('./mailbox').refetchCvs()).catch((e) => require('./alerts').devAlert('Email inbox check failed', e.message));
+  // Jobs open again: applications closed only because the job filled or closed come back.
+  try { const back = L.reopenRefilled(); if (back) done.reopened = back; } catch (e) { require('./alerts').devAlert('Reopen sweep failed', e.message); }
   // Ad applicants without an application get one on the job their ad points to.
   try { const adApps = L.openAdApplications(); if (adApps) done.ad_applications = adApps; } catch (e) { require('./alerts').devAlert('Ad applications sweep failed', e.message); }
   // Anyone hired through us: applications opened since then close.

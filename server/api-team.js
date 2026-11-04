@@ -812,6 +812,27 @@ function jdHtml(id) {
   const jd = { ...(j.jd || {}) }; if (jewelLine(jd)) jd.jewel_text = jewelLine(jd);
   const b = D.settings().business; const apply = L.link('apply', `?job=${j.id}`);
   const list = (t) => { const lines = String(t).split('\n').map((x) => x.replace(/^[-•*]\s*/, '').trim()).filter(Boolean); return lines.length > 1 ? `<ul>${lines.map((x) => `<li>${e(x)}</li>`).join('')}</ul>` : `<p>${e(lines[0] || '')}</p>`; };
+  // No JD typed in: the uploaded JD document is read, without the client's name, contact, emails or numbers.
+  const docText = () => {
+    const f = (jd.file && get('SELECT * FROM files WHERE id=?', jd.file)) || get("SELECT * FROM files WHERE record_id=? AND type='jd' AND name NOT LIKE '%-JD-approved.pdf' ORDER BY id DESC LIMIT 1", j.id);
+    if (!f) return '';
+    let t = ''; try { t = require('./cvparse').cvText(f.name, F.readStored(f)) || ''; } catch { return ''; }
+    const cl = get('SELECT company, contact FROM clients WHERE id=?', j.client_id) || {};
+    const names = v.internal ? [] : [cl.company, String(cl.company || '').replace(/\b(private|pvt\.?|limited|ltd\.?|llp|inc\.?)\b/gi, '').trim(), cl.contact].filter((x) => x && x.length >= 3);
+    for (const n of names) t = t.replace(new RegExp(n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), 'our client');
+    t = t.replace(/[\w.+-]+@[\w-]+\.[\w.-]+/g, '').replace(/(?:\+?91[\s-]?)?[6-9]\d{4}[\s-]?\d{5}/g, '');
+    // how to reach the client and the document's own title are left out: candidates apply with the button
+    return t.split('\n').filter((l) => !/^\s*(contact|e-?mail|call|phone|mobile|whatsapp|send (your )?(cv|resume)|interested candidates|job description\b)/i.test(l)).join('\n').replace(/[ \t]+\n/g, '\n').trim();
+  };
+  // A document as sections: short lines (or ones ending in ':') are headings, bullet lines a list.
+  const docHtml = (t) => { let out = ''; let ul = false; const close = () => { if (ul) { out += '</ul>'; ul = false; } };
+    for (const raw of t.split('\n')) { const l = raw.trim(); if (!l) { close(); continue; }
+      const bullet = /^([-•*·▪●◦]|\d{1,2}[.)])\s+/.test(l);
+      if (bullet) { if (!ul) { out += '<ul>'; ul = true; } out += `<li>${e(l.replace(/^([-•*·▪●◦]|\d{1,2}[.)])\s+/, ''))}</li>`; continue; }
+      close();
+      if (l.length <= 48 && (/:$/.test(l) || (/^[A-Z][^.!?]*$/.test(l) && l.split(' ').length <= 6))) out += `<h2>${e(l.replace(/:$/, ''))}</h2>`; else out += `<p>${e(l)}</p>`;
+    }
+    close(); return out; };
   const secs = [['summary', 'About the role'], ['duties', 'What you will do'], ['jewel_text', 'Jewellery industry experience'], ['must', 'Must have'], ['good', 'Good to have'], ['education', 'Education'], ['languages', 'Languages'], ['timings', 'Timings'], ['benefits', 'Benefits'], ['incentives', 'Incentives']]
     .filter(([k]) => jd[k]).map(([k, l]) => `<section><h2>${l}</h2>${list(jd[k])}</section>`).join('');
   const facts = [['Location', j.city], ['Salary', jd.salary || L.salaryText(j)], ['Experience', j.exp_from != null ? `${j.exp_from}${j.exp_to != null ? `–${j.exp_to}` : '+'} years` : ''], ['Openings', j.openings]].filter(([, x]) => x);
@@ -822,13 +843,13 @@ function jdHtml(id) {
 header{background:var(--navy);color:#fff;padding:18px 16px}header .in,main{max-width:760px;margin:0 auto}header b{font-size:15px;letter-spacing:.02em}header span{display:block;font-size:12px;opacity:.7}
 main{padding:20px 16px 90px}.card{background:#fff;border:1px solid var(--line);border-radius:16px;padding:22px}h1{font-size:26px;line-height:1.25;margin:0 0 6px}.where{color:var(--muted);margin:0 0 16px}
 .facts{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 6px}.facts span{background:var(--bg);border:1px solid var(--line);border-radius:999px;padding:5px 12px;font-size:14px}.facts b{font-weight:600}
-section{margin-top:22px}h2{font-size:15px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:0 0 8px}ul{margin:0;padding-left:20px}li{margin:4px 0}p{margin:0}
+section{margin-top:22px}.doc h2{margin-top:20px}.doc p{margin:0 0 8px}h2{font-size:15px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:0 0 8px}ul{margin:0;padding-left:20px}li{margin:4px 0}p{margin:0}
 .apply{position:fixed;left:0;right:0;bottom:0;background:#fff;border-top:1px solid var(--line);padding:12px 16px}.apply a{display:block;max-width:760px;margin:0 auto;text-align:center;background:var(--gold);color:var(--navy);font-weight:700;text-decoration:none;padding:14px;border-radius:12px}
 .closed{background:#fff7e0;border:1px solid #f0d58a;border-radius:12px;padding:12px 14px;margin-bottom:14px}</style></head>
 <body><header><div class="in"><b>${e(b.name)}</b><span>Jobs in jewellery</span></div></header><main><div class="card">
 ${open ? '' : '<div class="closed">This job is no longer taking applications. <a href="/">See open jobs</a></div>'}
 <h1>${e(j.title)}</h1><p class="where">${e(j.city)}${j.department ? ` · ${e(j.department)}` : ''}</p><div class="facts">${facts.map(([l, x]) => `<span>${l}: <b>${e(x)}</b></span>`).join('')}</div>
-${secs || (jd.text ? `<section>${list(jd.text)}</section>` : '<section><p>Apply to hear more about this job.</p></section>')}
+${secs || (jd.text ? `<section>${list(jd.text)}</section>` : ((d) => (d ? `<section class="doc">${docHtml(d)}</section>` : '<section><p>Apply to hear more about this job.</p></section>'))(docText()))}
 </div></main>${open ? `<div class="apply"><a href="${e(apply)}">Apply for this job</a></div>` : ''}</body></html>`;
 }
 module.exports.jdHtml = jdHtml;
@@ -1287,6 +1308,7 @@ route('POST', '/api/applications/:id/close', T, (ctx) => { const a = loadApp(ctx
 route('POST', '/api/applications/ad-applicants', T, (ctx) => {
   const only = (ctx.body || {}).only ? String(ctx.body.only) : null; // one candidate, from their profile: any team member
   if (!only && !['super', 'admin'].includes(ctx.user.level)) throw httpError(403, 'For admins');
+  if (!(ctx.body || {}).dry) L.reopenRefilled(ctx.actor, { only });
   const r = L.openAdApplications(ctx.actor, { dry: !!(ctx.body || {}).dry, report: true, only, days: only ? 365 : 90 });
   if (!(ctx.body || {}).dry) D.history(ctx.actor.label, 'ad applications opened', null, null, null, `${r.made} opened`, null, ctx.ip);
   return r;
