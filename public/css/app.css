@@ -1903,3 +1903,5 @@ button.fin-tile.on { border-color: var(--mustard); box-shadow: 0 0 0 1px var(--m
 .sub-card > summary { cursor: pointer; list-style: none; display: flex; gap: 8px; align-items: baseline; } .sub-card > summary::-webkit-details-marker { display: none; }
 .sub-card > summary::before { content: '▸'; color: var(--muted); } .sub-card[open] > summary::before { content: '▾'; }
 .sub-more { margin-top: 8px; } .sub-more > summary { cursor: pointer; padding: 4px 2px; }
+.job-acts { margin-bottom: 12px; }
+.pipe-steps { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; } .pipe-step { display: inline-flex; align-items: baseline; gap: 5px; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--border); font-size: 12px; color: var(--muted); } .pipe-step b { font-size: 13px; color: var(--faint); } .pipe-step.on { border-color: var(--navy); color: var(--ink); } .pipe-step.on b { color: var(--navy); }

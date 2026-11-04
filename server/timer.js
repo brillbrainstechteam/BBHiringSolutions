@@ -93,7 +93,7 @@ function runTimer() {
   // Outgoing emails waiting to be sent (or retried).
   const mails = require('./mailer').retryQueued(); if (mails) done.emails_retried = mails;
   // Email inbox door: unread CV emails become candidate leads.
-  if (D.ENV.imap.host) require('./mailbox').check().catch((e) => require('./alerts').devAlert('Email inbox check failed', e.message));
+  if (D.ENV.imap.host) require('./mailbox').check().then(() => require('./mailbox').refetchCvs()).catch((e) => require('./alerts').devAlert('Email inbox check failed', e.message));
   // Ad applicants without an application get one on the job their ad points to.
   try { const adApps = L.openAdApplications(); if (adApps) done.ad_applications = adApps; } catch (e) { require('./alerts').devAlert('Ad applications sweep failed', e.message); }
   // Anyone hired through us: applications opened since then close.

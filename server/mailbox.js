@@ -73,7 +73,15 @@ function parseHeaders(str) {
   }
   return h;
 }
-const param = (header, name) => { const m = new RegExp(`${name}\\*?=\\s*"?([^";]+)"?`, 'i').exec(header || ''); return m ? decodeWords(m[1].replace(/^utf-8''/i, '')).replace(/%([0-9A-F]{2})/gi, (x, hh) => String.fromCharCode(parseInt(hh, 16))) : ''; };
+const pct = (v) => { try { return Buffer.from(v.replace(/%([0-9A-F]{2})/gi, (x, hh) => String.fromCharCode(parseInt(hh, 16))), 'latin1').toString('utf8'); } catch { return v; } };
+const param = (header, name) => {
+  const h = String(header || '');
+  // RFC 2231 continuations: name*0*=utf-8''part1; name*1*=part2 … joined in order.
+  const pieces = [...h.matchAll(new RegExp(`(?:^|;)\\s*${name}\\*(\\d+)(\\*?)=\\s*("([^"]*)"|[^;]*)`, 'gi'))].map((m) => ({ n: Number(m[1]), enc: !!m[2], v: (m[4] !== undefined ? m[4] : m[3]).trim() })).sort((a, b) => a.n - b.n);
+  if (pieces.length) { const joined = pieces.map((p) => (p.enc ? p.v.replace(/^[\w-]*'[\w-]*'/, '') : p.v)).join(''); return pieces.some((p) => p.enc) ? pct(joined) : decodeWords(joined); }
+  const enc = new RegExp(`(?:^|;)\\s*${name}\\*=\\s*"?([^";]+)"?`, 'i').exec(h); if (enc) return pct(enc[1].replace(/^[\w-]*'[\w-]*'/, ''));
+  const m = new RegExp(`(?:^|;)\\s*${name}=\\s*("([^"]*)"|[^;]*)`, 'i').exec(h); return m ? decodeWords((m[2] !== undefined ? m[2] : m[1]).trim()) : '';
+};
 function decodeBody(raw, cte) {
   const enc = String(cte || '').toLowerCase();
   if (enc === 'base64') return Buffer.from(raw.toString('latin1').replace(/\s+/g, ''), 'base64');
@@ -87,13 +95,17 @@ function parseMessage(buf) {
   const walk = (b, depth) => {
     const [hs, body] = split(b); const h = parseHeaders(hs);
     const ct = h['content-type'] || 'text/plain'; const type = ct.split(';')[0].trim().toLowerCase();
+    if (type === 'message/rfc822' && depth < 6) { walk(decodeBody(body, h['content-transfer-encoding']), depth + 1); return h; }
     if (type.startsWith('multipart/') && depth < 6) {
       const boundary = param(ct, 'boundary'); if (!boundary) return h;
       const pieces = body.toString('latin1').split(`--${boundary}`).slice(1);
       for (const p of pieces) { if (p.startsWith('--')) break; walk(Buffer.from(p.replace(/^\r?\n/, ''), 'latin1'), depth + 1); }
       return h;
     }
-    const name = param(h['content-disposition'], 'filename') || param(ct, 'name');
+    const EXT = { 'application/pdf': 'pdf', 'application/msword': 'doc', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx' };
+    let name = param(h['content-disposition'], 'filename') || param(ct, 'name');
+    if (!name && EXT[type] && /attachment|inline/i.test(h['content-disposition'] || 'attachment')) name = `resume.${EXT[type]}`;
+    // a CV sent with a generic type (application/octet-stream) but a .pdf / .docx name is kept as it is
     parts.push({ type, name, content: decodeBody(body, h['content-transfer-encoding']) });
     return h;
   };
@@ -288,4 +300,46 @@ async function checkNow() {
   return done;
 }
 
-module.exports = { check, intakeEmail, parseMessage, cvText, findPhone, findName };
+// Resumes missed earlier: every email in the label is read once more (40 a run) and a CV attachment goes to the
+// candidate it belongs to (the sender's address, or the phone or email written in the CV) when they have no resume yet.
+let fixing = null;
+function refetchCvs() { if (fixing || running) return Promise.resolve({ skipped: 'busy' }); fixing = refetchNow().finally(() => { fixing = null; }); return fixing; }
+async function refetchNow() {
+  const cfg = D.ENV.imap; if (!cfg.host || !cfg.user) return { skipped: 'Email inbox not set in .env' };
+  if (!D.get("SELECT 1 FROM candidates WHERE source='Email' AND (cv_file IS NULL OR cv_file='') AND merged_into IS NULL AND removed=0")) return { done: 'no email candidate without a resume' };
+  const out = { read: 0, saved: 0, errors: [] };
+  const box = await imapConnect(cfg); await box.cmd(`LOGIN ${q(cfg.user)} ${q(cfg.pass)}`); await box.cmd(`SELECT ${q(cfg.folder)}`);
+  try {
+    const sr = await box.cmd('UID SEARCH ALL');
+    const uids = (sr.lines.find((l) => l.startsWith('* SEARCH')) || '').replace('* SEARCH', '').trim().split(/\s+/).filter(Boolean)
+      .filter((u) => !D.get('SELECT 1 FROM mail_seen WHERE uid=?', `cvfix:${cfg.user}:${cfg.folder}:${u}`)).slice(0, 40);
+    const own = ownDomains();
+    for (const uid of uids) {
+      try {
+        const fr = await box.cmd(`UID FETCH ${uid} BODY.PEEK[]`); const raw = fr.literals[0];
+        if (raw) {
+          const { headers, parts } = parseMessage(raw); out.read++;
+          const from = decodeWords(headers.from || ''); const fm = /<([^>]+)>/.exec(from); const fromEmail = (fm ? fm[1] : from).trim().toLowerCase();
+          const fromOwn = own.includes((fromEmail.split('@')[1] || ''));
+          for (const p of parts.filter((x) => x.name && isCv(x.name) && !/portfolio|work.?sample/i.test(x.name))) {
+            const t = cvText({ name: p.name, content: p.content }); const ph = findPhone(t); const em = findEmail(t).toLowerCase();
+            const c = (!fromOwn && fromEmail ? D.get("SELECT * FROM candidates WHERE lower(email)=? AND merged_into IS NULL AND removed=0 AND (cv_file IS NULL OR cv_file='')", fromEmail) : null)
+              || (ph ? D.get("SELECT * FROM candidates WHERE whatsapp=? AND merged_into IS NULL AND removed=0 AND (cv_file IS NULL OR cv_file='')", ph) : null)
+              || (em ? D.get("SELECT * FROM candidates WHERE lower(email)=? AND merged_into IS NULL AND removed=0 AND (cv_file IS NULL OR cv_file='')", em) : null);
+            if (!c) continue;
+            try {
+              const f = await F.saveFile({ recordId: c.id, type: 'cv', name: p.name, base64: p.content.toString('base64'), by: 'Email inbox' });
+              D.update('candidates', c.id, { cv_file: String(f.id) }); require('./cvparse').fillCandidate(c.id, p.name, p.content, 'Email inbox');
+              D.insert('notes', { record_id: c.id, text: `Resume ${p.name} added from their email (it was missed when the email was first read).`, author: 'Email inbox', at: D.now() }); out.saved++;
+            } catch (e) { out.errors.push(`${uid} ${p.name}: ${e.message}`); }
+          }
+        }
+        D.run('INSERT OR IGNORE INTO mail_seen (uid,at) VALUES (?,?)', `cvfix:${cfg.user}:${cfg.folder}:${uid}`, D.now());
+      } catch (e) { out.errors.push(`${uid}: ${e.message}`); }
+    }
+  } finally { box.end(); }
+  D.setHealth('last_cv_refetch', `${D.now()} · ${out.read} read · ${out.saved} resumes added`);
+  return out;
+}
+
+module.exports = { check, refetchCvs, intakeEmail, parseMessage, cvText, findPhone, findName };

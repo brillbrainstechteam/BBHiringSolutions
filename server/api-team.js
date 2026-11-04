@@ -804,6 +804,34 @@ function jdPdf(j) {
   return F.makePdf(`Job description · ${j.id}`, L2, D.settings().business, c);
 }
 module.exports.jdPdf = jdPdf;
+// The job description as a web page for candidates: the link the team copies and shares. The client is not named.
+function jdHtml(id) {
+  const j = get('SELECT * FROM jobs WHERE id=? AND archived=0 AND is_sample=0', String(id).toUpperCase()); if (!j) return null;
+  const v = V.jobView(j); const open = ['Open', 'Sourcing', 'Interviewing', 'Offer stage'].includes(v.status);
+  const e = (x) => String(x == null ? '' : x).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const jd = { ...(j.jd || {}) }; if (jewelLine(jd)) jd.jewel_text = jewelLine(jd);
+  const b = D.settings().business; const apply = L.link('apply', `?job=${j.id}`);
+  const list = (t) => { const lines = String(t).split('\n').map((x) => x.replace(/^[-•*]\s*/, '').trim()).filter(Boolean); return lines.length > 1 ? `<ul>${lines.map((x) => `<li>${e(x)}</li>`).join('')}</ul>` : `<p>${e(lines[0] || '')}</p>`; };
+  const secs = [['summary', 'About the role'], ['duties', 'What you will do'], ['jewel_text', 'Jewellery industry experience'], ['must', 'Must have'], ['good', 'Good to have'], ['education', 'Education'], ['languages', 'Languages'], ['timings', 'Timings'], ['benefits', 'Benefits'], ['incentives', 'Incentives']]
+    .filter(([k]) => jd[k]).map(([k, l]) => `<section><h2>${l}</h2>${list(jd[k])}</section>`).join('');
+  const facts = [['Location', j.city], ['Salary', jd.salary || L.salaryText(j)], ['Experience', j.exp_from != null ? `${j.exp_from}${j.exp_to != null ? `–${j.exp_to}` : '+'} years` : ''], ['Openings', j.openings]].filter(([, x]) => x);
+  const title = `${j.title} · ${j.city}`;
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${e(title)} · ${e(b.name)}</title>
+<meta name="description" content="${e(String(jd.summary || `${j.title} job in ${j.city}`).slice(0, 160))}"><meta property="og:title" content="${e(title)}"><meta property="og:description" content="${e(String(jd.summary || '').slice(0, 200))}"><meta name="robots" content="noindex">
+<style>:root{--navy:#101a3a;--gold:#d4a017;--ink:#1d2433;--muted:#5d6577;--line:#e6e8ef;--bg:#f6f7fb}*{box-sizing:border-box}body{margin:0;font:16px/1.6 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:var(--ink);background:var(--bg)}
+header{background:var(--navy);color:#fff;padding:18px 16px}header .in,main{max-width:760px;margin:0 auto}header b{font-size:15px;letter-spacing:.02em}header span{display:block;font-size:12px;opacity:.7}
+main{padding:20px 16px 90px}.card{background:#fff;border:1px solid var(--line);border-radius:16px;padding:22px}h1{font-size:26px;line-height:1.25;margin:0 0 6px}.where{color:var(--muted);margin:0 0 16px}
+.facts{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 6px}.facts span{background:var(--bg);border:1px solid var(--line);border-radius:999px;padding:5px 12px;font-size:14px}.facts b{font-weight:600}
+section{margin-top:22px}h2{font-size:15px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:0 0 8px}ul{margin:0;padding-left:20px}li{margin:4px 0}p{margin:0}
+.apply{position:fixed;left:0;right:0;bottom:0;background:#fff;border-top:1px solid var(--line);padding:12px 16px}.apply a{display:block;max-width:760px;margin:0 auto;text-align:center;background:var(--gold);color:var(--navy);font-weight:700;text-decoration:none;padding:14px;border-radius:12px}
+.closed{background:#fff7e0;border:1px solid #f0d58a;border-radius:12px;padding:12px 14px;margin-bottom:14px}</style></head>
+<body><header><div class="in"><b>${e(b.name)}</b><span>Jobs in jewellery</span></div></header><main><div class="card">
+${open ? '' : '<div class="closed">This job is no longer taking applications. <a href="/">See open jobs</a></div>'}
+<h1>${e(j.title)}</h1><p class="where">${e(j.city)}${j.department ? ` · ${e(j.department)}` : ''}</p><div class="facts">${facts.map(([l, x]) => `<span>${l}: <b>${e(x)}</b></span>`).join('')}</div>
+${secs || (jd.text ? `<section>${list(jd.text)}</section>` : '<section><p>Apply to hear more about this job.</p></section>')}
+</div></main>${open ? `<div class="apply"><a href="${e(apply)}">Apply for this job</a></div>` : ''}</body></html>`;
+}
+module.exports.jdHtml = jdHtml;
 route('POST', '/api/jobs/:id/posting', T, (ctx) => {
   const j = get('SELECT * FROM jobs WHERE id=?', ctx.params.id); mustSee(seeJob(ctx.user, j), 'job opening');
   const p = get('SELECT * FROM postings WHERE id=? AND job_id=?', ctx.body.id, j.id); if (!p) throw httpError(404, 'Posting not found');
@@ -958,6 +986,7 @@ route('GET', '/api/candidates/:id', T, (ctx) => {
   return {
     ...candidateOut(u, c), status: V.candStatus(c.id), apps, messages: msgs, rating: L.ratingOf(c.id), can_message: seeThread(u, 'candidate', c.id) || isSuper(u),
     verify: require('./verify').badge(c.id),
+    ad_plan: L.adPlanFor(c.id),
     job_matches: L.jobsFor(c, 20).filter((m) => seeJob(u, m.j)).slice(0, 6).map((m) => ({ id: m.j.id, title: m.j.title, city: m.j.city, client_name: (get('SELECT company FROM clients WHERE id=?', m.j.client_id) || {}).company, score: m.score, reasons: m.reasons, gaps: m.gaps })),
     files: show ? all('SELECT * FROM files WHERE record_id=? AND replaced=0 ORDER BY at DESC', c.id) : all("SELECT * FROM files WHERE record_id=? AND replaced=0 AND type IN ('cv','short_cv') ORDER BY at DESC", c.id),
     // History tab: every application, open or closed, with its screening, interviews (results and notes), calls and steps.
@@ -1256,8 +1285,9 @@ route('POST', '/api/applications/:id/close', T, (ctx) => { const a = loadApp(ctx
 // names or "Job you want" point to, unless they already have one there (open or closed). dry=true only shows it.
 // Ad applicants without an open application: what happens to each (dry), and open them now.
 route('POST', '/api/applications/ad-applicants', T, (ctx) => {
-  if (!['super', 'admin'].includes(ctx.user.level)) throw httpError(403, 'For admins');
-  const r = L.openAdApplications(ctx.actor, { dry: !!(ctx.body || {}).dry, report: true });
+  const only = (ctx.body || {}).only ? String(ctx.body.only) : null; // one candidate, from their profile: any team member
+  if (!only && !['super', 'admin'].includes(ctx.user.level)) throw httpError(403, 'For admins');
+  const r = L.openAdApplications(ctx.actor, { dry: !!(ctx.body || {}).dry, report: true, only, days: only ? 365 : 90 });
   if (!(ctx.body || {}).dry) D.history(ctx.actor.label, 'ad applications opened', null, null, null, `${r.made} opened`, null, ctx.ip);
   return r;
 });

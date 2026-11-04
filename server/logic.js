@@ -606,12 +606,13 @@ function jobsForPerson(p, opt = {}) {
 // Everyone who came from an ad or a job platform gets an application: candidates with no open application (from the last
 // 60 days) go onto the open jobs their ad (or the job they asked for) points to, skipping jobs they were already on.
 // No job found: the candidate is flagged so the team picks the job.
+function adPlanFor(candId) { const r = openAdApplications({ label: 'System' }, { dry: true, report: true, only: candId, days: 365 }); return r.rows[0] || null; }
 function openAdApplications(by = { label: 'System' }, o = {}) {
   const since = new Date(Date.now() - (o.days || 90) * 86400000).toISOString(); let made = 0; const report = [];
   // From an ad (ad names on the link) or from an ad / job platform (the source), with no open application.
   const AD_SOURCE = /instagram|facebook|meta|linkedin|naukri|apna|indeed|job post|google ad|youtube/i;
   const rows = all(`SELECT c.* FROM candidates c WHERE c.removed=0 AND IFNULL(c.junk,0)=0 AND c.merged_into IS NULL AND IFNULL(c.last_updated, c.created_at) > ? AND NOT EXISTS (SELECT 1 FROM applications a WHERE a.candidate_id=c.id AND a.result='open') ORDER BY c.created_at DESC`, since)
-    .filter((c) => c.ad_set || c.ad_name || c.ad_campaign || AD_SOURCE.test(c.source || ''));
+    .filter((c) => (!o.only || c.id === o.only) && (c.ad_set || c.ad_name || c.ad_campaign || AD_SOURCE.test(c.source || '')));
   for (const c of rows) {
     const line = { id: c.id, name: c.name, source: c.source, ad: [c.ad_campaign, c.ad_set, c.ad_name].filter(Boolean).join(' › '), job_wanted: c.job_wanted, jobs: [], result: '' };
     report.push(line);
@@ -1214,7 +1215,7 @@ function sendSystemText(ptype, pid, text) {
   insert('messages', { id: nextId('WA'), person_type: ptype, person_id: pid, phone: p.phone, direction: 'out', text, buttons: [], sent_by: 'Auto', status: settings().crm.enabled ? 'sending' : 'would send', read_by_us: 1, auto: 1, at: now() });
 }
 
-module.exports = { openAdApplications, placedOn, closePlacedApps, adLabel,
+module.exports = { adPlanFor, openAdApplications, placedOn, closePlacedApps, adLabel,
   STEPS, stepIdx, digits10, validPhone, inr, istDay, istFmt, istTime, istHour, inQuiet, next9am, daysBetween, addDays, hashPassword, checkPassword, newPassword, sha,
   activationState, checkActivation, waHeld, TEAMS, IV_MODES, clientSeesIv, addIvNote, CALL_OUTCOMES, logCall, jobList, deptOf, stateOf, person, fillFormat, windowOpenUntil, sendWA, setDispatcher, alertUser, link, agencyAdmin, superAdmins,
   computeJobStatus, jobStatusReason, recalcJob, filledCount, appsOfJob, matchScore, jobsFor, cleanBusiness, BUSINESS_TYPES, EXP_YEARS, JEW_YEARS, LOOKING, NOT_LOOKING, ratingOf, bestMatches, isPlaced, salaryText, autoJobAlert,

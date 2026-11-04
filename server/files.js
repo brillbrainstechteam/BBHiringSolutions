@@ -16,8 +16,8 @@ async function saveFile({ recordId, type, name, base64, by }) {
   if (!buf.length) throw D.httpError(400, 'The file is empty.');
   if (buf.length > MAX) throw D.httpError(400, 'The file is bigger than 10 MB.');
   const magic = buf.slice(0, 4).toString('hex');
-  const ok = (ext === 'pdf' && buf.slice(0, 4).toString() === '%PDF') || (['jpg', 'jpeg'].includes(ext) && magic.startsWith('ffd8')) || (ext === 'png' && magic === '89504e47') ||
-    (ext === 'docx' && magic === '504b0304') || (ext === 'doc' && magic === 'd0cf11e0');
+  const ok = (ext === 'pdf' && buf.slice(0, 1024).toString('latin1').includes('%PDF')) || (['jpg', 'jpeg'].includes(ext) && magic.startsWith('ffd8')) || (ext === 'png' && magic === '89504e47') ||
+    (ext === 'docx' && magic === '504b0304') || (ext === 'doc' && (magic === 'd0cf11e0' || magic === '504b0304' || buf.slice(0, 5).toString() === '{\\rtf'));
   if (!ok) throw D.httpError(400, 'The file does not look like a real ' + ext.toUpperCase() + ' file.');
   const scan = await virusScan(buf);
   if (!scan.clean) throw D.httpError(400, `The file failed the virus check${scan.virus ? ` (${scan.virus})` : ''}.`);

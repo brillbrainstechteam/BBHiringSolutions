@@ -92,6 +92,9 @@ const server = http.createServer(async (req, res) => {
     let p = url.pathname;
     // The team portal is internal: reachable by its address, but kept out of search engines.
     if (p === '/team' || p.startsWith('/team/')) return send(res, 200, pageHtml('/team'), { 'Content-Type': TYPES['.html'], 'Cache-Control': 'no-cache', 'X-Robots-Tag': 'noindex, nofollow' });
+    // A job description page for candidates: /jd/JB-2001.
+    const jdm = /^\/jd\/(JB-\d+)\/?$/i.exec(p);
+    if (jdm) { const h = require('./api-team').jdHtml(jdm[1]); return send(res, h ? 200 : 404, h || 'This job was not found.', { 'Content-Type': h ? TYPES['.html'] : 'text/plain', 'Cache-Control': 'no-cache' }); }
     const page = '/' + (p.split('/')[1] || '');
     if (PAGES.includes(page) || p === '/index.html') return send(res, 200, pageHtml(PAGES.includes(page) ? page : '/'), { 'Content-Type': TYPES['.html'], 'Cache-Control': 'no-cache' }); // the app's own pages, e.g. /my-account/jobs
     const file = path.normalize(path.join(PUBLIC, p));
