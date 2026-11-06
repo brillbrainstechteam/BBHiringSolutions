@@ -626,10 +626,11 @@ function reopenRefilled(by = { label: 'System' }, o = {}) {
 function adPlanFor(candId) { const r = openAdApplications({ label: 'System' }, { dry: true, report: true, only: candId, days: 365 }); return r.rows[0] || null; }
 function openAdApplications(by = { label: 'System' }, o = {}) {
   const since = new Date(Date.now() - (o.days || 90) * 86400000).toISOString(); let made = 0; const report = [];
-  // From an ad (ad names on the link) or from an ad / job platform (the source), with no open application.
-  const AD_SOURCE = /instagram|facebook|meta|linkedin|naukri|apna|indeed|job post|google ad|youtube/i;
+  // From an ad (ad names on the link) or from Instagram or LinkedIn (the source), with no open application. People
+  // brought in from Google Drive (resumes and the Naukri exports) are candidates only: never an application here.
+  const AD_SOURCE = /instagram|linkedin/i; const DRIVE = /^google drive/i;
   const rows = all(`SELECT c.* FROM candidates c WHERE c.removed=0 AND IFNULL(c.junk,0)=0 AND c.merged_into IS NULL AND IFNULL(c.last_updated, c.created_at) > ? AND NOT EXISTS (SELECT 1 FROM applications a WHERE a.candidate_id=c.id AND a.result='open') ORDER BY c.created_at DESC`, since)
-    .filter((c) => (!o.only || c.id === o.only) && (c.ad_set || c.ad_name || c.ad_campaign || AD_SOURCE.test(c.source || '')));
+    .filter((c) => (!o.only || c.id === o.only) && !DRIVE.test(c.source || '') && (c.ad_set || c.ad_name || c.ad_campaign || AD_SOURCE.test(c.source || '')));
   for (const c of rows) {
     const line = { id: c.id, name: c.name, source: c.source, ad: [c.ad_campaign, c.ad_set, c.ad_name].filter(Boolean).join(' › '), job_wanted: c.job_wanted, jobs: [], result: '' };
     report.push(line);

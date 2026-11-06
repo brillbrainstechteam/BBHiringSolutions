@@ -81,6 +81,19 @@ if (!(D.settings().done_once || []).includes('email_apps_binned')) {
   if (n) console.log(`Moved ${n} email applications to Deleted items`);
 }
 
+// Once (6 Nov 2026): applications made automatically for Google Drive candidates (the resumes and the Naukri
+// exports, brought in only to have everyone in one place) go to Deleted items, and the "pick the job" flag the ad
+// sweep put on them is cleared. Applications added by hand stay. Restorable from Settings -> Deleted items.
+if (!(D.settings().done_once || []).includes('drive_apps_binned')) {
+  const sys = { level: 'super' }; const actor = { label: 'System: Google Drive applications removed' }; let n = 0;
+  for (const a of all("SELECT a.id FROM applications a JOIN candidates c ON c.id=a.candidate_id WHERE c.source LIKE 'Google Drive%' AND EXISTS (SELECT 1 FROM app_history h WHERE h.app_id=a.id AND (h.note LIKE 'Applied from an ad%' OR h.note LIKE 'Matched automatically%' OR h.note LIKE 'Imported%'))")) {
+    try { deleteOne(sys, actor, 'application', a.id); n++; } catch (e) { console.error('drive app', a.id, e.message); }
+  }
+  D.run("UPDATE candidates SET needs_check=NULL WHERE source LIKE 'Google Drive%' AND needs_check='From an ad: pick the job'");
+  D.setSetting('done_once', [...(D.settings().done_once || []), 'drive_apps_binned']);
+  console.log(`Moved ${n} Google Drive applications to Deleted items`);
+}
+
 // dry=true: what would go with it (for the confirmation). ids: several of one kind at once.
 route('POST', '/api/delete', T, (ctx) => {
   const b = ctx.body || {}; const ids = Array.isArray(b.ids) ? b.ids.slice(0, 500) : [b.id];

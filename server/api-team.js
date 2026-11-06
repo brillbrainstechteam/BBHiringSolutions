@@ -1402,7 +1402,7 @@ route('POST', '/api/applications/ad-applicants', T, (ctx) => {
 route('POST', '/api/applications/auto-map', T, (ctx) => {
   const u = ctx.user; const b = ctx.body || {}; const plan = [];
   // Email candidates stay candidates only: the team picks their jobs by hand.
-  const cands = all("SELECT * FROM candidates WHERE merged_into IS NULL AND removed=0 AND junk=0 AND archived=0 AND source != 'Email'").filter((c) => isSuper(u) || c.agency_id === u.agency_id || !c.agency_id);
+  const cands = all("SELECT * FROM candidates WHERE merged_into IS NULL AND removed=0 AND junk=0 AND archived=0 AND source != 'Email' AND source NOT LIKE 'Google Drive%'").filter((c) => isSuper(u) || c.agency_id === u.agency_id || !c.agency_id);
   for (const c of cands) {
     if (b.ids && !b.ids.includes(c.id)) continue;
     if (L.isPlaced(c.id)) continue; // hired through us: not matched again
