@@ -876,7 +876,22 @@ const PREF_ASK = {
 function prefAnswer(step, t, candId, by) {
   const pick = (list) => list.find((x) => t.startsWith(x.split(' ')[0].toLowerCase()));
   const c = get('SELECT * FROM candidates WHERE id=?', candId); const say = (rule, text, buttons) => { try { sendWA({ ptype: 'candidate', pid: candId, text, buttons: buttons || [], rule, by: { label: 'Preferences' } }); } catch (e) { /* the window may have closed: the answer is still saved */ } };
-  if (step.startsWith('pref1')) { const v = pick(PREF.channel); if (!v) return null; update('candidates', candId, { pref_channel: v }); say('pref2', PREF_ASK.pref2.text, PREF_ASK.pref2.buttons); return `Prefers ${v}`; }
+  if (step.startsWith('pref1')) {
+    // the one-question message: a time slot (or any time), saved with when they answered, then the call task
+    const slot = t.startsWith('any') ? 'any' : pick(PREF.time);
+    if (slot) {
+      update('candidates', candId, { pref_time: slot === 'any' ? null : slot, pref_answered_at: now() });
+      const f = get('SELECT * FROM candidates WHERE id=?', candId);
+      say('pref_done', `Thank you. Our recruiter will call you ${slot === 'any' ? 'soon' : `in the ${slot.split(' (')[0].toLowerCase()}`}.`);
+      history('Candidate on WhatsApp', 'best time to call', candId, null, null, prefNote(f) || 'any time');
+      // a call task in that slot on each open application not yet with the client (made if missing, moved if there)
+      for (const ap of all("SELECT id FROM applications WHERE candidate_id=? AND result='open' AND step IN ('Applied','Screening','Our interview')", candId)) phoneTask(ap.id);
+      phoneTaskTimes(candId);
+      return `Best time: ${slot === 'any' ? 'any time' : slot}`;
+    }
+    // an answer to the old 3-question message (how to contact): saved, then its next question as before
+    const v = pick(PREF.channel); if (!v) return null; update('candidates', candId, { pref_channel: v }); say('pref2', PREF_ASK.pref2.text, PREF_ASK.pref2.buttons); return `Prefers ${v}`;
+  }
   if (step === 'pref2') { const v = t.startsWith('any') ? null : pick(PREF.time); if (!v && !t.startsWith('any')) return null; update('candidates', candId, { pref_time: v }); say('pref3', PREF_ASK.pref3.text, PREF_ASK.pref3.buttons); return `Best time: ${v || 'any time'}`; }
   if (step === 'pref3') { const v = t.startsWith('any') ? null : pick(PREF.days); if (!v && !t.startsWith('any')) return null; update('candidates', candId, { pref_days: v }); const f = get('SELECT * FROM candidates WHERE id=?', candId); say('pref_done', `Thank you. We will reach you on ${f.pref_channel || 'WhatsApp'}${f.pref_time ? `, ${f.pref_time.split(' (')[0].toLowerCase()}` : ''}${f.pref_days ? `, ${f.pref_days.toLowerCase()}` : ''}.`); history('Candidate on WhatsApp', 'contact preferences', candId, null, null, prefNote(f)); phoneTaskTimes(candId); return `Best days: ${v || 'any day'}`; }
   return null;
@@ -902,7 +917,7 @@ function candidateStory(candidateId) {
 function candidateKnown(c) {
   const call = get("SELECT * FROM calls WHERE candidate_id=? AND status='Done' ORDER BY at DESC LIMIT 1", c.id); const ev = evalView(get('SELECT * FROM evaluations WHERE candidate_id=? ORDER BY id DESC LIMIT 1', c.id));
   const decision = get("SELECT h.* FROM app_history h JOIN applications a ON a.id=h.app_id WHERE a.candidate_id=? AND h.kind IN ('screen','close') ORDER BY h.at DESC LIMIT 1", c.id);
-  return { prefs: { channel: c.pref_channel || '', time: c.pref_time || '', days: c.pref_days || '', note: prefNote(c), now_ok: inPreferred(c) }, last_call: call ? { ...call, job: jobOf(call.app_id), days: daysBetween(call.at) } : null, evaluation: ev ? { ...ev, job: jobOf(ev.app_id) } : null, decision: decision ? { note: decision.note, by: decision.by, at: decision.at, job: jobOf(decision.app_id) } : null };
+  return { prefs: { channel: c.pref_channel || '', time: c.pref_time || '', days: c.pref_days || '', note: prefNote(c) || (c.pref_answered_at ? 'any time' : ''), answered_at: c.pref_answered_at || null, now_ok: inPreferred(c) }, last_call: call ? { ...call, job: jobOf(call.app_id), days: daysBetween(call.at) } : null, evaluation: ev ? { ...ev, job: jobOf(ev.app_id) } : null, decision: decision ? { note: decision.note, by: decision.by, at: decision.at, job: jobOf(decision.app_id) } : null };
 }
 
 // ---------- offers ----------

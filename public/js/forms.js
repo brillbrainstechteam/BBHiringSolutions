@@ -29,7 +29,7 @@
       <form class="stack" novalidate${single ? '' : ' style="margin-top:18px"'}>
         ${BB.voiceSwitch()}
         ${q.ref ? `<div class="notice small" data-only="job">Referred by a friend (${esc(String(q.ref).toUpperCase())}).</div>` : ''}
-        <div class="cv-first" data-only="job" data-f="cv"><div class="cv-ic" aria-hidden="true">CV</div><div class="grow"><b>Start with your CV</b> <span class="opt">(optional)</span><div class="muted small" data-cv-name>PDF or Word, max 10 MB</div><div class="small" data-cv-msg></div></div><button type="button" class="btn" data-cv>Attach CV</button></div>
+        <div class="cv-first" data-only="job" data-f="cv"><div class="cv-ic" aria-hidden="true">CV</div><div class="grow"><b>Your CV / resume</b> <span class="opt">· required</span><div class="muted small" data-cv-name>PDF or Word, max 10 MB</div><div class="small" data-cv-msg></div></div><button type="button" class="btn" data-cv>Attach CV</button></div>
         <div class="grid g2">${field({ name: 'name', label: 'Your name' })}<div data-only="hire">${field({ name: 'company', label: 'Company name' })}</div><div data-only="job">${field({ name: 'email', label: 'Email', type: 'email', opt: true, placeholder: 'For a confirmation email', attrs: 'autocomplete="email"' })}</div></div>
         <div class="grid g2">${field({ name: 'whatsapp', label: 'Mobile number (WhatsApp) · required', type: 'tel', phone: true, placeholder: '10-digit mobile number', attrs: 'inputmode="numeric" maxlength="14" autocomplete="tel" required' })}<div data-only="hire">${field({ name: 'email_hire', label: 'Email', type: 'email', opt: true, placeholder: 'For a confirmation email', attrs: 'autocomplete="email"' })}</div><div data-only="job"><label class="field" data-f="job_wanted"><span class="lab">Job you want</span><select name="job_wanted">${BB.jobOptions(q.want || '', true, q.ind)}</select></label></div></div>
         <div class="hidden" data-other>${field({ name: 'job_other', label: 'Type the job you want' })}</div>
@@ -94,6 +94,7 @@
         : [...common, ['job_wanted', v.job_wanted, 'Pick the job you want'], ['job_other', v.job_wanted !== 'Other' || v.job_other, 'Type the job you want'], ['city', v.city, 'Please enter the city you want to work in']];
       v.exp_business = $$('[name=exp_business]:checked', form).map((x) => x.value);
       if (mode === 'job' && v.experience && v.experience !== 'Fresher') rules.push(['exp_business', v.exp_business.length, 'Tick where you have worked: wholesaler, manufacturer or retailer']);
+      if (mode === 'job') rules.push(['cv', !!cv, 'Please attach your CV (PDF, Word or a photo)']); // the resume is required for a job application
       rules.push(['consent', v.consent, 'Please tick to agree before sending']);
       if (!check(form, rules)) return;
       const body = mode === 'hire'

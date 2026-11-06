@@ -467,6 +467,7 @@ route('POST', '/api/public/apply', { rate: { key: 'form', max: 60, minutes: 60 }
 
   if (!b.city) throw httpError(400, 'Please enter the city you want to work in', 'city');
   if (!b.job_wanted) throw httpError(400, 'Pick the job you want', 'job_wanted');
+  if (!b.cv || !b.cv.base64) throw httpError(400, 'Please attach your CV (PDF, Word or a photo)', 'cv'); // the resume is required
   const business = L.cleanBusiness(b.exp_business);
   // Required on the current form (which always sends the field); a page opened before this question existed still goes through.
   if (b.exp_business !== undefined && b.experience && b.experience !== 'Fresher' && !business.length) throw httpError(400, 'Tick where you have worked: wholesaler, manufacturer or retailer', 'exp_business');
