@@ -273,6 +273,11 @@ function ensureSettings() {
     setSetting('auto_rules', settings().auto_rules.map((r) => (r.key === 'post_join_checkin' ? { ...r, when: defs.auto_rules.find((x) => x.key === r.key).when } : r)));
     setSetting('done_once', [...(settings().done_once || []), 'format_aftercare']);
   }
+  if (!once.includes('rules_profile_update')) {
+    const keys = ['profile_screening', 'profile_before_client', 'profile_refresh_90']; const have = new Set(settings().auto_rules.map((x) => x.key));
+    setSetting('auto_rules', [...settings().auto_rules, ...defs.auto_rules.filter((x) => keys.includes(x.key) && !have.has(x.key))]);
+    setSetting('done_once', [...(settings().done_once || []), 'rules_profile_update']);
+  }
   if (!once.includes('rule_pref1_screen')) {
     const r = defs.auto_rules.find((x) => x.key === 'pref1_screen'); if (!settings().auto_rules.some((x) => x.key === r.key)) setSetting('auto_rules', [r, ...settings().auto_rules]);
     setSetting('done_once', [...(settings().done_once || []), 'rule_pref1_screen']);

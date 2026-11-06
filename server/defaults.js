@@ -123,6 +123,9 @@ const FORMATS = {
 const AUTO_RULES = [
   { key: 'candidate_welcome', when: 'Fills the form / added by team', to: 'Candidate', format: 'bbhs_candidate_welcome', on: true },
   { key: 'resume_request', when: 'New candidate without a resume (not bulk imports): ask for the resume, salary and notice period, once', to: 'Candidate', format: 'bbhs_profile_update', on: true },
+  { key: 'profile_screening', when: 'Screened in, and the resume is over 6 months old or salary / notice is missing: the update link (it also asks their best time to call)', to: 'Candidate', format: 'bbhs_profile_update', on: true },
+  { key: 'profile_before_client', when: 'CV about to go to the client and the profile is over 90 days old: the update link', to: 'Candidate', format: 'bbhs_profile_update', on: true },
+  { key: 'profile_refresh_90', when: 'Every 90 days, candidates not in process: the update link (up to 100 a day)', to: 'Candidate', format: 'bbhs_profile_update', on: true },
   { key: 'job_alert', when: 'Match score 70+ on a new job', to: 'Candidate', format: 'bbhs_job_alert', on: true },
   { key: 'pref1_screen', when: 'Screened in: ask their best time to call (gives the recruiter a call task at that time)', to: 'Candidate', format: 'bbhs_contact_prefs', on: true },
   { key: 'interview_scheduled', when: 'Interview scheduled', to: 'Candidate', format: 'bbhs_interview_scheduled', on: true },

@@ -18,11 +18,45 @@ const linkOf = (candId) => {
   if (!t) { t = { token: crypto.randomBytes(12).toString('base64url'), candidate_id: candId, created_at: now(), used_at: null }; insert('profile_links', t); }
   return L.link(`u/${t.token}`);
 };
-// One candidate: the message, unless they already have a resume and all three details.
-function ask(candId, by, auto) {
+// How old the profile is: the resume's upload date, or when the candidate last shared their details on the link.
+const daysOld = (c) => { const f = c.cv_file ? get('SELECT at FROM files WHERE id=?', c.cv_file) : null; const used = get('SELECT MAX(used_at) at FROM profile_links WHERE candidate_id=?', c.id); const t = [f && f.at, used && used.at].filter(Boolean).sort().pop(); return t ? L.daysBetween(t) : Infinity; };
+const detailsMissing = (c) => !c.cv_file || !c.cur_salary || !c.exp_salary || c.notice_days === null || c.notice_days === undefined;
+// Needs an update: something missing, or the resume older than this many days.
+function needsUpdate(c, days) { return detailsMissing(c) || daysOld(c) > days; }
+// Not asked in the last 30 days (any reason): one request a month at most.
+const askedLately = (c) => !!get("SELECT 1 FROM messages WHERE person_type='candidate' AND person_id=? AND format='bbhs_profile_update' AND at > ?", c.id, new Date(Date.now() - 30 * 86400000).toISOString());
+// One candidate: the message, unless they already have a resume and all three details (o.stale: or the resume is
+// older than that many days). o.rule: the automatic message it is sent as.
+function ask(candId, by, auto, o = {}) {
   const c = get('SELECT * FROM candidates WHERE id=? AND removed=0 AND merged_into IS NULL', candId); if (!c) return { skipped: 'Not found' };
-  if (c.cv_file && c.cur_salary && c.exp_salary && c.notice_days !== null && c.notice_days !== undefined) return { skipped: 'Resume and details already there' };
-  return L.sendWA({ ptype: 'candidate', pid: c.id, format: 'bbhs_profile_update', vars: { link: linkOf(c.id) }, by, ...(auto ? { auto: true, rule: 'resume_request', dedupe: `profile:${c.id}` } : { bulk: true, dedupe: `profile:${c.id}:${L.istDay()}` }) });
+  if (!(o.stale ? needsUpdate(c, o.stale) : detailsMissing(c))) return { skipped: 'Resume and details already there' };
+  if (auto && askedLately(c)) return { skipped: 'Asked in the last 30 days' };
+  const rule = o.rule || 'resume_request';
+  return L.sendWA({ ptype: 'candidate', pid: c.id, format: 'bbhs_profile_update', vars: { link: linkOf(c.id) }, by, ap: o.ap, ...(auto ? { auto: true, rule, dedupe: `profile:${c.id}${rule === 'resume_request' ? '' : `:${rule}:${L.istDay()}`}` } : { bulk: true, dedupe: `profile:${c.id}:${L.istDay()}` }) });
+}
+const ruleOn = (key) => { const r = (D.settings().auto_rules || []).find((x) => x.key === key); return !r || r.on; };
+// Screened in: when the profile needs an update, the link goes instead of the best-time question (the page asks it too).
+function atScreening(c, appId) {
+  if (!ruleOn('profile_screening') || !c.whatsapp || !needsUpdate(c, 180) || askedLately(c)) return false;
+  const r = ask(c.id, { label: 'System' }, true, { stale: 180, rule: 'profile_screening', ap: appId }); return !!(r && !r.skipped);
+}
+// The CV is about to go to the client: a profile older than 90 days is refreshed first (the team does not wait).
+function beforeClient(candId, appId) {
+  const c = get('SELECT * FROM candidates WHERE id=?', candId); if (!c || !ruleOn('profile_before_client') || !c.whatsapp || !needsUpdate(c, 90)) return false;
+  const r = ask(c.id, { label: 'System' }, true, { stale: 90, rule: 'profile_before_client', ap: appId }); return !!(r && !r.skipped);
+}
+// Every 90 days: candidates not in process (no open application, not placed), not bulk imports, 100 a day at most.
+function refreshSweep() {
+  const fm = (D.settings().formats || {}).bbhs_profile_update; if (!fm || !fm.approved || fm.off || !ruleOn('profile_refresh_90')) return 0;
+  const today = L.istDay(); if ((get("SELECT value FROM health WHERE key='profile_refresh_day'") || {}).value === today) return 0;
+  let n = 0;
+  for (const c of all("SELECT * FROM candidates c WHERE c.removed=0 AND c.merged_into IS NULL AND IFNULL(c.junk,0)=0 AND IFNULL(c.archived,0)=0 AND c.whatsapp != '' AND IFNULL(c.opted_out,0)=0 AND NOT EXISTS (SELECT 1 FROM applications a WHERE a.candidate_id=c.id AND (a.result='open' OR (a.result='Hired' AND a.left_date IS NULL))) ORDER BY COALESCE(c.last_updated, c.created_at)")) {
+    if (n >= 100) break;
+    if (IMPORTED.test(c.source || '') || ['Not interested', 'Not looking', 'Placed'].includes(c.looking) || !needsUpdate(c, 90) || askedLately(c)) continue;
+    const r = ask(c.id, { label: 'System' }, true, { stale: 90, rule: 'profile_refresh_90' }); if (r && !r.skipped) n++;
+  }
+  D.setHealth('profile_refresh_day', today);
+  return n;
 }
 // The automatic one: new candidates (the last 7 days) with no resume, a WhatsApp number, not a bulk import, once.
 function sweep() {
@@ -50,6 +84,7 @@ function pageHtml(token) {
       <label>Current salary (₹ a month)<input name="cur" inputmode="numeric" placeholder="e.g. 25000" value="${e(month(c.cur_salary))}"></label>
       <label>Expected salary (₹ a month)<input name="exp" inputmode="numeric" placeholder="e.g. 30000" value="${e(month(c.exp_salary))}"></label>
       <label>Notice period<select name="notice"><option value="">Pick one</option>${notice.map(([v, l]) => `<option value="${v}" ${c.notice_days === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+      ${c.pref_time ? '' : `<label>Best time for our call<select name="ptime"><option value="">Pick one</option>${L.PREF.time.map((x) => `<option>${e(x)}</option>`).join('')}</select></label>`}
       <button>Send</button><div id="err"></div></form>`;
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>Your resume and details · ${e(b.name)}</title>
 <style>:root{--navy:#101a3a;--gold:#d4a017;--ink:#1d2433;--muted:#5d6577;--line:#e6e8ef;--bg:#f6f7fb}*{box-sizing:border-box}body{margin:0;font:16px/1.55 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:var(--ink);background:var(--bg)}
@@ -62,7 +97,7 @@ button{background:var(--navy);color:#fff;border:0;border-radius:10px;padding:13p
 <script>(function(){var f=document.getElementById('f');if(!f)return;var fi=f.cv;fi.onchange=function(){document.getElementById('cvn').textContent=fi.files[0]?fi.files[0].name:''};
 f.addEventListener('submit',function(ev){ev.preventDefault();var err=document.getElementById('err'),btn=f.querySelector('button');err.textContent='';var file=fi.files[0];
 if(file&&file.size>10*1024*1024){err.textContent='The resume is bigger than 10 MB.';return}btn.disabled=true;btn.textContent='Sending…';
-var go=function(cv){fetch('/api/pub/profile/${e(t ? t.token : '')}',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({cur:f.cur.value,exp:f.exp.value,notice:f.notice.value,cv:cv})}).then(function(r){return r.json().then(function(d){if(!r.ok)throw new Error(d.error||'Could not send');f.outerHTML='<div class="done">Thank you! Your details are saved. We will be in touch when a matching job opens.</div>'})}).catch(function(x){err.textContent=x.message;btn.disabled=false;btn.textContent='Send'})};
+var go=function(cv){fetch('/api/pub/profile/${e(t ? t.token : '')}',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({cur:f.cur.value,exp:f.exp.value,notice:f.notice.value,ptime:f.ptime?f.ptime.value:'',cv:cv})}).then(function(r){return r.json().then(function(d){if(!r.ok)throw new Error(d.error||'Could not send');f.outerHTML='<div class="done">Thank you! Your details are saved. We will be in touch when a matching job opens.</div>'})}).catch(function(x){err.textContent=x.message;btn.disabled=false;btn.textContent='Send'})};
 if(!file)return go(null);var rd=new FileReader();rd.onload=function(){go({name:file.name,base64:rd.result})};rd.readAsDataURL(file)})})();</script></body></html>`;
 }
 route('POST', '/api/pub/profile/:token', { rate: { key: 'profilelink', max: 20, minutes: 60 } }, async (ctx) => {
@@ -70,18 +105,21 @@ route('POST', '/api/pub/profile/:token', { rate: { key: 'profilelink', max: 20, 
   const c = get('SELECT * FROM candidates WHERE id=?', t.candidate_id); if (!c) throw httpError(404, 'Not found');
   const b = ctx.body || {}; const num = (v) => { const n = Math.round(Number(String(v || '').replace(/[^\d.]/g, ''))); return n > 0 ? n : null; };
   const cur = num(b.cur); const exp = num(b.exp); const notice = b.notice === '' || b.notice === undefined ? null : Number(b.notice);
-  if (!b.cv && !cur && !exp && notice === null) throw httpError(400, 'Please upload your resume or fill in the details.');
+  const ptime = L.PREF.time.includes(b.ptime) ? b.ptime : null;
+  if (!b.cv && !cur && !exp && notice === null && !ptime) throw httpError(400, 'Please upload your resume or fill in the details.');
   const patch = { last_updated: now() };
   if (cur) patch.cur_salary = cur * 12; if (exp) patch.exp_salary = exp * 12; if (notice !== null && !Number.isNaN(notice)) patch.notice_days = notice;
+  if (ptime) patch.pref_time = ptime;
   update('candidates', c.id, patch);
+  if (ptime) { try { L.phoneTaskTimes(c.id); } catch { /* the time is saved */ } } // the telephonic call task moves to their time
   if (b.cv && b.cv.base64) {
     const f = await F.saveFile({ recordId: c.id, type: 'cv', name: b.cv.name, base64: b.cv.base64, by: 'Candidate (link)' });
     update('candidates', c.id, { cv_file: String(f.id) }); try { require('./cvparse').fillCandidate(c.id, b.cv.name, b.cv.base64, 'Candidate (link)'); } catch { /* the file is kept */ }
   }
   D.run('UPDATE profile_links SET used_at=? WHERE token=?', now(), t.token);
-  insert('notes', { record_id: c.id, text: `Shared their ${[b.cv && 'resume', cur && 'current salary', exp && 'expected salary', notice !== null && 'notice period'].filter(Boolean).join(', ')} on the link`, author: 'Candidate', at: now() });
+  insert('notes', { record_id: c.id, text: `Shared their ${[b.cv && 'resume', cur && 'current salary', exp && 'expected salary', notice !== null && 'notice period', ptime && `best time to call (${ptime})`].filter(Boolean).join(', ')} on the link`, author: 'Candidate', at: now() });
   if (c.needs_check && /resume|salary|notice/i.test(c.needs_check)) update('candidates', c.id, { needs_check: null });
   return { ok: true };
 });
 
-module.exports = { ask, sweep, pageHtml };
+module.exports = { ask, sweep, refreshSweep, atScreening, beforeClient, needsUpdate, pageHtml };

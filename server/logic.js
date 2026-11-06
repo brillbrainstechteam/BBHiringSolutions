@@ -536,6 +536,7 @@ function moveStep(appId, step, by, note) {
   const job = get('SELECT * FROM jobs WHERE id=?', app.job_id);
   if (step === 'Sent to client') {
     try { require('./flow').clientCvFor(app.candidate_id, by); } catch (e) { console.error('Client CV', appId, e.message); }
+    try { if (require('./profilelink').beforeClient(app.candidate_id, appId)) appHist(appId, step, by, 'Profile over 90 days old: asked the candidate for an updated resume and details', 'note'); } catch (e) { console.error('Profile refresh', appId, e.message); }
     const count = get("SELECT COUNT(*) c FROM applications WHERE job_id=? AND step='Sent to client' AND result='open'", job.id).c;
     sendWA({ ptype: 'client', pid: job.client_id, format: 'bbhs_shortlist_ready', vars: { count, job: job.title, job_id: job.id, link: link('my-account') }, jb: job.id, ap: appId, auto: true, rule: 'shortlist_ready', dedupe: `shortlist:${appId}` });
   }
@@ -687,7 +688,8 @@ function phoneTask(appId) {
   if (get(`SELECT 1 FROM followups WHERE record_id=? AND done=0 AND note LIKE '${PHONE_TASK}%'`, appId)) return;
   const known = !!(c.pref_time || c.pref_days);
   insert('followups', { record_id: appId, at: (known && nextPreferred(c)) || now(), note: `${PHONE_TASK} call ${c.name} for ${job.title}. ${known ? `Best time: ${prefNote(c)}.` : 'Asked on WhatsApp for their best time.'}`, for_user: owner, done: 0, created_by: owner });
-  if (!known && c.whatsapp) { try { sendWA({ ptype: 'candidate', pid: c.id, format: 'bbhs_contact_prefs', vars: {}, rule: 'pref1_screen', auto: true, ap: appId, dedupe: `prefs:${c.id}:${appId}`, noEmailCopy: true }); } catch (e) { /* the task still stands */ } }
+  let linked = false; try { linked = require('./profilelink').atScreening(c, appId); } catch (e) { /* the question below still goes */ }
+  if (!known && c.whatsapp && !linked) { try { sendWA({ ptype: 'candidate', pid: c.id, format: 'bbhs_contact_prefs', vars: {}, rule: 'pref1_screen', auto: true, ap: appId, dedupe: `prefs:${c.id}:${appId}`, noEmailCopy: true }); } catch (e) { /* the task still stands */ } }
 }
 function phoneTaskTimes(candId) {
   const c = get('SELECT * FROM candidates WHERE id=?', candId);
@@ -1337,4 +1339,4 @@ function resumeUse(user, candidateId) {
 const accountsUsers = () => all("SELECT * FROM users WHERE level='sub' AND team='Accounts' AND status='On'");
 const ownsTask = (t, userId) => t.owner_id === userId || (Array.isArray(t.owners) && t.owners.includes(userId));
 const openTasksOf = (userId) => all("SELECT * FROM tasks WHERE removed=0 AND status<>'Done' ORDER BY COALESCE(due_date, '9999'), at").filter((t) => ownsTask(t, userId));
-Object.assign(module.exports, { markInterest, ownsTask, prefAnswer, PREF, cleanPrefs, inPreferred, nextPreferred, prefNote, evalView, candidateStory, candidateKnown, startCall, openCall, needsCall, callGateOn, roundsOf, skipRounds, passRounds, openTasksOf, accountsUsers, fixAsk, openAsks, OPEN_ASK, resumeUse, RESUME_DAYS });
+Object.assign(module.exports, { phoneTaskTimes, markInterest, ownsTask, prefAnswer, PREF, cleanPrefs, inPreferred, nextPreferred, prefNote, evalView, candidateStory, candidateKnown, startCall, openCall, needsCall, callGateOn, roundsOf, skipRounds, passRounds, openTasksOf, accountsUsers, fixAsk, openAsks, OPEN_ASK, resumeUse, RESUME_DAYS });

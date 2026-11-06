@@ -2429,6 +2429,7 @@ route('GET', '/api/resumes/missing', { auth: 'team', levels: ['super', 'admin'] 
   return { counts: { email: count((c) => c.source === 'Email'), drive: count((c) => c.source === 'Google Drive'), naukri: count((c) => c.source === 'Google Drive - Naukri') }, rows: rows.slice(0, 300).map((c) => ({ ...c, whatsapp: c.whatsapp ? `${String(c.whatsapp).slice(0, 2)}••••${String(c.whatsapp).slice(-2)}` : '' })),
     email: { on: !!D.ENV.imap.host, last: healthOf('last_cv_refetch'), progress: healthOf('cv_refetch_progress'), errors: healthOf('cv_refetch_errors') || [] }, drive: { last: healthOf('last_drive_check') } };
 });
+route('POST', '/api/candidates/:id/find-resume', { auth: 'team', levels: ['super', 'admin', 'sub'], rate: { key: 'findcv', max: 60, minutes: 60 } }, async (ctx) => require('./mailbox').findFor(L.resolveId(String(ctx.params.id))));
 route('POST', '/api/resumes/missing/fetch', { auth: 'team', levels: ['super'], rate: { key: 'cvrefetch', max: 20, minutes: 60 } }, async () => {
   if (!D.ENV.imap.host) throw httpError(400, 'The email inbox is not set up on the server.');
   const r = await require('./mailbox').refetchCvs({ force: true, batch: 300 }); return r;

@@ -154,6 +154,30 @@ function cvFiles(atts, subject) {
   const size = (a) => (a.buf || a.content || []).length;
   return atts.filter((a) => /\.(jpe?g|png)$/i.test(a.name || '') && size(a) >= 50 * 1024 && !PAPERS.test(a.name)).sort((x, y) => size(y) - size(x)).slice(0, 1);
 }
+// A resume sent as a link instead of a file: Google Drive files and Google Docs shared with "anyone with the link"
+// are downloaded (a Doc as PDF). Returns { name, buf } or { error } (not shared, not a resume, too big).
+const DRIVE_FILE = /https?:\/\/drive\.google\.com\/(?:file\/d\/|open\?id=|uc\?(?:[^ ]*&)?id=)([A-Za-z0-9_-]{20,})/;
+const GDOC = /https?:\/\/docs\.google\.com\/document\/d\/([A-Za-z0-9_-]{20,})/;
+function cvLinks(text) { const out = []; for (const u of String(text || '').match(/https?:\/\/[^\s"'<>)\]]+/g) || []) { const d = DRIVE_FILE.exec(u); const g = GDOC.exec(u); if (d) out.push({ kind: 'drive', id: d[1], url: u }); else if (g) out.push({ kind: 'doc', id: g[1], url: u }); } return out.filter((x, i, l) => l.findIndex((y) => y.id === x.id) === i).slice(0, 4); }
+async function fetchLinked(l) {
+  const url = l.kind === 'doc' ? `https://docs.google.com/document/d/${l.id}/export?format=pdf` : `https://drive.google.com/uc?export=download&id=${l.id}`;
+  let res; try { res = await fetch(url, { redirect: 'follow', signal: AbortSignal.timeout(30000) }); } catch (e) { return { error: `could not open the link (${e.message})` }; }
+  if (!res.ok) return { error: res.status === 404 ? 'the link is not shared (or was removed)' : `the link answered ${res.status}` };
+  const buf = Buffer.from(await res.arrayBuffer()); if (buf.length > 10 * 1024 * 1024) return { error: 'the file is bigger than 10 MB' };
+  const cd = res.headers.get('content-disposition') || ''; const fn = (/filename\*=UTF-8''([^;]+)/i.exec(cd) || [])[1] || (/filename="?([^";]+)"?/i.exec(cd) || [])[1] || '';
+  const head = buf.slice(0, 8).toString('latin1');
+  const ext = head.startsWith('%PDF') ? 'pdf' : head.startsWith('PK') ? 'docx' : buf.slice(0, 4).toString('hex') === 'd0cf11e0' ? 'doc' : buf.slice(0, 3).toString('hex') === 'ffd8ff' ? 'jpg' : buf.slice(0, 4).toString('hex') === '89504e47' ? 'png' : null;
+  if (!ext) return { error: /<html/i.test(buf.slice(0, 400).toString('latin1')) ? 'the link is not shared with "anyone with the link"' : 'the link is not a resume file' };
+  let name = decodeURIComponent(fn || '').trim() || `resume-from-link.${ext}`; if (!/\.(pdf|docx?|jpe?g|png)$/i.test(name)) name = `${name.replace(/\.[^.]*$/, '')}.${ext}`;
+  return { name, buf };
+}
+// The resume files an email has, and any resume links in its text downloaded as files (when the email has no file).
+async function withLinked(atts, text) {
+  if (atts.some((a) => isCv(a.name))) return { atts, notes: [] };
+  const notes = []; const got = [];
+  for (const l of cvLinks(text)) { const r = await fetchLinked(l); if (r.buf) got.push({ name: r.name, buf: r.buf, content: r.buf, fromLink: l.url }); else notes.push(`Resume link not downloaded: ${r.error}`); if (got.length) break; }
+  return { atts: [...atts, ...got], notes };
+}
 // One email → one candidate lead (or an update to the same number).
 // Your own addresses (the mailbox's domain, the business website's, the team's): their mail is not a candidate's.
 function ownDomains() {
@@ -280,7 +304,8 @@ async function checkNow() {
           const fm = /^(.*?)\s*<([^>]+)>/.exec(from);
           const text = parts.filter((p) => p.type === 'text/plain' && !p.name).map((p) => p.content.toString('utf8')).join('\n')
             || parts.filter((p) => p.type === 'text/html' && !p.name).map((p) => p.content.toString('utf8').replace(/<[^>]+>/g, ' ')).join('\n');
-          const attachments = parts.filter((p) => p.name).map((p) => ({ name: p.name, buf: p.content }));
+          const linked = await withLinked(parts.filter((p) => p.name).map((p) => ({ name: p.name, buf: p.content })), parts.filter((p) => !p.name && /^text\//.test(p.type)).map((p) => p.content.toString('utf8')).join('\n'));
+          const attachments = linked.atts;
           const fromEmail = fm ? fm[2] : from; const hasCv = cvFiles(attachments, decodeWords(headers.subject || '')).length > 0;
           const own = ownDomains().includes((String(fromEmail).split('@')[1] || '').toLowerCase());
           const subj = decodeWords(headers.subject || '');
@@ -327,7 +352,7 @@ async function refetchNow(o = {}) {
   try {
     const sr = await box.cmd('UID SEARCH ALL');
     const uids = (sr.lines.find((l) => l.startsWith('* SEARCH')) || '').replace('* SEARCH', '').trim().split(/\s+/).filter(Boolean)
-      .filter((u) => !D.get('SELECT 1 FROM mail_seen WHERE uid=?', `cvfix3:${cfg.user}:${cfg.folder}:${u}`));
+      .filter((u) => !D.get('SELECT 1 FROM mail_seen WHERE uid=?', `cvfix4:${cfg.user}:${cfg.folder}:${u}`));
     // how far through the mailbox the re-read is, for the Missing resumes window
     const totalN = (sr.lines.find((l) => l.startsWith('* SEARCH')) || '').replace('* SEARCH', '').trim().split(/\s+/).filter(Boolean).length;
     D.setHealth('cv_refetch_progress', JSON.stringify({ total: totalN, left: Math.max(0, uids.length - (o.batch || 150)), at: D.now() }));
@@ -340,7 +365,8 @@ async function refetchNow(o = {}) {
           const { headers, parts } = parseMessage(raw); out.read++;
           const from = decodeWords(headers.from || ''); const fm = /<([^>]+)>/.exec(from); const fromEmail = (fm ? fm[1] : from).trim().toLowerCase();
           const fromOwn = own.includes((fromEmail.split('@')[1] || ''));
-          const cvParts = cvFiles(parts.filter((x) => x.name), decodeWords(headers.subject || '')).filter((x) => !/portfolio|work.?sample/i.test(x.name));
+          const lk = await withLinked(parts.filter((x) => x.name), parts.filter((x) => !x.name && /^text\//.test(x.type)).map((x) => x.content.toString('utf8')).join('\n'));
+          const cvParts = cvFiles(lk.atts.map((x) => ({ ...x, content: x.content || x.buf })), decodeWords(headers.subject || '')).filter((x) => !/portfolio|work.?sample/i.test(x.name));
           // The candidates this very email made (their "Email: <subject>" note), still without a resume.
           const subj = decodeWords(headers.subject || '');
           const fromThis = subj ? D.all("SELECT DISTINCT c.* FROM candidates c JOIN notes n ON n.record_id=c.id WHERE n.text LIKE ? ESCAPE '\\' AND n.author='Email inbox' AND c.merged_into IS NULL AND c.removed=0 AND (c.cv_file IS NULL OR c.cv_file='')", `Email: ${subj.replace(/[\\%_]/g, (x) => `\\${x}`)}%`) : [];
@@ -362,7 +388,7 @@ async function refetchNow(o = {}) {
             } catch (e) { out.errors.push(`${uid} ${p.name}: ${e.message}`); }
           }
         }
-        D.run('INSERT OR IGNORE INTO mail_seen (uid,at) VALUES (?,?)', `cvfix3:${cfg.user}:${cfg.folder}:${uid}`, D.now());
+        D.run('INSERT OR IGNORE INTO mail_seen (uid,at) VALUES (?,?)', `cvfix4:${cfg.user}:${cfg.folder}:${uid}`, D.now());
       } catch (e) { out.errors.push(`${uid}: ${e.message}`); }
     }
   } finally { box.end(); }
@@ -371,4 +397,48 @@ async function refetchNow(o = {}) {
   return out;
 }
 
-module.exports = { check, refetchCvs, intakeEmail, parseMessage, cvText, findPhone, findName };
+// One candidate's resume, looked for in the mailbox: their emails by address, phone number and name (the label, then
+// All Mail on Gmail). The first resume file that is theirs is attached; the report says what each email had, so a
+// resume that came only as a link (Naukri, Drive) or a file that cannot be saved is plain to see.
+async function findFor(candId) {
+  const cfg = D.ENV.imap; if (!cfg.host || !cfg.user) throw D.httpError(400, 'The email inbox is not set up on the server.');
+  const c = D.get('SELECT * FROM candidates WHERE id=?', candId); if (!c) throw D.httpError(404, 'Candidate not found');
+  const phone = String(c.whatsapp || '').replace(/\D/g, '').slice(-10); const nameWs = String(c.name || '').split(/\s+/).filter((w) => w.length >= 3);
+  const terms = [c.email && `FROM ${q(c.email)}`, c.email && `TEXT ${q(c.email)}`, phone.length === 10 && `TEXT ${q(phone)}`, nameWs.length >= 2 && `TEXT ${q(nameWs.slice(0, 2).join(' '))}`, nameWs.length >= 2 && `SUBJECT ${q(nameWs[0])}`].filter(Boolean);
+  const out = { searched: terms, folders: [], emails: [], saved: null };
+  const box = await imapConnect(cfg); await box.cmd(`LOGIN ${q(cfg.user)} ${q(cfg.pass)}`);
+  const hay = (t) => String(t || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ');
+  const theirs = (p, text) => { const h = ` ${hay(`${p.name} ${text}`)} `; return (phone && h.replace(/ /g, '').includes(phone)) || (c.email && h.includes(hay(c.email))) || (nameWs.length >= 2 && nameWs.every((w) => h.includes(` ${w.toLowerCase()} `))); };
+  try {
+    for (const folder of [cfg.folder, /gmail/i.test(cfg.host) ? '[Gmail]/All Mail' : null].filter(Boolean)) {
+      try { await box.cmd(`SELECT ${q(folder)}`); } catch { continue; }
+      out.folders.push(folder); const uids = new Set();
+      for (const t of terms) { try { const sr = await box.cmd(`UID SEARCH ${t}`); (sr.lines.find((l) => l.startsWith('* SEARCH')) || '').replace('* SEARCH', '').trim().split(/\s+/).filter(Boolean).forEach((u) => uids.add(u)); } catch { /* a term the server does not take */ } }
+      for (const uid of [...uids].sort((a, b) => Number(b) - Number(a)).slice(0, 12)) {
+        const fr = await box.cmd(`UID FETCH ${uid} BODY.PEEK[]`); const raw = fr.literals[0]; if (!raw) continue;
+        const { headers, parts } = parseMessage(raw); const subj = decodeWords(headers.subject || '');
+        const files = parts.filter((p) => p.name);
+        const text = parts.filter((p) => !p.name && /^text\//.test(p.type)).map((p) => p.content.toString('utf8')).join('\n');
+        const lk = await withLinked(files, text); const cvs = cvFiles(lk.atts.map((x) => ({ ...x, content: x.content || x.buf })), subj);
+        const links = [...new Set((text.match(/https?:\/\/[^\s"'<>]+/g) || []).filter((u) => /drive\.google|docs\.google|naukri|indeed|linkedin|dropbox|onedrive|cv|resume/i.test(u)))].slice(0, 4);
+        const row = { folder, date: headers.date || '', from: decodeWords(headers.from || ''), subject: subj, files: files.map((p) => `${p.name} (${Math.round(p.content.length / 1024)} KB)`), links, result: '' };
+        if (!out.saved && cvs.length) {
+          const pick = cvs.find((p) => theirs(p, cvText({ name: p.name, content: p.content }))) || (cvs.length === 1 ? cvs[0] : null);
+          if (pick) {
+            try {
+              const f = await F.saveFile({ recordId: c.id, type: 'cv', name: pick.name, base64: pick.content.toString('base64'), by: 'Email inbox' });
+              D.update('candidates', c.id, { cv_file: String(f.id), last_updated: D.now() }); require('./cvparse').fillCandidate(c.id, pick.name, pick.content, 'Email inbox');
+              D.insert('notes', { record_id: c.id, text: `Resume ${pick.name} found in their email (${subj || 'no subject'}) and attached.`, author: 'Email inbox', at: D.now() });
+              out.saved = pick.name; row.result = `Attached ${pick.name}`;
+            } catch (e) { row.result = `${pick.name} could not be saved: ${e.message}`; }
+          } else row.result = 'Resume files here, but none names this candidate';
+        } else if (!cvs.length) row.result = lk.notes.length ? lk.notes.join('; ') : links.length ? 'No resume file: only a link (not a Google Drive or Docs link)' : files.length ? 'Files, but none looks like a resume' : 'No attachment';
+        out.emails.push(row);
+      }
+      if (out.saved) break;
+    }
+  } finally { box.end(); }
+  return out;
+}
+
+module.exports = { findFor, check, refetchCvs, intakeEmail, parseMessage, cvText, findPhone, findName };
