@@ -93,7 +93,7 @@ function runTimer() {
   // Outgoing emails waiting to be sent (or retried).
   const mails = require('./mailer').retryQueued(); if (mails) done.emails_retried = mails;
   // Email inbox door: unread CV emails become candidate leads.
-  if (D.ENV.imap.host) require('./mailbox').check().then(() => require('./mailbox').refetchCvs()).catch((e) => require('./alerts').devAlert('Email inbox check failed', e.message));
+  if (D.ENV.imap.host) require('./mailbox').check().catch((e) => require('./alerts').devAlert('Email inbox check failed', e.message)).finally(() => require('./mailbox').refetchCvs({ force: true }).catch((e) => require('./alerts').devAlert('Resume re-read failed', e.message)));
   // New candidates without a resume: the resume & details request, once (when that automatic message is on).
   try { const asked = require('./profilelink').sweep(); if (asked) done.resume_requests = asked; } catch (e) { require('./alerts').devAlert('Resume request sweep failed', e.message); }
   // Google Drive CV folder (every 30 minutes when set in .env): new resumes go to their candidate, or make one.

@@ -318,8 +318,8 @@ async function checkNow() {
 // Resumes missed earlier: every email in the label is read once more (50 a run; cvfix2 = again, with the matching below) and a CV attachment goes to the
 // candidate it belongs to (the sender's address, or the phone or email written in the CV) when they have no resume yet.
 let fixing = null;
-function refetchCvs() { if (fixing || running) return Promise.resolve({ skipped: 'busy' }); fixing = refetchNow().finally(() => { fixing = null; }); return fixing; }
-async function refetchNow() {
+function refetchCvs(o = {}) { if (fixing) return fixing; if (running && !o.force) return Promise.resolve({ skipped: 'busy' }); fixing = refetchNow(o).finally(() => { fixing = null; }); return fixing; }
+async function refetchNow(o = {}) {
   const cfg = D.ENV.imap; if (!cfg.host || !cfg.user) return { skipped: 'Email inbox not set in .env' };
   if (!D.get("SELECT 1 FROM candidates WHERE source='Email' AND (cv_file IS NULL OR cv_file='') AND merged_into IS NULL AND removed=0")) return { done: 'no email candidate without a resume' };
   const out = { read: 0, saved: 0, errors: [] };
@@ -327,7 +327,11 @@ async function refetchNow() {
   try {
     const sr = await box.cmd('UID SEARCH ALL');
     const uids = (sr.lines.find((l) => l.startsWith('* SEARCH')) || '').replace('* SEARCH', '').trim().split(/\s+/).filter(Boolean)
-      .filter((u) => !D.get('SELECT 1 FROM mail_seen WHERE uid=?', `cvfix3:${cfg.user}:${cfg.folder}:${u}`)).slice(0, 50);
+      .filter((u) => !D.get('SELECT 1 FROM mail_seen WHERE uid=?', `cvfix3:${cfg.user}:${cfg.folder}:${u}`));
+    // how far through the mailbox the re-read is, for the Missing resumes window
+    const totalN = (sr.lines.find((l) => l.startsWith('* SEARCH')) || '').replace('* SEARCH', '').trim().split(/\s+/).filter(Boolean).length;
+    D.setHealth('cv_refetch_progress', JSON.stringify({ total: totalN, left: Math.max(0, uids.length - (o.batch || 150)), at: D.now() }));
+    uids.splice(o.batch || 150);
     const own = ownDomains();
     for (const uid of uids) {
       try {
@@ -363,6 +367,7 @@ async function refetchNow() {
     }
   } finally { box.end(); }
   D.setHealth('last_cv_refetch', `${D.now()} · ${out.read} read · ${out.saved} resumes added`);
+  if (out.errors.length) D.setHealth('cv_refetch_errors', JSON.stringify(out.errors.slice(-15)));
   return out;
 }
 
