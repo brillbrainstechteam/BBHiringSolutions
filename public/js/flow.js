@@ -79,18 +79,25 @@
       ${(p.hired || []).length ? `<div class="sec"><h3>Candidates hired</h3>${p.hired.map((x) => `<div class="hist-row"><span class="grow"><b>${esc(x.name)}</b> · ${esc(x.role)}</span><span class="small muted">${fmtD(x.date)}</span></div>`).join('')}</div>` : ''}
       <div class="sec"><h3>Past interactions</h3>${(p.timeline || []).map((x) => `<div class="hist-row"><span class="badge b-outline">${esc(x.kind)}</span><span class="grow small">${esc(x.text)}${x.by ? ` <span class="faint">· ${esc(x.by)}</span>` : ''}</span><span class="small muted nw">${fmtD(x.at)}</span></div>`).join('') || '<div class="faint small">Nothing yet.</div>'}</div>`;
   };
+  // The client's onboarding in order: pitch deck, agreement, KYC papers, WhatsApp group, thank-you. Each step says
+  // where it stands, with its button.
   F.client = (c) => {
-    const a = c.activation || {};
-    return `      <div class="row" style="margin-bottom:14px"><button class="btn sm primary" data-fcall>Client call notes</button><button class="btn sm" data-fmail="pitch">Send pitch deck</button><button class="btn sm" data-fagree>Agreement${a.contract ? ' <span class="badge b-green tiny">Signed</span>' : ''}</button><button class="btn sm" data-fmail="kyc">Ask for KYC</button><button class="btn sm" data-fmail="general">Email</button><button class="btn sm" data-fthanks>Thank-you message</button><button class="btn sm" data-flook>${BB.icon('search')} Client info</button><button class="btn sm" data-fgroup>WhatsApp group</button></div>`;
+    const a = c.activation || {}; const k = c.kyc || {}; const g = c.wa_group || {};
+    const papers = [['GST', k.gst], ['PAN', k.pan], ['Owner ID', k.owner_id]]; const got = papers.filter(([, x]) => x).length;
+    const step = (n, title, status, cls, btn) => `<div class="ob-step"><span class="ob-n ${cls === 'b-green' ? 'done' : ''}">${cls === 'b-green' ? '✓' : n}</span><div class="grow"><b>${title}</b><div class="tiny muted">${status}</div></div>${btn}</div>`;
+    return `<div class="sec card pad onboard"><div class="row between"><h3 style="margin:0">Onboarding</h3><span class="small muted">${[a.contract, got === papers.length, g.created].filter(Boolean).length} of 3 key steps done</span></div>
+      ${step(1, 'Pitch deck', 'Our introduction, by email', '', '<button class="btn sm" data-fmail="pitch">Send pitch deck</button>')}
+      ${step(2, 'Recruitment agreement', a.contract ? 'Signed' : 'Not signed yet', a.contract ? 'b-green' : '', `<button class="btn sm ${a.contract ? '' : 'primary'}" data-fagree>${a.contract ? 'View agreement' : 'Agreement'}</button>`)}
+      ${step(3, 'KYC papers', `${papers.map(([l, x]) => `${x ? '✓' : '○'} ${l}`).join(' · ')}`, got === papers.length ? 'b-green' : '', '<button class="btn sm" data-fmail="kyc">Ask for KYC</button>')}
+      ${step(4, 'WhatsApp group', g.created ? `${esc(g.name || 'Created')}${g.link ? ` · <a href="${esc(g.link)}" target="_blank" rel="noopener">invite link</a>` : ''}` : g.name ? `${esc(g.name)} · to create` : 'Not set up', g.created ? 'b-green' : '', `<button class="btn sm" data-fgroup>${g.name ? 'Update' : 'Set up'}</button>`)}
+      ${step(5, 'Thank-you message', 'On WhatsApp, once they are on board', '', '<button class="btn sm" data-fthanks>Send thank-you</button>')}</div>`;
   };
   F.clientMore = (c) => {
     const g = c.wa_group || {}; const o = (c.extra || {}).online; const k = c.kyc || {}; const a = c.activation || {};
     const docs = [['Signed agreement', a.contract], ['GST certificate', k.gst], ['Business PAN', k.pan], ['Owner ID', k.owner_id]];
-    return `<div class="sec"><h3>Papers received</h3><div class="row">${docs.map(([l, on]) => `<span class="badge ${on ? 'b-green' : 'b-outline'}">${on ? '✓ ' : ''}${l}</span>`).join('')}</div></div>
-      ${BB.callsBlock({ party: 'client', client_id: c.id, apps: c.call_apps }, c.call_log, c.whatsapp)}
+    return `${BB.callsBlock({ party: 'client', client_id: c.id, apps: c.call_apps }, c.call_log, c.whatsapp)}
       ${(c.calls || []).length ? `<div class="sec"><h3>Requirements from calls</h3><div class="stack-sm">${c.calls.map((x) => `<div class="card pad small"><div class="row between"><span class="faint">${fmtDT(x.at)} · ${esc(x.by)}</span>${x.call_roles ? (x.call_roles.filter((l) => !l.job_id).length ? `<button class="btn sm" data-fjobs="${x.id}">Open ${x.call_roles.filter((l) => !l.job_id).length > 1 ? 'all as draft jobs' : 'as a draft job'}</button>` : '') : `<button class="btn sm" data-fjob="${x.id}">Open a job from this</button>`}</div>${x.call_roles ? callRoleRows(x) : ''}<dl class="kv" style="margin-top:6px">${[...(x.call_roles ? [] : [['Openings', x.openings], ['Location', x.location], ['Department', x.department], ['Roles', x.roles]]), ['Skills', x.skills], ['Responsibilities', x.duties], ['Notes', x.notes]].filter(([, v]) => v).map(([k, v]) => `<dt>${k}</dt><dd>${esc(v)}</dd>`).join('')}</dl></div>`).join('')}</div></div>` : ''}
       ${o ? clientInfo(o) : ''}
-      ${g.name ? `<div class="sec"><h3>WhatsApp group</h3><div class="small"><b>${esc(g.name)}</b> ${g.created ? '<span class="badge b-green">Created</span>' : '<span class="badge b-outline">To create</span>'}${g.link ? ` · <a href="${esc(g.link)}" target="_blank" rel="noopener">invite link</a>` : ''}</div></div>` : ''}
       ${(c.mails || []).length ? `<div class="sec"><h3>Emails</h3>${c.mails.map((m) => `<div class="small">${fmtDT(m.at)} · ${esc(m.subject)} <span class="badge ${m.status === 'received' ? 'b-green' : 'b-outline'}">${m.status === 'received' ? 'Client replied' : esc(m.status)}</span></div>`).join('')}</div>` : ''}`;
   };
   // Everything about one client's agreement in one place: get it, edit it, send it, file the signed copy.
