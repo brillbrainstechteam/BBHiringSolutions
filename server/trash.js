@@ -94,6 +94,20 @@ if (!(D.settings().done_once || []).includes('drive_apps_binned')) {
   console.log(`Moved ${n} Google Drive applications to Deleted items`);
 }
 
+// Once (6 Nov 2026, asked by the owner): every OPEN application whose candidate came from email, Google Drive (and
+// its Naukri exports), Naukri or an Excel import, or that an Excel import made, goes to Deleted items. Closed and
+// hired ones (the history) and billed ones stay. Restorable from Settings -> Deleted items.
+if (!(D.settings().done_once || []).includes('intake_open_apps_binned')) {
+  const sys = { level: 'super' }; const actor = { label: 'System: intake applications removed' }; let n = 0;
+  const rows = all(`SELECT a.id FROM applications a JOIN candidates c ON c.id=a.candidate_id WHERE a.result='open' AND (
+    c.source IN ('Email', 'Naukri', 'Excel import') OR c.source LIKE 'Google Drive%'
+    OR EXISTS (SELECT 1 FROM app_history h WHERE h.app_id=a.id AND h.note LIKE 'Imported%'))`);
+  for (const a of rows) { try { deleteOne(sys, actor, 'application', a.id); n++; } catch (e) { console.error('intake app', a.id, e.message); } }
+  D.run("UPDATE candidates SET needs_check=NULL WHERE needs_check='From an ad: pick the job' AND (source IN ('Email', 'Naukri', 'Excel import') OR source LIKE 'Google Drive%')");
+  D.setSetting('done_once', [...(D.settings().done_once || []), 'intake_open_apps_binned']);
+  console.log(`Moved ${n} open applications from email, Google Drive, Naukri and Excel imports to Deleted items`);
+}
+
 // dry=true: what would go with it (for the confirmation). ids: several of one kind at once.
 route('POST', '/api/delete', T, (ctx) => {
   const b = ctx.body || {}; const ids = Array.isArray(b.ids) ? b.ids.slice(0, 500) : [b.id];

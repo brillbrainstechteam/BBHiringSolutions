@@ -121,8 +121,11 @@ function runImport(kind, rows, map, opts) {
         let job = code ? D.get('SELECT * FROM jobs WHERE old_code=?', code) : null;
         if (!job && cname) { const cl = clientByName(cname); if (cl) job = D.get('SELECT * FROM jobs WHERE client_id=? AND lower(title)=lower(?)', cl.id, matchJobTitle(pos) || pos); }
         if ((code || cname) && !job) result.errors.push({ line, reason: `Job not found for ${code || cname + ' / ' + pos} (candidate saved without application)` });
-        if (job && !D.get('SELECT 1 FROM applications WHERE candidate_id=? AND job_id=?', cid, job.id)) {
-          const map20 = OLD_STATUS[val(r, 'status').toLowerCase()] || ['Applied', 'open'];
+        const map20 = OLD_STATUS[val(r, 'status').toLowerCase()] || ['Applied', 'open'];
+        // An import brings history (joined, rejected, closed) but never opens a live application: the team adds
+        // the candidate to the job from its Top matches if it is still relevant.
+        if (job && map20[1] === 'open') D.insert('notes', { record_id: cid, text: `Old sheet: on ${job.title} (${job.id})${val(r, 'status') ? `, status "${val(r, 'status')}"` : ''}. Add to the job from its Top matches if still relevant.`, author: 'Import', at: D.now() });
+        else if (job && !D.get('SELECT 1 FROM applications WHERE candidate_id=? AND job_id=?', cid, job.id)) {
           const a = L.createApplication(cid, job.id, rec ? { uid: rec.id, label: who } : by, source, 'Imported');
           D.update('applications', a.id, { step: map20[0], result: map20[1], on_hold: map20[2] === 'hold' ? 1 : 0, hold_reason: map20[2] === 'hold' ? 'Old On Hold record' : null, owner_id: rec ? rec.id : a.owner_id, joined_at: map20[1] === 'Hired' ? (d.created_at || D.now()) : null });
           L.appHist(a.id, map20[0], by, `Imported with old status "${val(r, 'status')}"`, 'import');
