@@ -373,17 +373,19 @@
       const fb = client ? 'Client feedback' : 'Interview feedback';
       // In the order the work happens: before the interview confirm it, after it record the feedback.
       const acts = i && client ? { main: `<button class="btn primary" data-result="${i.id}">${fb}</button>`, side: [due ? wa('client', 'bbhs_feedback_request', 'Ask client for feedback', 'btn') : confirm || wa('client', 'bbhs_interview_reminder', 'Remind client', 'btn')], more: [mi('data-fcvmail', 'Email CV to client'), wa('candidate', 'bbhs_interview_reminder', 'Remind candidate', ''), !due && confirm ? wa('client', 'bbhs_interview_reminder', 'Remind client', '') : '', mi('data-offer', 'Record the offer'), mi('data-radd', 'Add another round')] }
-        : i ? { main: `<button class="btn primary" data-result="${i.id}">${fb}</button>`, side: [confirm || wa('candidate', 'bbhs_interview_reminder', 'Remind candidate', 'btn'), '<button class="btn" data-logcall>Log a call</button>'], more: [confirm ? wa('candidate', 'bbhs_interview_reminder', 'Remind candidate', '') : '', mi(`data-rq="${esc(r.key)}"`, 'Interview questions')] }
+        : i ? { side: [confirm || wa('candidate', 'bbhs_interview_reminder', 'Remind candidate', 'btn'), '<button class="btn" data-logcall>Log a call</button>', `<button class="btn primary" data-result="${i.id}">${fb}</button>`], more: [confirm ? wa('candidate', 'bbhs_interview_reminder', 'Remind candidate', '') : '', mi(`data-rq="${esc(r.key)}"`, 'Interview questions')] }
         : client ? { main: '<button class="btn primary" data-fslots>Ask client for a slot</button>', side: [`<button class="btn" data-rsched="${esc(r.key)}">Schedule</button>`, '<button class="btn" data-fcvmail>Email CV to client</button>'], more: [mi('data-offer', 'Record the offer (no interview needed)')] }
-        // Telephonic: call at their best time, then record. Virtual: book it first.
-        : r.mode === 'phone' ? { main: `<button class="btn primary" data-fbnow="${esc(r.key)}">${fb}</button>`, side: [`<button class="btn" data-rsched="${esc(r.key)}">Schedule the call</button>`, '<button class="btn" data-logcall>Log a call</button>'], more: [!pf.note && c.whatsapp ? mi(`data-askprefs="${esc(c.id)}"`, 'Ask their best time on WhatsApp') : '', mi(`data-rq="${esc(r.key)}"`, 'Interview questions')] }
-        : !pf.note && c.whatsapp && !(a.candidate || {}).phone_hidden ? { main: `<button class="btn primary" data-askprefs="${esc(c.id)}">Ask candidate for a time</button>`, side: [`<button class="btn" data-rsched="${esc(r.key)}">Schedule</button>`, `<button class="btn" data-fbnow="${esc(r.key)}">${fb}</button>`], more: ['<button type="button" role="menuitem" data-logcall>Log a call</button>', mi(`data-rq="${esc(r.key)}"`, 'Interview questions')] }
-        : { main: `<button class="btn primary" data-rsched="${esc(r.key)}">Schedule</button>`, side: [`<button class="btn" data-fbnow="${esc(r.key)}">${fb}</button>`, '<button class="btn" data-logcall>Log a call</button>'], more: [mi(`data-rq="${esc(r.key)}"`, 'Interview questions')] };
+        // Our rounds, in the order the work happens: ask for a suitable slot, schedule, call, then the feedback.
+        // The first step still to do is the highlighted one.
+        : (() => { const ask = !pf.note && c.whatsapp && !c.phone_hidden;
+          const seq = [ask && ['data-askprefs', c.id, 'Ask for a suitable slot'], ['data-rsched', r.key, r.mode === 'phone' ? 'Schedule the call' : 'Schedule'], ['data-logcall', '', 'Log a call'], ['data-fbnow', r.key, fb]].filter(Boolean);
+          return { side: seq.map(([at, v, l], n) => `<button class="btn${n ? '' : ' primary'}" ${at}${v ? `="${esc(v)}"` : ''}>${l}</button>`), more: [mi(`data-rq="${esc(r.key)}"`, 'Interview questions')] }; })();
       const body = client ? BB.flow.appSlots(a) : `<details class="sub-more now-about"><summary class="small"><b>About the candidate</b></summary>${prep()}</details>`;
       // Skipping this round is always one click away, booked or not.
       // Not needed only while the round has not happened (to do, or booked ahead); the status and it sit side by side.
       const skippable = ['To do', 'Scheduled'].includes(st) && !(i && i.view_status === 'Result pending');
-      return box(esc(r.name), `<span class="now-hr">${rBadge(st)}${skippable ? `<button type="button" class="btn sm now-skip" data-rnotneeded="${esc(r.key)}" title="This round is not needed: skip it, with the reason">Mark not needed</button>` : ''}</span>`, when, acts, body);
+      // The status beside the name (none while it is still to do); Mark not needed in the top right corner.
+      return box(`${esc(r.name)}${st === 'To do' ? '' : ` ${rBadge(st)}`}`, skippable ? `<button type="button" class="btn sm now-skip" data-rnotneeded="${esc(r.key)}" title="This round is not needed: skip it, with the reason">Mark not needed</button>` : '', when, acts, body);
     };
     const nowCard = () => {
       const st = a.step;

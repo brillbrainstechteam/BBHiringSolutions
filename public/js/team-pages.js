@@ -67,7 +67,16 @@
     $('[data-mapply]', d).onclick = () => go(picked());
     $('[data-mclear]', d).onclick = () => go('');
     // Closing the list keeps the ticks: no need to press Apply.
-    d.addEventListener('toggle', () => { if (d.open) { const f = $('[data-mfind]', d); if (f) f.focus(); } else if (!done && picked() !== was) go(picked()); });
+    // The list always opens fully on screen (Apply included), even near the edge or inside a scrolling panel.
+    const pop = $('.msel-pop', d); const list = $('.msel-list', d);
+    const place = () => { if (!d.open) return; const r = $('summary', d).getBoundingClientRect(); const W = innerWidth; const H = innerHeight;
+      const w = Math.min(Math.max(pop.offsetWidth, 240), W - 16); const left = Math.max(8, Math.min(r.left, W - w - 8));
+      const foot = pop.offsetHeight - list.offsetHeight; const below = H - r.bottom - 14; const above = r.top - 14; const up = below < 220 && above > below;
+      const room = Math.max(120, (up ? above : below) - foot);
+      Object.assign(pop.style, { position: 'fixed', left: `${left}px`, right: 'auto', maxWidth: `${W - 16}px`, top: up ? 'auto' : `${r.bottom + 6}px`, bottom: up ? `${H - r.top + 6}px` : 'auto' });
+      list.style.maxHeight = `${Math.min(260, room)}px`; };
+    const onMove = () => place();
+    d.addEventListener('toggle', () => { if (d.open) { place(); addEventListener('resize', onMove); addEventListener('scroll', onMove, true); const f = $('[data-mfind]', d); if (f) f.focus(); } else { removeEventListener('resize', onMove); removeEventListener('scroll', onMove, true); if (!done && picked() !== was) go(picked()); } });
     const fd = $('[data-mfind]', d); if (fd) fd.oninput = () => { const w = fd.value.trim().toLowerCase(); $$('.msel-list label', d).forEach((l) => { l.hidden = !!w && !l.textContent.toLowerCase().includes(w); }); };
   });
   function candFilters(q, desigs, skills) {

@@ -1838,7 +1838,8 @@ button.fin-tile.on { border-color: var(--mustard); box-shadow: 0 0 0 1px var(--m
 .now .eyebrow { font-size: 10.5px; letter-spacing: .22em; }
 .now .eyebrow::before { width: 18px; }
 .now-h { display: flex; align-items: flex-start; gap: 12px; }
-.now-h h3 { margin: 2px 0 2px; font-size: 18px; }
+.now-h h3 { margin: 2px 0 2px; font-size: 18px; } .now-h h3 .badge { vertical-align: middle; margin-left: 6px; font-size: 12px; }
+.now-h > .now-skip { flex: none; margin-left: auto; align-self: flex-start; white-space: nowrap; }
 .now-acts { display: flex; flex-wrap: wrap; gap: 8px; }
 .now-acts > .btn, .now-acts > .step-menu > summary.btn { flex: 0 0 auto; height: 38px; padding: 0 16px; font-size: 13.5px; justify-content: center; white-space: nowrap; }
 .now-acts > .btn svg { width: 15px; height: 15px; flex: none; }
