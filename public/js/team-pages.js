@@ -25,8 +25,9 @@
   };
 
   // ---------- Dashboard ----------
-  P.dashboard = async ({ el, me }) => {
-    const [d, pl, td] = await Promise.all([BB.api('/api/dashboard'), BB.api(`/api/pipeline${me.level === 'super' ? '' : '?mine=1'}`).catch(() => null), BB.api('/api/today').catch(() => null)]); const c = d.counts;
+  P.dashboard = async ({ el, q, me }) => {
+    const agq = isSuper(me) && q.agency ? q.agency : '';
+    const [d, pl, td] = await Promise.all([BB.api(`/api/dashboard${agq ? `?agency=${encodeURIComponent(agq)}` : ''}`), BB.api(`/api/pipeline${me.level === 'super' ? '' : '?mine=1'}`).catch(() => null), BB.api('/api/today').catch(() => null)]); const c = d.counts;
     // Today: what to do now from everything I own, most urgent first; each line opens the record, the title the list.
     const tsec = td ? td.sections.filter((x) => x.count) : [];
     const today = td ? `<div class="card today"><div class="card-h"><h3>Today</h3><span class="small muted">${td.owned.clients} client${td.owned.clients === 1 ? '' : 's'} · ${td.owned.jobs} job${td.owned.jobs === 1 ? '' : 's'} · ${td.owned.applications} open application${td.owned.applications === 1 ? '' : 's'} owned by you</span></div>${tsec.length ? `<div class="today-grid">${tsec.map((x) => `<div class="today-sec"><div class="row between">${x.link ? `<a href="#" data-tlink="${esc(x.link)}"><b>${esc(x.title)}</b></a>` : `<b>${esc(x.title)}</b>`}<span class="badge b-primary">${x.count}</span></div>${x.items.map((i) => `<div class="today-item">${i.open ? `<a href="#" data-open="${i.open.type}:${esc(i.open.id)}">${esc(i.text)}</a>` : esc(i.text)}${i.when ? ` <span class="tiny muted">${fmtDT(i.when)}</span>` : ''}</div>`).join('')}${x.count > x.items.length ? `<div class="tiny muted">+${x.count - x.items.length} more</div>` : ''}</div>`).join('')}</div>` : '<div class="empty">Nothing waiting on you right now.</div>'}</div>` : '';
@@ -35,7 +36,8 @@
     const max = Math.max(1, ...Object.values(d.by_status));
     const kindColor = { 'Result not recorded': 'var(--amber)', 'Stuck 7+ days': 'var(--red)', 'At risk': 'var(--red)', 'No candidates': 'var(--blue)', 'Write job description': 'var(--violet)', 'Log missing': 'var(--amber)', 'Overdue bill': 'var(--red)', 'Bill to issue': 'var(--gold-600)', 'Leads to assign': 'var(--gold-600)', 'Data request': 'var(--slate)' };
     el.innerHTML = `<div class="stack-lg">
-      <div class="grid g3" style="grid-template-columns:repeat(auto-fit,minmax(160px,1fr))">${[['Open job openings', c.open_jobs, 'jobs?status=Active'], ['Active applications', c.active_apps, 'applications'], ['Interviews next 7 days', c.interviews_7, 'interviews'], ['Offers waiting', c.offers_waiting, 'applications?step=Offer made'], ['Joined last 30 days', c.joined_30, 'applications?closed=1'], ...(isSuper(me) ? [['New leads', c.new_leads, 'leads']] : [])].map(([l, v, h]) => `<a class="card stat click" href="/team/${h}" style="text-decoration:none;color:inherit"><div class="l">${l}</div><div class="v">${v}</div></a>`).join('')}</div>
+      ${d.agency_options ? `<div class="row dash-scope"><span class="small muted">Showing</span><select class="mini" data-dagency><option value="">Overall</option><option value="none" ${agq === 'none' ? 'selected' : ''}>BrillBrains (own)</option>${d.agency_options.map((x) => `<option value="${esc(x.id)}" ${agq === x.id ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select></div>` : ''}
+      <div class="kpis">${[['building', 'Clients with active enquiries', c.active_clients, 'clients', 'blue'], ['brief', 'Active job openings', c.open_jobs, 'jobs?status=Active', 'violet'], ['users', 'Seats to fill', c.seats_open, 'jobs?status=Active', 'gold'], ['flow', 'Active applications', c.active_apps, 'applications', 'blue'], ['cal', 'Interviews next 7 days', c.interviews_7, 'interviews', 'violet'], ['rupee', 'Offers waiting', c.offers_waiting, 'applications?stage=Offer', 'gold'], ['check', 'Joined last 30 days', c.joined_30, 'applications?closed=1', 'green'], isSuper(me) ? ['inbox', 'New leads', c.new_leads, 'leads', 'red'] : ['note', 'Feedback due', c.feedback_due, 'interviews', 'red']].map(([ic, l, v, h, tone]) => `<a class="card kpi click t-${tone}" href="/team/${h}"><span class="kpi-ic">${BB.icon(ic)}</span><span class="kpi-txt"><span class="kpi-v">${v || 0}</span><span class="kpi-l">${l}</span></span></a>`).join('')}</div>
       ${today}
       ${pipeline}
       <div class="grid" style="grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);gap:14px">
@@ -48,6 +50,7 @@
     $$('[data-go]', el).forEach((b) => (b.onclick = () => { const o = JSON.parse(b.dataset.go); if (o.type === 'page') BB.go(`team/${o.id}`); else BB.open(o.type, o.id); }));
     $$('[data-st]', el).forEach((b) => (b.onclick = () => BB.go(`team/jobs?status=${encodeURIComponent(b.dataset.st)}`)));
     $$('[data-pipe]', el).forEach((b) => (b.onclick = (e) => { e.preventDefault(); BB.go(`team/applications?${b.dataset.pipe}${me.level === 'super' ? '' : '&mine=1'}`); }));
+    const dag = $('[data-dagency]', el); if (dag) dag.onchange = () => BB.setQ({ agency: dag.value });
     $$('[data-tlink]', el).forEach((b) => (b.onclick = (e) => { e.preventDefault(); BB.go(`team/${b.dataset.tlink}`); }));
   };
 

@@ -206,14 +206,18 @@ route('GET', '/api/person/:id', T, (ctx) => {
 // ---------- dashboard ----------
 route('GET', '/api/dashboard', T, (ctx) => {
   const u = ctx.user;
-  const jobs = visibleJobs(u).map((j) => V.jobView(j));
-  const apps = visibleApps(u);
+  // Super admin: Overall (default), our own work ('none'), or one agency.
+  const ag = isSuper(u) ? String(ctx.query.agency || '') : '';
+  const inAg = (id) => !ag || (ag === 'none' ? !id : id === ag);
+  const jobs = visibleJobs(u).filter((j) => inAg(j.agency_id)).map((j) => V.jobView(j));
+  const jobIds = new Set(jobs.map((j) => j.id));
+  const apps = visibleApps(u).filter((a) => !ag || jobIds.has(a.job_id));
   const appIds = new Set(apps.map((a) => a.id));
   const ivs = all('SELECT * FROM interviews').filter((i) => appIds.has(i.app_id)).map(L.interviewView);
   const in7 = new Date(Date.now() + 7 * 86400000).toISOString();
   const byStatus = {};
   for (const j of jobs) byStatus[j.status] = (byStatus[j.status] || 0) + 1;
-  const bills = all('SELECT * FROM bills').filter((b) => seeBill(u, b)).map(L.billView);
+  const bills = all('SELECT * FROM bills').filter((b) => seeBill(u, b) && inAg(b.agency_id)).map(L.billView);
   const att = [];
   for (const i of ivs.filter((x) => x.view_status === 'Result pending')) {
     const a = V.appView(apps.find((x) => x.id === i.app_id));
@@ -242,18 +246,25 @@ route('GET', '/api/dashboard', T, (ctx) => {
     if (nc) att.push({ kind: 'New candidates', text: `${nc} new candidate(s) waiting for an agency`, open: { type: 'page', id: 'candidates' } });
     for (const r of all("SELECT * FROM data_requests WHERE status='Waiting'")) att.push({ kind: 'Data request', text: `${r.person_id} asked to ${r.kind === 'delete' ? 'delete their data' : r.kind}`, open: { type: 'page', id: 'settings' } });
   }
+  const live = jobs.filter((j) => ['Open', 'Sourcing', 'Interviewing', 'Offer stage'].includes(j.status));
+  const hiredOf = new Map(); for (const a of apps) if (a.result === 'Hired' && !a.left_date) hiredOf.set(a.job_id, (hiredOf.get(a.job_id) || 0) + 1);
   const out = {
     counts: {
-      open_jobs: jobs.filter((j) => ['Open', 'Sourcing', 'Interviewing', 'Offer stage'].includes(j.status)).length,
+      open_jobs: live.length,
+      // Clients with an enquiry in hand: a job opening being written (Draft) or being worked on.
+      active_clients: new Set(jobs.filter((j) => j.client_id && (j.status === 'Draft' || live.includes(j))).map((j) => j.client_id)).size,
+      seats_open: live.reduce((t, j) => t + Math.max(0, (j.openings || 1) - (hiredOf.get(j.id) || 0)), 0),
+      feedback_due: ivs.filter((i) => i.view_status === 'Result pending').length,
       active_apps: apps.filter((a) => a.result === 'open').length,
       interviews_7: ivs.filter((i) => ['Scheduled', 'Rescheduled'].includes(i.status) && i.at >= now() && i.at <= in7).length,
       offers_waiting: apps.filter((a) => a.result === 'open' && a.step === 'Offer made').length,
       joined_30: apps.filter((a) => a.result === 'Hired' && a.joined_at && L.daysBetween(a.joined_at) <= 30).length,
       new_leads: leadsNew,
     },
-    attention: att, by_status: byStatus,
+    attention: att, by_status: byStatus, agency: ag,
   };
-  if (isSuper(u)) out.agencies = all('SELECT * FROM agencies ORDER BY id').map((ag) => ({ id: ag.id, name: ag.name, status: agencyStatus(ag), open_jobs: jobs.filter((j) => j.agency_id === ag.id && !['Closed', 'Filled'].includes(j.status)).length, active_apps: apps.filter((a) => a.result === 'open' && (jobs.find((j) => j.id === a.job_id) || {}).agency_id === ag.id).length }));
+  if (isSuper(u)) out.agency_options = all('SELECT id, name FROM agencies ORDER BY name').map((x) => ({ id: x.id, name: x.name }));
+  if (isSuper(u) && !ag) out.agencies = all('SELECT * FROM agencies ORDER BY id').map((ag) => ({ id: ag.id, name: ag.name, status: agencyStatus(ag), open_jobs: jobs.filter((j) => j.agency_id === ag.id && !['Closed', 'Filled'].includes(j.status)).length, active_apps: apps.filter((a) => a.result === 'open' && (jobs.find((j) => j.id === a.job_id) || {}).agency_id === ag.id).length }));
   if (u.level === 'sub') out.mine = perfOf(u.id, new Date(Date.now() - 30 * 86400000).toISOString());
   return out;
 });

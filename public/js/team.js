@@ -164,12 +164,12 @@
   }
   BB.quickLead = () => quickLead();
   function quickLead() {
+    // Leads are clients only; candidates are added from the Candidates page.
     BB.ask({ title: 'Quick add lead', ok: 'Add lead', fields: [
-      { name: 'type', label: 'This is a', type: 'choice', options: [['candidate', 'Candidate'], ['client', 'Client']], value: 'candidate' },
       `<div class="grid g2">${field({ name: 'name', label: 'Name' })}${field({ name: 'phone', label: 'WhatsApp number', type: 'tel', phone: true })}</div>`,
-      `<div class="grid g2">${field({ name: 'company', label: 'Company (clients)', opt: true })}${field({ name: 'city', label: 'City', list: 'cities', opt: true })}</div>`,
+      `<div class="grid g2">${field({ name: 'company', label: 'Company', opt: true })}${field({ name: 'city', label: 'City', list: 'cities', opt: true })}</div>`,
       { name: 'source', label: 'Source', type: 'select', options: BB.boot.lead_sources, value: 'Walk-in' }, { name: 'note', label: 'Note', type: 'textarea', opt: true },
-    ], submit: (v) => BB.post('/api/leads/quick', { ...v, phone: BB.spokenToDigits(v.phone) || v.phone }) }).then((r) => { if (r) { BB.toast(r.isNew ? `${r.id} added` : `Already in the system as ${r.id} — details added`); BB.open(r.id.startsWith('CL') ? 'client' : 'candidate', r.id); BB.refreshPage && BB.refreshPage(); } });
+    ], submit: (v) => BB.post('/api/leads/quick', { ...v, type: 'client', phone: BB.spokenToDigits(v.phone) || v.phone }) }).then((r) => { if (r) { BB.toast(r.isNew ? `${r.id} added` : `Already in the system as ${r.id} — details added`); BB.open(r.id.startsWith('CL') ? 'client' : 'candidate', r.id); BB.refreshPage && BB.refreshPage(); } });
   }
   function changePassword(forced) {
     const html = `<div class="stack">${forced ? '<div class="notice small">Please set your own password before you start (at least 8 characters).</div>' : ''}${field({ name: 'old', label: 'Current password', type: 'password', voice: false })}${field({ name: 'password', label: 'New password', type: 'password', voice: false, hint: 'At least 8 characters' })}</div>`;
