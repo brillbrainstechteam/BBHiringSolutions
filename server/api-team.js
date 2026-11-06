@@ -1295,8 +1295,10 @@ route('GET', '/api/applications', T, (ctx) => {
   const state_counts = {}; if (q.stage) for (const r of inStage) state_counts[r.stage_state] = (state_counts[r.stage_state] || 0) + 1;
   const rows = scoreApps(q.state ? inStage.filter((r) => r.stage_state === q.state) : inStage, q);
   const placed = new Set(all("SELECT candidate_id FROM applications WHERE result='Hired' AND left_date IS NULL").map((r) => r.candidate_id)); for (const r of rows) r.cand_placed = placed.has(r.candidate_id);
+  // the candidate's mobile under their name (masked where this login may not see it)
+  for (const r of rows) { const c = get('SELECT * FROM candidates WHERE id=?', r.candidate_id) || {}; r.phone = c.whatsapp ? (R.phoneVisible(ctx.user, c) ? c.whatsapp : R.maskPhone(c.whatsapp)) : ''; }
   const vis = visibleApps(ctx.user); const counts = { open: vis.filter((a) => a.result === 'open').length, closed: vis.filter((a) => a.result !== 'open').length, joined: vis.filter((a) => a.result === 'Hired').length };
-  return { counts, stage_counts, state_counts, ...page(ctx, rows, 'applications', ['id', 'candidate_name', 'cand_placed', 'stage', 'stage_state', 'next_stage', 'on_hold', 'exp', 'candidate_id', 'score', 'job_id', 'job_title', 'client_name', 'step', 'result', 'days_in_step', 'owner_name', 'source', 'ad', 'screen', 'screen_note']), ads: adOptions('applications'), screens: L.SCREEN.filter((x) => x !== 'Requirement not met'),
+  return { counts, stage_counts, state_counts, ...page(ctx, rows, 'applications', ['id', 'candidate_name', 'phone', 'cand_placed', 'stage', 'stage_state', 'next_stage', 'on_hold', 'exp', 'candidate_id', 'score', 'job_id', 'job_title', 'client_name', 'step', 'result', 'days_in_step', 'owner_name', 'source', 'ad', 'screen', 'screen_note']), ads: adOptions('applications'), screens: L.SCREEN.filter((x) => x !== 'Requirement not met'),
     // Choices for the filters: the jobs, clients, owners and sources these applications have.
     // Each list follows the other filters picked (a client picked: only that client's job titles, jobs, owners, sources),
     // within the open or closed tab being looked at.
