@@ -199,6 +199,13 @@ function ensureSettings() {
     const ls = settings().lead_sources || []; if (!ls.includes('Internal')) setSetting('lead_sources', ['Internal', ...ls]);
     setSetting('done_once', [...(settings().done_once || []), 'source_internal']);
   }
+  if (!once.includes('formats_no_emoji')) {
+    const strip = (t) => String(t || '').replace(/(^|\n)[\u{1F300}-\u{1FAFF}\u{2300}-\u{23FF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{1F000}-\u{1F2FF}]\uFE0F? /gu, '$1').replace(/\s?[\u{1F300}-\u{1FAFF}\u{2300}-\u{23FF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{1F000}-\u{1F2FF}]\uFE0F?/gu, '');
+    const fm = settings().formats || {};
+    for (const [k, v] of Object.entries(fm)) fm[k] = k === 'bbhs_job_interest' && defs.formats[k] && !v.approved ? { ...v, en: defs.formats[k].en, hi: defs.formats[k].hi } : { ...v, en: strip(v.en), hi: strip(v.hi) };
+    setSetting('formats', fm);
+    setSetting('done_once', [...(settings().done_once || []), 'formats_no_emoji']);
+  }
   if (!once.includes('formats_off_2026_10_31')) {
     const fm = settings().formats || {};
     for (const k of ['bbhs_candidate_welcome', 'bbhs_consent_request']) if (fm[k]) fm[k] = { ...fm[k], off: true };
