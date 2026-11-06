@@ -144,7 +144,7 @@ BB.showErr = (root, e) => {
   else { const b = root.closest ? (root.closest('.modal') || root) : root; const body = b.querySelector && b.querySelector('.modal-b'); if (body) { body.insertAdjacentHTML('afterbegin', `<div class="err-msg err-top">${esc(e.message)}</div>`); body.firstElementChild.scrollIntoView({ behavior: 'smooth', block: 'center' }); } BB.toast(e.message, true); }
 };
 // Form pop-up returning the values: BB.ask({title, fields, ok, submit:(vals)=>promise})
-BB.ask = ({ title, fields, ok = 'Save', note, submit, wide, extra }) => new Promise((resolve) => {
+BB.ask = ({ title, fields, ok = 'Save', note, submit, wide, extra, mount }) => new Promise((resolve) => {
   const m = BB.modal({ title, wide, body: `${note ? `<div class="notice" style="margin-bottom:12px">${note}</div>` : ''}<form class="stack" onsubmit="return false">${fields.map((f) => (typeof f === 'string' ? f : BB.field(f))).join('')}</form>${extra || ''}`,
     foot: `<button class="btn" data-cancel>Cancel</button><button class="btn primary" data-ok>${esc(ok)}</button>`,
     onClose: () => resolve(null),
@@ -157,6 +157,7 @@ BB.ask = ({ title, fields, ok = 'Save', note, submit, wide, extra }) => new Prom
       $('[data-ok]', el).onclick = go;
       $('form', el).addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.tagName === 'INPUT') { e.preventDefault(); go(); } });
       const first = $('input:not([type=hidden]),select,textarea', el); first && setTimeout(() => first.focus(), 30);
+      if (mount) mount(el);
     } });
 });
 BB.confirm = (title, text, ok = 'Yes') => new Promise((resolve) => {
