@@ -931,7 +931,7 @@ route('POST', '/api/crm/inbound', {}, async (ctx) => {
   if (b.kind === 'email') {
     return require('./mailbox').intakeEmail({ fromName: b.name, fromEmail: b.email, subject: b.subject || '', text: [b.text, b.phone, b.city, b.job].filter(Boolean).join('\n'), attachments: b.cv && b.cv.base64 ? [{ name: b.cv.name, buf: Buffer.from(String(b.cv.base64).replace(/^data:[^,]*,/, ''), 'base64') }] : [] });
   }
-  const r = L.receiveReply(b.phone, b.text, b.button, { reply_to: b.reply_to, bot: b.bot, name: b.name, company: b.company, city: b.city, job: b.job, roles: b.roles, hasMedia: !!(b.media && b.media.base64) });
+  const r = L.receiveReply(b.phone, b.text, b.button, { resume_line: !!b.resume_line && !!(b.media && b.media.base64), reply_to: b.reply_to, bot: b.bot, name: b.name, company: b.company, city: b.city, job: b.job, roles: b.roles, hasMedia: !!(b.media && b.media.base64) });
   // A voice note is saved and written out (in English too); a CV sent as a file is saved on the candidate (PDF, Word, JPG or PNG).
   const LG = require('./lang');
   if (b.media && b.media.base64 && LG.AUDIO.test(String(b.media.mime || ''))) { if (r.pid) LG.voiceNote(r.id, b.media, r.pid).catch((e) => console.error('Voice note', r.id, e.message)); }
@@ -944,8 +944,15 @@ route('POST', '/api/crm/inbound', {}, async (ctx) => {
       update('candidates', r.pid, { cv_file: String(f.id), last_updated: now() });
       const filled = CV.fillCandidate(r.pid, name, b.media.base64, 'WhatsApp');
       r.effect = `${r.effect}; CV saved${filled.length ? ` (filled ${filled.join(', ')})` : ''}`;
+      if (b.resume_line) {
+        insert('notes', { record_id: r.pid, text: `Resume received on WhatsApp${b.to_number ? ` on ${String(b.to_number).replace(/\D/g, '').slice(-10)}` : ''}: ${name}`, author: 'WhatsApp', at: now() });
+        const c = get('SELECT * FROM candidates WHERE id=?', r.pid); const owner = c && c.recruiter_id;
+        for (const uid of owner ? [owner] : L.superAdmins().map((x) => x.id)) L.alertUser(uid, `Resume on WhatsApp: ${c.name}`, r.pid, false);
+      }
     } catch (e) { insert('notes', { record_id: r.pid, text: `File on WhatsApp not saved as CV: ${e.message}`, author: 'WhatsApp', at: now() }); }
   }
+  // The number they wrote to: our messages to them go from it, so their chat stays in one place.
+  if (b.to_phone_id && r.pid && (r.ptype === 'candidate' || r.ptype === 'client')) update(`${r.ptype}s`, r.pid, { wa_line: String(b.to_phone_id).replace(/\D/g, ''), wa_number: b.to_number ? String(b.to_number).replace(/\D/g, '').slice(-10) : null });
   return r;
 });
 route('POST', '/api/crm/status', {}, (ctx) => {

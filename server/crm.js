@@ -14,7 +14,9 @@ async function post(msg, text, vars) {
     paramList = order.map((k) => String((vars || {})[k] ?? ''));
   }
   // preview is the saved text, so a password or login code stays hidden in the CRM inbox too.
-  const body = { ref: msg.id, phone: `91${msg.phone}`, format: msg.format, language: msg.lang, params: vars || {}, param_list: paramList, text: msg.format ? undefined : text, preview: msg.text, buttons: msg.buttons, tag: 'Hiring' };
+  // Sent from the number this person last wrote to (when they wrote to one of our other numbers).
+  const line = ['candidate', 'client'].includes(msg.person_type) ? (D.get(`SELECT wa_line FROM ${msg.person_type}s WHERE id=?`, msg.person_id) || {}).wa_line : null;
+  const body = { ref: msg.id, from_phone_id: line || undefined, phone: `91${msg.phone}`, format: msg.format, language: msg.lang, params: vars || {}, param_list: paramList, text: msg.format ? undefined : text, preview: msg.text, buttons: msg.buttons, tag: 'Hiring' };
   const res = await fetch(s.send_url, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${s.token}` }, body: JSON.stringify(body) });
   if (!res.ok) throw new Error(`CRM answered ${res.status}: ${(await res.text()).slice(0, 200)}`);
   return res.json().catch(() => ({}));

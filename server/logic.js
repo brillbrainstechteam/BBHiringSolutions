@@ -1255,6 +1255,7 @@ function receiveReply(phone, text, button, opts = {}) {
     // Unknown number: the bot decides client or candidate (11.1); the bot conversation fills the details.
     const label = opts.name || `WhatsApp ${p10}`;
     if (opts.bot === 'client') { const r = intakeClient({ contact: label, company: opts.company || '', whatsapp: p10, city: opts.city, roles: opts.roles }, { source: 'WhatsApp bot', silent: true, needsCheck: 'Bot: details coming' }); ptype = 'client'; pid = r.client.id; }
+    else if (opts.resume_line) { const r = intakeCandidate({ name: label, whatsapp: p10 }, { source: 'WhatsApp resume', silent: true, consent: false }); ptype = 'candidate'; pid = r.candidate.id; }
     else { const r = intakeCandidate({ name: label, whatsapp: p10, city: opts.city, job_wanted: opts.job }, { source: 'WhatsApp bot', silent: true, needsCheck: 'Bot: details coming' }); ptype = 'candidate'; pid = r.candidate.id; }
     botNew = true;
   }
