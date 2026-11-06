@@ -1922,6 +1922,10 @@ a.pipe-step { text-decoration: none; cursor: pointer; } a.pipe-step:hover { bord
 .today-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; padding: 0 16px 16px; } .today-sec { border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; } .today-item { font-size: 13px; line-height: 1.35; } .today-item a { color: var(--ink); }
 .mine-tog { display: flex; align-items: center; gap: 6px; margin-left: auto; padding: 0 6px; } .mine-tog input { width: auto; }
 /* the job seeker form: live openings to tick */
-.job-picks { display: grid; gap: 6px; max-height: 240px; overflow-y: auto; padding: 4px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); }
-.job-pick { display: flex; gap: 10px; align-items: flex-start; padding: 8px 10px; border-radius: 8px; cursor: pointer; }
-.job-pick:hover { background: var(--sky-50); } .job-pick input { margin-top: 3px; flex: 0 0 auto; }
+.job-picks { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2px 8px; max-height: 150px; overflow-y: auto; padding: 4px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); }
+@media (max-width: 640px) { .job-picks { grid-template-columns: 1fr; } }
+.job-pick { display: flex; gap: 8px; align-items: center; padding: 6px 8px; border-radius: 8px; cursor: pointer; font-size: 14px; min-width: 0; } .job-pick > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.job-pick:hover { background: var(--sky-50); } .job-pick input { margin: 0; flex: 0 0 auto; }
+
+/* contact preferences: the three dropdowns on one line even when a label wraps */
+.pref-row { align-items: end; }

@@ -396,7 +396,8 @@ function autoJobAlert(jobId) {
     sendWA({ ptype: 'candidate', pid: m.c.id, format, vars: { job: job.title, city: job.city, salary: salaryText(job), link: link(`jd/${job.id}`) }, jb: job.id, auto: true, rule: 'job_alert', dedupe: `alert:${job.id}:${m.c.id}` });
   }
 }
-const salaryText = (j) => (j.sal_from || j.sal_to ? `${inr((j.sal_from || j.sal_to) / 12)}–${inr((j.sal_to || j.sal_from) / 12)} a month` : 'as per experience');
+// one figure when the range is a single amount (₹40,000 a month, not ₹40,000–₹40,000)
+const salaryText = (j) => { const lo = Math.round((j.sal_from || j.sal_to) / 12); const hi = Math.round((j.sal_to || j.sal_from) / 12); return j.sal_from || j.sal_to ? (lo === hi ? `${inr(lo)} a month` : `${inr(lo)}–${inr(hi)} a month`) : 'as per experience'; };
 
 // ---------- fees and bills ----------
 function feeFor(client, agencyId, ctc) {
