@@ -379,8 +379,14 @@ function rowFor(j, c, sc, extra) {
 // The candidate said yes (on a call, or in person): their application on this job opens now.
 route('POST', '/api/jobs/:id/interested', T, (ctx) => {
   const j = loadJob(ctx); const c = get('SELECT * FROM candidates WHERE id=?', (ctx.body || {}).candidate_id); if (!c) throw httpError(404, 'Candidate not found');
+  L.markInterest(c.id, true, ctx.actor);
   const a = L.createApplication(c.id, j.id, ctx.actor, c.source, `Interested in this job (confirmed by ${ctx.actor.label})`);
   return { id: a.id };
+});
+// They said no (on a call): marked not interested from today, and left out of matching.
+route('POST', '/api/jobs/:id/not-interested', T, (ctx) => {
+  const j = loadJob(ctx); const c = get('SELECT * FROM candidates WHERE id=?', (ctx.body || {}).candidate_id); if (!c) throw httpError(404, 'Candidate not found');
+  L.markInterest(c.id, false, ctx.actor, `Not interested in ${j.id} ${j.title} (told ${ctx.actor.label})`); return { ok: true };
 });
 route('GET', '/api/jobs/:id/screen', T, (ctx) => {
   const j = loadJob(ctx);

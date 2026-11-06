@@ -369,20 +369,31 @@ function closePlacedApps(by = { label: 'System' }) {
   for (const a of all("SELECT o.id, h.id hired FROM applications o JOIN applications h ON h.candidate_id=o.candidate_id AND h.result='Hired' AND h.left_date IS NULL WHERE o.result='open'")) { closeApplication(a.id, 'Already hired', by, `Hired through us on ${a.hired}`); n++; }
   return n;
 }
+// Interested again (applied, or said yes to a job): back in matching. Not interested: the date, the status, a note,
+// and out of matching until they show interest again.
+function markInterest(candId, yes, by, note) {
+  const c = get('SELECT * FROM candidates WHERE id=?', candId); if (!c) return;
+  if (yes) { if (c.not_interested_at || NOT_LOOKING.includes(c.looking)) update('candidates', candId, { not_interested_at: null, looking: 'Actively looking', last_updated: now() }); return; }
+  update('candidates', candId, { not_interested_at: now(), looking: 'Not interested', last_updated: now() });
+  insert('notes', { record_id: candId, text: note || 'Not interested right now', author: (by && by.label) || 'System', at: now() });
+  history((by && by.label) || 'System', 'not interested', candId, 'looking', c.looking, 'Not interested');
+}
 function bestMatches(job, limit = 10, forAlert = false) {
   const cands = all('SELECT * FROM candidates WHERE archived=0 AND junk=0 AND merged_into IS NULL AND removed=0');
   const onJob = new Set(all("SELECT candidate_id FROM applications WHERE job_id=? AND result='open'", job.id).map((r) => r.candidate_id));
   return cands
-    .filter((c) => !onJob.has(c.id) && !isPlaced(c.id) && (!forAlert || (!NOT_LOOKING.includes(c.looking) && !c.opted_out)))
+    .filter((c) => !onJob.has(c.id) && !isPlaced(c.id) && !NOT_LOOKING.includes(c.looking) && !c.not_interested_at && (!forAlert || !c.opted_out))
     .map((c) => ({ c, ...matchScore(c, job, ratingOf(c.id)) }))
     .sort((a, b) => b.score - a.score).slice(0, limit);
 }
 // Automatic job alert to strong matches when a job goes live (8.5).
 function autoJobAlert(jobId) {
   const job = get('SELECT * FROM jobs WHERE id=?', jobId); if (!job) return;
-  const strong = settings().match.strong;
+  const strong = settings().match.strong; const fm = settings().formats;
+  // the "are you interested?" message with the job's page once Meta approves it; the plain job alert until then
+  const format = fm.bbhs_job_interest && fm.bbhs_job_interest.approved && !fm.bbhs_job_interest.off ? 'bbhs_job_interest' : 'bbhs_job_alert';
   for (const m of bestMatches(job, 30, true).filter((m) => m.score >= strong)) {
-    sendWA({ ptype: 'candidate', pid: m.c.id, format: 'bbhs_job_alert', vars: { job: job.title, city: job.city, salary: salaryText(job) }, jb: job.id, auto: true, rule: 'job_alert', dedupe: `alert:${job.id}:${m.c.id}` });
+    sendWA({ ptype: 'candidate', pid: m.c.id, format, vars: { job: job.title, city: job.city, salary: salaryText(job), link: link(`jd/${job.id}`) }, jb: job.id, auto: true, rule: 'job_alert', dedupe: `alert:${job.id}:${m.c.id}` });
   }
 }
 const salaryText = (j) => (j.sal_from || j.sal_to ? `${inr((j.sal_from || j.sal_to) / 12)}–${inr((j.sal_to || j.sal_from) / 12)} a month` : 'as per experience');
@@ -1265,10 +1276,10 @@ function receiveReply(phone, text, button, opts = {}) {
     if (iv) { const r = recordInterview(iv.id, { status: 'Completed', result: t === 'selected' ? 'Selected' : t === 'another round' ? 'Another round' : 'Not selected', remark: 'Feedback on WhatsApp' }, by); effect = `${iv.id} result saved`; if (r.next === 'OPEN_OFFER') { const ap = get('SELECT * FROM applications WHERE id=?', iv.app_id); alertUser(ap.owner_id, `Client selected on ${ap.id}: record the offer`, ap.id, 'client'); } }
   }
   else if (ref && ref.ap && t === "i've joined") { const ap = get('SELECT * FROM applications WHERE id=?', ref.ap); alertUser(ap.owner_id, `${ap.id}: candidate says they have joined. Mark Joined.`, ap.id, 'candidate'); effect = 'Task alert to recruiter'; }
-  else if (ref && ref.jb && t === 'interested' && ptype === 'candidate') { try { const a = createApplication(pid, ref.jb, by, 'WhatsApp bot', 'Interested from job alert'); effect = `${a.id} created`; } catch (e) { effect = e.message; } }
+  else if (ref && ref.jb && t === 'interested' && ptype === 'candidate') { markInterest(pid, true, by); try { const a = createApplication(pid, ref.jb, by, 'WhatsApp bot', 'Interested (reply on WhatsApp)'); effect = `${a.id} created`; } catch (e) { effect = e.message; } }
   else if (ref && ref.ap && (ptype === 'candidate' || ptype === 'client') && (effect = require('./care').reply(ref, ptype, t, by) || effect) !== 'Saved in inbox') { /* a check-in answer was saved */ }
   else if (t === 'need help' && ref && ref.ap) { update('applications', ref.ap, { at_risk: 1 }); const ap = get('SELECT * FROM applications WHERE id=?', ref.ap); alertUser(ap.owner_id, `${ap.id} at risk: candidate needs help`, ap.id, 'candidate'); effect = 'Marked at risk'; }
-  else if (ref && ref.jb && t === 'not interested' && ptype === 'candidate') { insert('notes', { record_id: pid, text: `Not interested in ${ref.jb} (reply to the job alert)`, author: by.label, at: now() }); effect = `Noted: not interested in ${ref.jb}`; }
+  else if (ref && ref.jb && t === 'not interested' && ptype === 'candidate') { markInterest(pid, false, by, `Not interested in ${ref.jb} (reply on WhatsApp)`); effect = `Marked not interested (${ref.jb})`; }
   else if (t === 'share details' && ptype === 'candidate') { const c = get('SELECT recruiter_id FROM candidates WHERE id=?', pid) || {}; const ap = ref && ref.ap ? get('SELECT owner_id FROM applications WHERE id=?', ref.ap) : null; const owner = (ap && ap.owner_id) || c.recruiter_id; if (owner) alertUser(owner, `${pid} wants to share their salary and notice details: call or message them`, pid, 'candidate'); sendSystemText('candidate', pid, 'Thank you. Please type your current salary, expected salary and notice period here, and we will update your profile.'); effect = 'Asked for details; recruiter alerted'; }
   else if (t === 'not looking' && ptype === 'candidate') { update('candidates', pid, { looking: 'Not looking', last_updated: now() }); effect = 'Marked Not looking'; }
   else if (t === 'still looking' && ptype === 'candidate') { update('candidates', pid, { looking: 'Actively looking', last_updated: now() }); effect = 'Marked Actively looking'; }
@@ -1309,4 +1320,4 @@ function resumeUse(user, candidateId) {
 const accountsUsers = () => all("SELECT * FROM users WHERE level='sub' AND team='Accounts' AND status='On'");
 const ownsTask = (t, userId) => t.owner_id === userId || (Array.isArray(t.owners) && t.owners.includes(userId));
 const openTasksOf = (userId) => all("SELECT * FROM tasks WHERE removed=0 AND status<>'Done' ORDER BY COALESCE(due_date, '9999'), at").filter((t) => ownsTask(t, userId));
-Object.assign(module.exports, { ownsTask, prefAnswer, PREF, cleanPrefs, inPreferred, nextPreferred, prefNote, evalView, candidateStory, candidateKnown, startCall, openCall, needsCall, callGateOn, roundsOf, skipRounds, passRounds, openTasksOf, accountsUsers, fixAsk, openAsks, OPEN_ASK, resumeUse, RESUME_DAYS });
+Object.assign(module.exports, { markInterest, ownsTask, prefAnswer, PREF, cleanPrefs, inPreferred, nextPreferred, prefNote, evalView, candidateStory, candidateKnown, startCall, openCall, needsCall, callGateOn, roundsOf, skipRounds, passRounds, openTasksOf, accountsUsers, fixAsk, openAsks, OPEN_ASK, resumeUse, RESUME_DAYS });

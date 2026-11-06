@@ -42,7 +42,7 @@ route('POST', '/api/partners/search', ADMIN, async (ctx) => {
   if (!q.city && !q.state) throw httpError(400, 'Enter a city or a state', 'city');
   if (!q.type && !q.course) throw httpError(400, 'Enter the type of institute or the course', 'type');
   const where = [q.area, q.city, q.state].filter(Boolean).join(', ');
-  const r = await LLM.webLookup({ system: SYSTEM, name: 'institutes', schema: SCHEMA, maxTokens: 2500,
+  const r = await LLM.webLookup({ system: SYSTEM, name: 'institutes', schema: SCHEMA, maxTokens: 2500, searches: 2,
     user: `Find: ${q.type || 'institutes'}${q.course ? ` teaching ${q.course}` : ''}\nIndustry the students will work in: ${q.industry}\nWhere: ${where}${q.km ? `, within ${q.km} km of ${q.area || q.city || q.state}` : ''}\nReturn up to 15.` });
   const u = r.usage || {}; const usd = (u.searches || 0) * 0.01 + ((u.input_tokens || 0) * 0.2 + (u.output_tokens || 0) * 1.25) / 1e6; const cost = Math.max(1, Math.ceil(usd * 88));
   insert('partner_searches', { query: JSON.stringify(q), found: 0, added: 0, cost_inr: cost, by: ctx.actor.label, at: now() }); const sid = get('SELECT last_insert_rowid() id').id;

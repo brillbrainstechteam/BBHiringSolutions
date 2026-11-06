@@ -928,9 +928,11 @@ route('POST', '/api/jobs/:id/posting', T, (ctx) => {
 route('POST', '/api/jobs/:id/alert', T, (ctx) => {
   const j = get('SELECT * FROM jobs WHERE id=?', ctx.params.id); mustSee(seeJob(ctx.user, j), 'job opening');
   const targets = ctx.body.ids && ctx.body.ids.length ? ctx.body.ids : L.bestMatches(j, 30, true).filter((m) => m.score >= D.settings().match.strong).map((m) => m.c.id);
-  const budget = D.settings().bulk_budget; let sent = 0; const skipped = [];
+  const budget = D.settings().bulk_budget; let sent = 0; const skipped = []; const fm = D.settings().formats;
+  const format = fm.bbhs_job_interest && fm.bbhs_job_interest.approved && !fm.bbhs_job_interest.off ? 'bbhs_job_interest' : fm.bbhs_job_alert && fm.bbhs_job_alert.approved && !fm.bbhs_job_alert.off ? 'bbhs_job_alert' : null;
+  if (!format) throw httpError(400, 'The job interest message (bbhs_job_interest) is waiting for Meta approval. Send it from Settings → Message formats; until then, call and use Interested / Not interested.');
   for (const cid of targets.slice(0, budget)) {
-    const r = L.sendWA({ ptype: 'candidate', pid: cid, format: 'bbhs_job_alert', vars: { job: j.title, city: j.city, salary: L.salaryText(j) }, jb: j.id, by: ctx.actor, bulk: true, dedupe: `alert:${j.id}:${cid}` });
+    const r = L.sendWA({ ptype: 'candidate', pid: cid, format, vars: { job: j.title, city: j.city, salary: L.salaryText(j), link: L.link(`jd/${j.id}`) }, jb: j.id, by: ctx.actor, bulk: true, dedupe: `alert:${j.id}:${cid}` });
     if (r.skipped) skipped.push(`${cid}: ${r.skipped}`); else sent++;
   }
   return { sent, skipped };
@@ -1094,6 +1096,8 @@ route('PATCH', '/api/candidates/:id', T, (ctx) => {
   const patch = {}; for (const k of allowed) if (ctx.body[k] !== undefined) patch[k] = ctx.body[k];
   if (patch.language !== undefined) patch.language = require('./lang').pick(patch.language);
   if (patch.looking && !L.LOOKING.includes(patch.looking)) throw httpError(400, 'Pick a looking status', 'looking');
+  // not interested / not looking keeps the date they said so (out of matching); any other status clears it
+  if (patch.looking && patch.looking !== c.looking) patch.not_interested_at = ['Not interested', 'Not looking'].includes(patch.looking) ? (c.not_interested_at || now()) : null;
   if (patch.whatsapp) { patch.whatsapp = L.digits10(patch.whatsapp); if (!L.validPhone(patch.whatsapp)) throw httpError(400, 'Enter a 10-digit WhatsApp number', 'whatsapp'); }
   if (patch.job_wanted) patch.department = L.deptOf(patch.job_wanted);
   Object.assign(patch, L.cleanPrefs(ctx.body));
@@ -1160,7 +1164,7 @@ function bulkUpdate(ctx, out) {
     const c = get('SELECT * FROM candidates WHERE id=? AND removed=0', L.resolveId(id)); if (!c) { out.errors.push(`${id}: not found`); continue; }
     const own = isSuper(u) || (c.agency_id && c.agency_id === u.agency_id);
     if (b.action !== 'note' && b.action !== 'followup' && !own) { out.errors.push(`${c.id}: another agency's candidate`); continue; }
-    if (b.action === 'set_looking') { if (c.looking !== b.looking) D.edit('candidates', c.id, { looking: b.looking, last_updated: now() }, ctx.actor.label, ctx.ip); }
+    if (b.action === 'set_looking') { if (c.looking !== b.looking) D.edit('candidates', c.id, { looking: b.looking, not_interested_at: ['Not interested', 'Not looking'].includes(b.looking) ? (c.not_interested_at || now()) : null, last_updated: now() }, ctx.actor.label, ctx.ip); }
     else if (b.action === 'note') { insert('notes', { record_id: c.id, text: String(b.text).trim(), author: ctx.actor.label, at: now() }); D.history(ctx.actor.label, 'note', c.id); }
     else if (b.action === 'followup') insert('followups', { record_id: c.id, at: when.toISOString(), note: String(b.note || '').trim(), for_user: u.id, done: 0, created_by: u.id });
     else if (b.action === 'assign') {

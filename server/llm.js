@@ -89,14 +89,21 @@ async function extractCandidate({ subject = '', from = '', body = '', resume = '
 }
 
 // Web research with OpenAI's search tool. Priced per search on top of the words used (see the usage returned).
-async function webLookup({ system, user, schema, name = 'answer', maxTokens = 2500 }) {
+// searches: how many web searches it may run (each is charged): 1 unless a task needs more.
+async function webLookup({ system, user, schema, name = 'answer', maxTokens = 2500, searches = Number(process.env.OPENAI_SEARCH_CALLS) || 1 }) {
+  // OpenAI does not hold the model to max_tool_calls on web search, so it is also told plainly.
+  system = `${system}\nRun at most ${searches} web search${searches === 1 ? '' : 'es'}, each with one combined query, then answer from what came back; do not search again. Leave anything not found empty.`;
   if (provider() !== 'openai') throw httpError(424, 'Online lookup needs OPENAI_API_KEY in the server .env.');
   const model = process.env.OPENAI_SEARCH_MODEL || process.env.OPENAI_MODEL || DEFAULT_OPENAI; let res;
   try {
     res = await fetch('https://api.openai.com/v1/responses', {
       method: 'POST', signal: AbortSignal.timeout(120000),
       headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model, tools: [{ type: 'web_search' }], max_output_tokens: maxTokens * 3, input: [{ role: 'system', content: system }, { role: 'user', content: user }], text: { format: { type: 'json_schema', name, schema, strict: true } } }),
+      // Kept cheap: one web search (OPENAI_SEARCH_CALLS), little page text read back (OPENAI_SEARCH_CONTEXT: low |
+      // medium | high), results from India, and low thinking effort on reasoning models.
+      body: JSON.stringify({ model, tools: [{ type: 'web_search', search_context_size: process.env.OPENAI_SEARCH_CONTEXT || 'low', user_location: { type: 'approximate', country: 'IN' } }], max_tool_calls: searches,
+        ...(/^(gpt-5|o\d)/.test(model) ? { reasoning: { effort: process.env.OPENAI_REASONING || 'low' } } : {}),
+        max_output_tokens: maxTokens * 3, input: [{ role: 'system', content: system }, { role: 'user', content: user }], text: { format: { type: 'json_schema', name, schema, strict: true } } }),
     });
   } catch (e) { throw httpError(424, `The AI service could not be reached (${e.name === 'TimeoutError' ? 'timed out' : e.message}).`); }
   const body = await res.json().catch(() => ({}));

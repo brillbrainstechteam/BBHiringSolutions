@@ -483,6 +483,7 @@ route('POST', '/api/public/apply', { rate: { key: 'form', max: 60, minutes: 60 }
   const jobId = picked[0] || (b.job ? String(b.job).toUpperCase() : jobInAd(b) || adJobs[0] || null);
   const jobOk = jobId ? get('SELECT * FROM jobs WHERE id=?', jobId) : null;
   const r = L.intakeCandidate({ ...L.cleanPrefs(b), exp_business: business, exp_jewellery: b.exp_jewellery in jewMap ? jewMap[b.exp_jewellery] : null, language: b.lang, name: b.name, whatsapp: b.whatsapp, email: b.email || '', city: b.city, state: b.state, work_cities: [b.city], job_wanted: b.job_wanted === 'Other' ? b.job_other : b.job_wanted, exp_total: b.experience ? expMap[b.experience] : null, ref_by: refBy, apply_job: jobOk && ['Open', 'Sourcing', 'Interviewing', 'Offer stage'].includes(V.jobView(jobOk).status) ? jobOk.id : null }, { source: srcFrom(b), ad: adFrom(b) });
+  L.markInterest(r.candidate.id, true, { label: 'Candidate' }); // applying again: back in matching
   // The same ad on several jobs: an application on each of the others too.
   for (const extra of adJobs.slice(1)) { try { L.createApplication(r.candidate.id, extra, { label: 'Candidate' }, srcFrom(b), 'Applied from an ad', adFrom(b)); } catch { /* already on it */ } }
   // the other openings they ticked on the form: an application on each
