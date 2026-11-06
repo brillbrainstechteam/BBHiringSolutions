@@ -1945,3 +1945,4 @@ a.pipe-step { text-decoration: none; cursor: pointer; } a.pipe-step:hover { bord
 .now .now-acts > .btn, .now .now-acts > .step-menu, .now .now-acts > .step-menu > summary.btn { width: 100%; justify-content: center; box-sizing: border-box; }
 .now-about { margin-top: 10px; } .now-about > summary { cursor: pointer; padding: 4px 0; }
 .now .now-acts { grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); } .now-h .now-skip { margin-left: 8px; }
+.now-hr { display: inline-flex; align-items: center; gap: 8px; flex-wrap: nowrap; white-space: nowrap; flex: none; } .now-hr .now-skip { margin-left: 0; }

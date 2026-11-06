@@ -379,9 +379,11 @@
         : r.mode === 'phone' ? { main: `<button class="btn primary" data-fbnow="${esc(r.key)}">${fb}</button>`, side: [`<button class="btn" data-rsched="${esc(r.key)}">Schedule the call</button>`, '<button class="btn" data-logcall>Log a call</button>'], more: [!pf.note && c.whatsapp ? mi(`data-askprefs="${esc(c.id)}"`, 'Ask their best time on WhatsApp') : '', mi(`data-rq="${esc(r.key)}"`, 'Interview questions')] }
         : !pf.note && c.whatsapp && !(a.candidate || {}).phone_hidden ? { main: `<button class="btn primary" data-askprefs="${esc(c.id)}">Ask candidate for a time</button>`, side: [`<button class="btn" data-rsched="${esc(r.key)}">Schedule</button>`, `<button class="btn" data-fbnow="${esc(r.key)}">${fb}</button>`], more: ['<button type="button" role="menuitem" data-logcall>Log a call</button>', mi(`data-rq="${esc(r.key)}"`, 'Interview questions')] }
         : { main: `<button class="btn primary" data-rsched="${esc(r.key)}">Schedule</button>`, side: [`<button class="btn" data-fbnow="${esc(r.key)}">${fb}</button>`, '<button class="btn" data-logcall>Log a call</button>'], more: [mi(`data-rq="${esc(r.key)}"`, 'Interview questions')] };
-      const body = client ? BB.flow.appSlots(a) : `<details class="sub-more now-about"><summary class="small"><b>About the candidate</b> <span class="muted">what is good, what to check, feedback score</span></summary>${prep()}</details>`;
+      const body = client ? BB.flow.appSlots(a) : `<details class="sub-more now-about"><summary class="small"><b>About the candidate</b></summary>${prep()}</details>`;
       // Skipping this round is always one click away, booked or not.
-      return box(esc(r.name), `${rBadge(st)}<button type="button" class="btn sm ghost now-skip" data-rnotneeded="${esc(r.key)}" title="This round is not needed: skip it, with the reason">Mark not needed</button>`, when, acts, body);
+      // Not needed only while the round has not happened (to do, or booked ahead); the status and it sit side by side.
+      const skippable = ['To do', 'Scheduled'].includes(st) && !(i && i.view_status === 'Result pending');
+      return box(esc(r.name), `<span class="now-hr">${rBadge(st)}${skippable ? `<button type="button" class="btn sm now-skip" data-rnotneeded="${esc(r.key)}" title="This round is not needed: skip it, with the reason">Mark not needed</button>` : ''}</span>`, when, acts, body);
     };
     const nowCard = () => {
       const st = a.step;
