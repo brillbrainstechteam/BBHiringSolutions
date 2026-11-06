@@ -141,6 +141,34 @@ function personRow(u, from, to) {
   const tasks = { tasks_done: tk.filter((t) => t.status === 'Done' && t.done_at && t.done_at >= from && t.done_at <= to).length, tasks_open: tk.filter((t) => t.status !== 'Done').length, tasks_overdue: tk.filter((t) => t.status !== 'Done' && t.due_date && t.due_date < today).length };
   return { id: u.id, name: u.name, level: u.level, role: u.role, agency_id: u.agency_id, agency_name: V.agencyName(u.agency_id), status: personStatus(u), last_login: u.last_login, ...perfOf(u.id, from, to), ...tasks, logs: lg, log_pct: Math.round((lg.filter((x) => x.status).length / 7) * 100) };
 }
+// One agency's pipeline at this moment (not the date range). agency 'own' = BrillBrains' own work (no agency).
+function pipelineOf(agencyId) {
+  const own = agencyId === 'own'; const where = own ? 'agency_id IS NULL' : 'agency_id=?'; const args = own ? [] : [agencyId];
+  const clients = all(`SELECT id, company FROM clients WHERE ${where} AND COALESCE(placeholder,0)=0`, ...args);
+  const jobs = all(`SELECT * FROM jobs WHERE ${where} AND archived=0`, ...args).map((j) => V.jobView(j));
+  const ids = jobs.map((j) => j.id); const apps = ids.length ? all(`SELECT * FROM applications WHERE job_id IN (${ids.map(() => '?').join(',')})`, ...ids) : [];
+  const offered = new Set(ids.length ? all(`SELECT DISTINCT h.app_id FROM app_history h JOIN applications a ON a.id=h.app_id WHERE h.kind='offer' AND a.job_id IN (${ids.map(() => '?').join(',')})`, ...ids).map((r) => r.app_id) : []);
+  const OFFER = ['Offer made', 'Offer accepted', 'Joined'];
+  for (const a of apps) if (a.offer_sent || OFFER.includes(a.step) || a.result === 'Hired') offered.add(a.id);
+  const joined = (a) => a.result === 'Hired' || a.step === 'Joined' || !!a.joined_at;
+  const ACTIVE_NOT = ['Closed', 'Filled', 'Draft', 'On hold'];
+  const active = jobs.filter((j) => !ACTIVE_NOT.includes(j.status));
+  const activeClients = new Set(active.map((j) => j.client_id));
+  const stages = Object.fromEntries(L.STEPS.map((st) => [st, 0]));
+  for (const a of apps) if (a.result === 'open' && stages[a.step] !== undefined) stages[a.step]++;
+  const done = { Joined: apps.filter(joined).length, Rejected: apps.filter((a) => a.result === 'Rejected').length, Withdrawn: apps.filter((a) => !['open', 'Hired', 'Rejected'].includes(a.result)).length };
+  const perJob = jobs.filter((j) => j.status !== 'Draft').map((j) => {
+    const ja = apps.filter((a) => a.job_id === j.id); const st = {}; for (const a of ja) if (a.result === 'open') st[a.step] = (st[a.step] || 0) + 1;
+    return { id: j.id, title: j.title, client_name: j.client_name, status: j.status, openings: j.openings || 1, total: ja.length, open: ja.filter((a) => a.result === 'open').length, stages: st, offers: ja.filter((a) => offered.has(a.id)).length, joined: ja.filter(joined).length };
+  }).sort((x, y) => (ACTIVE_NOT.includes(x.status) - ACTIVE_NOT.includes(y.status)) || y.open - x.open);
+  const closedJoined = jobs.filter((j) => ['Closed', 'Filled'].includes(j.status) && apps.some((a) => a.job_id === j.id && joined(a)));
+  return {
+    clients: clients.length, clients_active: activeClients.size, clients_list: clients.map((c) => ({ id: c.id, company: c.company, active_jobs: active.filter((j) => j.client_id === c.id).length })).sort((x, y) => y.active_jobs - x.active_jobs),
+    active_jobs: active.length, openings: active.reduce((n, j) => n + (j.openings || 1), 0), on_hold: jobs.filter((j) => j.status === 'On hold').length,
+    apps_total: apps.length, apps_open: apps.filter((a) => a.result === 'open').length, stages, done,
+    offers: offered.size, closed_joined: closedJoined.length, jobs: perJob,
+  };
+}
 route('GET', '/api/performance', T, (ctx) => {
   const u = ctx.user; const days = Number(ctx.query.days) || 30;
   const from = ctx.query.from ? new Date(ctx.query.from).toISOString() : new Date(Date.now() - days * 86400000).toISOString();
@@ -166,7 +194,7 @@ route('GET', '/api/performance', T, (ctx) => {
       fee: bills.reduce((a, b) => a + b.fee, 0), share: bills.reduce((a, b) => a + b.agency_share, 0), log_pct: ppl.length ? Math.round(ppl.reduce((a, p) => a + p.log_pct, 0) / ppl.length) : 0,
     };
   });
-  return { level: 'super', agencies, people };
+  return { level: 'super', agencies, people, own_jobs: get('SELECT COUNT(*) n FROM jobs WHERE agency_id IS NULL AND archived=0').n, agency_options: all('SELECT id, name FROM agencies ORDER BY name'), pipeline: ctx.query.agency ? pipelineOf(ctx.query.agency) : null };
 });
 route('GET', '/api/person/:id', T, (ctx) => {
   const u = ctx.user; const p = get('SELECT * FROM users WHERE id=?', ctx.params.id);
@@ -2131,11 +2159,17 @@ route('POST', '/api/settings/formats/push', T, async (ctx) => {
     }
   }
   const out = templates.length ? await crmCall('/templates', 'POST', { templates }) : { results: [] };
+  // Remember what Meta now holds, so the list shows "waiting for Meta" straight away (not "not sent").
+  { const fm = JSON.parse(JSON.stringify(D.settings().formats)); const mark = (name, lang, st) => { if (!fm[name] || !st) return; fm[name].meta_status = { ...(fm[name].meta_status || {}), [lang]: st }; if (lang === 'en' || !fm[name].en) fm[name].approved = st === 'APPROVED'; };
+    for (const r of out.results || []) if (r.ok) mark(r.name, r.language, String(r.status || 'PENDING').toUpperCase());
+    for (const t of templates) if (!(out.results || []).some((r) => r.name === t.name && r.language === t.language)) mark(t.name, t.language, 'PENDING'); // CRM gave no per-template answer: it took them
+    for (const x of skipped) mark(x.name, x.language, (have[x.name] || {})[x.language]);
+    D.setSetting('formats', fm); }
   const hint = (e) => (/invalid parameter/i.test(e || '') ? `${e}: usually the name was used before (deleted in the last 4 weeks) or a blank sits at the very start or end` : e);
   D.history(ctx.actor.label, 'templates sent to Meta', null, null, null, `${templates.length} templates`);
   return { ...out, results: [...(out.results || []).map((r) => (r.ok ? r : { ...r, error: hint(r.error) })), ...skipped] };
 });
-route('POST', '/api/settings/formats/sync', T, async (ctx) => {
+async function syncFormats(by) {
   const out = await crmCall('/templates', 'GET');
   const s = D.settings(); const formats = JSON.parse(JSON.stringify(s.formats)); const seen = {};
   for (const t of out.templates || []) {
@@ -2148,9 +2182,18 @@ route('POST', '/api/settings/formats/sync', T, async (ctx) => {
     formats[name].approved = (langs.en || Object.values(langs)[0]) === 'APPROVED';
   }
   D.setSetting('formats', formats);
-  D.history(ctx.actor.label, 'templates status from Meta', null, null, null, `${Object.keys(seen).length} formats`);
+  if (by) D.history(by, 'templates status from Meta', null, null, null, `${Object.keys(seen).length} formats`);
   return { formats: Object.fromEntries(Object.entries(seen).map(([k, v]) => [k, v])), missing: Object.keys(formats).filter((k) => !seen[k]) };
-});
+}
+route('POST', '/api/settings/formats/sync', T, (ctx) => syncFormats(ctx.actor.label));
+// Every 30 minutes (from the timer) while any template waits for Meta: approvals show up without pressing anything.
+module.exports.autoSyncFormats = async () => {
+  const s = D.settings(); if (!s.crm || !s.crm.send_url || !s.crm.token) return 0;
+  const waiting = Object.values(s.formats || {}).some((x) => Object.values(x.meta_status || {}).some((st) => !['APPROVED', 'REJECTED'].includes(st)));
+  const last = get("SELECT value FROM health WHERE key='formats_synced'"); if (!waiting && last) return 0; // the first run checks once anyway (templates sent before this was saved)
+  if (last && Date.now() - new Date(last.value) < 29 * 60000) return 0;
+  D.setHealth('formats_synced', now()); await syncFormats(null); return 1;
+};
 
 route('POST', '/api/settings/remove-sample', SUPER, (ctx) => {
   D.tx(() => {

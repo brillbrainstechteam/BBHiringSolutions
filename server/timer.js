@@ -104,6 +104,8 @@ function runTimer() {
   try { const adApps = L.openAdApplications(); if (adApps) done.ad_applications = adApps; } catch (e) { require('./alerts').devAlert('Ad applications sweep failed', e.message); }
   // Anyone hired through us: applications opened since then close.
   try { const shut = L.closePlacedApps(); if (shut) done.closed_hired = shut; } catch (e) { require('./alerts').devAlert('Hired sweep failed', e.message); }
+  // Message templates waiting for Meta: their approval status, every 30 minutes.
+  require('./api-team').autoSyncFormats().catch((e) => console.error('template status', e.message));
   // Meta ad spend, once a day (when the token is in .env).
   require('./adspend').daily();
   D.setHealth('timer_last_run', now());
