@@ -79,7 +79,22 @@ BB.download = async (path, open = false) => {
     setTimeout(() => URL.revokeObjectURL(url), 60000);
   } catch (e) { BB.toast(e.message, true); }
 };
-BB.openFile = (id) => BB.download(`/api/files/${id}`, true);
+// A file to look at (a CV): a tab opens at once (so the browser does not block it) and the file shows in it.
+// Word files come as a PDF of their text; anything a browser cannot show is downloaded instead.
+BB.openFile = async (id) => {
+  const w = window.open('', '_blank');
+  if (w) w.document.write('<p style="font:15px system-ui;padding:24px;color:#555">Opening the file…</p>');
+  try {
+    const res = await api(`/api/files/${id}?view=1`); const blob = await res.blob();
+    const cd = res.headers.get('content-disposition') || ''; const name = (/filename="([^"]+)"/.exec(cd) || [])[1] || 'file';
+    const type = blob.type || (/\.pdf$/i.test(name) ? 'application/pdf' : /\.png$/i.test(name) ? 'image/png' : /\.jpe?g$/i.test(name) ? 'image/jpeg' : '');
+    const url = URL.createObjectURL(type && type !== blob.type ? new Blob([blob], { type }) : blob);
+    // the tab was blocked (pop-ups off): a button to open it, which the browser always allows
+    if (/pdf|image/.test(type)) { if (w) w.location.href = url; else BB.modal({ title: name, body: `<p class="small muted">Your browser blocked the new tab.</p><a class="btn primary" href="${url}" target="_blank" rel="noopener">Open ${/image/.test(type) ? 'the image' : 'the CV'}</a>` }); }
+    else { if (w) w.close(); const a = document.createElement('a'); a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove(); }
+    setTimeout(() => URL.revokeObjectURL(url), 120000);
+  } catch (e) { if (w) w.close(); BB.toast(e.message, true); }
+};
 
 // ---------- toast, modal ----------
 BB.toast = (msg, bad) => { const el = document.createElement('div'); el.className = 'toast' + (bad ? ' bad' : ''); el.textContent = msg; $('#toast-root').appendChild(el); setTimeout(() => el.remove(), bad ? 5000 : 3000); };

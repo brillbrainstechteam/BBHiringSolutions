@@ -586,7 +586,7 @@
     $$('[data-state]', el).forEach((b) => (b.onclick = () => BB.setQ({ state: b.dataset.state, page: 1 })));
     const mt = $('[data-mine]', el); if (mt) mt.onchange = () => BB.setQ({ mine: mt.checked ? '1' : '', page: 1 });
     BB.wireStageActs(el, () => BB.refreshPage());
-    $$('[data-cvget]', el).forEach((b) => (b.onclick = (e) => { e.stopPropagation(); BB.download(`/api/files/${b.dataset.cvget}`, true); }));
+    $$('[data-cvget]', el).forEach((b) => (b.onclick = (e) => { e.stopPropagation(); BB.openFile(b.dataset.cvget); }));
     let t; $('[data-q]', el).oninput = (e) => { clearTimeout(t); t = setTimeout(() => BB.setQ({ q: e.target.value, page: 1 }), 350); };
     BB.wireMultiSel(el); $$('[data-af]', el).forEach((x) => (x.onchange = () => BB.setQ({ [x.dataset.af]: x.value, page: 1 })));
     $('[data-arej]', el).onclick = async () => {

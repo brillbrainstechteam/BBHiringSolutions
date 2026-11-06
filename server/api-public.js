@@ -900,6 +900,12 @@ route('GET', '/api/files/:id', {}, (ctx) => {
     ok = rid === cid || !!get('SELECT 1 FROM applications WHERE id=? AND candidate_id=?', rid, cid);
   }
   if (!ok) throw httpError(403, 'You cannot open this file.');
+  // ?view=1 on a Word file: its text as a PDF, so it opens in the browser tab instead of downloading
+  if (ctx.query.view && /\.docx?$/i.test(f.name || '')) {
+    const buf = F.readStored(f); let text = ''; try { text = require('./cvparse').cvText(f.name, buf) || ''; } catch { text = ''; }
+    if (!text.trim() && /\.doc$/i.test(f.name)) text = [...buf.toString('latin1').matchAll(/[\x20-\x7E]{4,}/g)].map((m) => m[0]).join('\n');
+    if (text.trim()) return { __file: { name: f.name.replace(/\.docx?$/i, '.pdf'), mime: 'application/pdf', buf: F.makePdf(f.name.replace(/\.docx?$/i, ''), text.split('\n').map((l) => l.replace(/\s+/g, ' ').trim()).filter(Boolean).slice(0, 600)), inline: true } };
+  }
   return { __file: { name: f.name, mime: f.mime, buf: F.readStored(f), inline: true } };
 });
 // Invoice PDF for the client's own bills.
