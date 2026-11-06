@@ -34,6 +34,7 @@
         <div class="grid g2">${field({ name: 'whatsapp', label: 'WhatsApp number', type: 'tel', phone: true, placeholder: '10 digits', attrs: 'inputmode="numeric" maxlength="14" autocomplete="tel"' })}<div data-only="hire">${field({ name: 'email_hire', label: 'Email', type: 'email', opt: true, placeholder: 'For a confirmation email', attrs: 'autocomplete="email"' })}</div><div data-only="job"><label class="field" data-f="job_wanted"><span class="lab">Job you want</span><select name="job_wanted">${BB.jobOptions(q.want || '', true, q.ind)}</select></label></div></div>
         <div class="hidden" data-other>${field({ name: 'job_other', label: 'Type the job you want' })}</div>
         <div class="grid g2">${field({ name: 'city', label: 'City', list: 'cities', value: q.city || '', placeholder: 'Start typing your city…' })}${field({ name: 'state', label: 'State', placeholder: 'Fills in from the city', voice: false })}</div>
+        <div data-only="job" data-jobpicks class="hidden"></div>
         <div data-only="hire" class="stack">
           ${field({ name: 'business_type', label: 'Your business', type: 'choice', options: [['Showroom B2C', 'B2C'], ['Manufacturer B2B', 'B2B'], ['Both', 'Both']] })}
           ${field({ name: 'need', label: 'When do you want to hire?', type: 'choice', options: ['Hiring now', 'Hiring soon', 'Just exploring'] })}
@@ -55,6 +56,15 @@
   function mountForm(card, startMode, q, onMode, single) {
     let mode = startMode; let cv = null;
     const form = $('form', card);
+    // The live openings, to tick the ones they want: an application on each. The job from the link or ad is ticked.
+    (async () => {
+      const box = $('[data-jobpicks]', card); if (!box) return;
+      let d; try { d = await (await fetch('/api/public/jobs?all=1')).json(); } catch { return; }
+      const jobs = (d && d.jobs) || []; if (!jobs.length) return;
+      const pre = new Set([q.job, ...((q.adjobs || []).map((j) => j.id))].filter(Boolean).map((x) => String(x).toUpperCase()));
+      box.innerHTML = `<div class="field"><label>Openings you want to apply for <span class="opt">(optional · tick one or more)</span></label><div class="job-picks">${jobs.map((j) => `<label class="job-pick"><input type="checkbox" name="jobs" value="${esc(j.id)}" ${pre.has(j.id) ? 'checked' : ''}><span><b>${esc(j.title)}</b><span class="muted small"> · ${esc(j.city || '')}${j.salary ? ` · ${esc(j.salary)}` : ''}</span></span></label>`).join('')}</div></div>`;
+      box.classList.remove('hidden');
+    })();
     const apply = () => {
       $$('[data-only]', card).forEach((el) => el.classList.toggle('hidden', el.dataset.only !== mode));
       $$('[data-mode]', card).forEach((b) => { b.classList.toggle('on', b.dataset.mode === mode); b.setAttribute('aria-selected', b.dataset.mode === mode); });
@@ -88,7 +98,7 @@
       if (!check(form, rules)) return;
       const body = mode === 'hire'
         ? { contact: v.name, company: v.company, whatsapp: v.whatsapp, email, city: v.city, state: v.state, business_type: v.business_type, need: v.need, roles: v.roles, website: v.website, src: q.src, lang: BB.lang }
-        : { name: v.name, whatsapp: v.whatsapp, email, city: v.city, state: v.state, job_wanted: v.job_wanted, job_other: v.job_other, experience: v.experience, exp_business: v.exp_business, exp_jewellery: v.exp_jewellery, pref_channel: v.pref_channel, pref_time: v.pref_time, pref_days: v.pref_days, cv, website: v.website, lang: BB.lang, src: q.src || BB.adSource() || undefined, ...BB.adParams(), job: q.job, ref: q.ref };
+        : { name: v.name, whatsapp: v.whatsapp, email, city: v.city, state: v.state, job_wanted: v.job_wanted, job_other: v.job_other, experience: v.experience, exp_business: v.exp_business, exp_jewellery: v.exp_jewellery, pref_channel: v.pref_channel, pref_time: v.pref_time, pref_days: v.pref_days, cv, website: v.website, lang: BB.lang, src: q.src || BB.adSource() || undefined, ...BB.adParams(), job: q.job, ref: q.ref, jobs: $$('[name=jobs]:checked', form).map((x) => x.value) };
       const btn = $('[data-send]', card); btn.disabled = true; btn.textContent = 'Sending…';
       try {
         const res = await BB.post(mode === 'hire' ? '/api/public/hire' : '/api/public/apply', body, { kind: null });

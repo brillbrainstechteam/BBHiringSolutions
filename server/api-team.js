@@ -535,9 +535,12 @@ route('GET', '/api/jobs', T, (ctx) => {
   for (const j of rows) j.pscore = Math.round(50 * ctcRank(j.ctc || 0) + 50 * volRank(j.client_openings));
   const counts = { All: rows.length, Active: rows.filter((j) => ['Open', 'Sourcing', 'Interviewing', 'Offer stage'].includes(j.status)).length };
   for (const s of ['Draft', 'Open', 'Sourcing', 'Interviewing', 'Offer stage', 'Filled', 'On hold', 'Closed']) counts[s] = rows.filter((j) => j.status === s).length;
-  rows = rows.filter((j) => (!q.status || q.status === 'All' || (q.status === 'Active' ? ['Open', 'Sourcing', 'Interviewing', 'Offer stage'].includes(j.status) : j.status === q.status)) && (!q.client || j.client_id === q.client) && (!Number(q.ctc_min) || (j.ctc || 0) >= Number(q.ctc_min)) && like(q.q, j.id, j.title, j.client_name, j.city, j.old_code, j.recruiter_name, j.reopen_tag, j.reopen_tag ? 'replacement' : ''));
+  rows = rows.filter((j) => (!q.status || q.status === 'All' || (q.status === 'Active' ? ['Open', 'Sourcing', 'Interviewing', 'Offer stage'].includes(j.status) : j.status === q.status)) && (!q.client || j.client_id === q.client) && (!q.city || j.city === q.city) && (!q.recruiter || j.recruiter_id === q.recruiter) && (!Number(q.opened) || L.daysBetween(j.reopened_at || j.created_at) <= Number(q.opened)) && (!Number(q.ctc_min) || (j.ctc || 0) >= Number(q.ctc_min)) && like(q.q, j.id, j.title, j.client_name, j.city, j.old_code, j.recruiter_name, j.reopen_tag, j.reopen_tag ? 'replacement' : ''));
   const p = page(ctx, sortBy(rows, q, ['title', 'client_name', 'ctc', 'pscore', 'client_openings', 'filled', 'apps_total', 'reach_done', 'status', 'recruiter_name', 'days_open']), 'job-openings', ['id', 'title', 'client_name', 'city', 'ctc', 'client_openings', 'pscore', 'openings', 'filled', 'apps_total', 'status', 'recruiter_name', 'days_open', 'old_code']);
-  return p.__file ? p : { ...p, counts };
+  // Choices for the filters, from the jobs this person can see
+  const all0 = visibleJobs(u).map((j) => V.jobView(j)); const uniq = (f) => [...new Map(all0.map(f).filter((x) => x && x[0]).map((x) => [x[0], x])).values()].sort((a, b) => String(a[1]).localeCompare(String(b[1])));
+  const options = { clients: uniq((j) => [j.client_id, j.client_name]), cities: uniq((j) => [j.city, j.city]), recruiters: uniq((j) => [j.recruiter_id, j.recruiter_name]) };
+  return p.__file ? p : { ...p, counts, options };
 });
 // One "Client to be confirmed" per agency (the super admin's has no agency), made the first time it is needed. No
 // messages go to it; the job's client is changed to the real one later.
@@ -1289,8 +1292,16 @@ route('GET', '/api/applications', T, (ctx) => {
   const vis = visibleApps(ctx.user); const counts = { open: vis.filter((a) => a.result === 'open').length, closed: vis.filter((a) => a.result !== 'open').length, joined: vis.filter((a) => a.result === 'Hired').length };
   return { counts, stage_counts, state_counts, ...page(ctx, rows, 'applications', ['id', 'candidate_name', 'cand_placed', 'stage', 'stage_state', 'next_stage', 'on_hold', 'exp', 'candidate_id', 'score', 'job_id', 'job_title', 'client_name', 'step', 'result', 'days_in_step', 'owner_name', 'source', 'ad', 'screen', 'screen_note']), ads: adOptions('applications'), screens: L.SCREEN.filter((x) => x !== 'Requirement not met'),
     // Choices for the filters: the jobs, clients, owners and sources these applications have.
-    options: (() => { const vis = visibleApps(ctx.user).map(V.appView); const uniq = (f) => [...new Map(vis.map(f).filter((x) => x && x[0]).map((x) => [x[0], x])).values()].sort((a, b) => String(a[1]).localeCompare(String(b[1])));
-      return { titles: [...new Set(vis.map((a) => a.job_title).filter(Boolean))].sort(), jobs: uniq((a) => [a.job_id, `${a.job_title} · ${a.client_name || ''}${a.job_city ? ` · ${a.job_city}` : ''}`]), clients: uniq((a) => [a.client_id, a.client_name]), owners: uniq((a) => [a.owner_id, a.owner_name]), sources: [...new Set(vis.map((a) => a.source).filter(Boolean))].sort() }; })() };
+    // Each list follows the other filters picked (a client picked: only that client's job titles, jobs, owners, sources),
+    // within the open or closed tab being looked at.
+    options: (() => {
+      const all0 = visibleApps(ctx.user).map(V.appView).filter((a) => (q.closed === '1' ? a.result !== 'open' : a.result === 'open'));
+      const keep = (a, skip) => (skip === 'client' || !q.client || a.client_id === q.client) && (skip === 'title' || !q.title || a.job_title === q.title || many(q.title).includes(a.job_title))
+        && (skip === 'job' || !q.job || a.job_id === q.job) && (skip === 'owner' || !q.owner || a.owner_id === q.owner) && (skip === 'source' || !q.source || a.source === q.source);
+      const pool = (skip) => all0.filter((a) => keep(a, skip));
+      const uniq = (skip, f) => [...new Map(pool(skip).map(f).filter((x) => x && x[0]).map((x) => [x[0], x])).values()].sort((a, b) => String(a[1]).localeCompare(String(b[1])));
+      return { titles: [...new Set(pool('title').map((a) => a.job_title).filter(Boolean))].sort(), jobs: uniq('job', (a) => [a.job_id, `${a.job_title} · ${a.client_name || ''}${a.job_city ? ` · ${a.job_city}` : ''}`]), clients: uniq('client', (a) => [a.client_id, a.client_name]), owners: uniq('owner', (a) => [a.owner_id, a.owner_name]), sources: [...new Set(pool('source').map((a) => a.source).filter(Boolean))].sort() };
+    })() };
 });
 // The hiring pipeline for the dashboard: each open job with how many of its open applications are at each stage.
 route('GET', '/api/pipeline', T, (ctx) => {

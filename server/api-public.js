@@ -50,7 +50,7 @@ route('GET', '/api/public/jobs', { rate: { key: 'pubjobs', max: 240, minutes: 60
   const low = (v) => String(v || '').trim().toLowerCase();
   const title = low(q.title); const city = low(q.city); const group = String(q.group || '').trim();
   const out = { total: open.reduce((n, j) => n + seats(j), 0), groups: byGroup };
-  if (!title && !city && !group) return { ...out, jobs: open.slice(0, 9).map(card) };
+  if (q.all || (!title && !city && !group)) return { ...out, jobs: open.slice(0, q.all ? 300 : 60).map(card) };
   const fits = (j) => (!title || low(j.title).includes(title) || title.includes(low(j.title))) && (!city || low(j.city) === city) && (!group || (groups[j.title] || 'Other roles') === group);
   const hits = open.filter(fits);
   const wantGroup = group || groups[open.find((j) => low(j.title) === title)?.title] || (L.jobList().find((x) => low(x.title) === title) || {}).group;
@@ -475,13 +475,18 @@ route('POST', '/api/public/apply', { rate: { key: 'form', max: 60, minutes: 60 }
   let refBy = null;
   if (b.ref) { const rc = get('SELECT id FROM candidates WHERE id=?', L.resolveId(String(b.ref).toUpperCase())); refBy = rc ? rc.id : null; }
   // Saved ad names on jobs first; otherwise the role read from the ad names, or from the job they picked.
-  let adJobs = !b.job && !jobInAd(b) ? jobsByAdNames(b, srcFrom(b)) : [];
-  if (!b.job && !jobInAd(b) && !adJobs.length) adJobs = L.jobsForPerson({ ad_set: b.ad_set, ad_name: b.ad_name, ad_campaign: b.ad_campaign, job_wanted: b.job_wanted === 'Other' ? b.job_other : b.job_wanted }).jobs.map((j) => j.id);
-  const jobId = b.job ? String(b.job).toUpperCase() : jobInAd(b) || adJobs[0] || null;
+  const fromAd = !!(b.ad_set || b.ad_name || b.ad_campaign) || /instagram|linkedin|facebook|meta/i.test(String(srcFrom(b) || ''));
+  const LIVE = ['Open', 'Sourcing', 'Interviewing', 'Offer stage'];
+  const picked = [...new Set((Array.isArray(b.jobs) ? b.jobs : []).map((x) => String(x).toUpperCase()))].slice(0, 10).filter((id) => { const j = get('SELECT * FROM jobs WHERE id=? AND archived=0 AND is_sample=0', id); return j && LIVE.includes(V.jobView(j).status); });
+  let adJobs = !b.job && !jobInAd(b) && !picked.length ? jobsByAdNames(b, srcFrom(b)) : [];
+  if (fromAd && !b.job && !jobInAd(b) && !picked.length && !adJobs.length) adJobs = L.jobsForPerson({ ad_set: b.ad_set, ad_name: b.ad_name, ad_campaign: b.ad_campaign, job_wanted: b.job_wanted === 'Other' ? b.job_other : b.job_wanted }).jobs.map((j) => j.id);
+  const jobId = picked[0] || (b.job ? String(b.job).toUpperCase() : jobInAd(b) || adJobs[0] || null);
   const jobOk = jobId ? get('SELECT * FROM jobs WHERE id=?', jobId) : null;
   const r = L.intakeCandidate({ ...L.cleanPrefs(b), exp_business: business, exp_jewellery: b.exp_jewellery in jewMap ? jewMap[b.exp_jewellery] : null, language: b.lang, name: b.name, whatsapp: b.whatsapp, email: b.email || '', city: b.city, state: b.state, work_cities: [b.city], job_wanted: b.job_wanted === 'Other' ? b.job_other : b.job_wanted, exp_total: b.experience ? expMap[b.experience] : null, ref_by: refBy, apply_job: jobOk && ['Open', 'Sourcing', 'Interviewing', 'Offer stage'].includes(V.jobView(jobOk).status) ? jobOk.id : null }, { source: srcFrom(b), ad: adFrom(b) });
   // The same ad on several jobs: an application on each of the others too.
   for (const extra of adJobs.slice(1)) { try { L.createApplication(r.candidate.id, extra, { label: 'Candidate' }, srcFrom(b), 'Applied from an ad', adFrom(b)); } catch { /* already on it */ } }
+  // the other openings they ticked on the form: an application on each
+  for (const extra of picked.slice(1)) { try { L.createApplication(r.candidate.id, extra, { label: 'Candidate' }, srcFrom(b), 'Applied on the form', adFrom(b)); } catch { /* already on it */ } }
   { const mailer = require('./mailer'); const rec = get('SELECT * FROM candidates WHERE id=?', r.candidate.id); if (r.isNew) mailer.newLead('candidate', rec); mailer.confirmToPerson('candidate', rec); }
   if (refBy && r.isNew) insert('notes', { record_id: r.candidate.id, text: `Referred by ${refBy}`, author: 'Form', at: now() });
   if (b.cv && b.cv.base64) { try { const f = await F.saveFile({ recordId: r.candidate.id, type: 'cv', name: b.cv.name, base64: b.cv.base64, by: 'Candidate form' }); update('candidates', r.candidate.id, { cv_file: String(f.id) }); CV.fillCandidate(r.candidate.id, b.cv.name, b.cv.base64, 'Candidate form'); } catch (e) { insert('notes', { record_id: r.candidate.id, text: `CV not saved: ${e.message}`, author: 'Form', at: now() }); } }

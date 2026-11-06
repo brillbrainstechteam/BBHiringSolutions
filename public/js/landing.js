@@ -211,12 +211,12 @@
     if (searching) box.innerHTML = '<div class="job-card skel"></div><div class="job-card skel"></div><div class="job-card skel"></div>';
     if (scroll) { const o = $('#openings'); if (o) o.scrollIntoView({ behavior: reduced() ? 'auto' : 'smooth', block: 'start' }); }
     let d; try { d = await (await fetch(`/api/public/jobs${qs.toString() ? `?${qs}` : ''}`)).json(); } catch { d = null; }
-    // Featured roles join the list unless a live opening already has that title.
+    // Live openings only; the featured roles stand in when nothing is open at all.
     const liveTitles = new Set(((d && d.jobs) || []).map((j) => j.title));
     const want = String(p.want || '').toLowerCase();
-    const feats = featured().filter((f) => !liveTitles.has(f.title) && (!p.group || f.group === p.group) && (!want || f.title.toLowerCase().includes(want) || want.includes(f.title.toLowerCase())));
+    const feats = (((d && d.jobs && d.jobs.length) || (d && d.total)) ? [] : featured()).filter((f) => !liveTitles.has(f.title) && (!p.group || f.group === p.group) && (!want || f.title.toLowerCase().includes(want) || want.includes(f.title.toLowerCase())));
     // Field pills: every field that has open jobs (or featured roles), with how many; the active one is highlighted.
-    const counts = { ...((d && d.groups) || {}) }; for (const f of featured()) counts[f.group] = (counts[f.group] || 0) + 1;
+    const counts = { ...((d && d.groups) || {}) }; for (const f of feats) counts[f.group] = (counts[f.group] || 0) + 1;
     const groups = Object.entries(counts); const total = groups.reduce((n, [, c]) => n + c, 0);
     pills.innerHTML = groups.length ? `<button type="button" class="${!p.group && !p.want ? 'on' : ''}" data-g="">All <i data-no-i18n>${total}</i></button>${groups.map(([g, n]) => `<button type="button" class="${p.group === g ? 'on' : ''}" data-g="${esc(g)}">${esc(g)} <i data-no-i18n>${n}</i></button>`).join('')}` : '';
     $$('[data-g]', pills).forEach((b) => (b.onclick = () => BB.landingSearch(b.dataset.g ? { group: b.dataset.g } : {})));

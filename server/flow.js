@@ -376,12 +376,21 @@ function rowFor(j, c, sc, extra) {
   const ai = fitOf(j, c);
   return { candidate_id: c.id, name: c.name, city: c.city, wants: c.job_wanted, exp: c.exp_total, jewellery: c.exp_jewellery, score: ai ? ai.score : sc.score, by_ai: !!ai, points: ai ? ai.points : sc.reasons, gaps: ai ? ai.gaps : sc.gaps, source: c.source, has_cv: !!c.cv_file, ...extra };
 }
+// The candidate said yes (on a call, or in person): their application on this job opens now.
+route('POST', '/api/jobs/:id/interested', T, (ctx) => {
+  const j = loadJob(ctx); const c = get('SELECT * FROM candidates WHERE id=?', (ctx.body || {}).candidate_id); if (!c) throw httpError(404, 'Candidate not found');
+  const a = L.createApplication(c.id, j.id, ctx.actor, c.source, `Interested in this job (confirmed by ${ctx.actor.label})`);
+  return { id: a.id };
+});
 route('GET', '/api/jobs/:id/screen', T, (ctx) => {
   const j = loadJob(ctx);
   const apps = openApps(j).map((a) => { const c = get('SELECT * FROM candidates WHERE id=?', a.candidate_id); return rowFor(j, c, L.matchScore(c, j, L.ratingOf(c.id)), { app_id: a.id, step: a.step, screen: a.screen }); }).sort((x, y) => y.score - x.score);
   const seen = new Set(all('SELECT candidate_id FROM applications WHERE job_id=?', j.id).map((r) => r.candidate_id));
-  const bank = bankOf(j, 40).filter((m) => !seen.has(m.c.id)).slice(0, 15).map((m) => rowFor(j, m.c, m, {})).sort((x, y) => y.score - x.score);
-  return { apps, bank, ai: LLM.available(), scored: apps.concat(bank).filter((x) => x.by_ai).length };
+  // For each match not on the job: can they get the WhatsApp question, were they asked, did they say no.
+  const askState = (c) => { const m = get("SELECT at FROM messages WHERE dedupe=? ORDER BY at DESC LIMIT 1", `alert:${j.id}:${c.id}`); const no = get("SELECT 1 FROM notes WHERE record_id=? AND text LIKE ?", c.id, `Not interested in ${j.id}%`);
+    return { can_wa: !!(c.whatsapp && c.consent_alerts && !c.opted_out), asked_at: m ? m.at : null, not_interested: !!no }; };
+  const bank = bankOf(j, 40).filter((m) => !seen.has(m.c.id)).slice(0, 15).map((m) => rowFor(j, m.c, m, askState(m.c))).sort((x, y) => y.score - x.score);
+  return { apps, bank, strong: D.settings().match.strong, ai: LLM.available(), scored: apps.concat(bank).filter((x) => x.by_ai).length };
 });
 route('POST', '/api/jobs/:id/ai-fit', { auth: 'team', rate: { key: 'aifit', max: 60, minutes: 60 } }, async (ctx) => {
   const j = loadJob(ctx); const seen = new Set();

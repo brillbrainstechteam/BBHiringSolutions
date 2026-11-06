@@ -1572,7 +1572,7 @@ html[lang="hi"] .ss-g { letter-spacing: 0; }
 .job-search input { width: 100%; height: 44px; padding: 0 16px 0 44px; border-radius: 999px; }
 .job-chips { display: flex; flex-wrap: nowrap; gap: 6px; }
 .job-chips .chip { flex: 1 1 auto; justify-content: center; height: 36px; padding: 0 8px; font-size: 12.5px; white-space: nowrap; }
-.job-prio { gap: 8px; } .job-prio select { width: auto; } /* minimum CTC and sort by priority */
+.job-prio { gap: 8px; flex-wrap: wrap; } .job-prio select { width: auto; max-width: 220px; } /* minimum CTC and sort by priority */
 @media (max-width: 1180px) { .job-chips { flex-wrap: wrap; } }
 .bulk-card { padding: 16px; margin-bottom: 12px; display: grid; gap: 12px; }
 .bulk-head { display: flex; align-items: center; gap: 12px; }
@@ -1921,3 +1921,7 @@ a.pipe-step { text-decoration: none; cursor: pointer; } a.pipe-step:hover { bord
 .owner-btn { max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .task-bulk { display: flex; align-items: center; gap: 14px; padding: 10px 14px; margin-bottom: 10px; } .task-bulk[hidden] { display: none; }
 .today-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; padding: 0 16px 16px; } .today-sec { border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; } .today-item { font-size: 13px; line-height: 1.35; } .today-item a { color: var(--ink); }
 .mine-tog { display: flex; align-items: center; gap: 6px; margin-left: auto; padding: 0 6px; } .mine-tog input { width: auto; }
+/* the job seeker form: live openings to tick */
+.job-picks { display: grid; gap: 6px; max-height: 240px; overflow-y: auto; padding: 4px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); }
+.job-pick { display: flex; gap: 10px; align-items: flex-start; padding: 8px 10px; border-radius: 8px; cursor: pointer; }
+.job-pick:hover { background: var(--sky-50); } .job-pick input { margin-top: 3px; flex: 0 0 auto; }

@@ -184,7 +184,8 @@
       const b = $('[data-dpmake]'); if (!b) return;
       b.onclick = async () => {
         const f = await BB.pickFile('.jpg,.jpeg,.png'); if (!f) return;
-        try { dp = await groupDp(`data:image/${/\.png$/i.test(f.name) ? 'png' : 'jpeg'};base64,${f.base64}`, c.company); const i = $('[data-dpimg]'); i.src = dp; i.classList.remove('hidden'); const a = document.createElement('a'); a.href = dp; a.download = `${c.company}-group.png`; a.click(); } catch (e) { BB.fail(e); }
+        // the picker already gives a whole data: link; only a bare base64 needs the prefix
+        try { dp = await groupDp(String(f.base64).startsWith('data:') ? f.base64 : `data:image/${/\.png$/i.test(f.name) ? 'png' : 'jpeg'};base64,${f.base64}`, c.company); const i = $('[data-dpimg]'); i.src = dp; i.classList.remove('hidden'); const a = document.createElement('a'); a.href = dp; a.download = `${c.company}-group.png`; a.click(); } catch (e) { BB.fail(e); }
       };
     }, 60);
   }
@@ -192,15 +193,18 @@
   // ---------- job: screening board ----------
   const fitRow = (r, j) => `<tr><td style="width:64px">${scoreBadge(r.score)}${r.by_ai ? '<div class="tiny faint">AI</div>' : ''}</td><td><a href="#" data-open="${r.app_id ? `application:${r.app_id}` : `candidate:${r.candidate_id}`}"><b>${esc(r.name)}</b></a> <span class="tiny muted">${esc(r.wants || '')} · ${esc(r.city || '—')} · ${r.exp ?? '—'} yrs${r.jewellery ? ` · ${r.jewellery} in jewellery` : ''}${r.has_cv ? '' : ' · no CV'}</span>
       <div class="fit-pts">${(r.points || []).map((x) => `<span class="ok">✓ ${esc(x)}</span>`).join('')}${(r.gaps || []).map((x) => `<span class="no">✗ ${esc(x)}</span>`).join('')}</div></td>
-    <td class="nowrap">${r.app_id ? (r.screen === 'Accepted' ? '<span class="badge b-green">Accepted</span>' : `<span class="badge b-outline">${esc(r.step)}</span><div class="row" style="margin-top:4px"><button class="btn sm primary" data-qs="Accepted" data-ap="${r.app_id}">Accept</button><button class="btn sm" data-qs="Rejected" data-ap="${r.app_id}">Not suitable</button></div>`) : `<button class="btn sm primary" data-add="${r.candidate_id}">Open application</button>`}</td></tr>`;
+    <td class="nowrap">${r.app_id ? (r.screen === 'Accepted' ? '<span class="badge b-green">Accepted</span>' : `<span class="badge b-outline">${esc(r.step)}</span><div class="row" style="margin-top:4px"><button class="btn sm primary" data-qs="Accepted" data-ap="${r.app_id}">Accept</button><button class="btn sm" data-qs="Rejected" data-ap="${r.app_id}">Not suitable</button></div>`) : `${r.not_interested ? '<span class="badge b-red">Not interested</span>' : r.asked_at ? `<span class="badge b-amber" title="Asked on WhatsApp; their Interested reply opens the application by itself">Asked ${fmtD(r.asked_at)}</span>` : ''}<div class="row" style="margin-top:4px">${!r.asked_at && !r.not_interested && r.can_wa ? `<button class="btn sm" data-ask="${r.candidate_id}">Ask on WhatsApp</button>` : ''}${r.not_interested ? '' : `<button class="btn sm primary" data-intr="${r.candidate_id}" title="They said yes on a call: open their application">Interested – open</button>`}</div>`}</td></tr>`;
   const loadScreen = async (el, j) => {
     const box = $('[data-flow-screen]', el); if (!box) return;
     let d; try { d = await BB.api(`/api/jobs/${j.id}/screen`); } catch (e) { box.innerHTML = ''; return; }
     box.innerHTML = `<div class="sec"><div class="row between"><h3 style="margin:0">Screening (${d.apps.length}) <span class="faint small">· best first</span></h3><div class="row">${d.ai ? '<button class="btn sm gold" data-fit>✦ Rank with AI</button>' : ''}<button class="btn sm" data-addcvs>Add CVs</button></div></div>
         <div class="card tbl-wrap" style="margin-top:8px"><table class="tbl"><tbody>${d.apps.map((r) => fitRow(r, j)).join('') || '<tr><td class="empty">No open applications yet.</td></tr>'}</tbody></table></div></div>
-      <div class="sec"><h3>Top matches not applied yet <span class="faint small">· resume bank, any source</span></h3><div class="card tbl-wrap"><table class="tbl"><tbody>${d.bank.map((r) => fitRow(r, j)).join('') || '<tr><td class="empty">No strong matches in the resume bank.</td></tr>'}</tbody></table></div></div>`;
+      <div class="sec"><div class="row between"><h3 style="margin:0">Top matches not applied yet <span class="faint small">· ask first: the application opens when they say they are interested</span></h3>${(() => { const n = d.bank.filter((r) => r.score >= (d.strong || 70) && r.can_wa && !r.asked_at && !r.not_interested).length; return n ? `<button class="btn sm gold" data-askall>Ask all ${d.strong || 70}+ on WhatsApp (${n})</button>` : ''; })()}</div><div class="card tbl-wrap"><table class="tbl"><tbody>${d.bank.map((r) => fitRow(r, j)).join('') || '<tr><td class="empty">No strong matches in the resume bank.</td></tr>'}</tbody></table></div></div>`;
     BB.wireQuickScreen(box, () => done());
-    $$('[data-add]', box).forEach((b) => (b.onclick = () => act(() => BB.post('/api/applications', { candidate_id: b.dataset.add, job_id: j.id }), 'Application opened')));
+    // ask on WhatsApp (their Interested reply opens the application), or open it once they confirm on a call
+    $$('[data-ask]', box).forEach((b) => (b.onclick = () => act(() => BB.post(`/api/jobs/${j.id}/alert`, { ids: [b.dataset.ask] }), (r) => (r.sent ? 'Asked on WhatsApp' : `Not sent: ${(r.skipped[0] || '').split(': ').slice(1).join(': ')}`))));
+    const aa = $('[data-askall]', box); if (aa) aa.onclick = () => { const ids = d.bank.filter((r) => r.score >= (d.strong || 70) && r.can_wa && !r.asked_at && !r.not_interested).map((r) => r.candidate_id); act(() => BB.post(`/api/jobs/${j.id}/alert`, { ids }), (r) => `Asked ${r.sent} on WhatsApp${r.skipped.length ? `, ${r.skipped.length} not sent` : ''}`); };
+    $$('[data-intr]', box).forEach((b) => (b.onclick = async () => { if (await BB.confirm('Interested?', 'Did the candidate confirm they are interested in this job? Their application opens now.', 'Yes, open it')) act(() => BB.post(`/api/jobs/${j.id}/interested`, { candidate_id: b.dataset.intr }), 'Application opened'); }));
     const fit = $('[data-fit]', box);
     if (fit) fit.onclick = async () => {
       fit.disabled = true; let left = 1; let total = 0;
