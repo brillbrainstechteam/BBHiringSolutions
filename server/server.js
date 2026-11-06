@@ -95,6 +95,9 @@ const server = http.createServer(async (req, res) => {
     // A job description page for candidates: /jd/JB-2001.
     const jdm = /^\/jd\/(JB-\d+)\/?$/i.exec(p);
     if (jdm) { const h = require('./api-team').jdHtml(jdm[1]); return send(res, h ? 200 : 404, h || 'This job was not found.', { 'Content-Type': h ? TYPES['.html'] : 'text/plain', 'Cache-Control': 'no-cache' }); }
+    // A candidate sharing their resume and details, from the WhatsApp link: /u/<code>.
+    const pfm = /^\/u\/([\w-]{8,40})\/?$/.exec(p);
+    if (pfm) return send(res, 200, require('./profilelink').pageHtml(pfm[1]), { 'Content-Type': TYPES['.html'], 'Cache-Control': 'no-store', 'X-Robots-Tag': 'noindex' });
     // A client rating our recruiters, from the WhatsApp link: /rate/<code>.
     const rtm = /^\/rate\/([\w-]{8,40})\/?$/.exec(p);
     if (rtm) { const h = require('./care').rateHtml(rtm[1]); return send(res, h ? 200 : 404, h || 'This link is not valid any more.', { 'Content-Type': h ? TYPES['.html'] : 'text/plain', 'Cache-Control': 'no-store', 'X-Robots-Tag': 'noindex' }); }

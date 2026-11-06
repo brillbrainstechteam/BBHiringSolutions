@@ -72,6 +72,9 @@ const FORMATS = {
   bbhs_review_request: { type: 'Utility', approved: false, buttons: [],
     en: "Hello {name},\n\nHow was your experience with your recruiter at BrillBrains? Please rate them in 1 minute. Only our senior team reads it.\n\n{link}\n\nThank you.",
     hi: "नमस्ते {name},\n\nBrillBrains में आपके रिक्रूटर के साथ आपका अनुभव कैसा रहा? कृपया 1 मिनट में रेटिंग दें। इसे केवल हमारी सीनियर टीम पढ़ती है।\n\n{link}\n\nधन्यवाद।" },
+  bbhs_profile_update: { type: 'Utility', approved: false, buttons: [],
+    en: "Hello {name},\n\nTo match you with the right jobs, please share:\n\n• Your latest resume\n• Current salary\n• Expected salary\n• Notice period\n\nIt takes 2 minutes, no login needed: {link}\n\nThank you.",
+    hi: "नमस्ते {name},\n\nआपके लिए सही नौकरी ढूँढने के लिए कृपया भेजें:\n\n• अपना नया रिज़्यूमे\n• अभी की सैलरी\n• अपेक्षित सैलरी\n• नोटिस पीरियड\n\n2 मिनट लगेंगे, लॉगिन की ज़रूरत नहीं: {link}\n\nधन्यवाद।" },
   bbhs_job_interest: { type: 'Marketing', approved: false, buttons: ['Interested', 'Not interested'],
     en: "Hello {name},\n\nWe have a job opening that matches your profile:\n\n💼 *{job}*\n📍 {city}\n💰 {salary}\n\nSee the full job details here: {link}\n\nAre you interested in applying? Please tap a button below.",
     hi: "नमस्ते {name},\n\nआपकी प्रोफ़ाइल से मिलती एक नौकरी खुली है:\n\n💼 *{job}*\n📍 {city}\n💰 {salary}\n\nपूरी जानकारी यहाँ देखें: {link}\n\nक्या आप आवेदन करना चाहेंगे? कृपया नीचे एक बटन दबाएँ।" },
@@ -119,6 +122,7 @@ const FORMATS = {
 // Automatic messages (section 8.5); each can be turned off in Settings.
 const AUTO_RULES = [
   { key: 'candidate_welcome', when: 'Fills the form / added by team', to: 'Candidate', format: 'bbhs_candidate_welcome', on: true },
+  { key: 'resume_request', when: 'New candidate without a resume (not bulk imports): ask for the resume, salary and notice period, once', to: 'Candidate', format: 'bbhs_profile_update', on: true },
   { key: 'job_alert', when: 'Match score 70+ on a new job', to: 'Candidate', format: 'bbhs_job_alert', on: true },
   { key: 'pref1_screen', when: 'Screened in: ask their best time to call (gives the recruiter a call task at that time)', to: 'Candidate', format: 'bbhs_contact_prefs', on: true },
   { key: 'interview_scheduled', when: 'Interview scheduled', to: 'Candidate', format: 'bbhs_interview_scheduled', on: true },

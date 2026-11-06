@@ -1138,6 +1138,8 @@ route('POST', '/api/candidates/bulk', T, (ctx) => {
   if (action === 'add_to_job') {
     const j = get('SELECT * FROM jobs WHERE id=?', job_id); mustSee(seeJob(ctx.user, j) || R.sameAgency(ctx.user, j), 'job opening');
     for (const id of ids) { try { L.createApplication(id, job_id, ctx.actor, null, 'Added from resume bank'); out.done++; } catch (e) { out.errors.push(`${id}: ${e.message}`); } }
+  } else if (action === 'ask_profile') { // resume & details request to the ticked candidates (those still missing something)
+    for (const id of ids.slice(0, D.settings().bulk_budget)) { const r = require('./profilelink').ask(id, ctx.actor, false); if (r && r.skipped) out.errors.push(`${id}: ${r.skipped}`); else out.done++; }
   } else if (action === 'alert') {
     const j = get('SELECT * FROM jobs WHERE id=?', job_id); if (!j) throw httpError(400, 'Pick a job');
     for (const id of ids.slice(0, D.settings().bulk_budget)) { const r = L.sendWA({ ptype: 'candidate', pid: id, format: 'bbhs_job_alert', vars: { job: j.title, city: j.city, salary: L.salaryText(j) }, jb: j.id, by: ctx.actor, bulk: true, dedupe: `alert:${j.id}:${id}` }); if (r.skipped) out.errors.push(`${id}: ${r.skipped}`); else out.done++; }
@@ -2371,6 +2373,7 @@ route('GET', '/api/reports/:name', T, (ctx) => {
   return { rows };
 });
 module.exports.removePerson = removePerson;
+require('./profilelink'); // resume and details from candidates, on a link with no login
 require('./resumes'); // resumes from a zip of the Drive folder (Candidates -> Attach resumes)
 require('./drive'); // the Google Drive CV folder, read on the timer
 require('./trash'); // delete with a recycle bin (Settings -> Deleted items)
