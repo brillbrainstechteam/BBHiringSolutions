@@ -1554,6 +1554,7 @@ html[lang="hi"] .ss-g { letter-spacing: 0; }
 .src-cut { max-width: none; white-space: normal; overflow-wrap: anywhere; }
 .tbl td.from-col { width: 130px; min-width: 112px; max-width: 150px; white-space: normal; overflow-wrap: anywhere; line-height: 1.3; }
 /* Job openings */
+.page-h [data-actions] { margin-left: auto; } .head-menu { position: relative; } .head-menu > summary { list-style: none; height: 40px; padding: 0 16px; font-size: 13.5px; display: inline-flex; align-items: center; gap: 6px; cursor: pointer; } .head-menu > summary::-webkit-details-marker { display: none; } .head-menu > summary::after { content: '\25BE'; font-size: 11px; } .head-menu .step-pop { width: 220px; }
 .page-h.stacked { flex-direction: column; align-items: stretch; gap: 14px; }
 .page-h h1 { white-space: nowrap; }
 .page-h.stacked .help-btn { display: none; }
