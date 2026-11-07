@@ -156,6 +156,8 @@ input[type=range] { padding: 0; accent-color: var(--mustard); border: 0; }
 .kpi-l { font-size: 12.5px; color: var(--muted); font-weight: 600; margin-top: 3px; }
 .kpi.t-blue { --kc: var(--blue, #2f6fde); } .kpi.t-violet { --kc: var(--violet, #7b5cd6); } .kpi.t-gold { --kc: var(--gold-600, #c99a06); } .kpi.t-green { --kc: var(--green, #1f9d55); } .kpi.t-red { --kc: var(--red, #d64545); }
 .dash-scope { display: flex; align-items: center; gap: 8px; justify-content: flex-end; flex-wrap: nowrap; margin-bottom: -6px; } .dash-scope select { width: auto; flex: 0 0 auto; min-width: 220px; height: 38px; }
+.call-connected { display: flex; flex-direction: column; gap: 14px; } .call-connected[hidden] { display: none; }
+.call-rec { display: flex; padding-top: 12px; border-top: 1px dashed var(--border); } .call-rec .btn { background: var(--surface); border: 1px solid var(--border); }
 .stat.click { cursor: pointer; } .stat.click:hover { transform: translateY(-2px); box-shadow: var(--shadow-lg); border-color: var(--mustard-300); text-decoration: none; }
 .tbl-wrap { overflow-x: auto; }
 table.tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
