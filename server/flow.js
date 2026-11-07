@@ -292,6 +292,7 @@ function ruleNotes(text) {
 route('POST', '/api/jobs/mass', T, (ctx) => {
   const b = ctx.body || {}; const c = get('SELECT * FROM clients WHERE id=?', b.client_id); mustSee(seeClient(ctx.user, c), 'client');
   if (!b.title) throw httpError(400, 'Pick the role', 'title');
+  TEAM.needSalary(b);
   const rows = String(b.lines || '').split(/\n+/).map((l) => /^\s*(.+?)\s*[:\-,=]\s*(\d+)\s*$/.exec(l)).filter(Boolean).map((m) => ({ city: m[1], openings: Number(m[2]) }));
   if (!rows.length) throw httpError(400, 'Write one city per line, like Mumbai: 20', 'lines');
   const batch = `MH-${Date.now().toString(36).toUpperCase()}`; const jobs = [];

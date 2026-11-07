@@ -269,6 +269,71 @@ route('GET', '/api/dashboard', T, (ctx) => {
   return out;
 });
 
+// ---------- Business health (super admin: every agency; admin: their agency) ----------
+// Clients with open requirements, openings and seats, applications by stage, and the money: the fee we can earn
+// on every open seat (from the salary offered), what the closed positions earned, what came in and what is pending.
+// Clients are High or Low ticket by the fee they bring (open opportunity plus earned), from Settings › ticket.
+const OPEN_JOB = ['Open', 'Sourcing', 'Interviewing', 'Offer stage'];
+const ctcMid = (j) => { const lo = j.sal_from || j.sal_to; const hi = j.sal_to || j.sal_from; return lo ? (lo + hi) / 2 : 0; };
+route('GET', '/api/health', T, (ctx) => {
+  const u = ctx.user; if (u.level === 'sub') throw httpError(403, 'This view is for admins.');
+  const ag = isSuper(u) ? String(ctx.query.agency || '') : '';
+  const inAg = (id) => !ag || (ag === 'none' ? !id : id === ag);
+  const highFrom = Number((D.settings().ticket || {}).high_from) || 100000;
+  const jobs = visibleJobs(u).filter((j) => inAg(j.agency_id));
+  const jobIds = new Set(jobs.map((j) => j.id));
+  const apps = visibleApps(u).filter((a) => jobIds.has(a.job_id));
+  const bills = all('SELECT * FROM bills').filter((b) => seeBill(u, b) && inAg(b.agency_id) && !['Draft', 'Cancelled'].includes(b.status)).map(L.billView);
+  const billedApps = new Set(bills.map((b) => b.app_id).filter(Boolean));
+  const clientOf = new Map(); const cl = (id) => { if (!clientOf.has(id)) clientOf.set(id, get('SELECT * FROM clients WHERE id=?', id) || null); return clientOf.get(id); };
+  const agName = new Map(all('SELECT id, name FROM agencies').map((x) => [x.id, x.name]));
+  const zero = () => Object.fromEntries(L.STAGES.map((s) => [s, 0]));
+  const byJob = new Map(); for (const a of apps) { const l = byJob.get(a.job_id) || []; l.push(a); byJob.set(a.job_id, l); }
+  const rows = new Map();
+  const rowOf = (cid) => { if (!rows.has(cid)) { const c = cl(cid) || {}; rows.set(cid, { id: cid, company: c.company || cid, agency_id: c.agency_id || null, agency: agName.get(c.agency_id) || 'BrillBrains (own)', open_jobs: 0, draft_jobs: 0, seats: 0, apps: 0, stages: zero(), projected: 0, closed: 0, earned: 0, received: 0, pending: 0, jobs: [] }); } return rows.get(cid); };
+  for (const j of jobs) {
+    const c = cl(j.client_id); if (!c || c.placeholder || c.internal) continue;
+    const list = byJob.get(j.id) || []; const hired = list.filter((a) => a.result === 'Hired' && !a.left_date).length;
+    const open = OPEN_JOB.includes(j.status); const r = rowOf(j.client_id);
+    const seats = open ? Math.max(0, (j.openings || 1) - hired) : 0;
+    const mid = ctcMid(j); const fee = mid ? L.feeFor(c, j.agency_id, mid).fee : 0;
+    const st = zero(); let active = 0; for (const a of list) if (a.result === 'open') { const s = L.stageOfApp(a); if (st[s] !== undefined) { st[s]++; active++; } }
+    if (open) { r.open_jobs++; r.seats += seats; r.projected += fee * seats; }
+    if (j.status === 'Draft') r.draft_jobs++;
+    r.apps += active; for (const s of L.STAGES) r.stages[s] += st[s];
+    if (open || j.status === 'Draft' || active) r.jobs.push({ id: j.id, title: j.title, city: j.city, status: j.status, sal_from: j.sal_from, sal_to: j.sal_to, no_salary: !j.sal_from && !j.sal_to, openings: j.openings || 1, hired, seats, fee_each: fee, projected: open ? fee * seats : 0, apps: active, stages: st });
+  }
+  // Closed positions: joined candidates; earned is the bill fee, or the fee to bill on the offered CTC.
+  for (const a of apps.filter((x) => x.result === 'Hired')) {
+    const j = jobs.find((x) => x.id === a.job_id); const c = j && cl(j.client_id); if (!c || c.placeholder || c.internal) continue;
+    const r = rowOf(j.client_id); r.closed++;
+    if (!billedApps.has(a.id)) { const fee = L.feeFor(c, j.agency_id, a.offer_ctc || ctcMid(j)).fee; r.earned += fee; r.pending += fee; }
+  }
+  for (const b of bills) {
+    if (!rows.has(b.client_id) && !cl(b.client_id)) continue;
+    const r = rowOf(b.client_id); const fee = Number(b.fee) || 0; const settled = (b.paid || 0) + (b.tds || 0) + (b.credit || 0);
+    const got = b.total > 0 ? Math.min(fee, Math.round((fee * settled) / b.total)) : fee;
+    r.earned += fee; r.received += got; r.pending += fee - got;
+  }
+  let list = [...rows.values()].filter((r) => r.open_jobs || r.draft_jobs || r.apps || r.earned);
+  for (const r of list) { r.ticket = r.projected + r.earned >= highFrom ? 'High' : 'Low'; r.jobs.sort((x, y) => y.projected - x.projected); }
+  const ticket = ['High', 'Low'].includes(ctx.query.ticket) ? ctx.query.ticket : '';
+  const split = { High: 0, Low: 0 }; for (const r of list) split[r.ticket] += r.projected;
+  const counts = { High: list.filter((r) => r.ticket === 'High').length, Low: list.filter((r) => r.ticket === 'Low').length };
+  if (ticket) list = list.filter((r) => r.ticket === ticket);
+  list.sort((x, y) => y.projected + y.earned - (x.projected + x.earned));
+  const sum = (k) => list.reduce((t, r) => t + r[k], 0);
+  const stages = zero(); for (const r of list) for (const s of L.STAGES) stages[s] += r.stages[s];
+  const totals = { clients_open: list.filter((r) => r.open_jobs).length, open_jobs: sum('open_jobs'), draft_jobs: sum('draft_jobs'), seats: sum('seats'), apps: sum('apps'), stages, projected: sum('projected'), closed: sum('closed'), earned: sum('earned'), received: sum('received'), pending: sum('pending'), split, ticket_counts: counts };
+  const no_salary = list.flatMap((r) => r.jobs.filter((j) => j.no_salary && j.status !== 'Draft').map((j) => ({ id: j.id, title: j.title, client: r.company })));
+  const out = { totals, clients: list, stages: L.STAGES, high_from: highFrom, ticket, agency: ag, no_salary };
+  if (isSuper(u)) {
+    out.agency_options = all('SELECT id, name FROM agencies ORDER BY name');
+    if (!ag) { const by = new Map(); for (const r of list) { const k = r.agency_id || 'none'; const x = by.get(k) || { id: k, name: r.agency, clients: 0, open_jobs: 0, seats: 0, apps: 0, closed: 0, projected: 0, earned: 0, received: 0, pending: 0 }; x.clients++; for (const f of ['open_jobs', 'seats', 'apps', 'closed', 'projected', 'earned', 'received', 'pending']) x[f] += r[f]; by.set(k, x); } out.agencies = [...by.values()].sort((x, y) => y.projected - x.projected); }
+  }
+  return out;
+});
+
 // ---------- My day (sub admin home) ----------
 route('GET', '/api/people', T, (ctx) => taskOwners(ctx.user).map((x) => ({ id: x.id, name: x.name, level: x.level })));
 const setOwners = (ctx, table, rec, mainCol) => {
@@ -601,10 +666,13 @@ function internalClient(agencyId) {
   insert('clients', { id, company: `${biz.name || 'BrillBrains Hiring Solutions'} (Internal)`, contact: '', whatsapp: '', email: '', city: biz.city || '', source: 'Internal', stage: 'Job opening active', agency_id: agencyId || null, is_new: 0, kyc: {}, onboarding: {}, extra: {}, internal: 1, created_by: 'System', created_at: now(), updated_at: now() });
   return get('SELECT * FROM clients WHERE id=?', id);
 }
+// Every job opening carries its salary (a range is fine): the projected revenue is worked out from it.
+const needSalary = (b) => { if (!(Number(b.sal_from) > 0) && !(Number(b.sal_to) > 0)) throw httpError(400, 'Give the salary offered (from, and to if it is a range)', 'sal_from'); if (Number(b.sal_from) > 0 && Number(b.sal_to) > 0 && Number(b.sal_to) < Number(b.sal_from)) throw httpError(400, 'Salary to is less than salary from', 'sal_to'); };
 // Every level can open a job; a sub admin's job is always their own (they are its recruiter).
 route('POST', '/api/jobs', T, (ctx) => {
   const b = ctx.body; const c = b.client_id === 'TBC' ? placeholderClient(ctx.user.agency_id) : b.client_id === 'INTERNAL' ? internalClient(ctx.user.agency_id) : get('SELECT * FROM clients WHERE id=?', b.client_id); mustSee(seeClient(ctx.user, c), 'client');
   if (ctx.user.level === 'sub') b.recruiter_id = ctx.user.id;
+  needSalary(b);
   const made = createJob(c, b, ctx.actor, false);
   if (b.clone_of) { const o = get('SELECT * FROM jobs WHERE id=?', b.clone_of); if (o && (seeJob(ctx.user, o) || R.sameAgency(ctx.user, o))) { update('jobs', made.id, { jd: o.jd || {}, jd_status: o.jd && Object.keys(o.jd).length ? 'Draft' : 'Not written', rounds: o.rounds, screening_qs: o.screening_qs }); D.history(ctx.actor.label, 'clone job', made.id, null, o.id, null); } }
   if (b.jewel_need) { const j = get('SELECT jd FROM jobs WHERE id=?', made.id); update('jobs', made.id, { jd: { ...(j.jd || {}), jewel_need: b.jewel_need, ...(b.duties ? { duties: b.duties } : {}) } }); }
@@ -631,7 +699,7 @@ function createJob(c, b, actor, byClient) {
   if (stages.indexOf('Job opening active') > stages.indexOf(c.stage)) update('clients', c.id, { stage: 'Job opening active' });
   return get('SELECT * FROM jobs WHERE id=?', id);
 }
-module.exports.createJob = createJob;
+module.exports.createJob = createJob; module.exports.needSalary = needSalary;
 // ---------- hiring channels: a checklist row per channel on every job, and the tracker across jobs ----------
 const channels = () => (D.settings().hiring_channels || []).map((c) => { const o = c.owner_id && get('SELECT name FROM users WHERE id=?', c.owner_id); return o ? { ...c, owner: o.name } : c; });
 const POST_STATUS = ['', 'Pending', 'Done', 'Not needed'];
@@ -801,6 +869,7 @@ route('PATCH', '/api/jobs/:id', T, (ctx) => {
   if (ctx.body.mass !== undefined) ctx.body.mass = ctx.body.mass ? 1 : 0;
   allowed.push('recruiter_id');
   const patch = {}; for (const k of allowed) if (ctx.body[k] !== undefined) patch[k] = ctx.body[k];
+  if (patch.sal_from !== undefined || patch.sal_to !== undefined) needSalary({ sal_from: patch.sal_from !== undefined ? patch.sal_from : j.sal_from, sal_to: patch.sal_to !== undefined ? patch.sal_to : j.sal_to });
   // The ads this job runs under (Meta / LinkedIn campaign, ad set, ad names); applicants from those ads land on it.
   if (ctx.body.ad_match !== undefined) patch.ad_match = cleanAdMatch(ctx.body.ad_match);
   // Every level can set the real client (for a job first posted as "Client to be confirmed"), within their own agency.
@@ -2117,9 +2186,9 @@ route('POST', '/api/roles/role', T, (ctx) => {
 });
 
 // ---------- settings (super admin) ----------
-const EDITABLE = ['team_login', 'languages', 'aftercare', 'google_review_url', 'eval_criteria', 'call_topics', 'call_gate', 'accounts_email', 'resume_alert_pct', 'expense_tree', 'expense_accounts', 'revenue_kinds', 'call_script', 'email_templates', 'creative_template', 'hiring_channels', 'landing_roles', 'wa_pause', 'business', 'industries', 'default_industry', 'hidden_jobs', 'departments', 'cities', 'skills', 'client_stages', 'closing_reasons', 'job_close_reasons', 'reopen_reasons', 'lead_sources', 'src_tags', 'fee', 'agency_share_pct', 'gst', 'replacement_days', 'payment_days', 'targets', 'log_deadline', 'quiet', 'daily_limit', 'bulk_budget', 'match', 'languages', 'id_start', 'bill_prefix', 'retention_years', 'team_idle_hours', 'formats', 'auto_rules', 'crm', 'posting_channels', 'gap_targets', 'templates', 'jd_template', 'jd_templates'];
+const EDITABLE = ['ticket', 'team_login', 'languages', 'aftercare', 'google_review_url', 'eval_criteria', 'call_topics', 'call_gate', 'accounts_email', 'resume_alert_pct', 'expense_tree', 'expense_accounts', 'revenue_kinds', 'call_script', 'email_templates', 'creative_template', 'hiring_channels', 'landing_roles', 'wa_pause', 'business', 'industries', 'default_industry', 'hidden_jobs', 'departments', 'cities', 'skills', 'client_stages', 'closing_reasons', 'job_close_reasons', 'reopen_reasons', 'lead_sources', 'src_tags', 'fee', 'agency_share_pct', 'gst', 'replacement_days', 'payment_days', 'targets', 'log_deadline', 'quiet', 'daily_limit', 'bulk_budget', 'match', 'languages', 'id_start', 'bill_prefix', 'retention_years', 'team_idle_hours', 'formats', 'auto_rules', 'crm', 'posting_channels', 'gap_targets', 'templates', 'jd_template', 'jd_templates'];
 // Everyone in the team can set up what goes out. Connection secrets and the checks on the team's own activity stay with the super admin.
-const SUPER_ONLY = ['crm', 'resume_alert_pct', 'call_gate', 'google_review_url', 'team_login'];
+const SUPER_ONLY = ['ticket', 'crm', 'resume_alert_pct', 'call_gate', 'google_review_url', 'team_login'];
 route('GET', '/api/settings', T, (ctx) => { const s = { ...D.settings() }; if (!isSuper(ctx.user)) { for (const k of SUPER_ONLY) delete s[k]; return s; } s.crm = { ...s.crm, token: s.crm.token ? '••••••••' : '', webhook_secret: s.crm.from_env && s.crm.from_env.webhook_secret ? '••••••••' : s.crm.webhook_secret }; return s; });
 route('POST', '/api/health/mail', SUPER, async () => require('./mailbox').check());
 route('POST', '/api/health/email', SUPER, (ctx) => {

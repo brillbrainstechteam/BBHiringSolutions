@@ -158,6 +158,19 @@ input[type=range] { padding: 0; accent-color: var(--mustard); border: 0; }
 .dash-scope { display: flex; align-items: center; gap: 8px; justify-content: flex-end; flex-wrap: nowrap; margin-bottom: -6px; } .dash-scope select { width: auto; flex: 0 0 auto; min-width: 220px; height: 38px; }
 .call-connected { display: flex; flex-direction: column; gap: 14px; } .call-connected[hidden] { display: none; }
 .call-rec { display: flex; padding-top: 12px; border-top: 1px dashed var(--border); } .call-rec .btn { background: var(--surface); border: 1px solid var(--border); }
+.kpi-s { font-size: 11.5px; color: var(--muted); margin-top: 3px; }
+.h-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; } .h-bar select { width: auto; min-width: 200px; height: 38px; }
+.kpis.money .mcard { display: flex; flex-direction: column; gap: 2px; padding: 16px 18px; border-top: 4px solid var(--mc); background: linear-gradient(180deg, color-mix(in srgb, var(--mc) 7%, var(--surface)), var(--surface)); }
+.mcard .m-v { font: 700 26px/1.1 var(--display); letter-spacing: -.02em; margin-top: 4px; }
+.m-opp { --mc: var(--violet, #7b5cd6); } .m-won { --mc: var(--blue, #2f6fde); } .m-got { --mc: var(--green, #1f9d55); } .m-pend { --mc: var(--amber, #d98a00); }
+.h-stages { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; padding: 4px 16px 16px; }
+.h-stage { display: flex; flex-direction: column; gap: 4px; padding: 12px; border: 1px solid var(--border); border-radius: 12px; color: inherit; text-decoration: none; position: relative; overflow: hidden; }
+.h-stage b { font: 700 22px/1 var(--display); } .h-stage i { position: absolute; left: 0; bottom: 0; height: 4px; background: var(--gold-600, #c99a06); border-radius: 0 4px 4px 0; }
+.h-stage:hover { border-color: var(--mustard-300, #e8c766); text-decoration: none; }
+.h-tbl td, .h-tbl th { white-space: nowrap; } .h-tbl .h-cl td { border-top: 1px solid var(--border); } .h-tbl .h-job td { background: var(--surface-2); font-size: 13px; }
+.h-tog { border: 0; background: none; cursor: pointer; font-size: 14px; color: var(--muted); padding: 2px 6px; }
+.h-pend { color: var(--amber, #b26b00); font-weight: 600; }
+@media (max-width: 760px) { .h-stages { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .stat.click { cursor: pointer; } .stat.click:hover { transform: translateY(-2px); box-shadow: var(--shadow-lg); border-color: var(--mustard-300); text-decoration: none; }
 .tbl-wrap { overflow-x: auto; }
 table.tbl { width: 100%; border-collapse: collapse; font-size: 13px; }

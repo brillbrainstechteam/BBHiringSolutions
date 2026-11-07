@@ -243,6 +243,7 @@
         const i = r.dataset.row; const title = v[`title_${i}`];
         if (!title) { const e = new Error('Pick the job'); e.field = `title_${i}`; throw e; }
         if (title === 'Other' && !v[`other_${i}`]) { const e = new Error('Type the job'); e.field = `other_${i}`; throw e; }
+        if (!(Number(v[`sal_from_${i}`]) > 0) && !(Number(v[`sal_to_${i}`]) > 0)) { const e = new Error('Give the salary offered (a range is fine)'); e.field = `sal_from_${i}`; throw e; }
         list.push({ title, title_other: v[`other_${i}`], openings: Number(v[`openings_${i}`]) || 1, sal_from: v[`sal_from_${i}`], sal_to: v[`sal_to_${i}`], exp_from: v[`exp_from_${i}`], exp_to: v[`exp_to_${i}`], city: v.city, notice_days: v.notice_days, notes: v.notes, salary_per: 'month' });
       }
       const made = []; for (const j of list) made.push(await BB.post('/api/client/jobs', j));

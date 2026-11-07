@@ -399,7 +399,7 @@
     const r = await BB.api('/api/clients?all=1'); const list = r.rows.filter((c) => !c.placeholder);
     const v = await BB.ask({ title: 'Mass hiring', note: 'One role in many cities: one job opening per city, all marked as one drive.', wide: true, fields: [`<div class="grid g2"><label class="field"><span class="lab">Client</span><select name="client_id"><option value="">Choose…</option>${list.map((c) => `<option value="${c.id}">${esc(c.company)}</option>`).join('')}</select></label><label class="field"><span class="lab">Job</span><select name="title">${BB.jobOptions('')}</select></label></div>`,
       { name: 'lines', label: 'City and number of people, one per line', type: 'textarea', placeholder: 'Mumbai: 20\nSurat: 15', voice: false },
-      `<div class="grid g4">${field({ name: 'sal_from', label: 'Salary from / month', type: 'number', opt: true })}${field({ name: 'sal_to', label: 'Salary to / month', type: 'number', opt: true })}${field({ name: 'exp_from', label: 'Exp from (yrs)', type: 'number', opt: true })}${field({ name: 'exp_to', label: 'Exp to (yrs)', type: 'number', opt: true })}</div>`,
+      `<div class="grid g4">${field({ name: 'sal_from', label: 'Salary from / month', type: 'number' })}${field({ name: 'sal_to', label: 'Salary to / month', type: 'number', opt: true })}${field({ name: 'exp_from', label: 'Exp from (yrs)', type: 'number', opt: true })}${field({ name: 'exp_to', label: 'Exp to (yrs)', type: 'number', opt: true })}</div>`,
       { name: 'notes', label: 'Notes', type: 'textarea', opt: true }], ok: 'Create openings', submit: (x) => BB.post('/api/jobs/mass', { ...x, salary_per: 'month' }) });
     if (v) done(`${v.jobs.length} openings made for ${v.total} people`);
   };

@@ -554,6 +554,7 @@ route('GET', '/api/client/me', C, (ctx) => {
 });
 route('POST', '/api/client/jobs', C, (ctx) => {
   if (ctx.member && !(ctx.member.perms || {}).approve && !(ctx.member.perms || {}).admin) throw httpError(403, 'Your login cannot raise job openings.');
+  TEAM.needSalary(ctx.body);
   const j = TEAM.createJob(ctx.client, ctx.body, ctx.actor, true);
   insert('notes', { record_id: j.id, text: `Raised by ${ctx.actor.label}`, author: ctx.actor.label, at: now() });
   return j;
