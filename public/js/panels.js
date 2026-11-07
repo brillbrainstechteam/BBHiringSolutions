@@ -386,7 +386,8 @@
       const body = client ? BB.flow.appSlots(a) : `<details class="sub-more now-about"><summary class="small"><b>About the candidate</b></summary>${prep()}</details>`;
       // Skipping this round is always one click away, booked or not.
       // Not needed only while the round has not happened (to do, or booked ahead); the status and it sit side by side.
-      const skippable = ['To do', 'Scheduled'].includes(st) && !(i && i.view_status === 'Result pending');
+      // Until the round is done: to do, booked, or booked but not taken yet.
+      const skippable = ['To do', 'Scheduled', 'Result pending', 'No-show'].includes(st);
       // The status beside the name (none while it is still to do); Mark not needed in the top right corner.
       return box(`${esc(r.name)}${st === 'To do' ? '' : ` ${rBadge(st)}`}`, skippable ? `<button type="button" class="btn sm now-skip" data-rnotneeded="${esc(r.key)}" title="This round is not needed: skip it, with the reason">Mark not needed</button>` : '', when, acts, body);
     };
