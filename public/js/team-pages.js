@@ -513,7 +513,7 @@
       let t; $('[data-q]', el).oninput = (e) => { clearTimeout(t); t = setTimeout(() => BB.setQ({ q: e.target.value, page: 1 }), 350); };
       BB.wireMultiSel(el); $$('[data-f]', el).forEach((i) => (i.onchange = () => { if (i.dataset.f === 'saved') { if (i.value) openSeg(i.value); return; } BB.setQ({ [i.dataset.f]: i.type === 'checkbox' ? (i.checked ? '1' : '') : i.value, ...(i.dataset.f === 'industry' ? { job: '' } : {}), page: 1 }); }));
       const filtersNow = { ...q, page: undefined, tab: undefined, editseg: undefined };
-      $('[data-save]', el).onclick = () => BB.ask({ title: 'Save as segment', note: `${r.total ?? r.rows.length} candidates match these filters now. The segment keeps the filters, so it stays up to date.`, fields: [{ name: 'name', label: 'Segment name', placeholder: 'e.g. Jaipur sales, 3+ yrs jewellery' }, { name: 'shared', label: 'Share with the whole team', type: 'check' }], submit: (v) => BB.post('/api/saved-searches', { name: v.name, shared: v.shared, query: filtersNow }) }).then((x) => { if (x) { BB.toast('Segment saved'); openSeg(x.id); } });
+      $('[data-save]', el).onclick = () => BB.ask({ title: 'Save as segment', fields: [{ name: 'name', label: 'Segment name', placeholder: 'e.g. Jaipur sales, 3+ yrs jewellery' }], submit: (v) => BB.post('/api/saved-searches', { name: v.name, query: filtersNow }) }).then((x) => { if (x) { BB.toast('Segment saved'); openSeg(x.id); } });
       const upd = $('[data-updseg]', el); if (upd) upd.onclick = async () => { try { await BB.patch(`/api/segments/${editing.id}`, { query: filtersNow }); BB.toast(`“${editing.name}” updated`); openSeg(editing.id); } catch (e) { BB.fail(e); } };
       $('[data-up]', actions).onclick = () => BB.setQ({ tab: 'import' });
     }
