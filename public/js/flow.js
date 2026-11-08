@@ -606,7 +606,7 @@
   F.summary = async ({ el, actions, q }) => {
     const d = await BB.api(`/api/books?${BB.qs({ agency: q.agency, from: q.from, to: q.to })}`); const sum = (k) => d.months.reduce((t, r) => t + r[k], 0);
     actions.innerHTML = '<button class="btn" data-brev>+ Log other income</button>';
-    const tile = (l, v) => `<div class="card pad"><div class="small muted">${l}</div><div class="kpi">${inr(v)}</div></div>`;
+    const tile = (l, v) => `<div class="card pad"><div class="small muted">${l}</div><div class="flow-kpi">${inr(v)}</div></div>`;
     el.innerHTML = `${d.agencies.length ? `<div class="filters"><select data-bag><option value="">All agencies and BrillBrains</option>${d.agencies.map((a) => `<option value="${a.id}" ${q.agency === a.id ? 'selected' : ''}>${esc(a.name)}</option>`).join('')}</select></div>` : ''}
       <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr));margin-bottom:14px">${tile('Income', sum('billed') + sum('other'))}${tile('Received', sum('received'))}${tile('Expenses', sum('expenses'))}${tile('Profit', sum('net'))}${tile('Yet to collect', d.dues)}</div>
       <div class="card" style="margin-bottom:14px"><div class="card-h"><h3>Month by month</h3></div>${BB.table([{ t: 'Month', f: (r) => esc(r.month) }, { t: 'Income', num: 1, f: (r) => inr(r.billed + r.other) }, { t: 'GST', num: 1, f: (r) => inr(r.gst) }, { t: 'Received', num: 1, f: (r) => inr(r.received) }, { t: 'Expenses', num: 1, f: (r) => inr(r.expenses) }, { t: 'Profit', num: 1, f: (r) => `<b>${inr(r.net)}</b>` }], d.months)}</div>
