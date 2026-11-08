@@ -124,7 +124,7 @@ function teamWays() {
 }
 const mailKey = (e) => `mail:${String(e || '').trim().toLowerCase()}`;
 function teamUserFor(who) {
-  const w = String(who || '').trim().toLowerCase(); if (!w) throw httpError(400, 'Enter your username, WhatsApp number or email', 'who');
+  const w = String(who || '').trim().toLowerCase(); if (!w) throw httpError(400, 'Enter your WhatsApp number or email', 'who');
   const p10 = L.digits10(w);
   return get('SELECT * FROM users WHERE username=?', w) || (L.validPhone(p10) && get('SELECT * FROM users WHERE whatsapp=?', p10)) || (/@/.test(w) && get('SELECT * FROM users WHERE lower(email)=?', w)) || null;
 }
