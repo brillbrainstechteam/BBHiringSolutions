@@ -285,6 +285,10 @@ route('GET', '/api/health', T, (ctx) => {
   const apps = visibleApps(u).filter((a) => jobIds.has(a.job_id));
   const bills = all('SELECT * FROM bills').filter((b) => seeBill(u, b) && inAg(b.agency_id) && !['Draft', 'Cancelled'].includes(b.status)).map(L.billView);
   const billedApps = new Set(bills.map((b) => b.app_id).filter(Boolean));
+  // Period (closed positions and their money only; open work is always as of now): All time, 30 or 90 days, this financial year.
+  const period = ['30', '90', 'fy'].includes(ctx.query.period) ? ctx.query.period : '';
+  const since = period === 'fy' ? (() => { const d = new Date(); const y = d.getMonth() >= 3 ? d.getFullYear() : d.getFullYear() - 1; return new Date(Date.UTC(y, 3, 1)).toISOString(); })() : period ? new Date(Date.now() - Number(period) * 86400000).toISOString() : '';
+  const inPeriod = (d) => !since || (!!d && String(d) >= since.slice(0, String(d).length > 10 ? 24 : 10));
   const clientOf = new Map(); const cl = (id) => { if (!clientOf.has(id)) clientOf.set(id, get('SELECT * FROM clients WHERE id=?', id) || null); return clientOf.get(id); };
   const agName = new Map(all('SELECT id, name FROM agencies').map((x) => [x.id, x.name]));
   const zero = () => Object.fromEntries(L.STAGES.map((s) => [s, 0]));
@@ -304,12 +308,12 @@ route('GET', '/api/health', T, (ctx) => {
     if (open || j.status === 'Draft' || active) r.jobs.push({ id: j.id, title: j.title, city: j.city, status: j.status, sal_from: j.sal_from, sal_to: j.sal_to, no_salary: !j.sal_from && !j.sal_to, openings: j.openings || 1, hired, seats, fee_each: fee, projected: open ? fee * seats : 0, apps: active, stages: st });
   }
   // Closed positions: joined candidates; earned is the bill fee, or the fee to bill on the offered CTC.
-  for (const a of apps.filter((x) => x.result === 'Hired')) {
+  for (const a of apps.filter((x) => x.result === 'Hired' && inPeriod(x.joined_at || x.joining_date))) {
     const j = jobs.find((x) => x.id === a.job_id); const c = j && cl(j.client_id); if (!c || c.placeholder || c.internal) continue;
     const r = rowOf(j.client_id); r.closed++;
     if (!billedApps.has(a.id)) { const fee = L.feeFor(c, j.agency_id, a.offer_ctc || ctcMid(j)).fee; r.earned += fee; r.pending += fee; }
   }
-  for (const b of bills) {
+  for (const b of bills.filter((x) => inPeriod(x.date || x.issued_at || x.created_at))) {
     if (!rows.has(b.client_id) && !cl(b.client_id)) continue;
     const r = rowOf(b.client_id); const fee = Number(b.fee) || 0; const settled = (b.paid || 0) + (b.tds || 0) + (b.credit || 0);
     const got = b.total > 0 ? Math.min(fee, Math.round((fee * settled) / b.total)) : fee;
@@ -326,7 +330,7 @@ route('GET', '/api/health', T, (ctx) => {
   const stages = zero(); for (const r of list) for (const s of L.STAGES) stages[s] += r.stages[s];
   const totals = { clients_open: list.filter((r) => r.open_jobs).length, open_jobs: sum('open_jobs'), draft_jobs: sum('draft_jobs'), seats: sum('seats'), apps: sum('apps'), stages, projected: sum('projected'), closed: sum('closed'), earned: sum('earned'), received: sum('received'), pending: sum('pending'), split, ticket_counts: counts };
   const no_salary = list.flatMap((r) => r.jobs.filter((j) => j.no_salary && j.status !== 'Draft').map((j) => ({ id: j.id, title: j.title, client: r.company })));
-  const out = { totals, clients: list, stages: L.STAGES, high_from: highFrom, ticket, agency: ag, no_salary };
+  const out = { totals, clients: list, stages: L.STAGES, high_from: highFrom, ticket, agency: ag, period, no_salary };
   if (isSuper(u)) {
     out.agency_options = all('SELECT id, name FROM agencies ORDER BY name');
     if (!ag) { const by = new Map(); for (const r of list) { const k = r.agency_id || 'none'; const x = by.get(k) || { id: k, name: r.agency, clients: 0, open_jobs: 0, seats: 0, apps: 0, closed: 0, projected: 0, earned: 0, received: 0, pending: 0 }; x.clients++; for (const f of ['open_jobs', 'seats', 'apps', 'closed', 'projected', 'earned', 'received', 'pending']) x[f] += r[f]; by.set(k, x); } out.agencies = [...by.values()].sort((x, y) => y.projected - x.projected); }

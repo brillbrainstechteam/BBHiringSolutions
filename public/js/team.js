@@ -91,14 +91,15 @@
 
   function shell() {
     const u = BB.me.user; const ag = BB.me.agency;
-    $('#app').innerHTML = `<div class="shell"><aside class="side">${BB.brand('Team portal', '#team')}<nav class="nav" data-nav></nav>
-      <div class="me"><b>${esc(u.name)}</b>${BB.levelName(u.level)}${ag ? ` · ${esc(ag.name)}` : ' · BrillBrains'}<div style="margin-top:6px"><a href="/guides/${{ super: 'super-admin', admin: 'admin', sub: 'sub-admin' }[u.level]}.html" target="_blank" rel="noopener" style="color:var(--gold)">1-page guide ↗</a></div></div></aside>
+    $('#app').innerHTML = `<div class="shell"><aside class="side">${BB.brand('Team portal', '#team')}<nav class="nav" data-nav></nav><span class="side-art" aria-hidden="true"></span></aside>
       <div class="main"><header class="topbar"><div class="search"${u.channel_only || u.accounts_only ? ' hidden' : ''}>${icon('search')}<input placeholder="Search ID, name, phone or company…" data-search><div class="search-res hidden" data-res></div></div>
         ${u.channel_only || u.accounts_only ? '' : `<button class="btn sm" data-addlead>${icon('plus', 'wa-ico')} Add lead</button>`}
         <div class="bell" style="position:relative"><button class="btn icon ghost" data-bell title="Alerts">${icon('bell', 'wa-ico')}</button><span class="n hidden" data-bell-n></span><div class="drop hidden" data-bell-drop></div></div>
-        <span class="who-chip"><span class="av">${esc(u.name.split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase())}</span><span><b>${esc(u.name)}</b><span>${BB.levelName(u.level)}${ag ? ' · ' + esc(ag.name) : ''}</span></span></span>
-        <button class="btn sm ghost" data-out>Log out</button></header><div class="page" data-page></div></div></div>`;
+        <details class="who-menu"><summary class="who-chip"><span class="av">${esc(u.name.split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase())}</span><span><b>${esc(u.name)}</b><span>${BB.levelName(u.level)}${ag ? ' · ' + esc(ag.name) : ''}</span></span><svg class="who-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></summary>
+          <div class="step-pop right who-pop" role="menu"><a role="menuitem" href="/guides/${{ super: 'super-admin', admin: 'admin', sub: 'sub-admin' }[u.level]}.html" target="_blank" rel="noopener">1-page guide ↗</a><button type="button" role="menuitem" data-cpw>Change password</button><button type="button" role="menuitem" class="danger-item" data-out>Log out</button></div></details></header><div class="page" data-page></div></div></div>`;
     updateNav();
+    const wm = $('.who-menu'); document.addEventListener('click', (e) => { if (wm.open && (!wm.contains(e.target) || e.target.closest('[role=menuitem]'))) wm.open = false; });
+    $('[data-cpw]').onclick = () => changePassword(false);
     $('[data-out]').onclick = async () => { await BB.post('/api/team/logout').catch(() => {}); BB.setToken('team', null); BB.closePanels(); BB.unguard(); BB.me = null; if (BB.setUrl) BB.setUrl('team'); BB.toast('You have logged out'); loginView(); };
     if (!u.channel_only && !u.accounts_only) { $('[data-addlead]').onclick = quickLead; wireSearch(); }
     wireBell();
@@ -115,7 +116,7 @@
   async function renderPage() {
     const el = $('[data-page]'); const page = BB.pages[pageName]; el.dataset.view = pageName; // lets a page's lists keep their header in view
     const m = MENU.find((x) => x[0] === pageName);
-    el.innerHTML = `<div class="page-h ${pageName === 'jobs' ? 'stacked' : ''}"><div class="grow">${GROUP[pageName] === 'Financials' ? '' : `<span class="eyebrow">${GROUP[pageName]}</span>`}<div class="row"><h1>${m[1]}</h1>${['logs', 'candidates'].includes(pageName) ? '' : '<button class="help-btn" data-help title="What is this page?">?</button>'}</div><div class="help hidden" data-help-t>${HELP[pageName] || ''}</div></div><div class="row" data-actions></div></div><div data-content><div class="empty">Loading…</div></div>`;
+    el.innerHTML = `<div class="page-h ${pageName === 'jobs' ? 'stacked' : ''}"><div class="grow">${GROUP[pageName] === 'Financials' ? '' : `<span class="eyebrow">${GROUP[pageName]}</span>`}<div class="row"><h1>${m[1]}</h1>${['logs', 'candidates', 'dashboard'].includes(pageName) ? '' : '<button class="help-btn" data-help title="What is this page?">?</button>'}</div><div class="help hidden" data-help-t>${HELP[pageName] || ''}</div></div><div class="row" data-actions></div></div><div data-content><div class="empty">Loading…</div></div>`;
     if ($('[data-help]')) $('[data-help]').onclick = () => $('[data-help-t]').classList.toggle('hidden');
     // A redraw while someone is typing in a list's search box keeps what they typed since (the old box still holds
     // it), the cursor in the box, and searches again for the newer text.

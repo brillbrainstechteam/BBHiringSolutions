@@ -29,10 +29,24 @@
   const money = (n) => { n = Math.round(Number(n) || 0); const t = n >= 1e7 ? `₹${(n / 1e7).toFixed(2).replace(/\.?0+$/, '')} Cr` : n >= 1e5 ? `₹${(n / 1e5).toFixed(2).replace(/\.?0+$/, '')} L` : inr(n); return `<span title="${esc(inr(n))}">${t}</span>`; };
   const salRange = (j) => { if (j.no_salary) return '<span class="badge b-red tiny">Salary missing</span>'; const lo = Math.round((j.sal_from || j.sal_to) / 12); const hi = Math.round((j.sal_to || j.sal_from) / 12); return `${inr(lo)}${hi !== lo ? `–${inr(hi)}` : ''}/mo`; };
   const STAGE_LABEL = { Screening: 'Screening', Telephonic: 'Telephonic', Virtual: 'Virtual', Client: 'Client round', Offer: 'Offer' };
+  const svg = (d, w = 2) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
+  const DASH_IC = {
+    clients: svg('<rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 8h6M9 12h6M9 16h4"/>'),
+    jobs: svg('<rect x="3" y="7" width="18" height="13" rx="2"/><path d="M9 7V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"/>'),
+    seats: svg('<path d="M7 11V6a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v5"/><path d="M5 11h14v4H5z"/><path d="M7 15v5M17 15v5"/>'),
+    apps: svg('<path d="m12 3 9 5-9 5-9-5z"/><path d="m3 13 9 5 9-5"/>'),
+    closed: svg('<path d="m11 17 2 2a1.5 1.5 0 0 0 2-2"/><path d="m14 14 2.5 2.5a1.5 1.5 0 0 0 2-2l-3.9-3.9a2 2 0 0 0-2.8 0l-.9.9a1.5 1.5 0 0 1-2-2l2.8-2.8a3 3 0 0 1 3.6-.5l.6.3a3 3 0 0 0 2 .3L21 6"/><path d="m21 15-2 1"/><path d="M3 6l2.6.6a3 3 0 0 0 2-.3L9 5.5"/><path d="m3 15 6 5"/>'),
+    received: svg('<path d="M6 4h12M6 9h12M9 4c6 0 6 9 0 9H6l8 8"/>'),
+    pending: svg('<path d="M6 3h12M6 21h12"/><path d="M7 3c0 5 10 5 10 9s-10 4-10 9"/><path d="M17 3c0 5-10 5-10 9"/>'),
+    growth: svg('<path d="M4 20h3v-5H4zM10.5 20h3v-8h-3zM17 20h3V9h-3z" fill="currentColor" stroke="none"/><path d="M4 11l6-5 4 3 6-6"/><path d="M15 3h5v5"/>', 2.4),
+  };
+  const PERIODS = [['', 'All time'], ['30', 'Last 30 days'], ['90', 'Last 90 days'], ['fy', 'This financial year']];
   const healthView = (h, me, agq) => {
     const t = h.totals; const sc = (n, qs) => (n ? `<a href="#" class="pipe-n" data-hgo="${esc(qs)}">${n}</a>` : '<span class="faint">0</span>');
-    const kpi = (ic, l, v, sub, tone, link) => `<a class="card kpi click t-${tone}" href="/team/${link}"><span class="kpi-ic">${BB.icon(ic)}</span><span class="kpi-txt"><span class="kpi-v">${v}</span><span class="kpi-l">${l}</span>${sub ? `<span class="kpi-s">${sub}</span>` : ''}</span></a>`;
+    const kpi = (ic, l, v, sub, tone, link) => `<a class="card kpi click t-${tone}" href="/team/${link}"><span class="kpi-ic">${DASH_IC[ic]}</span><span class="kpi-txt"><span class="kpi-l">${l}</span><span class="kpi-v">${v}</span>${sub ? `<span class="kpi-s">${sub}</span>` : ''}</span></a>`;
     const tick = (k, label, n, tone) => `<button type="button" class="h-tk ${tone || ''} ${h.ticket === k ? 'on' : ''}" data-hticket="${k}" aria-pressed="${h.ticket === k}">${label}${n !== undefined ? `<span class="h-tk-n">${n}</span>` : ''}</button>`;
+    const mcard = (cls, ic, l, v, sub) => `<div class="card mcard ${cls}"><div class="m-head"><span class="m-ic">${DASH_IC[ic]}</span><span class="kpi-l">${l}</span></div><span class="m-v">${v}</span><span class="kpi-s">${sub}</span></div>`;
+    const per = (PERIODS.find((p) => p[0] === (h.period || '')) || PERIODS[0])[1];
     const stTot = Math.max(1, ...h.stages.map((s) => t.stages[s]));
     const clientRow = (r) => `<tr class="h-cl" data-hcl="${esc(r.id)}"><td><button type="button" class="h-tog" aria-label="Show job openings">▸</button></td><td><a href="#" data-open="client:${esc(r.id)}"><b>${esc(r.company)}</b></a> <span class="badge ${r.ticket === 'High' ? 'b-gold' : 'b-outline'} tiny">${r.ticket} ticket</span>${h.agencies || isSuper(me) ? `<div class="tiny muted">${esc(r.agency)}</div>` : ''}</td>
       <td class="num">${r.open_jobs}${r.draft_jobs ? ` <span class="tiny muted">+${r.draft_jobs} draft</span>` : ''}</td><td class="num">${r.seats}</td>${h.stages.map((s) => `<td class="num">${sc(r.stages[s], BB.qs({ client: r.id, stage: s }))}</td>`).join('')}
@@ -41,15 +55,15 @@
     return `<div class="health stack">
       <div class="card h-bar">
         <div class="h-group"><span class="h-lab">Clients</span><div class="h-tickets">${tick('', 'All', t.ticket_counts.High + t.ticket_counts.Low)}${tick('High', 'High ticket', t.ticket_counts.High, 'hi')}${tick('Low', 'Low ticket', t.ticket_counts.Low, 'lo')}</div></div>
-        ${h.agency_options ? `<div class="h-group"><span class="h-lab">Agency</span><select data-dagency aria-label="Agency"><option value="">Overall</option><option value="none" ${agq === 'none' ? 'selected' : ''}>BrillBrains (own)</option>${h.agency_options.map((x) => `<option value="${esc(x.id)}" ${agq === x.id ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select></div>` : ''}
-        <div class="h-group h-rule">${isSuper(me) ? `<button type="button" class="btn sm" data-hfrom title="Clients whose fee (open opportunity plus earned) reaches this are High ticket">High ticket from ${money(h.high_from)} · Change</button>` : `<span class="small muted">High ticket from ${money(h.high_from)}</span>`}</div>
+        ${h.agency_options ? `<span class="h-div"></span><div class="h-group"><span class="h-lab">Agency</span><select data-dagency aria-label="Agency"><option value="">Overall</option><option value="none" ${agq === 'none' ? 'selected' : ''}>BrillBrains (own)</option>${h.agency_options.map((x) => `<option value="${esc(x.id)}" ${agq === x.id ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select></div>` : ''}
+        <span class="h-div"></span><div class="h-group h-rule"><span class="small muted">High ticket from ${money(h.high_from)}</span>${isSuper(me) ? '<a href="#" class="h-change" data-hfrom title="Clients whose fee (open opportunity plus earned) reaches this are High ticket">Change</a>' : ''}</div>
       </div>
-      <div class="kpis">${kpi('building', 'Clients with open requirements', t.clients_open, '', 'blue', 'clients')}${kpi('brief', 'Open job openings', t.open_jobs, t.draft_jobs ? `${t.draft_jobs} more waiting for the JD` : '', 'violet', 'jobs?status=Active')}${kpi('users', 'Seats to fill', t.seats, '', 'gold', 'jobs?status=Active')}${kpi('flow', 'Active applications', t.apps, '', 'blue', 'applications')}</div>
+      <div class="kpis">${kpi('clients', 'Clients with open requirements', t.clients_open, '', 'blue', 'clients')}${kpi('jobs', 'Open job openings', t.open_jobs, t.draft_jobs ? `${t.draft_jobs} more waiting for the JD` : '', 'violet', 'jobs?status=Active')}${kpi('seats', 'Seats to fill', t.seats, '', 'gold', 'jobs?status=Active')}${kpi('apps', 'Active applications', t.apps, '', 'green', 'applications')}</div>
       <div class="kpis money">
-        <div class="card mcard m-opp"><span class="kpi-l">Revenue opportunity</span><span class="m-v">${money(t.projected)}</span><span class="kpi-s">High ticket ${money(t.split.High)} · Low ticket ${money(t.split.Low)}</span></div>
-        <div class="card mcard m-won"><span class="kpi-l">Positions closed</span><span class="m-v">${t.closed}</span><span class="kpi-s">Revenue ${money(t.earned)}</span></div>
-        <div class="card mcard m-got"><span class="kpi-l">Revenue received</span><span class="m-v">${money(t.received)}</span><span class="kpi-s">${t.earned ? `${Math.round((t.received / t.earned) * 100)}% of the revenue from closed positions` : 'Nothing closed yet'}</span></div>
-        <div class="card mcard m-pend"><span class="kpi-l">Revenue pending</span><span class="m-v">${money(t.pending)}</span><span class="kpi-s">Billed or to bill, not received yet</span></div>
+        <div class="card mcard m-opp"><span class="kpi-l">Revenue opportunity</span><span class="m-v">${money(t.projected)}</span><span class="m-split">High ticket: ${money(t.split.High)}<i></i>Low ticket: ${money(t.split.Low)}</span><span class="m-art">${DASH_IC.growth}</span></div>
+        ${mcard('m-won', 'closed', 'Positions closed', t.closed, `Revenue ${money(t.earned)}${h.period ? ` · ${per.toLowerCase()}` : ''}`)}
+        ${mcard('m-got', 'received', 'Revenue received', money(t.received), t.earned ? `${Math.round((t.received / t.earned) * 100)}% of the revenue from closed positions` : 'Nothing closed yet')}
+        ${mcard('m-pend', 'pending', 'Revenue pending', money(t.pending), 'Billed or to bill, not received yet')}
       </div>
       <div class="card"><div class="card-h"><h3>Applications by stage</h3><span class="small muted">Open applications on these job openings · click to work through them</span></div><div class="h-stages">${h.stages.map((s) => `<a href="#" class="h-stage" data-hgo="${esc(BB.qs({ stage: s }))}"><span class="small muted">${STAGE_LABEL[s] || s}</span><b>${t.stages[s]}</b><i style="width:${(t.stages[s] / stTot) * 100}%"></i></a>`).join('')}</div></div>
       ${h.no_salary.length ? `<div class="notice small">${h.no_salary.length} open job opening${h.no_salary.length === 1 ? ' has' : 's have'} no salary, so ${h.no_salary.length === 1 ? 'it is' : 'they are'} not in the revenue: ${h.no_salary.slice(0, 6).map((j) => `<a href="#" data-open="job:${esc(j.id)}">${esc(j.title)} (${esc(j.client)})</a>`).join(', ')}${h.no_salary.length > 6 ? ` and ${h.no_salary.length - 6} more` : ''}.</div>` : ''}
@@ -58,26 +72,28 @@
         ${h.clients.length ? `<div class="tbl-wrap"><table class="tbl h-tbl"><thead><tr><th></th><th>Client</th><th class="num">Open jobs</th><th class="num">Seats</th>${h.stages.map((s) => `<th class="num">${STAGE_LABEL[s] || s}</th>`).join('')}<th class="num">Opportunity</th><th class="num">Closed</th><th class="num">Revenue</th><th class="num">Received</th><th class="num">Pending</th></tr></thead><tbody>${h.clients.map(clientRow).join('')}</tbody></table></div>` : '<div class="empty">No clients with open requirements here.</div>'}
       </div></div>`;
   };
+  const healthQs = (o) => new URLSearchParams(Object.entries(o).filter(([, v]) => v)).toString();
   const wireHealth = (el, h, me, agq) => {
     const box = $('.health', el);
-    const load = async (ticket, agency) => {
-      const u = new URL(location.href); for (const [k, v] of [['ticket', ticket], ['agency', agency]]) { if (v) u.searchParams.set(k, v); else u.searchParams.delete(k); } history.replaceState(history.state, '', u);
+    const load = async (ticket, agency, period) => {
+      const u = new URL(location.href); for (const [k, v] of [['ticket', ticket], ['agency', agency], ['period', period]]) { if (v) u.searchParams.set(k, v); else u.searchParams.delete(k); } history.replaceState(history.state, '', u);
       box.classList.add('h-busy');
-      try { const qs = new URLSearchParams(Object.entries({ agency, ticket }).filter(([, v]) => v)).toString(); const h2 = await BB.api(`/api/health${qs ? `?${qs}` : ''}`); const tmp = document.createElement('div'); tmp.innerHTML = healthView(h2, me, agency); box.replaceWith(tmp.firstElementChild); wireHealth(el, h2, me, agency); } catch (e) { box.classList.remove('h-busy'); BB.fail(e); }
+      try { const qs = healthQs({ agency, ticket, period }); const h2 = await BB.api(`/api/health${qs ? `?${qs}` : ''}`); const tmp = document.createElement('div'); tmp.innerHTML = healthView(h2, me, agency); box.replaceWith(tmp.firstElementChild); wireHealth(el, h2, me, agency); } catch (e) { box.classList.remove('h-busy'); BB.fail(e); }
     };
-    $$('[data-hticket]', el).forEach((b) => (b.onclick = () => { if (b.dataset.hticket !== h.ticket) load(b.dataset.hticket, agq); }));
-    const dsel = $('[data-dagency]', box); if (dsel) dsel.onchange = () => BB.setQ({ agency: dsel.value }); // the agency also changes Needs attention below
+    BB.dashPeriod = (p) => load(h.ticket, agq, p);
+    $$('[data-hticket]', el).forEach((b) => (b.onclick = () => { if (b.dataset.hticket !== h.ticket) load(b.dataset.hticket, agq, h.period); }));
+    const dsel = $('[data-dagency]', box); if (dsel) dsel.onchange = () => BB.setQ({ agency: dsel.value });
     $$('[data-hag]', el).forEach((b) => (b.onclick = (e) => { e.preventDefault(); BB.setQ({ agency: b.dataset.hag }); }));
     $$('[data-hgo]', el).forEach((b) => (b.onclick = (e) => { e.preventDefault(); BB.go(`team/applications?${b.dataset.hgo}`); }));
     $$('.h-cl', el).forEach((tr) => { const tog = $('.h-tog', tr); tog.onclick = () => { const open = tr.classList.toggle('open'); tog.textContent = open ? '▾' : '▸'; $$(`[data-hof="${CSS.escape(tr.dataset.hcl)}"]`, el).forEach((x) => { x.hidden = !open; }); }; });
-    const hf = $('[data-hfrom]', el); if (hf) hf.onclick = () => BB.ask({ title: 'High ticket clients', note: 'A client is High ticket when the fee they bring (open opportunity plus revenue from closed positions) reaches this amount.', fields: [{ name: 'high_from', label: 'High ticket from (₹ fee)', type: 'number', value: h.high_from, voice: false }], ok: 'Save', submit: (v) => BB.api('/api/settings/ticket', { method: 'PUT', body: { value: { high_from: Number(v.high_from) || 100000 } } }) }).then((x) => x && BB.refreshPage());
+    const hf = $('[data-hfrom]', el); if (hf) hf.onclick = (e) => { e.preventDefault(); BB.ask({ title: 'High ticket clients', note: 'A client is High ticket when the fee they bring (open opportunity plus revenue from closed positions) reaches this amount.', fields: [{ name: 'high_from', label: 'High ticket from (₹ fee)', type: 'number', value: h.high_from, voice: false }], ok: 'Save', submit: (v) => BB.api('/api/settings/ticket', { method: 'PUT', body: { value: { high_from: Number(v.high_from) || 100000 } } }) }).then((x) => x && BB.refreshPage()); };
   };
 
   // ---------- Dashboard ----------
   // Super admin: the health of every agency's work. Admin: the same for their agency. Sub admin: their own day.
-  P.dashboard = async ({ el, q, me }) => {
+  P.dashboard = async ({ el, q, me, actions }) => {
     const agq = isSuper(me) && q.agency ? q.agency : ''; const sub = me.level === 'sub';
-    const hq = new URLSearchParams(Object.entries({ agency: agq, ticket: q.ticket || '' }).filter(([, v]) => v)).toString();
+    const hq = healthQs({ agency: agq, ticket: q.ticket || '', period: q.period || '' });
     const [d, pl, td, h] = await Promise.all([BB.api(`/api/dashboard${agq ? `?agency=${encodeURIComponent(agq)}` : ''}`), sub ? BB.api('/api/pipeline?mine=1').catch(() => null) : null, BB.api('/api/today').catch(() => null), sub ? null : BB.api(`/api/health${hq ? `?${hq}` : ''}`)]); const c = d.counts;
     // Today: what to do now from everything I own, most urgent first; each line opens the record, the title the list.
     const tsec = td ? td.sections.filter((x) => x.count) : [];
@@ -101,7 +117,11 @@
     $$('[data-st]', el).forEach((b) => (b.onclick = () => BB.go(`team/jobs?status=${encodeURIComponent(b.dataset.st)}`)));
     $$('[data-pipe]', el).forEach((b) => (b.onclick = (e) => { e.preventDefault(); BB.go(`team/applications?${b.dataset.pipe}${me.level === 'super' ? '' : '&mine=1'}`); }));
     const dag = $('[data-dagency]', el); if (dag) dag.onchange = () => BB.setQ({ agency: dag.value });
-    if (h) wireHealth(el, h, me, agq);
+    if (h) {
+      wireHealth(el, h, me, agq);
+      // The period (closed positions and their money) sits beside the heading.
+      if (actions) { actions.innerHTML = `<label class="dash-period">${svg('<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18"/>')}<select data-dperiod aria-label="Period">${PERIODS.map(([v, l]) => `<option value="${v}" ${(q.period || '') === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>`; $('[data-dperiod]', actions).onchange = (e) => BB.dashPeriod(e.target.value); }
+    }
     $$('[data-tlink]', el).forEach((b) => (b.onclick = (e) => { e.preventDefault(); BB.go(`team/${b.dataset.tlink}`); }));
   };
 
