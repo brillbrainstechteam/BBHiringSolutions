@@ -2066,7 +2066,9 @@ a.pipe-step { text-decoration: none; cursor: pointer; } a.pipe-step:hover { bord
 .kpi-v, .mcard .m-v { font-size: 34px; color: var(--navy); }
 .kpi-s { margin-top: 0; color: #5B6785; }
 .kpi.t-green { --kc: #1F9D6B; }
-.kpis.money { grid-template-columns: minmax(0, 1.55fr) repeat(3, minmax(0, 1fr)); }
+/* Column widths for this row are set once, lower down, to match the hiring
+   row. Leaving a different track list here only invites the two rows to drift
+   apart again. */
 @media (max-width: 1100px) { .kpis.money { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .kpis .mcard { flex-direction: column; gap: 10px; }
 .m-head { display: flex; align-items: center; gap: 12px; }
@@ -2100,7 +2102,11 @@ a.pipe-step { text-decoration: none; cursor: pointer; } a.pipe-step:hover { bord
 .kpi-ic { width: 44px; height: 44px; } .kpi-ic svg { width: 20px; height: 20px; }
 .kpi-l { font-size: 14px; line-height: 1.3; }
 .kpi-v { font-size: 30px; }
-.kpis.money { grid-template-columns: minmax(0, 1.3fr) repeat(3, minmax(0, 1fr)); align-items: stretch; }
+/* Four equal columns, same as the row above, so each revenue card sits
+   directly under its hiring card. A wider first column made the opportunity
+   card overhang "Clients with open requirements" and pushed the other three
+   out of line with the cards they belong under. */
+.kpis.money { grid-template-columns: repeat(4, minmax(0, 1fr)); align-items: stretch; }
 .kpis .mcard { padding: 16px 18px; gap: 8px; justify-content: flex-start; }
 .m-head { gap: 10px; } .m-ic { width: 36px; height: 36px; } .m-ic svg { width: 18px; height: 18px; }
 .mcard .kpi-l { font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
