@@ -2196,3 +2196,9 @@ a.pipe-step { text-decoration: none; cursor: pointer; } a.pipe-step:hover { bord
 .dt-cl .dt-client { flex-wrap: nowrap; white-space: nowrap; } .dt-cl .dt-sub { white-space: nowrap; }
 .tbl.dt td.num { white-space: nowrap; }
 .dt-job td:nth-child(3) { white-space: normal; min-width: 260px; }
+/* Table scrollbars: thin, light cream */
+.dt-wrap, .tbl-wrap { scrollbar-width: thin; scrollbar-color: #EADFC2 #FBF8F0; }
+.dt-wrap::-webkit-scrollbar, .tbl-wrap::-webkit-scrollbar { height: 8px; width: 8px; }
+.dt-wrap::-webkit-scrollbar-track, .tbl-wrap::-webkit-scrollbar-track { background: #FBF8F0; border-radius: 8px; }
+.dt-wrap::-webkit-scrollbar-thumb, .tbl-wrap::-webkit-scrollbar-thumb { background: #EADFC2; border-radius: 8px; }
+.dt-wrap::-webkit-scrollbar-thumb:hover, .tbl-wrap::-webkit-scrollbar-thumb:hover { background: #DCCB9E; }
