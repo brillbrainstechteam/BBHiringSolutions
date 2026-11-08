@@ -47,7 +47,7 @@ async function dispatch(req, res, url, body) {
     const need = r.opts.auth;
     if (need) {
       const s = loadSession(req);
-      if (!s || s.expired) throw D.httpError(401, s && s.expired ? 'You were logged out after being idle. Please log in again.' : 'Please log in.');
+      if (!s || s.expired) throw D.httpError(401, s && s.expired ? 'Session expired. Please log in.' : 'Please log in.');
       if (s.kind !== need) throw D.httpError(403, 'Not allowed here.');
       if (s.pending_2fa && !r.opts.allow2fa) throw D.httpError(401, 'Enter the WhatsApp code first.');
       ctx.session = s;
