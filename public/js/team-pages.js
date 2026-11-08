@@ -41,6 +41,121 @@
     growth: svg('<path d="M4 20h3v-5H4zM10.5 20h3v-8h-3zM17 20h3V9h-3z" fill="currentColor" stroke="none"/><path d="M4 11l6-5 4 3 6-6"/><path d="M15 3h5v5"/>', 2.4),
   };
   const PERIODS = [['', 'All time'], ['30', 'Last 30 days'], ['90', 'Last 90 days'], ['fy', 'This financial year']];
+  // ---------- Dashboard tables: search, filters, sorting, columns, selection, export and pages, all on the loaded data ----------
+  const STAGE_IC = {
+    Screening: svg('<rect x="6" y="4" width="12" height="17" rx="2"/><path d="M9 4V3h6v1"/><path d="m9 13 2 2 4-4"/>'),
+    Telephonic: svg('<path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 1.9.7 2.8a2 2 0 0 1-.5 2.1L8 9.9a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.8.7a2 2 0 0 1 1.7 2z"/>'),
+    Virtual: svg('<rect x="4" y="5" width="16" height="11" rx="1.5"/><path d="M2 19h20"/>'),
+    Client: svg('<circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><circle cx="17" cy="9" r="2.6"/><path d="M16 14.2c2.9.3 5 2.7 5 5.8"/>'),
+    Offer: svg('<circle cx="12" cy="9" r="6"/><path d="m8.5 14 -1.5 7 5-3 5 3-1.5-7"/>'),
+  };
+  const tstore = { get: (k) => { try { return JSON.parse(localStorage.getItem(k) || 'null'); } catch { return null; } }, set: (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* private window */ } } };
+  const csvDownload = (name, head, rows) => { const q = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`; const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob(['﻿' + [head, ...rows].map((r) => r.map(q).join(',')).join('\r\n')], { type: 'text/csv' })); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000); };
+  const sortIc = (on, dir) => `<span class="dt-sort ${on ? 'on' : ''}">${on ? (dir > 0 ? '▲' : '▼') : '⇅'}</span>`;
+  const pager = (st, total) => { const pages = Math.max(1, Math.ceil(total / st.per)); const from = total ? (st.page - 1) * st.per + 1 : 0; const to = Math.min(total, st.page * st.per);
+    return `<div class="dt-foot"><label class="dt-per">Rows per page <select data-dtper>${[10, 25, 50].map((n) => `<option ${n === st.per ? 'selected' : ''}>${n}</option>`).join('')}</select></label><span class="dt-range">${from}–${to} of ${total}</span><span class="grow"></span>
+      <button type="button" class="btn sm" data-dtpage="${st.page - 1}" ${st.page <= 1 ? 'disabled' : ''}>‹ Previous</button>${Array.from({ length: pages }, (_, i) => i + 1).filter((p) => p === 1 || p === pages || Math.abs(p - st.page) <= 1).map((p, i, l) => `${i && p - l[i - 1] > 1 ? '<span class="dt-gap">…</span>' : ''}<button type="button" class="dt-pg ${p === st.page ? 'on' : ''}" data-dtpage="${p}">${p}</button>`).join('')}<button type="button" class="btn sm" data-dtpage="${st.page + 1}" ${st.page >= pages ? 'disabled' : ''}>Next ›</button></div>`; };
+  const cmp = (a, b) => (typeof a === 'number' && typeof b === 'number' ? a - b : String(a ?? '').localeCompare(String(b ?? ''), undefined, { sensitivity: 'base' }));
+
+  // Agencies: search, agency filter, sort (menu or column), export, pages.
+  const agencyTable = (box, h) => {
+    const st = { q: '', ag: '', sort: 'name', dir: 1, page: 1, per: 10 };
+    const cols = [['name', 'Agency'], ['clients', 'Clients', 1], ['open_jobs', 'Open jobs', 1], ['seats', 'Seats', 1], ['apps', 'Applications', 1], ['projected', 'Opportunity', 1], ['closed', 'Closed', 1], ['earned', 'Revenue', 1], ['received', 'Received', 1], ['pending', 'Pending', 1]];
+    const SORTS = [['name:1', 'Agency (A–Z)'], ['name:-1', 'Agency (Z–A)'], ['projected:-1', 'Opportunity (high–low)'], ['open_jobs:-1', 'Open jobs (most)'], ['apps:-1', 'Applications (most)'], ['pending:-1', 'Pending (high–low)']];
+    const rowsNow = () => h.agencies.filter((a) => (!st.ag || a.id === st.ag) && (!st.q || a.name.toLowerCase().includes(st.q.toLowerCase()))).sort((a, b) => cmp(a[st.sort], b[st.sort]) * st.dir);
+    const draw = () => {
+      const all = rowsNow(); const pages = Math.max(1, Math.ceil(all.length / st.per)); st.page = Math.min(st.page, pages); const rows = all.slice((st.page - 1) * st.per, st.page * st.per);
+      box.innerHTML = `<div class="dt-bar"><label class="dt-search">${BB.icon('search')}<input placeholder="Search agencies…" value="${esc(st.q)}" data-dtq></label><span class="grow"></span>
+        <label class="dt-sel">${svg('<path d="M3 5h18l-7 8v6l-4-2v-4z"/>')}<select data-dtag><option value="">All agencies</option>${h.agencies.map((a) => `<option value="${esc(a.id)}" ${st.ag === a.id ? 'selected' : ''}>${esc(a.name)}</option>`).join('')}</select></label>
+        <label class="dt-sel">${svg('<path d="M7 4v16M3 8l4-4 4 4M17 20V4M13 16l4 4 4-4"/>')}<select data-dtsort>${SORTS.map(([v, l]) => `<option value="${v}" ${`${st.sort}:${st.dir}` === v ? 'selected' : ''}>Sort: ${l}</option>`).join('')}${SORTS.some(([v]) => v === `${st.sort}:${st.dir}`) ? '' : `<option selected>Sort: column</option>`}</select></label>
+        <span class="dt-vdiv"></span><button type="button" class="btn sm dt-btn" data-dtexport>${BB.icon('download')} Export</button></div>
+        <div class="dt-wrap"><table class="tbl dt"><thead><tr>${cols.map(([k, t, num]) => `<th class="${num ? 'num' : ''}"><button type="button" class="dt-th" data-dtsortk="${k}">${t}${sortIc(st.sort === k, st.dir)}</button></th>`).join('')}</tr></thead>
+        <tbody>${rows.map((a) => `<tr><td><a href="#" class="dt-link" data-hag="${esc(a.id)}">${esc(a.name)}</a></td><td class="num">${a.clients}</td><td class="num">${a.open_jobs}</td><td class="num">${a.seats}</td><td class="num">${a.apps}</td><td class="num"><b>${money(a.projected)}</b></td><td class="num">${a.closed}</td><td class="num">${money(a.earned)}</td><td class="num">${money(a.received)}</td><td class="num">${money(a.pending)}</td></tr>`).join('') || `<tr><td colspan="${cols.length}"><div class="dt-empty">No agencies match. <a href="#" data-dtreset>Reset filters</a></div></td></tr>`}</tbody></table></div>${pager(st, all.length)}`;
+      const q = $('[data-dtq]', box); q.oninput = () => { st.q = q.value; st.page = 1; draw(); const n = $('[data-dtq]', box); n.focus(); n.setSelectionRange(n.value.length, n.value.length); };
+      $('[data-dtag]', box).onchange = (e) => { st.ag = e.target.value; st.page = 1; draw(); };
+      $('[data-dtsort]', box).onchange = (e) => { const [k, d] = e.target.value.split(':'); if (d) { st.sort = k; st.dir = Number(d); draw(); } };
+      $$('[data-dtsortk]', box).forEach((b) => (b.onclick = () => { const k = b.dataset.dtsortk; st.dir = st.sort === k ? -st.dir : (k === 'name' ? 1 : -1); st.sort = k; draw(); }));
+      $$('[data-dtpage]', box).forEach((b) => (b.onclick = () => { st.page = Number(b.dataset.dtpage); draw(); }));
+      $('[data-dtper]', box).onchange = (e) => { st.per = Number(e.target.value); st.page = 1; draw(); };
+      $('[data-dtexport]', box).onclick = () => csvDownload('agencies.csv', cols.map((c) => c[1]), rowsNow().map((a) => cols.map(([k]) => a[k])));
+      const rs = $('[data-dtreset]', box); if (rs) rs.onclick = (e) => { e.preventDefault(); Object.assign(st, { q: '', ag: '', page: 1 }); draw(); };
+      $$('[data-hag]', box).forEach((b) => (b.onclick = (e) => { e.preventDefault(); BB.setQ({ agency: b.dataset.hag }); }));
+    };
+    draw();
+  };
+
+  // Clients and their job openings: search, ticket and stage filters, sort, columns, ticks with bulk update, row menu, pages.
+  const clientTable = (box, h, me, shared) => {
+    const st = shared; // { q, ticket, stage, sort, dir, page, per, sel:Set, open:Set }
+    const COLS = [['open_jobs', 'Open jobs'], ['seats', 'Seats'], ...h.stages.map((s) => [`st_${s}`, STAGE_LABEL[s] || s]), ['projected', 'Opportunity'], ['closed', 'Closed'], ['earned', 'Revenue'], ['received', 'Received'], ['pending', 'Pending']];
+    const hidden = new Set(tstore.get('bb.dash.hidecols') || []);
+    const val = (r, k) => (k === 'company' ? r.company : k.startsWith('st_') ? r.stages[k.slice(3)] : r[k]);
+    const SORTS = [['company:1', 'Client (A–Z)'], ['company:-1', 'Client (Z–A)'], ['projected:-1', 'Opportunity (high–low)'], ['open_jobs:-1', 'Open jobs (most)'], ['seats:-1', 'Seats (most)'], ['pending:-1', 'Pending (high–low)']];
+    const match = (r) => (!st.ticket || r.ticket === st.ticket) && (!st.stage || r.stages[st.stage] > 0)
+      && (!st.q || [r.company, r.agency, ...r.jobs.map((j) => j.title)].join(' ').toLowerCase().includes(st.q.toLowerCase()));
+    const rowsNow = () => h.clients.filter(match).sort((a, b) => cmp(val(a, st.sort), val(b, st.sort)) * st.dir);
+    const n = (v, link) => (v ? `<a href="#" class="pipe-n" data-hgo="${esc(link)}"><b>${v}</b></a>` : '<span class="dt-zero">0</span>');
+    const cell = (r, k) => { if (k.startsWith('st_')) return n(r.stages[k.slice(3)], BB.qs({ client: r.id, stage: k.slice(3) }));
+      if (['projected', 'earned', 'received'].includes(k)) return r[k] ? (k === 'projected' ? `<b>${money(r[k])}</b>` : money(r[k])) : '<span class="dt-zero">₹0</span>';
+      if (k === 'pending') return r.pending ? `<span class="h-pend">${money(r.pending)}</span>` : '<span class="dt-zero">₹0</span>';
+      if (k === 'open_jobs') return `${r.open_jobs || '<span class="dt-zero">0</span>'}${r.draft_jobs ? ` <span class="tiny muted">+${r.draft_jobs} draft</span>` : ''}`;
+      return r[k] ? r[k] : '<span class="dt-zero">0</span>'; };
+    const jcell = (j, k) => (k.startsWith('st_') ? n(j.stages[k.slice(3)], BB.qs({ job: j.id, stage: k.slice(3) })) : k === 'projected' ? (j.projected ? `${money(j.projected)}<div class="tiny muted">${money(j.fee_each)} a seat</div>` : '<span class="dt-zero">—</span>') : k === 'open_jobs' ? `<span class="tiny muted">${j.openings} open${j.hired ? `, ${j.hired} joined` : ''}</span>` : k === 'seats' ? j.seats : '');
+    const draw = () => {
+      const cols = COLS.filter(([k]) => !hidden.has(k)); const all = rowsNow(); const pages = Math.max(1, Math.ceil(all.length / st.per)); st.page = Math.min(st.page, pages);
+      const rows = all.slice((st.page - 1) * st.per, st.page * st.per); const allTicked = rows.length && rows.every((r) => st.sel.has(r.id));
+      box.innerHTML = `<div class="dt-bar"><label class="dt-search">${BB.icon('search')}<input placeholder="Search clients or jobs…" value="${esc(st.q)}" data-dtq></label>
+        <label class="dt-sel">${svg('<path d="M3 5h18l-7 8v6l-4-2v-4z"/>')}<select data-dtticket><option value="">Ticket type: All</option><option value="High" ${st.ticket === 'High' ? 'selected' : ''}>High ticket</option><option value="Low" ${st.ticket === 'Low' ? 'selected' : ''}>Low ticket</option></select></label>
+        <label class="dt-sel">${svg('<path d="M3 5h18l-7 8v6l-4-2v-4z"/>')}<select data-dtstage><option value="">Stage: All</option>${h.stages.map((s) => `<option value="${s}" ${st.stage === s ? 'selected' : ''}>${STAGE_LABEL[s] || s}</option>`).join('')}</select></label>
+        <label class="dt-sel">${svg('<path d="M7 4v16M3 8l4-4 4 4M17 20V4M13 16l4 4 4-4"/>')}<select data-dtsort>${SORTS.map(([v, l]) => `<option value="${v}" ${`${st.sort}:${st.dir}` === v ? 'selected' : ''}>Sort: ${l}</option>`).join('')}${SORTS.some(([v]) => v === `${st.sort}:${st.dir}`) ? '' : '<option selected>Sort: column</option>'}</select></label>
+        <span class="grow"></span><span class="dt-vdiv"></span>
+        <details class="step-menu dt-cols"><summary class="btn sm dt-btn">${svg('<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16M15 4v16"/>')} Columns</summary><div class="step-pop right dt-colpop">${COLS.map(([k, t]) => `<label class="row small"><input type="checkbox" data-dtcol="${k}" ${hidden.has(k) ? '' : 'checked'}> ${esc(t)}</label>`).join('')}</div></details>
+        <button type="button" class="btn sm dt-btn" data-dtexport>${BB.icon('download')} Export</button>
+        <button type="button" class="btn sm dt-primary" data-dtbulk ${st.sel.size ? '' : 'disabled'}>${svg('<path d="m12 3 9 5-9 5-9-5z"/><path d="m3 13 9 5 9-5"/>')} Bulk update${st.sel.size ? ` (${st.sel.size})` : ''}</button></div>
+        <div class="dt-wrap"><table class="tbl dt dt-cl"><thead><tr><th class="dt-ck"><input type="checkbox" data-dtall ${allTicked ? 'checked' : ''} aria-label="Tick all on this page"></th><th class="dt-tg"></th><th><button type="button" class="dt-th" data-dtsortk="company">Client${sortIc(st.sort === 'company', st.dir)}</button></th>${cols.map(([k, t]) => `<th class="num"><button type="button" class="dt-th" data-dtsortk="${k}">${esc(t)}${sortIc(st.sort === k, st.dir)}</button></th>`).join('')}<th class="dt-act">Actions</th></tr></thead>
+        <tbody>${rows.map((r) => `<tr class="dt-row ${st.sel.has(r.id) ? 'ticked' : ''}"><td class="dt-ck"><input type="checkbox" data-dtck="${esc(r.id)}" ${st.sel.has(r.id) ? 'checked' : ''} aria-label="Tick ${esc(r.company)}"></td><td class="dt-tg"><button type="button" class="dt-tog ${st.open.has(r.id) ? 'open' : ''}" data-dttog="${esc(r.id)}" aria-label="Show job openings" ${r.jobs.length ? '' : 'disabled'}>▶</button></td>
+          <td><div class="dt-client"><a href="#" class="dt-link" data-open="client:${esc(r.id)}">${esc(r.company)}</a><span class="dt-pill ${r.ticket === 'High' ? 'hi' : 'lo'}">${r.ticket} ticket</span></div>${isSuper(me) ? `<div class="dt-sub">${esc(r.agency)}</div>` : ''}</td>
+          ${cols.map(([k]) => `<td class="num">${cell(r, k)}</td>`).join('')}
+          <td class="dt-act"><details class="step-menu dt-more"><summary class="dt-dots" aria-label="Actions for ${esc(r.company)}">⋮</summary><div class="step-pop right" role="menu"><button type="button" role="menuitem" data-open="client:${esc(r.id)}">Open client</button><button type="button" role="menuitem" data-dtnewjob="${esc(r.id)}">New job opening</button><button type="button" role="menuitem" data-hgo="${esc(BB.qs({ client: r.id }))}">See applications</button><button type="button" role="menuitem" data-dtjobs="${esc(r.id)}">See job openings</button></div></details></td></tr>
+          ${st.open.has(r.id) ? r.jobs.map((j) => `<tr class="dt-job"><td></td><td></td><td><a href="#" data-open="job:${esc(j.id)}">${esc(j.title)}</a> <span class="tiny muted">${esc(j.city || '')} · ${esc(j.status || '')} · ${salRange(j)}</span></td>${cols.map(([k]) => `<td class="num">${jcell(j, k)}</td>`).join('')}<td></td></tr>`).join('') : ''}`).join('')
+          || `<tr><td colspan="${cols.length + 4}"><div class="dt-empty">No clients match these filters. <a href="#" data-dtreset>Reset filters</a></div></td></tr>`}</tbody></table></div>${pager(st, all.length)}`;
+      const q = $('[data-dtq]', box); q.oninput = () => { st.q = q.value; st.page = 1; draw(); const x = $('[data-dtq]', box); x.focus(); x.setSelectionRange(x.value.length, x.value.length); };
+      $('[data-dtticket]', box).onchange = (e) => { st.ticket = e.target.value; st.page = 1; draw(); };
+      $('[data-dtstage]', box).onchange = (e) => { st.stage = e.target.value; st.page = 1; st.onStage && st.onStage(); draw(); };
+      $('[data-dtsort]', box).onchange = (e) => { const [k, d] = e.target.value.split(':'); if (d) { st.sort = k; st.dir = Number(d); draw(); } };
+      $$('[data-dtsortk]', box).forEach((b) => (b.onclick = () => { const k = b.dataset.dtsortk; st.dir = st.sort === k ? -st.dir : (k === 'company' ? 1 : -1); st.sort = k; draw(); }));
+      $$('[data-dtpage]', box).forEach((b) => (b.onclick = () => { st.page = Number(b.dataset.dtpage); draw(); }));
+      $('[data-dtper]', box).onchange = (e) => { st.per = Number(e.target.value); st.page = 1; draw(); };
+      $$('[data-dtcol]', box).forEach((c) => (c.onchange = () => { if (c.checked) hidden.delete(c.dataset.dtcol); else hidden.add(c.dataset.dtcol); tstore.set('bb.dash.hidecols', [...hidden]); draw(); $('.dt-cols', box).open = true; }));
+      $$('[data-dtck]', box).forEach((c) => (c.onchange = () => { if (c.checked) st.sel.add(c.dataset.dtck); else st.sel.delete(c.dataset.dtck); draw(); }));
+      $('[data-dtall]', box).onchange = (e) => { rows.forEach((r) => (e.target.checked ? st.sel.add(r.id) : st.sel.delete(r.id))); draw(); };
+      $$('[data-dttog]', box).forEach((b) => (b.onclick = () => { const id = b.dataset.dttog; if (st.open.has(id)) st.open.delete(id); else st.open.add(id); draw(); }));
+      $$('[data-dtjobs]', box).forEach((b) => (b.onclick = () => { st.open.add(b.dataset.dtjobs); draw(); }));
+      $$('[data-dtnewjob]', box).forEach((b) => (b.onclick = () => BB.newJob(b.dataset.dtnewjob)));
+      $$('[data-hgo]', box).forEach((b) => (b.onclick = (e) => { e.preventDefault(); BB.go(`team/applications?${b.dataset.hgo}`); }));
+      const rs = $('[data-dtreset]', box); if (rs) rs.onclick = (e) => { e.preventDefault(); Object.assign(st, { q: '', ticket: '', stage: '', page: 1 }); st.onStage && st.onStage(); draw(); };
+      $('[data-dtexport]', box).onclick = () => csvDownload('clients-and-job-openings.csv', ['Client', 'Ticket', 'Agency', ...COLS.map((c) => c[1])], (st.sel.size ? rowsNow().filter((r) => st.sel.has(r.id)) : rowsNow()).map((r) => [r.company, r.ticket, r.agency, ...COLS.map(([k]) => val(r, k))]));
+      $('[data-dtbulk]', box).onclick = () => bulk();
+      box.onclick = (e) => $$('details.step-menu', box).forEach((d) => { if (!d.contains(e.target) || e.target.closest('[role=menuitem]')) d.open = false; });
+    };
+    const bulk = async () => {
+      const ids = [...st.sel]; const people = await BB.api('/api/people').catch(() => []);
+      const v = await BB.ask({ title: `Bulk update · ${ids.length} client${ids.length === 1 ? '' : 's'}`, fields: [
+        { name: 'what', label: 'What to change', type: 'select', options: [['owner', 'Set the owner'], ...(isSuper(me) && h.agency_options ? [['agency', 'Assign to an agency']] : [])], value: 'owner', placeholder: false },
+        { name: 'owner', label: 'Owner', type: 'select', options: people.map((p) => [p.id, p.name]), opt: true },
+        ...(isSuper(me) && h.agency_options ? [{ name: 'agency_id', label: 'Agency', type: 'select', options: h.agency_options.map((a) => [a.id, a.name]), opt: true }] : [])], ok: 'Update',
+        submit: async (x) => {
+          if (x.what === 'agency') { if (!x.agency_id) { const e = new Error('Pick the agency'); e.field = 'agency_id'; throw e; } return BB.post('/api/leads/assign', { type: 'client', ids, agency_id: x.agency_id }); }
+          if (!x.owner) { const e = new Error('Pick the owner'); e.field = 'owner'; throw e; }
+          const fails = []; for (const id of ids) { try { await BB.post(`/api/clients/${id}/owners`, { owners: [x.owner] }); } catch (er) { fails.push(`${id}: ${er.message}`); } }
+          return { fails };
+        } });
+      if (!v) return; if (v.fails && v.fails.length) BB.toast(`${ids.length - v.fails.length} updated · ${v.fails.length} not: ${v.fails[0]}`, true); else BB.toast(`${ids.length} client${ids.length === 1 ? '' : 's'} updated`);
+      st.sel.clear(); BB.refreshPage();
+    };
+    st.redraw = draw; draw();
+  };
+
   const healthView = (h, me, agq) => {
     const t = h.totals; const sc = (n, qs) => (n ? `<a href="#" class="pipe-n" data-hgo="${esc(qs)}">${n}</a>` : '<span class="faint">0</span>');
     const kpi = (ic, l, v, sub, tone, link) => `<a class="card kpi click t-${tone}" href="/team/${link}"><span class="kpi-ic">${DASH_IC[ic]}</span><span class="kpi-txt"><span class="kpi-l">${l}</span><span class="kpi-v">${v}</span>${sub ? `<span class="kpi-s">${sub}</span>` : ''}</span></a>`;
@@ -65,12 +180,11 @@
         ${mcard('m-got', 'received', 'Revenue received', money(t.received), t.earned ? `${Math.round((t.received / t.earned) * 100)}% of the revenue from closed positions` : 'Nothing closed yet')}
         ${mcard('m-pend', 'pending', 'Revenue pending', money(t.pending), 'Billed or to bill, not received yet')}
       </div>
-      <div class="card"><div class="card-h"><h3>Applications by stage</h3><span class="small muted">Open applications on these job openings · click to work through them</span></div><div class="h-stages">${h.stages.map((s) => `<a href="#" class="h-stage" data-hgo="${esc(BB.qs({ stage: s }))}"><span class="small muted">${STAGE_LABEL[s] || s}</span><b>${t.stages[s]}</b><i style="width:${(t.stages[s] / stTot) * 100}%"></i></a>`).join('')}</div></div>
+      <section class="card dsec"><h3 class="dsec-h">Applications by stage</h3><div class="h-stages">${h.stages.map((s) => `<div role="button" tabindex="0" class="h-stage" data-hstage="${s}"><span class="h-stage-ic">${STAGE_IC[s] || ''}</span><span class="h-stage-t"><span>${STAGE_LABEL[s] || s}</span><b>${t.stages[s]}</b></span><a href="#" class="h-stage-go" data-hgo="${esc(BB.qs({ stage: s }))}" title="Open these applications" aria-label="Open ${STAGE_LABEL[s] || s} applications">↗</a></div>`).join('')}</div></section>
       ${h.no_salary.length ? `<div class="notice small">${h.no_salary.length} open job opening${h.no_salary.length === 1 ? ' has' : 's have'} no salary, so ${h.no_salary.length === 1 ? 'it is' : 'they are'} not in the revenue: ${h.no_salary.slice(0, 6).map((j) => `<a href="#" data-open="job:${esc(j.id)}">${esc(j.title)} (${esc(j.client)})</a>`).join(', ')}${h.no_salary.length > 6 ? ` and ${h.no_salary.length - 6} more` : ''}.</div>` : ''}
-      ${h.agencies && h.agencies.length ? `<div class="card"><div class="card-h"><h3>Agencies</h3><span class="small muted">Click an agency to see only its work</span></div>${BB.table([{ t: 'Agency', f: (a) => `<a href="#" data-hag="${esc(a.id)}"><b>${esc(a.name)}</b></a>` }, { t: 'Clients', num: 1, f: (a) => a.clients }, { t: 'Open jobs', num: 1, f: (a) => a.open_jobs }, { t: 'Seats', num: 1, f: (a) => a.seats }, { t: 'Applications', num: 1, f: (a) => a.apps }, { t: 'Opportunity', num: 1, f: (a) => `<b>${money(a.projected)}</b>` }, { t: 'Closed', num: 1, f: (a) => a.closed }, { t: 'Revenue', num: 1, f: (a) => money(a.earned) }, { t: 'Received', num: 1, f: (a) => money(a.received) }, { t: 'Pending', num: 1, f: (a) => money(a.pending) }], h.agencies)}</div>` : ''}
-      <div class="card"><div class="card-h"><h3>Clients and their job openings</h3><span class="small muted">Biggest first · click a client's arrow for its job openings</span></div>
-        ${h.clients.length ? `<div class="tbl-wrap"><table class="tbl h-tbl"><thead><tr><th></th><th>Client</th><th class="num">Open jobs</th><th class="num">Seats</th>${h.stages.map((s) => `<th class="num">${STAGE_LABEL[s] || s}</th>`).join('')}<th class="num">Opportunity</th><th class="num">Closed</th><th class="num">Revenue</th><th class="num">Received</th><th class="num">Pending</th></tr></thead><tbody>${h.clients.map(clientRow).join('')}</tbody></table></div>` : '<div class="empty">No clients with open requirements here.</div>'}
-      </div></div>`;
+      ${h.agencies && h.agencies.length ? '<section class="card dsec"><h3 class="dsec-h">Agencies</h3><div data-agtbl></div></section>' : ''}
+      <section class="card dsec"><h3 class="dsec-h">Clients and their job openings</h3>${h.clients.length ? '<div data-cltbl></div>' : '<div class="dt-empty">No clients with open requirements here.</div>'}</section>
+      </div>`;
   };
   const healthQs = (o) => new URLSearchParams(Object.entries(o).filter(([, v]) => v)).toString();
   const wireHealth = (el, h, me, agq) => {
@@ -85,6 +199,12 @@
     const dsel = $('[data-dagency]', box); if (dsel) dsel.onchange = () => BB.setQ({ agency: dsel.value });
     $$('[data-hag]', el).forEach((b) => (b.onclick = (e) => { e.preventDefault(); BB.setQ({ agency: b.dataset.hag }); }));
     $$('[data-hgo]', el).forEach((b) => (b.onclick = (e) => { e.preventDefault(); BB.go(`team/applications?${b.dataset.hgo}`); }));
+    const cst = { q: '', ticket: '', stage: '', sort: 'projected', dir: -1, page: 1, per: 10, sel: new Set(), open: new Set() };
+    const markStage = () => $$('[data-hstage]', box).forEach((c) => c.classList.toggle('on', c.dataset.hstage === cst.stage));
+    cst.onStage = markStage;
+    const at = $('[data-agtbl]', box); if (at) agencyTable(at, h);
+    const ct = $('[data-cltbl]', box); if (ct) clientTable(ct, h, me, cst);
+    $$('[data-hstage]', box).forEach((c) => (c.onclick = (e) => { if (e.target.closest('[data-hgo]')) return; cst.stage = cst.stage === c.dataset.hstage ? '' : c.dataset.hstage; cst.page = 1; markStage(); if (cst.redraw) cst.redraw(); }));
     $$('.h-cl', el).forEach((tr) => { const tog = $('.h-tog', tr); tog.onclick = () => { const open = tr.classList.toggle('open'); tog.textContent = open ? '▾' : '▸'; $$(`[data-hof="${CSS.escape(tr.dataset.hcl)}"]`, el).forEach((x) => { x.hidden = !open; }); }; });
     const hf = $('[data-hfrom]', el); if (hf) hf.onclick = (e) => { e.preventDefault(); BB.ask({ title: 'High ticket clients', note: 'A client is High ticket when the fee they bring (open opportunity plus revenue from closed positions) reaches this amount.', fields: [{ name: 'high_from', label: 'High ticket from (₹ fee)', type: 'number', value: h.high_from, voice: false }], ok: 'Save', submit: (v) => BB.api('/api/settings/ticket', { method: 'PUT', body: { value: { high_from: Number(v.high_from) || 100000 } } }) }).then((x) => x && BB.refreshPage()); };
   };
