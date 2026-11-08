@@ -159,7 +159,17 @@ input[type=range] { padding: 0; accent-color: var(--mustard); border: 0; }
 .call-connected { display: flex; flex-direction: column; gap: 14px; } .call-connected[hidden] { display: none; }
 .call-rec { display: flex; padding-top: 12px; border-top: 1px dashed var(--border); } .call-rec .btn { background: var(--surface); border: 1px solid var(--border); }
 .kpi-s { font-size: 11.5px; color: var(--muted); margin-top: 3px; }
-.h-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; } .h-bar select { width: auto; min-width: 200px; height: 38px; }
+.h-bar { display: flex; align-items: center; gap: 14px 28px; flex-wrap: wrap; padding: 14px 18px; }
+.h-group { display: flex; align-items: center; gap: 10px; } .h-rule { margin-left: auto; }
+.h-lab { font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.h-tickets { display: inline-flex; gap: 8px; flex-wrap: wrap; }
+.h-tk { display: inline-flex; align-items: center; gap: 8px; height: 38px; padding: 0 16px; border: 1px solid var(--border); border-radius: 999px; background: var(--surface); font: 600 14px var(--font); color: var(--ink); cursor: pointer; transition: border-color .15s, background .15s; }
+.h-tk:hover { border-color: var(--navy); }
+.h-tk-n { min-width: 22px; height: 22px; padding: 0 6px; border-radius: 999px; display: inline-grid; place-items: center; font-size: 12px; background: var(--surface-2); color: var(--muted); }
+.h-tk.hi .h-tk-n { background: color-mix(in srgb, var(--gold-600, #c99a06) 18%, transparent); color: var(--gold-600, #9a7400); }
+.h-tk.on { background: var(--navy); border-color: var(--navy); color: #fff; } .h-tk.on .h-tk-n { background: rgba(255, 255, 255, .2); color: #fff; }
+.h-bar select { width: auto; min-width: 220px; height: 38px; }
+.health.h-busy { opacity: .55; pointer-events: none; transition: opacity .15s; }
 .kpis.money .mcard { display: flex; flex-direction: column; gap: 2px; padding: 16px 18px; border-top: 4px solid var(--mc); background: linear-gradient(180deg, color-mix(in srgb, var(--mc) 7%, var(--surface)), var(--surface)); }
 .mcard .m-v { font: 700 26px/1.1 var(--display); letter-spacing: -.02em; margin-top: 4px; }
 .m-opp { --mc: var(--violet, #7b5cd6); } .m-won { --mc: var(--blue, #2f6fde); } .m-got { --mc: var(--green, #1f9d55); } .m-pend { --mc: var(--amber, #d98a00); }

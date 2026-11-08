@@ -32,18 +32,17 @@
   const healthView = (h, me, agq) => {
     const t = h.totals; const sc = (n, qs) => (n ? `<a href="#" class="pipe-n" data-hgo="${esc(qs)}">${n}</a>` : '<span class="faint">0</span>');
     const kpi = (ic, l, v, sub, tone, link) => `<a class="card kpi click t-${tone}" href="/team/${link}"><span class="kpi-ic">${BB.icon(ic)}</span><span class="kpi-txt"><span class="kpi-v">${v}</span><span class="kpi-l">${l}</span>${sub ? `<span class="kpi-s">${sub}</span>` : ''}</span></a>`;
-    const tick = (k, label, n) => `<button type="button" class="${h.ticket === k ? 'on' : ''}" data-hticket="${k}">${label}${n !== undefined ? ` <span class="faint">${n}</span>` : ''}</button>`;
+    const tick = (k, label, n, tone) => `<button type="button" class="h-tk ${tone || ''} ${h.ticket === k ? 'on' : ''}" data-hticket="${k}" aria-pressed="${h.ticket === k}">${label}${n !== undefined ? `<span class="h-tk-n">${n}</span>` : ''}</button>`;
     const stTot = Math.max(1, ...h.stages.map((s) => t.stages[s]));
     const clientRow = (r) => `<tr class="h-cl" data-hcl="${esc(r.id)}"><td><button type="button" class="h-tog" aria-label="Show job openings">▸</button></td><td><a href="#" data-open="client:${esc(r.id)}"><b>${esc(r.company)}</b></a> <span class="badge ${r.ticket === 'High' ? 'b-gold' : 'b-outline'} tiny">${r.ticket} ticket</span>${h.agencies || isSuper(me) ? `<div class="tiny muted">${esc(r.agency)}</div>` : ''}</td>
       <td class="num">${r.open_jobs}${r.draft_jobs ? ` <span class="tiny muted">+${r.draft_jobs} draft</span>` : ''}</td><td class="num">${r.seats}</td>${h.stages.map((s) => `<td class="num">${sc(r.stages[s], BB.qs({ client: r.id, stage: s }))}</td>`).join('')}
       <td class="num"><b>${money(r.projected)}</b></td><td class="num">${r.closed}</td><td class="num">${money(r.earned)}</td><td class="num">${money(r.received)}</td><td class="num">${r.pending ? `<span class="h-pend">${money(r.pending)}</span>` : money(0)}</td></tr>
       ${r.jobs.map((j) => `<tr class="h-job" data-hof="${esc(r.id)}" hidden><td></td><td><a href="#" data-open="job:${esc(j.id)}">${esc(j.title)}</a> <span class="tiny muted">${esc(j.city || '')} · ${esc(j.status || '')} · ${salRange(j)}</span></td><td class="num tiny muted">${j.openings} open${j.hired ? `, ${j.hired} joined` : ''}</td><td class="num">${j.seats}</td>${h.stages.map((s) => `<td class="num">${sc(j.stages[s], BB.qs({ job: j.id, stage: s }))}</td>`).join('')}<td class="num">${j.projected ? money(j.projected) : '<span class="faint">—</span>'}${j.fee_each ? `<div class="tiny muted">${money(j.fee_each)} a seat</div>` : ''}</td><td colspan="4"></td></tr>`).join('')}`;
     return `<div class="health stack">
-      <div class="h-bar">
-        <div class="seg h-tickets">${tick('', 'All clients')}${tick('High', 'High ticket', t.ticket_counts.High)}${tick('Low', 'Low ticket', t.ticket_counts.Low)}</div>
-        <span class="grow"></span>
-        ${isSuper(me) ? `<button type="button" class="btn sm ghost" data-hfrom title="Clients whose fee (open opportunity plus earned) reaches this are High ticket">High ticket from ${money(h.high_from)}</button>` : `<span class="small muted">High ticket from ${money(h.high_from)}</span>`}
-        ${h.agency_options ? `<select class="mini" data-dagency aria-label="Agency"><option value="">Overall</option><option value="none" ${agq === 'none' ? 'selected' : ''}>BrillBrains (own)</option>${h.agency_options.map((x) => `<option value="${esc(x.id)}" ${agq === x.id ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select>` : ''}
+      <div class="card h-bar">
+        <div class="h-group"><span class="h-lab">Clients</span><div class="h-tickets">${tick('', 'All', t.ticket_counts.High + t.ticket_counts.Low)}${tick('High', 'High ticket', t.ticket_counts.High, 'hi')}${tick('Low', 'Low ticket', t.ticket_counts.Low, 'lo')}</div></div>
+        ${h.agency_options ? `<div class="h-group"><span class="h-lab">Agency</span><select data-dagency aria-label="Agency"><option value="">Overall</option><option value="none" ${agq === 'none' ? 'selected' : ''}>BrillBrains (own)</option>${h.agency_options.map((x) => `<option value="${esc(x.id)}" ${agq === x.id ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select></div>` : ''}
+        <div class="h-group h-rule">${isSuper(me) ? `<button type="button" class="btn sm" data-hfrom title="Clients whose fee (open opportunity plus earned) reaches this are High ticket">High ticket from ${money(h.high_from)} · Change</button>` : `<span class="small muted">High ticket from ${money(h.high_from)}</span>`}</div>
       </div>
       <div class="kpis">${kpi('building', 'Clients with open requirements', t.clients_open, '', 'blue', 'clients')}${kpi('brief', 'Open job openings', t.open_jobs, t.draft_jobs ? `${t.draft_jobs} more waiting for the JD` : '', 'violet', 'jobs?status=Active')}${kpi('users', 'Seats to fill', t.seats, '', 'gold', 'jobs?status=Active')}${kpi('flow', 'Active applications', t.apps, '', 'blue', 'applications')}</div>
       <div class="kpis money">
@@ -59,8 +58,15 @@
         ${h.clients.length ? `<div class="tbl-wrap"><table class="tbl h-tbl"><thead><tr><th></th><th>Client</th><th class="num">Open jobs</th><th class="num">Seats</th>${h.stages.map((s) => `<th class="num">${STAGE_LABEL[s] || s}</th>`).join('')}<th class="num">Opportunity</th><th class="num">Closed</th><th class="num">Revenue</th><th class="num">Received</th><th class="num">Pending</th></tr></thead><tbody>${h.clients.map(clientRow).join('')}</tbody></table></div>` : '<div class="empty">No clients with open requirements here.</div>'}
       </div></div>`;
   };
-  const wireHealth = (el, h) => {
-    $$('[data-hticket]', el).forEach((b) => (b.onclick = () => BB.setQ({ ticket: b.dataset.hticket })));
+  const wireHealth = (el, h, me, agq) => {
+    const box = $('.health', el);
+    const load = async (ticket, agency) => {
+      const u = new URL(location.href); for (const [k, v] of [['ticket', ticket], ['agency', agency]]) { if (v) u.searchParams.set(k, v); else u.searchParams.delete(k); } history.replaceState(history.state, '', u);
+      box.classList.add('h-busy');
+      try { const qs = new URLSearchParams(Object.entries({ agency, ticket }).filter(([, v]) => v)).toString(); const h2 = await BB.api(`/api/health${qs ? `?${qs}` : ''}`); const tmp = document.createElement('div'); tmp.innerHTML = healthView(h2, me, agency); box.replaceWith(tmp.firstElementChild); wireHealth(el, h2, me, agency); } catch (e) { box.classList.remove('h-busy'); BB.fail(e); }
+    };
+    $$('[data-hticket]', el).forEach((b) => (b.onclick = () => { if (b.dataset.hticket !== h.ticket) load(b.dataset.hticket, agq); }));
+    const dsel = $('[data-dagency]', box); if (dsel) dsel.onchange = () => BB.setQ({ agency: dsel.value }); // the agency also changes Needs attention below
     $$('[data-hag]', el).forEach((b) => (b.onclick = (e) => { e.preventDefault(); BB.setQ({ agency: b.dataset.hag }); }));
     $$('[data-hgo]', el).forEach((b) => (b.onclick = (e) => { e.preventDefault(); BB.go(`team/applications?${b.dataset.hgo}`); }));
     $$('.h-cl', el).forEach((tr) => { const tog = $('.h-tog', tr); tog.onclick = () => { const open = tr.classList.toggle('open'); tog.textContent = open ? '▾' : '▸'; $$(`[data-hof="${CSS.escape(tr.dataset.hcl)}"]`, el).forEach((x) => { x.hidden = !open; }); }; });
@@ -95,7 +101,7 @@
     $$('[data-st]', el).forEach((b) => (b.onclick = () => BB.go(`team/jobs?status=${encodeURIComponent(b.dataset.st)}`)));
     $$('[data-pipe]', el).forEach((b) => (b.onclick = (e) => { e.preventDefault(); BB.go(`team/applications?${b.dataset.pipe}${me.level === 'super' ? '' : '&mine=1'}`); }));
     const dag = $('[data-dagency]', el); if (dag) dag.onchange = () => BB.setQ({ agency: dag.value });
-    if (h) wireHealth(el, h);
+    if (h) wireHealth(el, h, me, agq);
     $$('[data-tlink]', el).forEach((b) => (b.onclick = (e) => { e.preventDefault(); BB.go(`team/${b.dataset.tlink}`); }));
   };
 
