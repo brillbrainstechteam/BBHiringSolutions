@@ -60,7 +60,7 @@
       </div>
       <div class="kpis">${kpi('clients', 'Clients with open requirements', t.clients_open, '', 'blue', 'clients')}${kpi('jobs', 'Open job openings', t.open_jobs, t.draft_jobs ? `${t.draft_jobs} more waiting for the JD` : '', 'violet', 'jobs?status=Active')}${kpi('seats', 'Seats to fill', t.seats, '', 'gold', 'jobs?status=Active')}${kpi('apps', 'Active applications', t.apps, '', 'green', 'applications')}</div>
       <div class="kpis money">
-        <div class="card mcard m-opp"><span class="kpi-l">Revenue opportunity</span><span class="m-v">${money(t.projected)}</span><span class="m-split">High ticket: ${money(t.split.High)}<i></i>Low ticket: ${money(t.split.Low)}</span><span class="m-art">${DASH_IC.growth}</span></div>
+        <div class="card mcard m-opp"><span class="kpi-l">Revenue opportunity</span><span class="m-v">${money(t.projected)}</span><span class="m-split"><span>High ticket <b>${money(t.split.High)}</b></span><i></i><span>Low ticket <b>${money(t.split.Low)}</b></span></span><span class="m-art">${DASH_IC.growth}</span></div>
         ${mcard('m-won', 'closed', 'Positions closed', t.closed, `Revenue ${money(t.earned)}${h.period ? ` · ${per.toLowerCase()}` : ''}`)}
         ${mcard('m-got', 'received', 'Revenue received', money(t.received), t.earned ? `${Math.round((t.received / t.earned) * 100)}% of the revenue from closed positions` : 'Nothing closed yet')}
         ${mcard('m-pend', 'pending', 'Revenue pending', money(t.pending), 'Billed or to bill, not received yet')}
