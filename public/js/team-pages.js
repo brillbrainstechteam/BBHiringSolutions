@@ -90,25 +90,30 @@
   // Clients and their job openings: search, ticket and stage filters, sort, columns, ticks with bulk update, row menu, pages.
   const clientTable = (box, h, me, shared) => {
     const st = shared; // { q, ticket, stage, sort, dir, page, per, sel:Set, open:Set }
-    const COLS = [['open_jobs', 'Open jobs'], ['seats', 'Seats'], ...h.stages.map((s) => [`st_${s}`, STAGE_LABEL[s] || s]), ['projected', 'Opportunity'], ['closed', 'Closed'], ['earned', 'Revenue'], ['received', 'Received'], ['pending', 'Pending']];
+    const COLS = [['resp_days', 'Client response'], ['waiting', 'Waiting on client'], ['open_jobs', 'Open jobs'], ['seats', 'Seats'], ...h.stages.map((s) => [`st_${s}`, STAGE_LABEL[s] || s]), ['projected', 'Opportunity'], ['closed', 'Closed'], ['earned', 'Revenue'], ['received', 'Received'], ['pending', 'Pending']];
     const hidden = new Set(tstore.get('bb.dash.hidecols') || []);
-    const val = (r, k) => (k === 'company' ? r.company : k.startsWith('st_') ? r.stages[k.slice(3)] : r[k]);
-    const SORTS = [['company:1', 'Client (A–Z)'], ['company:-1', 'Client (Z–A)'], ['projected:-1', 'Opportunity (high–low)'], ['open_jobs:-1', 'Open jobs (most)'], ['seats:-1', 'Seats (most)'], ['pending:-1', 'Pending (high–low)']];
-    const match = (r) => (!st.ticket || r.ticket === st.ticket) && (!st.stage || r.stages[st.stage] > 0)
+    const val = (r, k) => (k === 'company' ? r.company : k === 'resp_days' ? (r.resp_days ?? 999) : k === 'waiting' ? r.waiting * 1000 + r.wait_oldest : k.startsWith('st_') ? r.stages[k.slice(3)] : r[k]);
+    const SORTS = [['company:1', 'Client (A–Z)'], ['company:-1', 'Client (Z–A)'], ['resp_days:1', 'Fastest to respond'], ['resp_days:-1', 'Slowest to respond'], ['waiting:-1', 'Waiting on client (most)'], ['projected:-1', 'Opportunity (high–low)'], ['open_jobs:-1', 'Open jobs (most)'], ['seats:-1', 'Seats (most)'], ['pending:-1', 'Pending (high–low)']];
+    const match = (r) => (!st.ticket || r.ticket === st.ticket) && (!st.stage || r.stages[st.stage] > 0) && (!st.resp || (st.resp === 'stuck' ? r.stuck : st.resp === 'waiting' ? r.waiting > 0 : r.response === st.resp))
       && (!st.q || [r.company, r.agency, ...r.jobs.map((j) => j.title)].join(' ').toLowerCase().includes(st.q.toLowerCase()));
     const rowsNow = () => h.clients.filter(match).sort((a, b) => cmp(val(a, st.sort), val(b, st.sort)) * st.dir);
     const n = (v, link) => (v ? `<a href="#" class="pipe-n" data-hgo="${esc(link)}"><b>${v}</b></a>` : '<span class="dt-zero">0</span>');
-    const cell = (r, k) => { if (k.startsWith('st_')) return n(r.stages[k.slice(3)], BB.qs({ client: r.id, stage: k.slice(3) }));
+    const RESP_TIP = { Fast: 'Usually responds within 2 days', Average: 'Usually responds in 3–5 days', Slow: 'Usually takes more than 5 days', Waiting: 'No past replies yet; something is waiting on them' };
+    const cell = (r, k) => {
+      if (k === 'resp_days') return r.response ? `<span class="dt-resp ${r.response.toLowerCase()}" title="${esc(RESP_TIP[r.response] || '')}${r.resp_n ? ` · from ${r.resp_n} repl${r.resp_n === 1 ? 'y' : 'ies'} in the last 6 months` : ''}">${r.response}</span>${r.resp_days !== null ? `<div class="dt-sub">${r.resp_days < 1 ? 'same day' : `~${r.resp_days} day${r.resp_days === 1 ? '' : 's'}`}</div>` : ''}` : '<span class="dt-zero" title="Nothing sent to this client in the last 6 months">No data</span>';
+      if (k === 'waiting') return r.waiting ? `<a href="#" class="pipe-n" data-hgo="${esc(BB.qs({ client: r.id, stage: 'Client' }))}"><b class="${r.stuck ? 'dt-stuck' : ''}">${r.waiting}</b></a><div class="dt-sub ${r.stuck ? 'dt-stuck' : ''}">oldest ${r.wait_oldest} day${r.wait_oldest === 1 ? '' : 's'}</div>` : '<span class="dt-zero">0</span>';
+      if (k.startsWith('st_')) return n(r.stages[k.slice(3)], BB.qs({ client: r.id, stage: k.slice(3) }));
       if (['projected', 'earned', 'received'].includes(k)) return r[k] ? (k === 'projected' ? `<b>${money(r[k])}</b>` : money(r[k])) : '<span class="dt-zero">₹0</span>';
       if (k === 'pending') return r.pending ? `<span class="h-pend">${money(r.pending)}</span>` : '<span class="dt-zero">₹0</span>';
       if (k === 'open_jobs') return `${r.open_jobs || '<span class="dt-zero">0</span>'}${r.draft_jobs ? ` <span class="tiny muted">+${r.draft_jobs} draft</span>` : ''}`;
       return r[k] ? r[k] : '<span class="dt-zero">0</span>'; };
-    const jcell = (j, k) => (k.startsWith('st_') ? n(j.stages[k.slice(3)], BB.qs({ job: j.id, stage: k.slice(3) })) : k === 'projected' ? (j.projected ? `${money(j.projected)}<div class="tiny muted">${money(j.fee_each)} a seat</div>` : '<span class="dt-zero">—</span>') : k === 'open_jobs' ? `<span class="tiny muted">${j.openings} open${j.hired ? `, ${j.hired} joined` : ''}</span>` : k === 'seats' ? j.seats : '');
+    const jcell = (j, k) => (k === 'resp_days' || k === 'waiting' ? '' : k.startsWith('st_') ? n(j.stages[k.slice(3)], BB.qs({ job: j.id, stage: k.slice(3) })) : k === 'projected' ? (j.projected ? `${money(j.projected)}<div class="tiny muted">${money(j.fee_each)} a seat</div>` : '<span class="dt-zero">—</span>') : k === 'open_jobs' ? `<span class="tiny muted">${j.openings} open${j.hired ? `, ${j.hired} joined` : ''}</span>` : k === 'seats' ? j.seats : '');
     const draw = () => {
       const cols = COLS.filter(([k]) => !hidden.has(k)); const all = rowsNow(); const pages = Math.max(1, Math.ceil(all.length / st.per)); st.page = Math.min(st.page, pages);
       const rows = all.slice((st.page - 1) * st.per, st.page * st.per); const allTicked = rows.length && rows.every((r) => st.sel.has(r.id));
       box.innerHTML = `<div class="dt-bar"><label class="dt-search">${BB.icon('search')}<input placeholder="Search clients or jobs…" value="${esc(st.q)}" data-dtq></label>
         <label class="dt-sel">${svg('<path d="M3 5h18l-7 8v6l-4-2v-4z"/>')}<select data-dtticket><option value="">Ticket type: All</option><option value="High" ${st.ticket === 'High' ? 'selected' : ''}>High ticket</option><option value="Low" ${st.ticket === 'Low' ? 'selected' : ''}>Low ticket</option></select></label>
+        <label class="dt-sel">${svg('<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>')}<select data-dtresp><option value="">Response: All</option>${[['Fast', 'Fast'], ['Average', 'Average'], ['Slow', 'Slow'], ['waiting', 'Waiting on client'], ['stuck', 'Stuck on client (5+ days)']].map(([v, l]) => `<option value="${v}" ${st.resp === v ? 'selected' : ''}>Response: ${l}</option>`).join('')}</select></label>
         <label class="dt-sel">${svg('<path d="M3 5h18l-7 8v6l-4-2v-4z"/>')}<select data-dtstage><option value="">Stage: All</option>${h.stages.map((s) => `<option value="${s}" ${st.stage === s ? 'selected' : ''}>${STAGE_LABEL[s] || s}</option>`).join('')}</select></label>
         <label class="dt-sel">${svg('<path d="M7 4v16M3 8l4-4 4 4M17 20V4M13 16l4 4 4-4"/>')}<select data-dtsort>${SORTS.map(([v, l]) => `<option value="${v}" ${`${st.sort}:${st.dir}` === v ? 'selected' : ''}>Sort: ${l}</option>`).join('')}${SORTS.some(([v]) => v === `${st.sort}:${st.dir}`) ? '' : '<option selected>Sort: column</option>'}</select></label>
         <span class="grow"></span>
@@ -124,6 +129,7 @@
           || `<tr><td colspan="${cols.length + 4}"><div class="dt-empty">No clients match these filters. <a href="#" data-dtreset>Reset filters</a></div></td></tr>`}</tbody></table></div>${pager(st, all.length)}`;
       const q = $('[data-dtq]', box); q.oninput = () => { st.q = q.value; st.page = 1; draw(); const x = $('[data-dtq]', box); x.focus(); x.setSelectionRange(x.value.length, x.value.length); };
       $('[data-dtticket]', box).onchange = (e) => { st.ticket = e.target.value; st.page = 1; draw(); };
+      $('[data-dtresp]', box).onchange = (e) => { st.resp = e.target.value; st.page = 1; draw(); };
       $('[data-dtstage]', box).onchange = (e) => { st.stage = e.target.value; st.page = 1; st.onStage && st.onStage(); draw(); };
       $('[data-dtsort]', box).onchange = (e) => { const [k, d] = e.target.value.split(':'); if (d) { st.sort = k; st.dir = Number(d); draw(); } };
       $$('[data-dtsortk]', box).forEach((b) => (b.onclick = () => { const k = b.dataset.dtsortk; st.dir = st.sort === k ? -st.dir : (k === 'company' ? 1 : -1); st.sort = k; draw(); }));
@@ -136,7 +142,7 @@
       $$('[data-dtjobs]', box).forEach((b) => (b.onclick = () => { st.open.add(b.dataset.dtjobs); draw(); }));
       $$('[data-dtnewjob]', box).forEach((b) => (b.onclick = () => BB.newJob(b.dataset.dtnewjob)));
       $$('[data-hgo]', box).forEach((b) => (b.onclick = (e) => { e.preventDefault(); BB.go(`team/applications?${b.dataset.hgo}`); }));
-      const rs = $('[data-dtreset]', box); if (rs) rs.onclick = (e) => { e.preventDefault(); Object.assign(st, { q: '', ticket: '', stage: '', page: 1 }); st.onStage && st.onStage(); draw(); };
+      const rs = $('[data-dtreset]', box); if (rs) rs.onclick = (e) => { e.preventDefault(); Object.assign(st, { q: '', ticket: '', stage: '', resp: '', page: 1 }); st.onStage && st.onStage(); draw(); };
       $('[data-dtexport]', box).onclick = () => csvDownload('clients-and-job-openings.csv', ['Client', 'Ticket', 'Agency', ...COLS.map((c) => c[1])], (st.sel.size ? rowsNow().filter((r) => st.sel.has(r.id)) : rowsNow()).map((r) => [r.company, r.ticket, r.agency, ...COLS.map(([k]) => val(r, k))]));
       $('[data-dtbulk]', box).onclick = () => bulk();
       fitSelects(box);
@@ -187,7 +193,7 @@
       <section class="card dsec"><h3 class="dsec-h">Applications by stage</h3><div class="h-stages">${h.stages.map((s) => `<div role="button" tabindex="0" class="h-stage" data-hstage="${s}"><span class="h-stage-ic">${STAGE_IC[s] || ''}</span><span class="h-stage-t"><span>${STAGE_LABEL[s] || s}</span><b>${t.stages[s]}</b></span><a href="#" class="h-stage-go" data-hgo="${esc(BB.qs({ stage: s }))}" title="Open these applications" aria-label="Open ${STAGE_LABEL[s] || s} applications">↗</a></div>`).join('')}</div></section>
       ${h.no_salary.length ? `<div class="notice small">${h.no_salary.length} open job opening${h.no_salary.length === 1 ? ' has' : 's have'} no salary, so ${h.no_salary.length === 1 ? 'it is' : 'they are'} not in the revenue: ${h.no_salary.slice(0, 6).map((j) => `<a href="#" data-open="job:${esc(j.id)}">${esc(j.title)} (${esc(j.client)})</a>`).join(', ')}${h.no_salary.length > 6 ? ` and ${h.no_salary.length - 6} more` : ''}.</div>` : ''}
       ${h.agencies && h.agencies.length ? '<section class="card dsec"><h3 class="dsec-h">Agencies</h3><div data-agtbl></div></section>' : ''}
-      <section class="card dsec"><h3 class="dsec-h">Clients and their job openings</h3>${h.clients.length ? '<div data-cltbl></div>' : '<div class="dt-empty">No clients with open requirements here.</div>'}</section>
+      <section class="card dsec"><h3 class="dsec-h">Clients and their job openings${(() => { const st2 = h.clients.filter((r) => r.stuck); const w = h.clients.reduce((n, r) => n + r.waiting, 0); return w ? `<span class="dsec-note ${st2.length ? 'warn' : ''}">${w} candidate${w === 1 ? '' : 's'} waiting on clients${st2.length ? ` · ${st2.length} client${st2.length === 1 ? '' : 's'} stuck 5+ days` : ''}</span>` : ''; })()}</h3>${h.clients.length ? '<div data-cltbl></div>' : '<div class="dt-empty">No clients with open requirements here.</div>'}</section>
       </div>`;
   };
   const healthQs = (o) => new URLSearchParams(Object.entries(o).filter(([, v]) => v)).toString();
@@ -203,7 +209,7 @@
     const dsel = $('[data-dagency]', box); if (dsel) dsel.onchange = () => BB.setQ({ agency: dsel.value });
     $$('[data-hag]', el).forEach((b) => (b.onclick = (e) => { e.preventDefault(); BB.setQ({ agency: b.dataset.hag }); }));
     $$('[data-hgo]', el).forEach((b) => (b.onclick = (e) => { e.preventDefault(); BB.go(`team/applications?${b.dataset.hgo}`); }));
-    const cst = { q: '', ticket: '', stage: '', sort: 'projected', dir: -1, page: 1, per: 10, sel: new Set(), open: new Set() };
+    const cst = { q: '', ticket: '', stage: '', resp: '', sort: 'projected', dir: -1, page: 1, per: 10, sel: new Set(), open: new Set() };
     const markStage = () => $$('[data-hstage]', box).forEach((c) => c.classList.toggle('on', c.dataset.hstage === cst.stage));
     cst.onStage = markStage;
     const at = $('[data-agtbl]', box); if (at) agencyTable(at, h);

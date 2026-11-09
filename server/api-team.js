@@ -319,6 +319,30 @@ route('GET', '/api/health', T, (ctx) => {
     const got = b.total > 0 ? Math.min(fee, Math.round((fee * settled) / b.total)) : fee;
     r.earned += fee; r.received += got; r.pending += fee - got;
   }
+  // How fast each client responds, from the last 180 days: CV sent → the client's next move (interview fixed, moved on or
+  // rejected), and client interview → feedback recorded. Plus what is waiting on the client right now.
+  const DAY = 86400000; const since180 = new Date(Date.now() - 180 * DAY).toISOString();
+  const appClient = new Map(); for (const a of apps) { const j = jobs.find((x) => x.id === a.job_id); if (j) appClient.set(a.id, j.client_id); }
+  const gaps = new Map(); const addGap = (cid, d) => { if (cid && d >= 0) { const l = gaps.get(cid) || []; l.push(d); gaps.set(cid, l); } };
+  const hist = all("SELECT app_id, at, step, kind FROM app_history WHERE kind IN ('step','close','interview') AND at >= ? ORDER BY app_id, at", since180).filter((x) => appClient.has(x.app_id));
+  for (let i = 0; i < hist.length; i++) {
+    const x = hist[i]; if (x.kind !== 'step' || x.step !== 'Sent to client') continue;
+    let nx = null; for (let k = i + 1; k < hist.length && hist[k].app_id === x.app_id; k++) if (!(hist[k].kind === 'step' && hist[k].step === 'Sent to client')) { nx = hist[k]; break; }
+    if (nx) addGap(appClient.get(x.app_id), (Date.parse(nx.at) - Date.parse(x.at)) / DAY);
+  }
+  const civs = all("SELECT app_id, at, completed_at, status FROM interviews WHERE round='client' AND at >= ?", since180).filter((x) => appClient.has(x.app_id));
+  for (const iv of civs) if (iv.completed_at && iv.at && iv.completed_at > iv.at) addGap(appClient.get(iv.app_id), (Date.parse(iv.completed_at) - Date.parse(iv.at)) / DAY);
+  const waits = new Map(); const addWait = (cid, d) => { if (!cid) return; const w = waits.get(cid) || { n: 0, oldest: 0 }; w.n++; w.oldest = Math.max(w.oldest, Math.floor(d)); waits.set(cid, w); };
+  for (const a of apps.filter((x) => x.result === 'open' && !x.on_hold && x.step === 'Sent to client')) addWait(appClient.get(a.id), (Date.now() - Date.parse(a.step_since || a.created_at)) / DAY);
+  const nowIso = new Date().toISOString();
+  for (const iv of all("SELECT app_id, at FROM interviews WHERE round='client' AND status IN ('Scheduled','Rescheduled') AND at < ?", nowIso).filter((x) => appClient.has(x.app_id))) { const a = apps.find((y) => y.id === iv.app_id); if (a && a.result === 'open') addWait(appClient.get(iv.app_id), (Date.now() - Date.parse(iv.at)) / DAY); }
+  const median = (l) => { const s = [...l].sort((p, q) => p - q); const m = Math.floor(s.length / 2); return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
+  for (const r of rows.values()) {
+    const l = gaps.get(r.id) || []; const w = waits.get(r.id) || { n: 0, oldest: 0 };
+    r.resp_days = l.length ? Math.round(median(l) * 10) / 10 : null; r.resp_n = l.length;
+    r.response = r.resp_days === null ? (w.n ? (w.oldest > 5 ? 'Slow' : 'Waiting') : '') : r.resp_days <= 2 ? 'Fast' : r.resp_days <= 5 ? 'Average' : 'Slow';
+    r.waiting = w.n; r.wait_oldest = w.oldest; r.stuck = w.n > 0 && w.oldest > 5;
+  }
   let list = [...rows.values()].filter((r) => r.open_jobs || r.draft_jobs || r.apps || r.earned);
   for (const r of list) { r.ticket = r.projected + r.earned >= highFrom ? 'High' : 'Low'; r.jobs.sort((x, y) => y.projected - x.projected); }
   const ticket = ['High', 'Low'].includes(ctx.query.ticket) ? ctx.query.ticket : '';

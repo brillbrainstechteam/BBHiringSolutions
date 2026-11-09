@@ -2220,3 +2220,11 @@ a.pipe-step { text-decoration: none; cursor: pointer; } a.pipe-step:hover { bord
 .dt-dots:hover, .dt-more[open] > .dt-dots { background: var(--dt-mint); border-color: var(--dt-mint-b); color: var(--dt-teal); }
 .dt-more .step-pop { position: absolute; right: 12px; top: auto; margin-top: 6px; width: 200px; z-index: 20; }
 .dt-cl td.dt-act { position: sticky; }
+
+/* Client response speed */
+.dt-resp { display: inline-block; font-size: 12px; font-weight: 700; padding: 2px 10px; border-radius: 999px; }
+.dt-resp.fast { background: #E3F4EA; color: #1F8A55; } .dt-resp.average { background: #EAEFF7; color: #4A5675; } .dt-resp.slow { background: #FDE8E6; color: #B4332A; } .dt-resp.waiting { background: #FBEFD2; color: #9A6412; }
+.dt-stuck { color: #B4332A !important; font-weight: 700; }
+.dsec-note { margin-left: 8px; font: 600 12.5px var(--font); padding: 3px 10px; border-radius: 999px; background: #FBEFD2; color: #8A5A0E; }
+.dsec-note.warn { background: #FDE8E6; color: #B4332A; }
+.dt-cl td:nth-child(4), .dt-cl td:nth-child(5) { text-align: center !important; } .dt-cl th:nth-child(4), .dt-cl th:nth-child(5) { text-align: center !important; }
