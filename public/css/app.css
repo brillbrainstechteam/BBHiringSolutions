@@ -2234,3 +2234,10 @@ a.pipe-step { text-decoration: none; cursor: pointer; } a.pipe-step:hover { bord
 .cand-seg { gap: 6px; } .cand-seg select { width: 170px; max-width: 170px; }
 .cand-clear { flex: none; display: inline-flex; align-items: center; gap: 4px; height: 36px; padding: 0 10px; border: 0; border-radius: 999px; background: none; font: 600 13px var(--font); color: var(--muted); cursor: pointer; white-space: nowrap; }
 .cand-clear:hover { background: var(--surface-2); color: var(--ink); } .cand-clear span { font-size: 11px; }
+/* the row always fits inside its card: the segment dropdown gives way first */
+.cand-result { gap: 10px 12px; min-width: 0; }
+.cand-views { min-width: 0; }
+.cand-seg { flex: 0 1 auto; min-width: 0; gap: 6px; }
+.cand-seg select { flex: 0 1 170px; width: 170px; min-width: 112px; max-width: 170px; text-overflow: ellipsis; }
+.cand-seg [data-save], .cand-seg [data-updseg] { flex: none; padding: 0 14px; }
+@media (min-width: 1100px) and (max-width: 1320px) { .cand-views .chip { padding: 0 10px; } .cand-count b { font-size: 16px; } }
