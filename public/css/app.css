@@ -2320,3 +2320,18 @@ a.pipe-step { text-decoration: none; cursor: pointer; } a.pipe-step:hover { bord
 .verify-client { display: flex; flex-direction: column; gap: 6px; padding-top: 8px; border-top: 1px dashed var(--border); }
 .ver-pkg { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 12px; cursor: pointer; }
 .ver-pkg:has(input:checked) { border-color: var(--teal, #0F5E5A); background: #EAF9F5; }
+
+/* Admin dashboard: clients by stage, team table */
+.cl-stages { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 6px; align-items: end; }
+.cl-stage { display: grid; grid-template-rows: 20px 90px auto; gap: 4px; padding: 6px 4px; border-radius: 10px; color: inherit; text-decoration: none; text-align: center; }
+.cl-stage:hover { background: #F2F8F6; text-decoration: none; }
+.cl-n { font: 800 15px var(--display); color: var(--ink); }
+.cl-bar { display: flex; align-items: flex-end; justify-content: center; border-bottom: 1px solid var(--border); } .cl-bar i { display: block; width: 70%; max-width: 34px; min-height: 2px; background: var(--teal-600, #137A72); border-radius: 4px 4px 0 0; }
+.cl-l { font-size: 11px; line-height: 1.25; color: var(--muted); }
+.cl-side { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.cl-side-chip { display: inline-flex; gap: 6px; align-items: center; padding: 5px 12px; border: 1px solid var(--border); border-radius: 999px; font-size: 13px; color: var(--ink); text-decoration: none; }
+.cl-side-chip:hover { border-color: var(--teal, #0F5E5A); text-decoration: none; }
+.cl-fu { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; margin-top: 12px; padding-top: 10px; border-top: 1px dashed var(--border); }
+@media (max-width: 1100px) { .cl-stages { grid-template-columns: repeat(6, minmax(0, 1fr)); } }
+@media (max-width: 640px) { .cl-stages { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.cl-stage { grid-template-rows: 20px 90px 44px; align-items: end; } .cl-l { align-self: start; }

@@ -260,7 +260,7 @@ module.exports.defaultSettings = () => ({
   departments: ['Sales', 'Design', 'Production', 'Marketing', 'Purchase', 'Dispatch', 'Accounts', 'Admin', 'Support'],
   cities: CITIES,
   skills: ['Gold knowledge', 'Diamond knowledge', 'Customer handling', 'Billing software', 'Tally', 'MS Excel', 'CAD (Matrix)', 'CAD (Rhino)', 'Hand sketching', 'Stone setting', 'Polishing', 'Hallmarking', 'GST filing', 'Social media', 'Photography', 'Visual merchandising', 'Inventory software', 'Hindi', 'English', 'Gujarati', 'Marathi', 'Team handling', 'Negotiation', 'Cold calling'],
-  client_stages: ['Call initiated', 'Understanding needs', 'Proposal and pitch deck', 'Agreement shared', 'Client activated', 'Job opening active', 'No current opening', 'On hold', 'Not interested'],
+  client_stages: ['Call initiated', 'Requirement understanding', 'Requirement received', 'Proposal & pitch deck shared', 'Agreement shared', 'Agreement follow-up', 'Agreement received', 'JD and R&R shared', 'JD and R&R approved', 'Client activated', 'Client onboarded', 'Job opening activated', 'No current opening', 'Requirement later', 'Decision on hold', 'Inactive'],
   closing_reasons: ['Not suitable', 'Client rejected', 'Candidate withdrew', 'Offer declined', 'Did not join', 'No response'],
   job_close_reasons: ['Client stopped hiring', 'Hired on their own', 'Budget not approved', 'Duplicate'],
   reopen_reasons: ['Client needs more people', 'Replacement (left within 3 months)', 'Client restarted hiring', 'Closed by mistake'],

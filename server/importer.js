@@ -88,7 +88,7 @@ const OLD_STATUS = {
   'rejected': ['Screening', 'Not suitable'], 'client denied': ['Sent to client', 'Client rejected'], 'candidate denied': ['Screening', 'Candidate withdrew'],
   'backout': ['Offer accepted', 'Did not join'], 'on hold': ['Screening', 'open', 'hold'],
 };
-const CLIENT_STAGE = { 'on- hold': 'On hold', 'on-hold': 'On hold', 'on hold': 'On hold', 'not interested': 'Not interested', 'active': 'Client activated', 'activated': 'Client activated', 'in progress': 'Understanding needs' };
+const CLIENT_STAGE = { 'on- hold': 'Decision on hold', 'on-hold': 'Decision on hold', 'on hold': 'Decision on hold', 'not interested': 'Inactive', 'inactive': 'Inactive', 'active': 'Client activated', 'activated': 'Client activated', 'in progress': 'Requirement understanding', 'requirement later': 'Requirement later' };
 const userByName = (n) => n ? D.get('SELECT * FROM users WHERE lower(name)=lower(?) OR lower(username)=lower(?)', String(n).trim(), String(n).trim()) : null;
 const clientByName = (n) => n ? D.get('SELECT * FROM clients WHERE lower(company)=lower(?) AND merged_into IS NULL', String(n).trim()) : null;
 

@@ -112,8 +112,8 @@ function saveCall(c, lines, notes, actor) {
   if (open && open.client_id === c.id) update('calls', open.id, log); else insert('calls', { ...log, user_id: actor.uid, by: actor.label });
   const line = [['Number of openings', row.openings], ...lines.map((x) => [x.role, [`${x.openings} in ${x.location || c.city || 'no location given'}`, x.department, x.skills && `Skills: ${x.skills}`, x.duties && `Responsibilities: ${x.duties}`, x.notes && `Notes: ${x.notes}`].filter(Boolean).join('; ')]), ['Notes', row.notes]].filter(([, v]) => v).map(([k, v]) => `${k}: ${v}`).join('\n');
   insert('notes', { record_id: c.id, text: `Client call\n${line}`, author: actor.label, at: now() });
-  const ob = { ...(c.onboarding || {}), intro_call: { done: true, date: now(), by: actor.label, note: '' } }; const st = D.settings().client_stages;
-  update('clients', c.id, { onboarding: ob, is_new: 0, ...(st.indexOf('Understanding needs') > st.indexOf(c.stage) ? { stage: 'Understanding needs' } : {}) });
+  const ob = { ...(c.onboarding || {}), intro_call: { done: true, date: now(), by: actor.label, note: '' }, ...(lines.length ? { requirement: { done: true, date: now(), by: actor.label, note: 'From the call' } } : {}) };
+  update('clients', c.id, { onboarding: ob, is_new: 0 }); L.syncClientStage(c.id, actor);
   D.history(actor.label, 'client call', c.id);
 }
 const S = (d) => ({ type: 'string', description: d });
@@ -194,8 +194,7 @@ route('POST', '/api/clients/email', T, (ctx) => {
     if (!eid) { out.skipped.push(`${c.company}: not a valid email`); continue; }
     if (cvApp) L.appHist(cvApp.id, cvApp.step, ctx.actor, `CV without phone and email emailed to ${to}`, 'paper');
     if (isContract) {
-      const st = D.settings().client_stages;
-      update('clients', c.id, { onboarding: { ...(c.onboarding || {}), proposal: { done: true, date: now(), by: ctx.actor.label, note: 'Agreement emailed' } }, ...(st.indexOf('Agreement shared') > st.indexOf(c.stage) ? { stage: 'Agreement shared' } : {}) });
+      update('clients', c.id, { onboarding: { ...(c.onboarding || {}), agreement: { done: true, date: now(), by: ctx.actor.label, note: 'Agreement emailed' } } }); L.syncClientStage(c.id, ctx.actor);
     }
     insert('notes', { record_id: c.id, text: `Email${get('SELECT status FROM emails WHERE id=?', eid).status === 'held' ? ' saved (messages are off)' : ' sent'}: ${subject}`, author: ctx.actor.label, at: now() });
     out.done++; if (get('SELECT status FROM emails WHERE id=?', eid).status === 'held') out.held++;

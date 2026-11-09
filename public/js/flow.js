@@ -409,7 +409,7 @@
     const bar = $('[data-cbar]', el); if (!bar) return;
     const n = () => { const k = BB.selected(el).length; $('[data-ccount]', bar).textContent = BB.bulkCount('client', k); bar.classList.toggle('has-sel', k > 0); };
     BB.wireSelect(el, n); $$('[data-sel]', el).forEach((x) => x.addEventListener('change', n));
-    const stg = $('[data-cstage]', bar); stg.onchange = async () => { const v = stg.value; const ids = BB.selected(el); stg.value = ''; if (!v) return; if (!ids.length) return BB.toast('Select some clients first', true); await act(() => BB.post('/api/leads/bulk', { type: 'client', ids, action: 'stage', value: v }), (r) => `${r.done} of ${ids.length} updated${r.skipped.length ? ` · ${r.skipped[0].split(': ').pop()}` : ''}`); };
+    const stg = $('[data-cstage]', bar); stg.onchange = async () => { const v = stg.value; const ids = BB.selected(el); stg.value = ''; if (!v) return; if (!ids.length) return BB.toast('Select some clients first', true); let extra = {}; if (v === 'Requirement later') { const x = await BB.askRequirementLater(`${ids.length} client${ids.length === 1 ? '' : 's'}`); if (!x) return; extra = x; } await act(() => BB.post('/api/leads/bulk', { type: 'client', ids, action: 'stage', value: v, ...extra }), (r) => `${r.done} of ${ids.length} updated${r.skipped.length ? ` · ${r.skipped[0].split(': ').pop()}` : ''}`); };
     $$('[data-cm]', bar).forEach((b) => (b.onclick = () => { const ids = BB.selected(el); if (!ids.length) return BB.toast('Select some clients first', true); F.composeMail(ids, b.dataset.cm, b.textContent); }));
   };
 

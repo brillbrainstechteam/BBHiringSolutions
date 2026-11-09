@@ -50,23 +50,34 @@ function clientView(c) {
   return { ...c, lifecycle: c.activated_at ? 'Active client' : 'Lead', agency_name: agencyName(c.agency_id), owner_name: [c.owner_id, ...(Array.isArray(c.owners) ? c.owners : [])].filter((x, i, l) => x && l.indexOf(x) === i).map(userName).filter(Boolean).join(', ') || userName(c.owner_id), owner_ids: [c.owner_id, ...(Array.isArray(c.owners) ? c.owners : [])].filter((x, i, l) => x && l.indexOf(x) === i), jobs_open: jobs.filter((j) => !['Closed', 'Filled'].includes(j.status)).length, jobs_total: jobs.length };
 }
 const ONBOARDING = [
-  { key: 'intro_call', label: 'Intro call', stage: 'Understanding needs' },
+  { key: 'intro_call', label: 'Intro call: requirement understanding', stage: 'Requirement understanding' },
   { key: 'background', label: 'Background note' },
-  { key: 'proposal', label: 'Proposal sent', stage: 'Proposal and pitch deck' },
+  { key: 'requirement', label: 'Requirement received', stage: 'Requirement received' },
+  { key: 'proposal', label: 'Proposal and pitch deck shared', stage: 'Proposal & pitch deck shared' },
   { key: 'meeting', label: 'Meeting (optional)' },
+  { key: 'agreement', label: 'Agreement shared', stage: 'Agreement shared' },
   { key: 'kyc', label: 'KYC received' },
-  { key: 'contract', label: 'Contract signed', stage: 'Client activated' },
+  { key: 'contract', label: 'Agreement received (signed)', stage: 'Agreement received' },
+  { key: 'jd_shared', label: 'JD and R&R shared', stage: 'JD and R&R shared' },
+  { key: 'jd_approved', label: 'JD and R&R approved', stage: 'JD and R&R approved' },
   { key: 'account', label: 'Account opened' },
-  { key: 'first_job', label: 'First job opening', stage: 'Job opening active' },
+  { key: 'group_dp', label: 'Onboarding: WhatsApp group and DP created', group: 'onboarding' },
+  { key: 'welcome', label: 'Onboarding: welcome message sent', group: 'onboarding' },
+  { key: 'req_confirmed', label: 'Onboarding: requirement confirmed', group: 'onboarding' },
+  { key: 'thanks', label: 'Onboarding: thank-you message sent', group: 'onboarding', stage: 'Client onboarded' },
+  { key: 'first_job', label: 'Job opening activated', stage: 'Job opening activated' },
 ];
 // Some checklist items tick themselves from the data.
 function onboardingView(c) {
   const ob = c.onboarding || {};
+  const f = L.clientFacts(c);
   const auto = {
+    intro_call: f.intro, requirement: f.requirement, agreement: f.agreement,
     kyc: ['gst', 'pan', 'owner_id'].every((k) => (c.kyc || {})[k]),
-    contract: !!c.contract,
+    contract: !!c.contract, jd_shared: f.jd_shared, jd_approved: f.jd_approved,
     account: c.account_status === 'Opened',
-    first_job: !!get('SELECT 1 FROM jobs WHERE client_id=?', c.id),
+    group_dp: L.onboardDone(c, 'group_dp'), welcome: L.onboardDone(c, 'welcome'), thanks: L.onboardDone(c, 'thanks'),
+    first_job: f.open_job,
   };
   return ONBOARDING.map((it) => ({ ...it, ...(ob[it.key] || {}), done: !!((ob[it.key] || {}).done || auto[it.key]) }));
 }

@@ -119,7 +119,9 @@
         wireCommon(el); BB.flow.clientMount(el, c);
         // Profile / History switch at the top
         $$('[data-ctab]', el).forEach((b) => (b.onclick = () => { $$('[data-ctab]', el).forEach((x) => x.classList.toggle('on', x === b)); $$('[data-cpane]', el).forEach((p) => { p.hidden = p.dataset.cpane !== b.dataset.ctab; }); }));
-        $('[data-stage]', el).onchange = (e) => run(() => BB.patch(`/api/clients/${c.id}`, { stage: e.target.value }), 'Stage saved');
+        $('[data-stage]', el).onchange = async (e) => { const v = e.target.value; let extra = {};
+          if (v === 'Requirement later') { const x = await BB.askRequirementLater(c.company); if (!x) { e.target.value = c.stage; return; } extra = x; }
+          run(() => BB.patch(`/api/clients/${c.id}`, { stage: v, ...extra }), v === 'Requirement later' ? 'Saved, with a follow-up reminder' : 'Stage saved'); };
         const ag = $('[data-agency]', el); if (ag) ag.onchange = (e) => run(() => (c.agency_id ? BB.patch(`/api/clients/${c.id}`, { agency_id: e.target.value || null }) : BB.post('/api/leads/assign', { type: 'client', id: c.id, agency_id: e.target.value })), 'Agency saved');
         $$('[data-ob]', el).forEach((cb) => (cb.onchange = () => { const done = cb.checked; if (done && ['intro_call', 'background', 'meeting'].includes(cb.dataset.ob)) { BB.ask({ title: 'Add a note', fields: [{ name: 'note', label: 'Notes (optional)', type: 'textarea' }], ok: 'Tick', submit: (v) => BB.post(`/api/clients/${c.id}/onboarding`, { item: cb.dataset.ob, done, note: v.note }) }).then((x) => (x ? after('Ticked') : (cb.checked = false))); } else run(() => BB.post(`/api/clients/${c.id}/onboarding`, { item: cb.dataset.ob, done }), done ? 'Ticked' : 'Unticked'); }));
         const nj = $('[data-newjob]', el); if (nj) nj.onclick = () => BB.newJob(c.id);

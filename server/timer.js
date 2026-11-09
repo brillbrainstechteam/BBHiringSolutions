@@ -76,6 +76,8 @@ function runTimer() {
   }
   // Follow-ups due → bell + WhatsApp task alert.
   for (const f of all('SELECT * FROM followups WHERE done=0 AND alerted=0 AND at<=?', now())) { L.alertUser(f.for_user, `Follow-up: ${f.note || f.record_id}`, f.record_id, 'followups'); update('followups', f.id, { alerted: 1 }); count('followup'); }
+  // Client stages: worked out again every 10 minutes (agreement follow-ups, onboarding steps, openings closing).
+  { const tick = Math.floor(t / 600000); if (tick !== globalThis.__clientStageTick) { globalThis.__clientStageTick = tick; for (const c of all("SELECT id FROM clients WHERE removed=0 AND archived=0 AND merged_into IS NULL")) { try { L.syncClientStage(c.id, { label: 'System' }); } catch (e) { /* next round */ } } } }
   // Job status check: candidates in the database with nothing in process and no fresh answer are asked where they stand
   // (up to 40 a day, each at most once a month). Bulk imports never opted in, so the rule leaves them out.
   { const rule = (D.settings().auto_rules || []).find((r) => r.key === 'still_looking');

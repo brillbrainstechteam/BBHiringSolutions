@@ -291,6 +291,12 @@ function ensureSettings() {
     const rk = settings().revenue_kinds || []; if (!rk.includes('Background verification')) setSetting('revenue_kinds', [...rk.filter((x) => x !== 'Other'), 'Background verification', ...(rk.includes('Other') ? ['Other'] : [])]);
     setSetting('done_once', [...(settings().done_once || []), 'verify_docs_v1']);
   }
+  // Client stages v2: the 16-step path. Old names move to the new ones; the engine then works out the rest.
+  if (!once.includes('client_stages_v2')) {
+    for (const [a, b] of [['Understanding needs', 'Requirement understanding'], ['Proposal and pitch deck', 'Proposal & pitch deck shared'], ['Job opening active', 'Job opening activated'], ['On hold', 'Decision on hold'], ['Not interested', 'Inactive']]) run('UPDATE clients SET stage=? WHERE stage=?', b, a);
+    setSetting('client_stages', defs.client_stages);
+    setSetting('done_once', [...(settings().done_once || []), 'client_stages_v2']);
+  }
   if (!once.includes('rules_profile_update')) {
     const keys = ['profile_screening', 'profile_before_client', 'profile_refresh_90']; const have = new Set(settings().auto_rules.map((x) => x.key));
     setSetting('auto_rules', [...settings().auto_rules, ...defs.auto_rules.filter((x) => keys.includes(x.key) && !have.has(x.key))]);

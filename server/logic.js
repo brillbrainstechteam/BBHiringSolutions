@@ -260,6 +260,7 @@ function recalcJob(jobId, by, note) {
     insert('job_history', { job_id: jobId, at: now(), status: st, by: by || 'Software', note: note || (st === 'Filled' ? 'All seats filled, closes on its own' : '') });
     history(by || 'Software', 'status', jobId, 'status', job.status, st);
     if (job.status === 'Draft' && st !== 'Draft') autoJobAlert(jobId);
+    try { syncClientStage(job.client_id, by); } catch (e) { /* the stage catches up on the next sweep */ }
   }
   return st;
 }
@@ -1101,11 +1102,71 @@ function activationState(c) {
   const kyc = ['gst', 'pan', 'owner_id'].every((x) => k[x]) || !!(ob.kyc || {}).done; const contract = !!c.contract || !!(ob.contract || {}).done;
   return { kyc, contract, ready: contract, missing: contract ? [] : ['Signed contract'] };
 }
+// ---------- Client stage, worked out from what has happened ----------
+// The main path runs forward on its own (never back); the four side stages are set by the team, except that an open
+// job opening always brings a client back to "Job opening activated", and a client whose openings all closed moves to
+// "No current opening".
+const CLIENT_MAIN = ['Call initiated', 'Requirement understanding', 'Requirement received', 'Proposal & pitch deck shared', 'Agreement shared', 'Agreement follow-up', 'Agreement received', 'JD and R&R shared', 'JD and R&R approved', 'Client activated', 'Client onboarded', 'Job opening activated'];
+const CLIENT_SIDE = ['No current opening', 'Requirement later', 'Decision on hold', 'Inactive'];
+const OPEN_JOB_STATUSES = ['Open', 'Sourcing', 'Interviewing', 'Offer stage'];
+// The onboarding sub-steps (all four done = Client onboarded).
+const ONBOARD_STEPS = ['group_dp', 'welcome', 'req_confirmed', 'thanks'];
+function clientFacts(c) {
+  const ob = c.onboarding || {}; const done = (k) => !!(ob[k] && ob[k].done);
+  const jobs = all('SELECT status, jd_status, jd_approved FROM jobs WHERE client_id=? AND archived=0', c.id).map((j) => ({ ...j, status: j.status || 'Draft' }));
+  const msg = (f) => !!get("SELECT 1 FROM messages WHERE person_type='client' AND person_id=? AND format=? AND IFNULL(status,'') NOT IN ('failed','Failed') LIMIT 1", c.id, f);
+  const agreementAt = (ob.agreement && ob.agreement.done && ob.agreement.date) || null;
+  return {
+    intro: done('intro_call') || !!get("SELECT 1 FROM calls WHERE client_id=? AND status='Done' LIMIT 1", c.id),
+    requirement: done('requirement') || jobs.length > 0,
+    proposal: done('proposal'),
+    agreement: done('agreement') || !!agreementAt,
+    followup: !!agreementAt && !c.contract && daysBetween(agreementAt) >= 3,
+    contract: !!c.contract,
+    jd_shared: jobs.some((j) => j.jd_status && j.jd_status !== 'Not written') || msg('bbhs_jd_approval'),
+    jd_approved: jobs.some((j) => j.jd_status === 'Approved' || j.jd_approved),
+    activated: !!c.activated_at,
+    onboarded: !!c.activated_at && ONBOARD_STEPS.every((k) => onboardDone(c, k)),
+    open_job: jobs.some((j) => OPEN_JOB_STATUSES.includes(j.status)),
+    had_jobs: jobs.length > 0,
+  };
+}
+// Sub-steps that tick themselves: the WhatsApp group with its DP, the welcome and thank-you messages.
+function onboardDone(c, k) {
+  const ob = c.onboarding || {}; if (ob[k] && ob[k].done) return true;
+  const msg = (f) => !!get("SELECT 1 FROM messages WHERE person_type='client' AND person_id=? AND format=? AND IFNULL(status,'') NOT IN ('failed','Failed') LIMIT 1", c.id, f);
+  if (k === 'group_dp') return !!(c.wa_group && c.wa_group.created);
+  if (k === 'welcome') return msg('bbhs_client_welcome');
+  if (k === 'thanks') return msg('bbhs_client_thanks');
+  return false;
+}
+function earnedStage(f) {
+  if (f.open_job) return 'Job opening activated';
+  if (f.onboarded) return 'Client onboarded';
+  if (f.activated) return 'Client activated';
+  if (f.jd_approved) return 'JD and R&R approved';
+  if (f.jd_shared) return 'JD and R&R shared';
+  if (f.contract) return 'Agreement received';
+  if (f.followup) return 'Agreement follow-up';
+  if (f.agreement) return 'Agreement shared';
+  if (f.proposal) return 'Proposal & pitch deck shared';
+  if (f.requirement) return 'Requirement received';
+  if (f.intro) return 'Requirement understanding';
+  return 'Call initiated';
+}
+function syncClientStage(clientId, by) {
+  const c = get('SELECT * FROM clients WHERE id=?', clientId); if (!c || c.removed || c.placeholder || c.internal) return null;
+  const f = clientFacts(c); const earned = earnedStage(f); let next = null;
+  if (CLIENT_SIDE.includes(c.stage)) { if (f.open_job) next = 'Job opening activated'; }
+  else if (c.stage === 'Job opening activated' && !f.open_job && f.had_jobs) next = 'No current opening';
+  else if (CLIENT_MAIN.indexOf(earned) > CLIENT_MAIN.indexOf(c.stage)) next = earned;
+  if (!next || next === c.stage) return c.stage;
+  update('clients', c.id, { stage: next }); history(actorName(by) || 'System', 'stage', c.id, 'stage', c.stage, next);
+  return next;
+}
 function checkActivation(clientId, by) {
   const c = get('SELECT * FROM clients WHERE id=?', clientId); if (!c || c.activated_at || !activationState(c).ready) return false;
-  const stages = settings().client_stages; const patch = { activated_at: now() };
-  if (stages.indexOf('Client activated') > stages.indexOf(c.stage)) patch.stage = 'Client activated';
-  update('clients', c.id, patch); history(actorName(by), 'activate', c.id, 'stage', c.stage, 'Active client');
+  update('clients', c.id, { activated_at: now() }); syncClientStage(c.id, by); history(actorName(by), 'activate', c.id, 'stage', c.stage, 'Active client');
   if (c.owner_id) alertUser(c.owner_id, `${c.company} is now an active client: signed contract is in`, c.id, false);
   return true;
 }
@@ -1340,7 +1401,7 @@ function sendSystemText(ptype, pid, text) {
 module.exports = { stageStateOf, ownersOfJob, ownerMap, ownsApp, STAGES, stageOfApp, nextStageOf, reopenRefilled, adPlanFor, openAdApplications, placedOn, closePlacedApps, adLabel,
   STEPS, stepIdx, digits10, validPhone, inr, istDay, istFmt, istTime, istHour, inQuiet, next9am, daysBetween, addDays, hashPassword, checkPassword, newPassword, sha,
   activationState, checkActivation, waHeld, TEAMS, IV_MODES, clientSeesIv, addIvNote, CALL_OUTCOMES, logCall, jobList, deptOf, stateOf, person, fillFormat, windowOpenUntil, sendWA, setDispatcher, alertUser, link, agencyAdmin, superAdmins,
-  computeJobStatus, jobStatusReason, recalcJob, filledCount, appsOfJob, matchScore, jobsFor, cleanBusiness, BUSINESS_TYPES, EXP_YEARS, JEW_YEARS, LOOKING, NOT_LOOKING, JOB_STATUSES, LOOK_FRESH, appStates, appStateOf, jobStatusOf, setLooking, ratingOf, bestMatches, isPlaced, salaryText, autoJobAlert,
+  CLIENT_MAIN, CLIENT_SIDE, ONBOARD_STEPS, clientFacts, onboardDone, earnedStage, syncClientStage, computeJobStatus, jobStatusReason, recalcJob, filledCount, appsOfJob, matchScore, jobsFor, cleanBusiness, BUSINESS_TYPES, EXP_YEARS, JEW_YEARS, LOOKING, NOT_LOOKING, JOB_STATUSES, LOOK_FRESH, appStates, appStateOf, jobStatusOf, setLooking, ratingOf, bestMatches, isPlaced, salaryText, autoJobAlert,
   SAL_HIDDEN, feeFor, gstFor, fyOf, billView, refreshBill, createBillForApp, issueBill, upiLink,
   appHist, createApplication, moveStep, closeApplication, reopenApplication, screenApplication, SCREEN, jobsForRole, jobsForPerson, roleTokens, scheduleInterview, recordInterview, interviewView, ivVars, recordOffer, leftJob, jobAction,
   CONSENT_WORDING, saveConsent, intakeClient, intakeCandidate, assignLead, mergeRecords, resolveId, receiveReply, actorName,

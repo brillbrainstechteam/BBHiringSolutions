@@ -40,8 +40,8 @@ function seed() {
 
     // Clients
     const clients = [
-      [{ company: 'Lustre Stores', contact: 'Anita Desai', whatsapp: '9820011111', city: 'Mumbai', business_type: 'Showroom B2C', need: 'Hiring now', roles: 'Sales Executive, Cashier', email: 'hr@lustre.example' }, 'Client referral', 'AG-02', 'U-02', 'Job opening active'],
-      [{ company: 'Navratna Jewels', contact: 'Vikram Jain', whatsapp: '9820022222', city: 'Jaipur', business_type: 'Manufacturer B2B', need: 'Hiring now', roles: 'Goldsmith, CAD Designer' }, 'Exhibition', 'AG-03', 'U-05', 'Job opening active'],
+      [{ company: 'Lustre Stores', contact: 'Anita Desai', whatsapp: '9820011111', city: 'Mumbai', business_type: 'Showroom B2C', need: 'Hiring now', roles: 'Sales Executive, Cashier', email: 'hr@lustre.example' }, 'Client referral', 'AG-02', 'U-02', 'Job opening activated'],
+      [{ company: 'Navratna Jewels', contact: 'Vikram Jain', whatsapp: '9820022222', city: 'Jaipur', business_type: 'Manufacturer B2B', need: 'Hiring now', roles: 'Goldsmith, CAD Designer' }, 'Exhibition', 'AG-03', 'U-05', 'Job opening activated'],
       [{ company: 'Surat Diamond House', contact: 'Hetal Shah', whatsapp: '9820033333', city: 'Surat', business_type: 'Both', need: 'Hiring soon', roles: 'Diamond Assorter' }, 'LinkedIn', 'AG-02', 'U-02', 'Agreement shared'],
       [{ company: 'Kanak Gold', contact: 'Rajiv Malhotra', whatsapp: '9820044444', city: 'Delhi NCR', business_type: 'Showroom B2C', need: 'Just exploring', roles: 'Store Manager' }, 'Website', null, null, 'Call initiated'],
       [{ company: 'Heritage Kundan', contact: 'Meera Rathore', whatsapp: '9820055555', city: 'Jaipur', business_type: 'Showroom B2C', need: 'Hiring now', roles: 'Kundan Worker, Sales Executive' }, 'Referral', 'AG-03', 'U-05', 'Client activated'],
@@ -50,8 +50,8 @@ function seed() {
       const r = L.intakeClient(d, { source: src, silent: true });
       D.update('clients', r.client.id, { agency_id: ag, owner_id: owner, stage, is_new: ag ? 0 : 1, is_sample: 1, created_at: ago(ag ? 60 : 1), account_status: ag ? 'Opened' : 'Not opened',
         onboarding: ag ? { intro_call: { done: true, date: ago(55), by: 'Rohan Mehta', note: 'Owner keen, 3 branches' }, background: { done: true, date: ago(54), by: 'Rohan Mehta' }, proposal: { done: true, date: ago(50), by: 'Rohan Mehta' } } : {},
-        contract: stage === 'Job opening active' || stage === 'Client activated' ? JSON.stringify({ by: d.contact, at: ago(45), method: 'Signed online (I agree)' }) : null,
-        kyc: stage === 'Job opening active' ? { gst: 1, pan: 1, owner_id: 1, gstin: '27AAACL1234C1Z1' } : {} });
+        contract: stage === 'Job opening activated' || stage === 'Client activated' ? JSON.stringify({ by: d.contact, at: ago(45), method: 'Signed online (I agree)' }) : null,
+        kyc: stage === 'Job opening activated' ? { gst: 1, pan: 1, owner_id: 1, gstin: '27AAACL1234C1Z1' } : {} });
     }
     D.insert('client_members', { client_id: 'CL-1001', name: 'Shivani Kulkarni', whatsapp: '9820011112', role: 'HR', perms: JSON.stringify({ candidates: true, feedback: true, approve: false, bills: false }), created_at: ago(40) });
 

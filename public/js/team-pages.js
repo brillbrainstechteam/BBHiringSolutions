@@ -219,12 +219,24 @@
     const hf = $('[data-hfrom]', el); if (hf) hf.onclick = (e) => { e.preventDefault(); BB.ask({ title: 'High ticket clients', note: 'A client is High ticket when the fee they bring (open opportunity plus revenue from closed positions) reaches this amount.', fields: [{ name: 'high_from', label: 'High ticket from (₹ fee)', type: 'number', value: h.high_from, voice: false }], ok: 'Save', submit: (v) => BB.api('/api/settings/ticket', { method: 'PUT', body: { value: { high_from: Number(v.high_from) || 100000 } } }) }).then((x) => x && BB.refreshPage()); };
   };
 
+  // Admin: client stages (click → those clients), follow-ups on "Requirement later", and each team member's work.
+  const teamView = (tv) => { const max = Math.max(1, ...tv.stages.filter((s) => !s.side).map((s) => s.n));
+    const pct = (n) => `${Math.round(n)}%`;
+    return `<section class="card dsec"><h3 class="dsec-h">Clients by stage <span class="dsec-note">${tv.total_clients} client${tv.total_clients === 1 ? '' : 's'}</span></h3>
+      <div class="cl-stages">${tv.stages.filter((s) => !s.side).map((s, i) => `<a href="#" class="cl-stage" data-cstagego="${esc(s.stage)}" title="${esc(s.stage)}: ${s.n}"><span class="cl-n">${s.n}</span><span class="cl-bar"><i style="height:${(s.n / max) * 100}%"></i></span><span class="cl-l">${i + 1}. ${esc(s.stage)}</span></a>`).join('')}</div>
+      <div class="cl-side">${tv.stages.filter((s) => s.side).map((s) => `<a href="#" class="cl-side-chip" data-cstagego="${esc(s.stage)}">${esc(s.stage)} <b>${s.n}</b></a>`).join('')}</div>
+      ${tv.followups.length ? `<div class="cl-fu"><b class="small">Requirement follow-ups</b>${tv.followups.map((f) => `<a href="#" class="small" data-open="client:${esc(f.client_id)}">${esc(f.company)} · ${fmtDT(f.at)}</a>`).join('')}</div>` : ''}</section>
+      <section class="card dsec"><h3 class="dsec-h">Your team <span class="dsec-note">last 30 days · tasks as of now</span></h3>${tv.people.length ? `<div class="dt-wrap"><table class="tbl dt"><thead><tr><th>Person</th><th class="num">Clients</th><th class="num">Open jobs</th><th class="num">Applications</th><th class="num">Calls (7 days)</th><th class="num">Screened</th><th class="num">Sent to client</th><th class="num">Interviews</th><th class="num">Offers</th><th class="num">Joined</th><th class="num">Target</th><th class="num">Tasks</th></tr></thead><tbody>
+        ${tv.people.map((p) => `<tr><td><b>${esc(p.name)}</b><div class="dt-sub">${p.level === 'admin' ? 'Admin' : 'Sub admin'}</div></td><td class="num">${p.clients}</td><td class="num">${p.jobs}</td><td class="num">${p.apps}</td><td class="num">${p.calls7}</td><td class="num">${p.screened}</td><td class="num">${p.sent}</td><td class="num">${p.interviews}</td><td class="num">${p.offers}</td><td class="num"><b>${p.joined}</b></td>
+          <td class="num"><span class="badge ${p.target >= 80 ? 'b-green' : p.target >= 50 ? 'b-amber' : 'b-red'}">${pct(p.target)}</span></td><td class="num">${p.tasks_open}${p.tasks_overdue ? ` <span class="badge b-red tiny">${p.tasks_overdue} late</span>` : ''}</td></tr>`).join('')}</tbody></table></div>` : '<div class="dt-empty">No team members yet.</div>'}
+        <div class="row" style="margin-top:12px;gap:8px"><a class="btn sm" href="/team/tasks">Tasks</a><a class="btn sm" href="/team/performance">Performance</a></div></section>`; };
   // ---------- Dashboard ----------
   // Super admin: the health of every agency's work. Admin: the same for their agency. Sub admin: their own day.
   P.dashboard = async ({ el, q, me, actions }) => {
-    const agq = isSuper(me) && q.agency ? q.agency : ''; const sub = me.level === 'sub';
+    const agq = isSuper(me) && q.agency ? q.agency : ''; const sub = me.level === 'sub'; const admin = me.level === 'admin';
     const hq = healthQs({ agency: agq, ticket: q.ticket || '', period: q.period || '' });
-    const [d, pl, td, h] = await Promise.all([BB.api(`/api/dashboard${agq ? `?agency=${encodeURIComponent(agq)}` : ''}`), sub ? BB.api('/api/pipeline?mine=1').catch(() => null) : null, BB.api('/api/today').catch(() => null), sub ? null : BB.api(`/api/health${hq ? `?${hq}` : ''}`)]); const c = d.counts;
+    const [d, pl, td, h] = await Promise.all([BB.api(`/api/dashboard${agq ? `?agency=${encodeURIComponent(agq)}` : ''}`), sub ? BB.api('/api/pipeline?mine=1').catch(() => null) : null, BB.api('/api/today').catch(() => null), sub || admin ? null : BB.api(`/api/health${hq ? `?${hq}` : ''}`)]); const c = d.counts;
+    const tv = admin ? await BB.api('/api/team-overview').catch(() => null) : null;
     // Today: what to do now from everything I own, most urgent first; each line opens the record, the title the list.
     const tsec = td ? td.sections.filter((x) => x.count) : [];
     const today = td ? `<div class="card today"><div class="card-h"><h3>Today</h3><span class="small muted">${td.owned.clients} client${td.owned.clients === 1 ? '' : 's'} · ${td.owned.jobs} job${td.owned.jobs === 1 ? '' : 's'} · ${td.owned.applications} open application${td.owned.applications === 1 ? '' : 's'} owned by you</span></div>${tsec.length ? `<div class="today-grid">${tsec.map((x) => `<div class="today-sec"><div class="row between">${x.link ? `<a href="#" data-tlink="${esc(x.link)}"><b>${esc(x.title)}</b></a>` : `<b>${esc(x.title)}</b>`}<span class="badge b-primary">${x.count}</span></div>${x.items.map((i) => `<div class="today-item">${i.open ? `<a href="#" data-open="${i.open.type}:${esc(i.open.id)}">${esc(i.text)}</a>` : esc(i.text)}${i.when ? ` <span class="tiny muted">${fmtDT(i.when)}</span>` : ''}</div>`).join('')}${x.count > x.items.length ? `<div class="tiny muted">+${x.count - x.items.length} more</div>` : ''}</div>`).join('')}</div>` : '<div class="empty">Nothing waiting on you right now.</div>'}</div>` : '';
@@ -234,6 +246,7 @@
     const kindColor = { 'Result not recorded': 'var(--amber)', 'Stuck 7+ days': 'var(--red)', 'At risk': 'var(--red)', 'No candidates': 'var(--blue)', 'Write job description': 'var(--violet)', 'Log missing': 'var(--amber)', 'Overdue bill': 'var(--red)', 'Bill to issue': 'var(--gold-600)', 'Leads to assign': 'var(--gold-600)', 'Data request': 'var(--slate)' };
     el.innerHTML = `<div class="stack-lg">
       ${h ? healthView(h, me, agq) : `<div class="kpis">${[['building', 'Clients with active enquiries', c.active_clients, 'clients', 'blue'], ['brief', 'Active job openings', c.open_jobs, 'jobs?status=Active', 'violet'], ['users', 'Seats to fill', c.seats_open, 'jobs?status=Active', 'gold'], ['flow', 'Active applications', c.active_apps, 'applications', 'blue'], ['cal', 'Interviews next 7 days', c.interviews_7, 'interviews', 'violet'], ['rupee', 'Offers waiting', c.offers_waiting, 'applications?stage=Offer', 'gold'], ['check', 'Joined last 30 days', c.joined_30, 'applications?closed=1', 'green'], isSuper(me) ? ['inbox', 'New leads', c.new_leads, 'leads', 'red'] : ['note', 'Feedback due', c.feedback_due, 'interviews', 'red']].map(([ic, l, v, h, tone]) => `<a class="card kpi click t-${tone}" href="/team/${h}"><span class="kpi-ic">${BB.icon(ic)}</span><span class="kpi-txt"><span class="kpi-v">${v || 0}</span><span class="kpi-l">${l}</span></span></a>`).join('')}</div>`}
+      ${tv ? teamView(tv) : ''}
       ${sub || (!isSuper(me) && tsec.length) ? today : ''}
       ${pipeline}
       <div class="grid ${h ? 'dash-side-only' : ''}" style="grid-template-columns:${h ? 'minmax(0,1fr)' : 'minmax(0,1.6fr) minmax(0,1fr)'};gap:14px">
@@ -247,6 +260,7 @@
     $$('[data-st]', el).forEach((b) => (b.onclick = () => BB.go(`team/jobs?status=${encodeURIComponent(b.dataset.st)}`)));
     $$('[data-pipe]', el).forEach((b) => (b.onclick = (e) => { e.preventDefault(); BB.go(`team/applications?${b.dataset.pipe}${me.level === 'super' ? '' : '&mine=1'}`); }));
     const dag = $('[data-dagency]', el); if (dag) dag.onchange = () => BB.setQ({ agency: dag.value });
+    $$('[data-cstagego]', el).forEach((b) => (b.onclick = (e) => { e.preventDefault(); BB.go(`team/clients?stage=${encodeURIComponent(b.dataset.cstagego)}`); }));
     if (h) {
       wireHealth(el, h, me, agq);
       // The period (closed positions and their money) sits beside the heading.

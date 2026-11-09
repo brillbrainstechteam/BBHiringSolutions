@@ -362,6 +362,30 @@ route('GET', '/api/health', T, (ctx) => {
   return out;
 });
 
+// ---------- Team at work (admin dashboard): each person's numbers, and where the clients stand ----------
+route('GET', '/api/team-overview', T, (ctx) => {
+  const u = ctx.user; if (u.level === 'sub') throw httpError(403, 'This view is for admins.');
+  const ag = isSuper(u) ? String(ctx.query.agency || '') : u.agency_id;
+  const people = all("SELECT id, name, level, agency_id FROM users WHERE status='On' AND level IN ('admin','sub') ORDER BY CASE level WHEN 'admin' THEN 0 ELSE 1 END, name").filter((p) => !ag || p.agency_id === ag);
+  const since30 = new Date(Date.now() - 30 * 86400000).toISOString(); const since7 = new Date(Date.now() - 7 * 86400000).toISOString(); const today = L.istDay();
+  const clients = all('SELECT * FROM clients WHERE removed=0 AND archived=0 AND merged_into IS NULL').filter((c) => seeClient(u, c) && !c.placeholder && !c.internal && (!ag || c.agency_id === ag));
+  const jobs = all('SELECT * FROM jobs WHERE archived=0').filter((j) => (!ag || j.agency_id === ag)); const open = ['Open', 'Sourcing', 'Interviewing', 'Offer stage'];
+  const apps = all("SELECT * FROM applications WHERE result='open'"); const tasks = all("SELECT * FROM tasks WHERE removed=0 AND status!='Done'");
+  const owns = (row, main, uid) => row[main] === uid || (Array.isArray(row.owners) && row.owners.includes(uid));
+  const rows = people.map((p) => {
+    const perf = perfOf(p.id, since30); const mine = tasks.filter((t) => taskOwnerIds(t).includes(p.id));
+    return { id: p.id, name: p.name, level: p.level, clients: clients.filter((c) => owns(c, 'owner_id', p.id)).length,
+      jobs: jobs.filter((j) => open.includes(j.status) && owns(j, 'recruiter_id', p.id)).length,
+      apps: apps.filter((a) => a.owner_id === p.id).length,
+      calls7: get('SELECT COUNT(*) n FROM calls WHERE user_id=? AND at>=?', p.id, since7).n,
+      screened: perf.screened, sent: perf.sent, interviews: perf.interviews, offers: perf.offers, joined: perf.joined, target: perf.target,
+      tasks_open: mine.length, tasks_overdue: mine.filter((t) => t.due_date && t.due_date < today).length };
+  });
+  const stages = D.settings().client_stages.map((s) => ({ stage: s, n: clients.filter((c) => c.stage === s).length, side: L.CLIENT_SIDE.includes(s) }));
+  const followups = all("SELECT f.*, c.company FROM followups f JOIN clients c ON c.id=f.record_id WHERE f.done=0 AND f.note LIKE 'Ask % for the requirement%' ORDER BY f.at").filter((f) => clients.some((c) => c.id === f.record_id)).slice(0, 8).map((f) => ({ id: f.id, client_id: f.record_id, company: f.company, at: f.at }));
+  return { people: rows, stages, followups, total_clients: clients.length };
+});
+
 // ---------- My day (sub admin home) ----------
 route('GET', '/api/people', T, (ctx) => taskOwners(ctx.user).map((x) => ({ id: x.id, name: x.name, level: x.level })));
 const setOwners = (ctx, table, rec, mainCol) => {
@@ -503,6 +527,12 @@ route('POST', '/api/leads/assign', T, (ctx) => {
 });
 // Bulk actions on ticked leads (Leads page, super admin): mark seen, junk, send the account link on WhatsApp,
 // move clients to a stage, add candidates to a job opening. Each record is done on its own; failures are listed.
+// Requirement later: a follow-up on the date they gave, for the client's owner (it shows in their day and the bell).
+function setRequirementLater(c, at, note, ctx) {
+  const who = c.owner_id || ctx.user.id; const text = `Ask ${c.company} for the requirement${note ? `: ${String(note).trim()}` : ''}`;
+  insert('followups', { record_id: c.id, at: at.toISOString(), note: text, for_user: who, done: 0, created_by: ctx.user.id });
+  insert('notes', { record_id: c.id, text: `Requirement later — follow up on ${L.istFmt(at.toISOString(), false)}${note ? `: ${String(note).trim()}` : ''}`, author: ctx.actor.label, at: now() });
+}
 route('POST', '/api/leads/bulk', T, (ctx) => {
   if (!isSuper(ctx.user) && ctx.body.type !== 'client') throw httpError(403, 'Only the super admin acts on candidates here.');
   const { type, action, value } = ctx.body; const ids = (ctx.body.ids || []).map(String).slice(0, 500);
@@ -518,6 +548,7 @@ route('POST', '/api/leads/bulk', T, (ctx) => {
       else if (action === 'stage' && type === 'client') {
         const c = get('SELECT * FROM clients WHERE id=?', id);
         if (value === 'Client activated' && !c.activated_at && !L.activationState(c).ready) { out.skipped.push(`${c.company}: no signed contract yet`); continue; }
+        if (value === 'Requirement later') { const at = new Date(ctx.body.follow_up_at || ''); if (Number.isNaN(at.getTime())) throw httpError(400, 'Pick the date to follow up for the requirement', 'follow_up_at'); setRequirementLater(c, at, ctx.body.follow_up_note, ctx); }
         D.edit(table, id, { stage: value, is_new: 0 }, ctx.actor.label, ctx.ip);
       }
       else if (action === 'add_to_job' && type === 'candidate') L.createApplication(id, value, ctx.actor, null, 'Added from Leads');
@@ -619,6 +650,7 @@ route('PATCH', '/api/clients/:id', T, (ctx) => {
   const patch = {}; for (const k of allowed) if (ctx.body[k] !== undefined) patch[k] = ctx.body[k];
   if (patch.whatsapp) { patch.whatsapp = L.digits10(patch.whatsapp); if (!L.validPhone(patch.whatsapp)) throw httpError(400, 'Enter a 10-digit WhatsApp number', 'whatsapp'); }
   if (patch.fee_value === '') patch.fee_value = null;
+  if (patch.stage === 'Requirement later') { const at = new Date(ctx.body.follow_up_at || ''); if (Number.isNaN(at.getTime())) throw httpError(400, 'Pick the date to follow up for the requirement', 'follow_up_at'); setRequirementLater(c, at, ctx.body.follow_up_note, ctx); }
   if (patch.stage === 'Client activated' && !c.activated_at) { const st = L.activationState(c); if (!st.ready) throw httpError(400, 'Upload the signed contract to activate this client. All other work can carry on without it.'); }
   if (patch.agency_id && patch.agency_id !== c.agency_id) { const adm = L.agencyAdmin(patch.agency_id); patch.owner_id = adm ? adm.id : null; patch.is_new = 0; D.run('UPDATE jobs SET agency_id=? WHERE client_id=? AND agency_id IS NULL', patch.agency_id, c.id); }
   return D.edit('clients', c.id, patch, ctx.actor.label, ctx.ip);
@@ -628,12 +660,11 @@ route('POST', '/api/clients/:id/onboarding', T, (ctx) => {
   const { item, done, note } = ctx.body; const it = V.ONBOARDING.find((x) => x.key === item); if (!it) throw httpError(400, 'Unknown item');
   const ob = { ...(c.onboarding || {}) }; ob[item] = { done: !!done, date: done ? now() : null, by: ctx.actor.label, note: note || (ob[item] || {}).note || '' };
   const patch = { onboarding: ob };
-  const stages = D.settings().client_stages;
-  if (done && it.stage && it.stage !== 'Client activated' && stages.indexOf(it.stage) > stages.indexOf(c.stage)) patch.stage = it.stage;
   if (item === 'contract' && done && !c.contract) patch.contract = JSON.stringify({ by: ctx.actor.label, at: now(), method: 'Marked by team' });
+  if (item === 'group_dp' && done) patch.wa_group = { ...(c.wa_group || {}), created: true, at: (c.wa_group || {}).at || now(), by: ctx.actor.label };
   D.edit('clients', c.id, patch, ctx.actor.label, ctx.ip);
   if (done && note) insert('notes', { record_id: c.id, text: `${it.label}: ${note}`, author: ctx.actor.label, at: now() });
-  L.checkActivation(c.id, ctx.actor);
+  L.checkActivation(c.id, ctx.actor); L.syncClientStage(c.id, ctx.actor);
   return { ok: true, stage: get('SELECT stage FROM clients WHERE id=?', c.id).stage };
 });
 route('POST', '/api/clients/:id/summary', T, (ctx) => {
@@ -686,14 +717,14 @@ const TBC = 'Client to be confirmed';
 function placeholderClient(agencyId) {
   const c = get('SELECT * FROM clients WHERE placeholder=1 AND removed=0 AND agency_id IS ?', agencyId || null); if (c) return c;
   const id = D.nextId('CL');
-  insert('clients', { id, company: TBC, contact: '', whatsapp: '', email: '', city: '', source: 'Job ad', stage: 'Job opening active', agency_id: agencyId || null, is_new: 0, kyc: {}, onboarding: {}, extra: {}, placeholder: 1, created_by: 'System', created_at: now(), updated_at: now() });
+  insert('clients', { id, company: TBC, contact: '', whatsapp: '', email: '', city: '', source: 'Job ad', stage: 'Job opening activated', agency_id: agencyId || null, is_new: 0, kyc: {}, onboarding: {}, extra: {}, placeholder: 1, created_by: 'System', created_at: now(), updated_at: now() });
   return get('SELECT * FROM clients WHERE id=?', id);
 }
 // BrillBrains' own hiring ("Internal"): one such client per agency, made the first time it is needed. Never billed.
 function internalClient(agencyId) {
   const c = get('SELECT * FROM clients WHERE internal=1 AND removed=0 AND agency_id IS ?', agencyId || null); if (c) return c;
   const biz = D.settings().business || {}; const id = D.nextId('CL');
-  insert('clients', { id, company: `${biz.name || 'BrillBrains Hiring Solutions'} (Internal)`, contact: '', whatsapp: '', email: '', city: biz.city || '', source: 'Internal', stage: 'Job opening active', agency_id: agencyId || null, is_new: 0, kyc: {}, onboarding: {}, extra: {}, internal: 1, created_by: 'System', created_at: now(), updated_at: now() });
+  insert('clients', { id, company: `${biz.name || 'BrillBrains Hiring Solutions'} (Internal)`, contact: '', whatsapp: '', email: '', city: biz.city || '', source: 'Internal', stage: 'Job opening activated', agency_id: agencyId || null, is_new: 0, kyc: {}, onboarding: {}, extra: {}, internal: 1, created_by: 'System', created_at: now(), updated_at: now() });
   return get('SELECT * FROM clients WHERE id=?', id);
 }
 // Every job opening carries its salary (a range is fine): the projected revenue is worked out from it.
@@ -726,7 +757,7 @@ function createJob(c, b, actor, byClient) {
   L.recalcJob(id, L.actorName(actor), byClient ? 'Raised by client' : 'Job opening made');
   if (recruiter && byClient) L.alertUser(recruiter, `${c.company} raised a new job opening ${id}: write the job description`, id, 'jobs');
   const stages = D.settings().client_stages;
-  if (stages.indexOf('Job opening active') > stages.indexOf(c.stage)) update('clients', c.id, { stage: 'Job opening active' });
+  L.syncClientStage(c.id, actor);
   return get('SELECT * FROM jobs WHERE id=?', id);
 }
 module.exports.createJob = createJob; module.exports.needSalary = needSalary;
@@ -851,7 +882,7 @@ route('POST', '/api/jobs/import', T, (ctx) => {
     plan.push({ ...line, client_new: !!c.new, client_ref: c, job, result: 'create' });
   }
   // Clients only in the Client Master sheet: added too (unless unticked), at the stage their status says.
-  const stageOf = (t) => { const x = String(t || '').toLowerCase(); return /requirement active|job/.test(x) ? 'Job opening active' : /hold/.test(x) ? 'On hold' : /no current|no active/.test(x) ? 'No current opening' : /not interested/.test(x) ? 'Not interested' : /understanding|input/.test(x) ? 'Understanding needs' : /agreement|contract/.test(x) ? 'Agreement shared' : /proposal/.test(x) ? 'Proposal and pitch deck' : 'Call initiated'; };
+  const stageOf = (t) => { const x = String(t || '').toLowerCase(); return /requirement active|job/.test(x) ? 'Job opening activated' : /hold/.test(x) ? 'Decision on hold' : /no current|no active/.test(x) ? 'No current opening' : /not interested/.test(x) ? 'Not interested' : /understanding|input/.test(x) ? 'Understanding needs' : /agreement|contract/.test(x) ? 'Agreement shared' : /proposal/.test(x) ? 'Proposal and pitch deck' : 'Call initiated'; };
   if (b.all_clients !== false) for (const [key, m] of master) {
     if (clientsSeen.has(key) || existingClients.some((x) => nameKey(x.company) === key)) continue;
     const c = { key, company: m.name, new: true, ...m, stage: stageOf(m.status) }; clientsSeen.set(key, c);
@@ -865,7 +896,7 @@ route('POST', '/api/jobs/import', T, (ctx) => {
   for (const c of clientsSeen.values()) {
     if (!c.new) continue;
     const id = D.nextId('CL');
-    insert('clients', { id, company: c.company, contact: c.contact || '', whatsapp: c.phone || '', email: c.email || '', city: c.city || '', state: c.state || L.stateOf(c.city), business_type: c.type || '', source: 'Excel upload', stage: c.stage || 'Job opening active', agency_id: u.agency_id || null, owner_id: u.id, is_new: 0, kyc: {}, onboarding: {}, extra: {}, created_by: ctx.actor.label, created_at: now(), updated_at: now() });
+    insert('clients', { id, company: c.company, contact: c.contact || '', whatsapp: c.phone || '', email: c.email || '', city: c.city || '', state: c.state || L.stateOf(c.city), business_type: c.type || '', source: 'Excel upload', stage: c.stage || 'Job opening activated', agency_id: u.agency_id || null, owner_id: u.id, is_new: 0, kyc: {}, onboarding: {}, extra: {}, created_by: ctx.actor.label, created_at: now(), updated_at: now() });
     if (c.remarks) insert('notes', { record_id: id, text: `From Client Master${c.status ? ` (${c.status})` : ''}: ${c.remarks}`, author: 'Excel upload', at: now() });
     D.history(ctx.actor.label, 'create', id, null, null, `Client ${c.company} from Excel upload`);
     c.id = id;
@@ -2166,9 +2197,9 @@ route('POST', '/api/agencies/:id/delete', SUPER, (ctx) => {
 });
 
 // ---------- tasks: who owns what ----------
-const canTask = (u, t) => isSuper(u) || !t.agency_id || t.agency_id === u.agency_id;
+const canTask = (u, t) => isSuper(u) || !t.agency_id || t.agency_id === u.agency_id || taskOwnerIds(t).includes(u.id);
 // Owners to pick from: the team, not the super admins (they see and do everything already).
-const taskOwners = (u) => all("SELECT id, name, level, agency_id, team FROM users WHERE status='On' AND level != 'super'").filter((x) => isSuper(u) || !u.agency_id || x.agency_id === u.agency_id || x.id === u.id);
+const taskOwners = (u) => all("SELECT id, name, level, agency_id, team FROM users WHERE status='On' AND level IN ('super','admin','sub') ORDER BY CASE level WHEN 'super' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END, name").filter((x) => x.level === 'super' || isSuper(u) || !u.agency_id || x.agency_id === u.agency_id || x.id === u.id);
 const taskOwnerIds = (t) => [...new Set([t.owner_id, ...(Array.isArray(t.owners) ? t.owners : [])].filter(Boolean))];
 const taskRow = (t) => { const ids = taskOwnerIds(t); return { ...t, owners: ids, owner_name: ids.map((id) => (get('SELECT name FROM users WHERE id=?', id) || {}).name).filter(Boolean).join(', ') }; };
 const loadTask = (ctx) => { const t = get('SELECT * FROM tasks WHERE id=? AND removed=0', ctx.params.id); if (!t || !canTask(ctx.user, t)) throw httpError(404, 'Task not found'); return t; };

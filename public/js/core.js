@@ -525,6 +525,11 @@ BB.route = () => {
 };
 // Brand lockup: mark | BrillBrains / Hiring Solutions / tagline (as on the website).
 // The full logo on wide screens, the BB mark where space is tight; the tagline names the part of the site.
+// Client stage "Requirement later": when to ask them again (a follow-up for the owner). null = cancelled.
+BB.askRequirementLater = (who) => BB.ask({ title: `Requirement later${who ? ` · ${String(who).replace(/[<>&"]/g, '')}` : ''}`, note: 'When should we ask them for the requirement? The client owner gets a reminder on that day.', fields: [
+  { name: 'follow_up_at', label: 'Follow up on', type: 'datetime-local', value: BB.toLocalInput ? BB.toLocalInput(new Date(Date.now() + 14 * 86400000)) : '' },
+  { name: 'follow_up_note', label: 'Note (optional)', type: 'textarea', opt: true, placeholder: 'e.g. Hiring after Diwali for 2 sales executives' }], ok: 'Save',
+  submit: (v) => { if (!v.follow_up_at) { const e = new Error('Pick the date'); e.field = 'follow_up_at'; throw e; } return { follow_up_at: BB.fromLocalInput ? BB.fromLocalInput(v.follow_up_at) : v.follow_up_at, follow_up_note: v.follow_up_note }; } });
 // Job status: the worked-out one (placed / in process through us first, then the candidate's fresh answer).
 BB.JOB_STATUS_CLS = { 'Actively looking': 'b-green', 'Not interested': 'b-red', 'Current status unknown': 'b-outline', 'Placed - BBHS': 'b-gold', 'Active application - BBHS': 'b-primary' };
 BB.jobStatusBadge = (s) => `<span class="badge ${BB.JOB_STATUS_CLS[s] || 'b-outline'}" title="${s === 'Current status unknown' ? 'No fresh answer from them: ask with Ask job status' : ''}">${String(s || '').replace(/[<>&"]/g, '')}</span>`;
