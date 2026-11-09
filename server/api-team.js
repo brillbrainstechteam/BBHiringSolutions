@@ -1086,11 +1086,15 @@ route('POST', '/api/jobs/:id/send-profiles', T, (ctx) => {
 // ---------- candidates (resume bank) ----------
 // The resume bank as filtered by q (the same filters a segment saves), as this user may see it.
 // Everything but the dropdown filters (those are candMatch): archived, notice, looking, tie-up, agency, new, freshness, search.
+const OLD_STATUS = { Hired: 'Placed - BBHS', 'In process': 'Active application - BBHS' };
 function candBase(q, u) {
   const fresh = q.updated ? Number(q.updated) : null;
+  const want = many(q.looking).concat(OLD_STATUS[q.status] ? [OLD_STATUS[q.status]] : []); let states = null;
+  const statusOk = (c) => { if (!want.length) return true; if (!states) states = L.appStates(); return want.includes(L.jobStatusOf(c, states.get(c.id))); };
+  const worked = many(q.worked);
   const ind = q.industry || 'all'; const inInd = (c) => ind === 'all' || (c.industry || 'Jewellery') === ind; // old segments may still carry an industry
   return (c) => (q.archived ? c.archived : !c.archived) && inInd(c) && (!q.notice || (c.notice_days ?? 999) <= Number(q.notice))
-      && (!q.looking || c.looking === q.looking) && (!q.tieup || String(c.tieup_id) === String(q.tieup)) && (!q.agency || (q.agency === 'none' ? !c.agency_id : q.agency === 'any' ? !!c.agency_id : c.agency_id === q.agency)) && (!q.new || c.is_new)
+      && statusOk(c) && (!worked.length || (c.exp_business || []).some((x) => worked.includes(x))) && (!q.tieup || String(c.tieup_id) === String(q.tieup)) && (!q.agency || (q.agency === 'none' ? !c.agency_id : q.agency === 'any' ? !!c.agency_id : c.agency_id === q.agency)) && (!q.new || c.is_new)
       && (!q.cv || (q.cv === 'yes' ? !!c.cv_file : !c.cv_file))
       && (!fresh || L.daysBetween(c.last_updated || c.created_at) <= fresh) && (!q.stale || L.daysBetween(c.last_updated || c.created_at) > 90)
       && like(q.q, c.id, c.name, R.phoneVisible(u, c) ? c.whatsapp : '', c.job_wanted, (c.also_roles || []).join(' '), c.city, c.current_company, c.old_code, c.domain, (c.skills || []).join(' '));
@@ -1117,11 +1121,10 @@ function candFacets(q, u) {
   return out;
 }
 function candRows(q, u) {
-  const match = candMatch(q); const base = candBase(q, u);
+  const match = candMatch(q); const base = candBase(q, u); const states = L.appStates();
   return all('SELECT * FROM candidates WHERE merged_into IS NULL AND removed=0 AND junk=0 ORDER BY created_at DESC')
     .filter((c) => base(c) && match(c))
-    .map((c) => ({ ...candidateOut(u, c), status: V.candStatus(c.id) }))
-    .filter((c) => !q.status || c.status.startsWith(q.status));
+    .map((c) => { const js = L.jobStatusOf(c, states.get(c.id)); return { ...candidateOut(u, c), job_status: js, status: js }; });
 }
 // ---------- Add to the lists: a domain, department, designation or skill that is not there yet (admins) ----------
 route('POST', '/api/taxonomy', T, (ctx) => {
@@ -1159,7 +1162,7 @@ route('GET', '/api/candidates/report', T, (ctx) => {
   const jewBand = (y) => (y === null || y === undefined ? null : y === 0 ? '0' : y < 1 ? 'lt1' : y < 3 ? '1-3' : y < 5 ? '3-5' : y < 10 ? '5-10' : '10+');
   const JEW = [['0', 'None'], ['lt1', 'Under 1 year'], ['1-3', '1–3 years'], ['3-5', '3–5 years'], ['5-10', '5–10 years'], ['10+', '10+ years']];
   const jewM = tally((c) => jewBand(c.exp_jewellery));
-  const lookM = tally((c) => c.looking || 'Not asked yet');
+  const stM = L.appStates(); const lookM = tally((c) => L.jobStatusOf(c, stM.get(c.id)));
   // Added per week, the last 12 weeks (India time, weeks start Monday)
   const weeks = []; const day0 = new Date(`${L.istDay()}T00:00:00Z`); const dow = (day0.getUTCDay() + 6) % 7; const mon = new Date(day0.getTime() - dow * 86400000);
   for (let i = 11; i >= 0; i--) { const s = new Date(mon.getTime() - i * 7 * 86400000); const e = new Date(s.getTime() + 6 * 86400000); const from = s.toISOString().slice(0, 10); const to = e.toISOString().slice(0, 10); weeks.push({ label: from, to, n: rows.filter((c) => { const d = L.istDay(c.created_at); return d >= from && d <= to; }).length, f: { from, to } }); }
@@ -1169,7 +1172,7 @@ route('GET', '/api/candidates/report', T, (ctx) => {
       { label: 'New, not yet seen', n: rows.filter((c) => c.is_new).length, f: { new: '1' } },
       { label: 'Not assigned to an agency', n: rows.filter((c) => !c.agency_id).length, f: { agency: 'none' } },
       { label: 'No resume on file', n: rows.filter((c) => !c.cv_file).length, f: { cv: 'no' } },
-      { label: 'Actively looking', n: rows.filter((c) => c.looking === 'Actively looking').length, f: { looking: 'Actively looking' } },
+      { label: 'Current status unknown', n: rows.filter((c) => L.jobStatusOf(c, stM.get(c.id)) === 'Current status unknown').length, f: { looking: 'Current status unknown' } },
     ],
     dept: top(tally((c) => c.department || 'Not set'), 12, (k) => (k === 'Not set' ? null : { dept: k })),
     job: top(tally((c) => c.job_wanted || 'Not set'), 12, (k) => (k === 'Not set' ? null : { job: k })),
@@ -1180,7 +1183,8 @@ route('GET', '/api/candidates/report', T, (ctx) => {
     skills: top(tally((c) => (c.skills || []).map((s) => String(s).trim())), 15, (k) => ({ skills: k })),
     exp: EXP.map(([l, f]) => ({ label: l, n: expM.get(l) || 0, f })).concat([{ label: 'Not given', n: rows.filter((c) => c.exp_total === null || c.exp_total === undefined).length, f: null }]),
     jewellery: JEW.map(([k, l]) => ({ label: l, n: jewM.get(k) || 0, f: { jewellery: k } })),
-    looking: top(lookM, 6, (k) => (k === 'Not asked yet' ? null : { looking: k })),
+    looking: L.JOB_STATUSES.map((k) => ({ label: k, n: lookM.get(k) || 0, f: { looking: k } })),
+    worked: L.BUSINESS_TYPES.map((k) => ({ label: k, n: rows.filter((c) => (c.exp_business || []).includes(k)).length, f: { worked: k } })),
     assigned: [{ label: 'Assigned', n: rows.filter((c) => c.agency_id).length, f: { agency: 'any' } }, { label: 'Not assigned', n: rows.filter((c) => !c.agency_id).length, f: { agency: 'none' } }],
     resume: [{ label: 'Resume on file', n: rows.filter((c) => c.cv_file).length, f: { cv: 'yes' } }, { label: 'No resume', n: rows.filter((c) => !c.cv_file).length, f: { cv: 'no' } }],
     weeks,
@@ -1300,7 +1304,7 @@ route('GET', '/api/candidates/:id', T, (ctx) => {
   const msgs = seeThread(u, 'candidate', c.id) ? all("SELECT * FROM messages WHERE person_type='candidate' AND person_id=? ORDER BY at DESC LIMIT 30", c.id) : [];
   if (c.is_new) update('candidates', c.id, { is_new: 0 }); // opened, so no longer new
   return {
-    ...candidateOut(u, c), status: V.candStatus(c.id), apps, messages: msgs, rating: L.ratingOf(c.id), can_message: seeThread(u, 'candidate', c.id) || isSuper(u),
+    ...candidateOut(u, c), status: V.candStatus(c.id), job_status: L.jobStatusOf(c, L.appStateOf(c.id)), apps, messages: msgs, rating: L.ratingOf(c.id), can_message: seeThread(u, 'candidate', c.id) || isSuper(u),
     verify: require('./verify').badge(c.id),
     ad_plan: L.adPlanFor(c.id),
     job_matches: L.jobsFor(c, 20).filter((m) => seeJob(u, m.j)).slice(0, 6).map((m) => ({ id: m.j.id, title: m.j.title, city: m.j.city, client_name: (get('SELECT company FROM clients WHERE id=?', m.j.client_id) || {}).company, score: m.score, reasons: m.reasons, gaps: m.gaps })),
@@ -1323,8 +1327,10 @@ route('PATCH', '/api/candidates/:id', T, (ctx) => {
   const patch = {}; for (const k of allowed) if (ctx.body[k] !== undefined) patch[k] = ctx.body[k];
   if (patch.language !== undefined) patch.language = require('./lang').pick(patch.language);
   if (patch.looking && !L.LOOKING.includes(patch.looking)) throw httpError(400, 'Pick a looking status', 'looking');
-  // not interested / not looking keeps the date they said so (out of matching); any other status clears it
-  if (patch.looking && patch.looking !== c.looking) patch.not_interested_at = ['Not interested', 'Not looking'].includes(patch.looking) ? (c.not_interested_at || now()) : null;
+  // An answer from the team for the candidate: saved with today's date (not interested keeps them out of matching)
+  if (patch.looking === '' || patch.looking === null) { if (c.looking) { patch.looking = null; patch.looking_at = null; } else delete patch.looking; }
+  else if (patch.looking && patch.looking === c.looking) delete patch.looking; // unchanged: the date they said it stays
+  else if (patch.looking) { patch.looking_at = now(); patch.not_interested_at = patch.looking === 'Not interested' ? (c.not_interested_at || now()) : null; }
   if (patch.whatsapp) { patch.whatsapp = L.digits10(patch.whatsapp); if (!L.validPhone(patch.whatsapp)) throw httpError(400, 'Enter a 10-digit WhatsApp number', 'whatsapp'); }
   if (patch.job_wanted) patch.department = L.deptOf(patch.job_wanted);
   Object.assign(patch, L.cleanPrefs(ctx.body));
@@ -1367,6 +1373,11 @@ route('POST', '/api/candidates/bulk', T, (ctx) => {
     for (const id of ids) { try { L.createApplication(id, job_id, ctx.actor, null, 'Added from resume bank'); out.done++; } catch (e) { out.errors.push(`${id}: ${e.message}`); } }
   } else if (action === 'ask_profile') { // resume & details request to the ticked candidates (those still missing something)
     for (const id of ids.slice(0, D.settings().bulk_budget)) { const r = require('./profilelink').ask(id, ctx.actor, false); if (r && r.skipped) out.errors.push(`${id}: ${r.skipped}`); else out.done++; }
+  } else if (action === 'ask_status') { // the job status question on WhatsApp; their tap sets the status
+    const states = L.appStates();
+    for (const id of ids.slice(0, D.settings().bulk_budget)) { const c = get('SELECT * FROM candidates WHERE id=?', L.resolveId(id)); if (!c) { out.errors.push(`${id}: not found`); continue; }
+      const js = L.jobStatusOf(c, states.get(c.id)); if (js.endsWith('BBHS')) { out.errors.push(`${c.id}: ${js}, no need to ask`); continue; }
+      const r = L.sendWA({ ptype: 'candidate', pid: c.id, format: 'bbhs_still_looking', vars: { link: L.link('my-profile') }, by: ctx.actor, bulk: true, dedupe: `status:${c.id}:${L.istDay()}` }); if (r.skipped) out.errors.push(`${c.id}: ${r.skipped}`); else out.done++; }
   } else if (action === 'alert') {
     const j = get('SELECT * FROM jobs WHERE id=?', job_id); if (!j) throw httpError(400, 'Pick a job');
     for (const id of ids.slice(0, D.settings().bulk_budget)) { const r = L.sendWA({ ptype: 'candidate', pid: id, format: 'bbhs_job_alert', vars: { job: j.title, city: j.city, salary: L.SAL_HIDDEN }, jb: j.id, by: ctx.actor, bulk: true, dedupe: `alert:${j.id}:${id}` }); if (r.skipped) out.errors.push(`${id}: ${r.skipped}`); else out.done++; }
@@ -1393,7 +1404,7 @@ function bulkUpdate(ctx, out) {
     const c = get('SELECT * FROM candidates WHERE id=? AND removed=0', L.resolveId(id)); if (!c) { out.errors.push(`${id}: not found`); continue; }
     const own = isSuper(u) || (c.agency_id && c.agency_id === u.agency_id);
     if (b.action !== 'note' && b.action !== 'followup' && !own) { out.errors.push(`${c.id}: another agency's candidate`); continue; }
-    if (b.action === 'set_looking') { if (c.looking !== b.looking) D.edit('candidates', c.id, { looking: b.looking, not_interested_at: ['Not interested', 'Not looking'].includes(b.looking) ? (c.not_interested_at || now()) : null, last_updated: now() }, ctx.actor.label, ctx.ip); }
+    if (b.action === 'set_looking') L.setLooking(c.id, b.looking, ctx.actor, 'set by the team');
     else if (b.action === 'note') { insert('notes', { record_id: c.id, text: String(b.text).trim(), author: ctx.actor.label, at: now() }); D.history(ctx.actor.label, 'note', c.id); }
     else if (b.action === 'followup') insert('followups', { record_id: c.id, at: when.toISOString(), note: String(b.note || '').trim(), for_user: u.id, done: 0, created_by: u.id });
     else if (b.action === 'assign') {
@@ -1431,7 +1442,7 @@ route('POST', '/api/tieups', T, (ctx) => {
 // ---------- segments (saved candidate searches) ----------
 // A segment is a named set of resume-bank filters. Its owner sees it; shared ones are seen by the whole team.
 // The list of people is worked out again each time, so counts and downloads are always current.
-const SEG_KEYS = ['q', 'industry', 'domain', 'skills', 'dept', 'job', 'city', 'state', 'ad', 'jewellery', 'from', 'to', 'exp_min', 'exp_max', 'sal_min', 'sal_max', 'looking', 'status', 'source', 'updated', 'notice', 'stale', 'archived'];
+const SEG_KEYS = ['q', 'industry', 'domain', 'skills', 'skillgroup', 'worked', 'biz', 'cv', 'dept', 'job', 'city', 'state', 'ad', 'jewellery', 'from', 'to', 'exp_min', 'exp_max', 'sal_min', 'sal_max', 'looking', 'status', 'source', 'updated', 'notice', 'stale', 'archived'];
 const segQuery = (raw) => { const q = typeof raw === 'string' ? JSON.parse(raw || '{}') : raw || {}; return Object.fromEntries(SEG_KEYS.filter((k) => q[k] !== undefined && q[k] !== null && q[k] !== '').map((k) => [k, String(q[k])])); };
 const segVisible = (u) => all('SELECT s.*, us.name AS owner_name FROM saved_searches s LEFT JOIN users us ON us.id=s.user_id WHERE s.user_id=? OR s.shared=1 ORDER BY s.name COLLATE NOCASE', u.id);
 function segOwn(ctx) {
@@ -2514,7 +2525,7 @@ route('GET', '/api/candidates/:id/profile.pdf', T, (ctx) => {
     `Total: ${yrs(c.exp_total)}  ·  In jewellery: ${c.exp_jewellery === 0 ? 'none' : yrs(c.exp_jewellery)}`,
     `Worked with: ${(c.exp_business || []).join(', ') || '—'}  ·  Current company: ${c.current_company || '—'}`,
     `Current salary: ${money(c.cur_salary)}  ·  Expected: ${money(c.exp_salary)}  ·  Notice: ${c.notice_days ?? '—'} days`,
-    `Looking: ${c.looking || '—'}  ·  Status: ${V.candStatus(c.id)}`,
+    `Job status: ${L.jobStatusOf(c, L.appStateOf(c.id))}`,
     '', { text: 'Skills', bold: true }, (c.skills || []).join(', ') || '—',
     '', { text: `Applications (${apps.length})`, bold: true },
     ...(apps.length ? apps.map((a) => `${a.id}  ${a.job_title || ''}${a.client_name ? ` (${a.client_name})` : ''}  ·  ${a.step}${a.result && a.result !== 'open' ? ` · ${a.result}` : ''}`) : ['None yet']),

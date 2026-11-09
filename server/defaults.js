@@ -108,9 +108,9 @@ const FORMATS = {
   bbhs_jd_approval: { type: 'Utility', approved: false, buttons: [],
     en: "Hello {name},\n\nThe job description for your *{job}* opening is ready.\n\nPlease review and approve it so we can start sending you candidates: {link}\n\nThank you.",
     hi: "नमस्ते {name},\n\nआपकी *{job}* नौकरी का जॉब डिस्क्रिप्शन तैयार है।\n\nकृपया देखकर मंज़ूर करें, ताकि हम उम्मीदवार भेजना शुरू कर सकें: {link}\n\nधन्यवाद।" },
-  bbhs_still_looking: { type: 'Utility', approved: false, buttons: ['Still looking', 'Not looking'],
-    en: "Hello {name},\n\nAre you still looking for a new job?\n\nTap a button below, or update your profile so we only send jobs that suit you: {link}\n\nThank you.",
-    hi: "नमस्ते {name},\n\nक्या आप अभी भी नई नौकरी ढूँढ रहे हैं?\n\nनीचे एक बटन दबाएँ, या अपनी प्रोफ़ाइल अपडेट करें ताकि हम सिर्फ़ सही नौकरियाँ भेजें: {link}\n\nधन्यवाद।" },
+  bbhs_still_looking: { type: 'Utility', approved: false, buttons: ['Looking for a job', 'Not interested now'],
+    en: "Hello {name},\n\nWe want to send you only the jobs that suit you. Which of these fits you right now?\n\nTap a button below. You can also update your profile here: {link}\n\nThank you.",
+    hi: "नमस्ते {name},\n\nहम आपको सिर्फ़ वही नौकरियाँ भेजना चाहते हैं जो आपके लिए सही हों। अभी आपके लिए कौन-सा सही है?\n\nनीचे एक बटन दबाएँ। आप यहाँ अपनी प्रोफ़ाइल भी अपडेट कर सकते हैं: {link}\n\nधन्यवाद।" },
   bbhs_monthly_summary: { type: 'Utility', approved: false, buttons: [],
     en: "Hello {name},\n\nYour BrillBrains hiring summary for *{month}* is ready:\n{summary}\n\nDownload the full report: {link}\n\nThank you for hiring with us.",
     hi: "नमस्ते {name},\n\n*{month}* का आपका BrillBrains हायरिंग सारांश तैयार है:\n{summary}\n\nपूरी रिपोर्ट डाउनलोड करें: {link}\n\nहमारे साथ हायर करने के लिए धन्यवाद।" },
@@ -157,7 +157,7 @@ const AUTO_RULES = [
   { key: 'log_reminder', when: '30 minutes before log deadline', to: 'Anyone without a log', format: 'bbhs_log_reminder', on: true },
   { key: 'day_summary', when: 'Every evening', to: 'Each admin and super admin', format: 'bbhs_day_summary', on: true },
   { key: 'monthly_summary', when: '1st of every month', to: 'Client', format: 'bbhs_monthly_summary', on: true },
-  { key: 'still_looking', when: 'Weekly, candidates not updated in 90 days', to: 'Candidate', format: 'bbhs_still_looking', on: false },
+  { key: 'still_looking', when: 'Daily, up to 40: candidates in the database with no application in process, not placed, and no fresh job status (people who came to us themselves; bulk imports are left out). Their reply sets the job status.', to: 'Candidate', format: 'bbhs_still_looking', on: false },
   // Off: candidates cannot log in to their profile (no login code is sent, the login links are hidden).
   // Emails to the team's notification address (NOTIFY_EMAILS) when a lead comes in.
   { key: 'team_new_client', when: 'New client hiring request', to: 'Team (notification email)', format: null, team_email: true, on: true },

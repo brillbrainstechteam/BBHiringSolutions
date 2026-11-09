@@ -17,7 +17,7 @@ route('GET', '/api/bootstrap', {}, () => {
     candidate_login: candidateLogin(),
     business: { name: s.business.name, short: s.business.short, support_phone: s.business.support_phone, primary: s.business.primary, accent: s.business.accent },
     jobs: L.jobList().filter((j) => !j.hidden), places: (() => { const seen = new Set(); const out = []; for (const p of [...s.cities, ...require('./places').PLACES]) { const k = p.name.toLowerCase(); if (!seen.has(k)) { seen.add(k); out.push({ name: p.name, state: p.state || L.stateOf(p.name) }); } } return out; })(), industries: Object.fromEntries(Object.keys(s.industries).map((k) => [k, L.jobList(k).filter((j) => !j.hidden)])), default_industry: s.default_industry, departments: s.departments, cities: s.cities.map((c) => c.name), skills: [...new Set([...require('./skills').groups(s).flatMap((g) => g.skills), ...(s.skills || [])])], skill_groups: require('./skills').forBoot(s), stages: s.client_stages,
-    closing_reasons: s.closing_reasons, job_close_reasons: s.job_close_reasons, reopen_reasons: s.reopen_reasons, lead_sources: s.lead_sources, src_tags: s.src_tags, industry_list: s.industry_list || ['Jewellery'], default_industry: s.default_industry || 'Jewellery',
+    closing_reasons: s.closing_reasons, job_close_reasons: s.job_close_reasons, reopen_reasons: s.reopen_reasons, lead_sources: s.lead_sources, src_tags: s.src_tags, industry_list: s.industry_list || ['Jewellery'], job_statuses: L.JOB_STATUSES, business_types: L.BUSINESS_TYPES, default_industry: s.default_industry || 'Jewellery',
     steps: L.STEPS, consent: L.CONSENT_WORDING, fee: s.fee, replacement_days: s.replacement_days, payment_days: s.payment_days, agency_share_pct: s.agency_share_pct, gst: s.gst, match: s.match, quiet: s.quiet, log_deadline: s.log_deadline,
     team_login: teamWays(),
     test_mode: !s.crm.enabled, wa_paused: !!((s.wa_pause || {}).candidates || (s.wa_pause || {}).everyone), languages: require('./lang').active(), lang_names: require('./lang').LANGS, env: D.ENV.name, base_url: s.business.base_url, landing: s.landing || null, landing_roles: s.landing_roles || [], team_sections: L.TEAMS, contact_prefs: L.PREF, looking: L.LOOKING,
@@ -491,6 +491,7 @@ route('POST', '/api/public/apply', { rate: { key: 'form', max: 60, minutes: 60 }
   for (const extra of picked.slice(1)) { try { L.createApplication(r.candidate.id, extra, { label: 'Candidate' }, srcFrom(b), 'Applied on the form', adFrom(b)); } catch { /* already on it */ } }
   { const mailer = require('./mailer'); const rec = get('SELECT * FROM candidates WHERE id=?', r.candidate.id); if (r.isNew) mailer.newLead('candidate', rec); mailer.confirmToPerson('candidate', rec); }
   if (refBy && r.isNew) insert('notes', { record_id: r.candidate.id, text: `Referred by ${refBy}`, author: 'Form', at: now() });
+  L.setLooking(r.candidate.id, 'Actively looking', null, 'applied on the website');
   // Skills ticked on the form (grouped there) join whatever the profile already has.
   const formSkills = (Array.isArray(b.skills) ? b.skills : []).map((x) => String(x || '').replace(/\s+/g, ' ').trim().slice(0, 40)).filter((x) => x.length > 1).slice(0, 40);
   if (formSkills.length) { const cur = get('SELECT skills FROM candidates WHERE id=?', r.candidate.id) || {}; const have = Array.isArray(cur.skills) ? cur.skills : []; const low = new Set(have.map((x) => String(x).toLowerCase())); update('candidates', r.candidate.id, { skills: [...have, ...formSkills.filter((x) => !low.has(x.toLowerCase()))] }); }
@@ -805,6 +806,7 @@ route('PUT', '/api/cand/profile', K, (ctx) => {
   for (const k of ['exp_business', 'name', 'email', 'city', 'state', 'job_wanted', 'exp_total', 'exp_jewellery', 'notice_days', 'skills', 'current_company', 'looking', 'work_cities']) if (b[k] !== undefined) patch[k] = b[k] === '' ? null : b[k];
   Object.assign(patch, L.cleanPrefs(b));
   if (patch.looking && !L.LOOKING.includes(patch.looking)) throw httpError(400, 'Pick a looking status', 'looking');
+  if (patch.looking) { patch.looking_at = now(); patch.not_interested_at = patch.looking === 'Not interested' ? now() : null; }
   if (b.social !== undefined) patch.social = cleanSocial(b.social);
   // A new city brings its own state (the profile has no State box), unless a state was sent with it.
   if (patch.city && patch.city !== ctx.candidate.city && b.state === undefined) patch.state = L.stateOf(patch.city) || null;

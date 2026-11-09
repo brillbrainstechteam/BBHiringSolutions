@@ -117,6 +117,7 @@ route('POST', '/api/pub/profile/:token', { rate: { key: 'profilelink', max: 20, 
     update('candidates', c.id, { cv_file: String(f.id) }); try { require('./cvparse').fillCandidate(c.id, b.cv.name, b.cv.base64, 'Candidate (link)'); } catch { /* the file is kept */ }
   }
   D.run('UPDATE profile_links SET used_at=? WHERE token=?', now(), t.token);
+  L.setLooking(c.id, 'Actively looking', null, 'updated their profile');
   insert('notes', { record_id: c.id, text: `Shared their ${[b.cv && 'resume', cur && 'current salary', exp && 'expected salary', notice !== null && 'notice period', ptime && `best time to call (${ptime})`].filter(Boolean).join(', ')} on the link`, author: 'Candidate', at: now() });
   if (c.needs_check && /resume|salary|notice/i.test(c.needs_check)) update('candidates', c.id, { needs_check: null });
   return { ok: true };

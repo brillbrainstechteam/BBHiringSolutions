@@ -76,12 +76,19 @@ function runTimer() {
   }
   // Follow-ups due → bell + WhatsApp task alert.
   for (const f of all('SELECT * FROM followups WHERE done=0 AND alerted=0 AND at<=?', now())) { L.alertUser(f.for_user, `Follow-up: ${f.note || f.record_id}`, f.record_id, 'followups'); update('followups', f.id, { alerted: 1 }); count('followup'); }
-  // Weekly freshness ping to candidates not updated in 90 days (Mondays).
-  if (new Date(t + 330 * 60000).getUTCDay() === 1) {
-    for (const c of all("SELECT * FROM candidates WHERE merged_into IS NULL AND removed=0 AND archived=0 AND looking NOT IN ('Placed','Joined elsewhere','Not interested') AND whatsapp!=''")) {
-      if (L.daysBetween(c.last_updated || c.created_at) > 90) L.sendWA({ ptype: 'candidate', pid: c.id, format: 'bbhs_still_looking', vars: { link: L.link('my-profile') }, auto: true, rule: 'still_looking', dedupe: `fresh:${c.id}:${L.istDay()}` });
-    }
-  }
+  // Job status check: candidates in the database with nothing in process and no fresh answer are asked where they stand
+  // (up to 40 a day, each at most once a month). Bulk imports never opted in, so the rule leaves them out.
+  { const rule = (D.settings().auto_rules || []).find((r) => r.key === 'still_looking');
+    if (rule && rule.on) {
+      const day = L.istDay(); const sentKey = `status_ask:${day}`; let sent = Number((get('SELECT value FROM health WHERE key=?', sentKey) || {}).value || 0);
+      if (sent < 40) { const states = L.appStates(); const IMPORTED = /^(google drive|excel import|naukri|agency database)/i;
+        for (const c of all("SELECT * FROM candidates WHERE merged_into IS NULL AND removed=0 AND archived=0 AND junk=0 AND opted_out=0 AND whatsapp!='' ORDER BY created_at DESC")) {
+          if (sent >= 40) break; if (IMPORTED.test(c.source || '')) continue;
+          if (L.jobStatusOf(c, states.get(c.id)) !== 'Current status unknown') continue;
+          const r = L.sendWA({ ptype: 'candidate', pid: c.id, format: 'bbhs_still_looking', vars: { link: L.link('my-profile') }, auto: true, rule: 'still_looking', dedupe: `status:${c.id}:${day.slice(0, 7)}` });
+          if (r && !r.skipped && !r.deduped) sent++;
+        }
+        D.setHealth(sentKey, String(sent)); } } }
   // Retention: ask to remove candidates inactive for the set years.
   const yrs = D.settings().retention_years;
   const old = all('SELECT id FROM candidates WHERE removed=0 AND merged_into IS NULL').filter((c) => { const r = get('SELECT last_updated, created_at FROM candidates WHERE id=?', c.id); return L.daysBetween(r.last_updated || r.created_at) > yrs * 365; });

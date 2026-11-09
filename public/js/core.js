@@ -525,6 +525,9 @@ BB.route = () => {
 };
 // Brand lockup: mark | BrillBrains / Hiring Solutions / tagline (as on the website).
 // The full logo on wide screens, the BB mark where space is tight; the tagline names the part of the site.
+// Job status: the worked-out one (placed / in process through us first, then the candidate's fresh answer).
+BB.JOB_STATUS_CLS = { 'Actively looking': 'b-green', 'Not interested': 'b-red', 'Current status unknown': 'b-outline', 'Placed - BBHS': 'b-gold', 'Active application - BBHS': 'b-primary' };
+BB.jobStatusBadge = (s) => `<span class="badge ${BB.JOB_STATUS_CLS[s] || 'b-outline'}" title="${s === 'Current status unknown' ? 'No fresh answer from them: ask with Ask job status' : ''}">${String(s || '').replace(/[<>&"]/g, '')}</span>`;
 // Skill groups (from the server): the group of any skill, listed or typed.
 BB.skillGroupNames = () => [...((BB.boot.skill_groups || {}).groups || []).map((g) => g.name), (BB.boot.skill_groups || {}).other || 'Other skills'];
 BB.skillGroupOf = (skill) => { const sg = BB.boot.skill_groups || { groups: [] }; const low = String(skill || '').toLowerCase().trim();

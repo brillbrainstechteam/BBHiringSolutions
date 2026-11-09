@@ -316,9 +316,9 @@
     };
   }
   // The filters in use, one chip per value, each with ✕ to take just that one off.
-  const CHIP_LABEL = { q: 'Search', domain: 'Domain', dept: 'Department', job: 'Designation', skills: 'Skill', city: 'City', state: 'State', source: 'Source', jewellery: 'Jewellery', biz: 'B2B / B2C', looking: 'Job status', status: 'Status', ad: 'Ad', new: 'New', agency: 'Agency', from: 'Applied from', to: 'Applied up to', exp_min: 'Experience from', exp_max: 'Experience up to', sal_min: 'Expected salary from', sal_max: 'Expected salary up to', notice: 'Notice up to', updated: 'Updated in', stale: 'Not updated 90+ days', skillgroup: 'Skill group', cv: 'Resume' };
+  const CHIP_LABEL = { q: 'Search', domain: 'Domain', dept: 'Department', job: 'Designation', skills: 'Skill', city: 'City', state: 'State', source: 'Source', jewellery: 'Jewellery', biz: 'B2B / B2C', worked: 'Worked at', looking: 'Job status', status: 'Status', ad: 'Ad campaign', new: 'New', agency: 'Agency', from: 'Applied from', to: 'Applied up to', exp_min: 'Experience from', exp_max: 'Experience up to', sal_min: 'Expected salary from', sal_max: 'Expected salary up to', notice: 'Notice up to', updated: 'Updated in', stale: 'Not updated 90+ days', skillgroup: 'Skill group', cv: 'Resume' };
   const JEW_TXT = { 0: 'none', lt1: 'under 1 year', '1-3': '1–3 years', '3-5': '3–5 years', '5-10': '5–10 years', '10+': '10+ years' };
-  const MULTI = ['domain', 'dept', 'job', 'skills', 'skillgroup', 'city', 'state', 'source'];
+  const MULTI = ['domain', 'dept', 'job', 'skills', 'skillgroup', 'city', 'state', 'source', 'worked', 'looking'];
   const activeChips = (q) => { const chips = [];
     for (const k of Object.keys(CHIP_LABEL)) { const v = q[k]; if (!v) continue;
       if (MULTI.includes(k)) for (const one of String(v).split(',').filter(Boolean)) chips.push([k, one, `${CHIP_LABEL[k]}: ${one}`]);
@@ -327,8 +327,8 @@
   const wireChips = (el, q) => $$('[data-fx]', el).forEach((b) => (b.onclick = () => { const k = b.dataset.fx; const one = b.dataset.fxv; BB.setQ({ [k]: one ? String(q[k] || '').split(',').filter((x) => x && x !== one).join(',') : '', page: 1 }); }));
   const jewYrs = (y) => (y === null || y === undefined ? '—' : y === 0 ? 'None' : `${y} yrs`);
   const moreBtn = (n) => `More filters${n ? ` <span class="badge b-primary tiny">${n}</span>` : ''}`;
-  const anyCandFilter = (q) => ['skillgroup', 'cv', 'domain', 'skills', 'source', 'new', 'agency', 'dept', 'job', 'city', 'state', 'jewellery', 'ad', ...CAND_MORE].some((k) => q[k]);
-  const clearCandFilters = () => BB.setQ(Object.fromEntries(['skillgroup', 'cv', 'domain', 'skills', 'new', 'agency', 'dept', 'job', 'city', 'state', 'jewellery', 'ad', ...CAND_MORE, 'q', 'source', 'looking', 'status', 'notice', 'updated', 'stale'].map((k) => [k, ''])));
+  const anyCandFilter = (q) => ['worked', 'looking', 'skillgroup', 'cv', 'domain', 'skills', 'source', 'new', 'agency', 'dept', 'job', 'city', 'state', 'jewellery', 'ad', ...CAND_MORE].some((k) => q[k]);
+  const clearCandFilters = () => BB.setQ(Object.fromEntries(['worked', 'skillgroup', 'cv', 'domain', 'skills', 'new', 'agency', 'dept', 'job', 'city', 'state', 'jewellery', 'ad', ...CAND_MORE, 'q', 'source', 'looking', 'status', 'notice', 'updated', 'stale'].map((k) => [k, ''])));
 
   // Possible repeats and records with a problem, with a Merge button (Leads for clients, Candidates for candidates).
   const checkTable = (rows) => BB.table([{ t: 'Name', f: (r) => esc(r.label || '—') }, { t: 'Problem', f: (r) => `${r.needs_check ? `<span class="badge b-amber">${esc(r.needs_check)}</span>` : ''}${r.possible_repeat_of ? `<span class="badge b-amber">Possible repeat of ${esc(r.possible_repeat_of)}</span>` : ''}` }, { t: 'Source', f: (r) => esc(r.source) }, { t: '', f: (r) => `<div class="row nowrap" onclick="event.stopPropagation()">${r.possible_repeat_of ? `<button class="btn sm" data-merge="${r.type}:${r.possible_repeat_of}:${r.id}">Merge</button>` : ''}</div>` }], rows, { open: (r) => `${r.type}:${r.id}`, empty: 'Nothing to check.' });
@@ -553,7 +553,7 @@
   const JEW_LABEL = { 0: 'no experience', lt1: 'under 1 year', '1-3': '1–3 years', '3-5': '3–5 years', '5-10': '5–10 years', '10+': '10+ years' };
   const SEG_LABEL = [['q', 'Search'], ['industry', 'Industry', (v) => (v === 'all' ? 'All industries' : v)], ['domain', 'Domain'], ['skills', 'Skills'], ['dept', 'Department'], ['job', 'Designation'], ['city', 'City'], ['state', 'State'], ['jewellery', 'Jewellery', (v) => JEW_LABEL[v] || v],
     ['from', 'Applied from'], ['to', 'Applied up to'], ['exp_min', 'Experience from', (v) => `${v} yrs`], ['exp_max', 'Experience up to', (v) => `${v} yrs`], ['sal_min', 'Expected salary from', (v) => `${inr(v)}/mo`], ['sal_max', 'Expected salary up to', (v) => `${inr(v)}/mo`],
-    ['biz', 'B2B / B2C'], ['looking', 'Current job status'], ['status', 'Status'], ['source', 'Source'], ['ad', 'Ad'], ['updated', 'Updated in last', (v) => `${v} days`], ['notice', 'Notice up to', (v) => `${v} days`], ['stale', 'Not updated in 90+ days', () => 'yes'], ['archived', 'Archived', () => 'yes']];
+    ['biz', 'B2B / B2C'], ['worked', 'Worked at'], ['looking', 'Current job status'], ['status', 'Status'], ['source', 'Source'], ['ad', 'Ad campaign'], ['updated', 'Updated in last', (v) => `${v} days`], ['notice', 'Notice up to', (v) => `${v} days`], ['stale', 'Not updated in 90+ days', () => 'yes'], ['archived', 'Archived', () => 'yes']];
   const segChips = (q) => SEG_LABEL.filter(([k]) => q[k]).map(([k, l, f]) => `<span class="chip">${esc(l)}: <b>${esc(f ? f(q[k]) : q[k])}</b></span>`).join('') || '<span class="faint">All candidates</span>';
 
   // Share / rename / delete / copy link / download buttons, the same in the segment list and on an open segment.
@@ -604,7 +604,7 @@
   }
 
   // ---------- Candidates › Reports: charts on the resume bank (as filtered), every bar and slice opens those candidates ----------
-  const REP_KEEP = ['q', 'domain', 'dept', 'job', 'skills', 'skillgroup', 'city', 'state', 'source', 'jewellery', 'biz', 'looking', 'status', 'ad', 'new', 'agency', 'cv', 'from', 'to', 'exp_min', 'exp_max', 'sal_min', 'sal_max', 'notice', 'updated', 'stale'];
+  const REP_KEEP = ['worked', 'q', 'domain', 'dept', 'job', 'skills', 'skillgroup', 'city', 'state', 'source', 'jewellery', 'biz', 'looking', 'status', 'ad', 'new', 'agency', 'cv', 'from', 'to', 'exp_min', 'exp_max', 'sal_min', 'sal_max', 'notice', 'updated', 'stale'];
   const reportsTab = async (body, q) => {
     const base = Object.fromEntries(REP_KEEP.filter((k) => q[k]).map((k) => [k, q[k]]));
     body.innerHTML = '<div class="empty">Loading…</div>';
@@ -627,14 +627,15 @@
       <div class="card rep-head"><div class="rep-total"><b>${fmt(r.total)}</b> candidates${Object.keys(base).length ? ' with these filters' : ''}</div>${activeChips(q)}<span class="grow"></span><button type="button" class="btn sm" data-rbank>Open in resume bank →</button></div>
       <div class="rep-tiles">${r.tiles.map((t) => `<button type="button" class="card rep-tile" data-rgo="${enc(t.f)}"><span class="rep-tile-l">${esc(t.label)}</span><span class="rep-tile-v">${fmt(t.n)}</span><span class="rep-tile-s">${pct(t.n)} of these candidates · open</span></button>`).join('')}</div>
       <div class="rep-grid">
+        ${card('Current job status', 'Click a slice or a line to see those candidates', donut(r.looking, 'Current job status'))}
+        ${card('Business type worked in', 'Candidates who worked at each kind of business', donut(r.worked, 'Business type worked in'))}
+        ${card('Assignment and resumes', '', `<div class="rep-pair">${donut(r.assigned, 'Assigned to an agency')}${donut(r.resume, 'Resume on file')}</div>`, true)}
         ${card('Departments', 'Click a bar to see those candidates', hbars(r.dept))}
         ${card('Designations', 'Top 12 roles candidates want', hbars(r.job))}
         ${card('Skill groups', 'Candidates with at least one skill in the group', hbars(r.skill_group))}
         ${card('Top skills', 'The 15 most common skills', hbars(r.skills))}
         ${card('Total experience', '', cols(r.exp))}
         ${card('Jewellery industry experience', '', cols(r.jewellery))}
-        ${card('Job status', 'What candidates said about looking for a job', donut(r.looking, 'Job status'))}
-        ${card('Assignment and resumes', '', `<div class="rep-pair">${donut(r.assigned, 'Assigned to an agency')}${donut(r.resume, 'Resume on file')}</div>`)}
         ${card('Cities', 'Top 12 cities', hbars(r.city))}
         ${card('Sources', 'Where candidates came from', hbars(r.source))}
         ${card('Domains', '', hbars(r.domain))}
@@ -703,7 +704,7 @@
       <div class="row cand-seg">${segButtons(seg, seg.can_download, false)}</div></div></section>` : '';
     // Filters and saved segments in one card; the selection bar; then the table in its own scroll box.
     const head = seg ? segHead : `<section class="card cand-panel">
-      <div class="filters cand-filters"><input placeholder="Search name, ID, phone, job…" value="${esc(q.q || '')}" data-q aria-label="Search candidates">${cf.main}${sel('biz', 'B2B / B2C', ['B2B', 'B2C'])}${sel('looking', 'Current job status', BB.boot.looking)}${sel('status', 'Any status', ['Available', 'In process', 'Hired'])}${(r.ads || []).length || q.ad ? sel('ad', 'Any ad', r.ads || [q.ad]) : ''}
+      <div class="filters cand-filters"><input placeholder="Search name, ID, phone, job…" value="${esc(q.q || '')}" data-q aria-label="Search candidates">${cf.main}${multiSel('worked', 'Worked at: any business', 'business types', BB.boot.business_types || ['Manufacturer', 'Wholesaler', 'Retailer'], q.worked)}${multiSel('looking', 'Current job status', 'job statuses', BB.boot.job_statuses || [], q.looking)}${(r.ads || []).length || q.ad ? sel('ad', 'All ad campaigns', r.ads || [q.ad]) : ''}
       <details class="more-f" ${BB.moreFiltersOpen ? 'open' : ''}><summary class="btn sm">${moreBtn(cf.count(['notice', 'updated', 'stale']))}</summary><div class="card more-pop">
         ${cf.more}
         <div class="grid g2"><label class="mf"><span>Profile last updated</span>${sel('updated', 'Any time', [['7', 'Last 7 days'], ['30', 'Last 30 days'], ['90', 'Last 90 days']])}</label><label class="mf"><span>Notice period up to (days)</span><input type="number" min="0" placeholder="Days" data-f="notice" value="${esc(q.notice || '')}"></label></div>
@@ -715,7 +716,7 @@
     </section>`;
     el.innerHTML = `${head}
     <div class="card bulkbar bulk-card cand-bulk" data-bulkbar>${BB.bulkHead('candidate', 'data-selcount')}
-      ${bulkBtn('add_to_job', 'Add to a job')}${!me.accounts_only ? bulkBtn('alert', 'Send campaign', 'gold') : ''}${bulkBtn('ask_profile', 'Ask for resume & details')}${bulkBtn('set_looking', 'Set job status')}${bulkBtn('note', 'Add note')}${bulkBtn('followup', 'Follow-up')}${!me.accounts_only ? `${bulkBtn('assign', 'Assign recruiter')}${bulkBtn(q.archived ? 'unarchive' : 'archive', q.archived ? 'Unarchive' : 'Archive')}` : ''}${superAdmin ? `${bulkBtn('agency', 'Assign to agency')}${bulkBtn('welcome', 'Send account link')}${bulkBtn('download', 'Download selected')}` : ''}${!me.accounts_only ? bulkBtn('delete', 'Delete', 'danger') : ''}<button class="btn sm ghost" data-unsel hidden>Clear selection</button></div>
+      ${bulkBtn('add_to_job', 'Add to a job')}${!me.accounts_only ? bulkBtn('alert', 'Send campaign', 'gold') : ''}${bulkBtn('ask_profile', 'Ask for resume & details')}${bulkBtn('ask_status', 'Ask job status')}${bulkBtn('set_looking', 'Set job status')}${bulkBtn('note', 'Add note')}${bulkBtn('followup', 'Follow-up')}${!me.accounts_only ? `${bulkBtn('assign', 'Assign recruiter')}${bulkBtn(q.archived ? 'unarchive' : 'archive', q.archived ? 'Unarchive' : 'Archive')}` : ''}${superAdmin ? `${bulkBtn('agency', 'Assign to agency')}${bulkBtn('welcome', 'Send account link')}${bulkBtn('download', 'Download selected')}` : ''}${!me.accounts_only ? bulkBtn('delete', 'Delete', 'danger') : ''}<button class="btn sm ghost" data-unsel hidden>Clear selection</button></div>
     <div class="card cand-table">${BB.table([
       { t: 'Candidate', sort: 'name', cls: 'name-col', f: (c) => `<b>${esc(c.name)}</b>${c.is_new ? ' <span class="dot new" title="New"></span>' : ''}${c.opted_out ? ' <span class="badge b-red tiny">STOP</span>' : ''}<div class="cand-phone ${c.phone_hidden ? 'faint' : 'muted'}">${esc(c.whatsapp)}</div>` },
       { t: 'Role and domain', sort: 'job_wanted', cls: 'wrap', f: (c) => `${esc(c.job_wanted) || '<span class="faint">—</span>'}<div class="tiny muted">${[(c.exp_business || []).length ? ((c.exp_business || []).includes('Retailer') ? 'B2C' : 'B2B') : '', c.domain && c.domain !== 'Not clear' ? c.domain : ''].filter(Boolean).map(esc).join(' · ')}</div>` },
@@ -723,7 +724,7 @@
       { t: 'Skills', cls: 'skills-col', f: (c) => { const sk = c.skills || []; return sk.length ? `<div class="sk-wrap">${sk.slice(0, 5).map((x) => `<span class="sk">${esc(x)}</span>`).join('')}${sk.length > 5 ? `<span class="sk more" title="${esc(sk.slice(5).join(', '))}">+${sk.length - 5}</span>` : ''}</div>` : '<span class="faint">—</span>'; } },
       { t: 'Experience', sort: 'exp_total', desc: 1, f: (c) => `${c.exp_total === null || c.exp_total === undefined ? '—' : `${c.exp_total} yrs`}<div class="tiny muted">Jewellery: ${jewYrs(c.exp_jewellery)}</div>${c.exp_salary ? `<div class="tiny muted">Expects ${inr(c.exp_salary / 12)}/mo</div>` : ''}` },
       { t: 'City', sort: 'city', cls: 'city-col', f: (c) => esc(c.city) },
-      { t: 'Status', sort: 'status', cls: 'stack-col', f: (c) => `<span class="badge ${c.status === 'Hired' ? 'b-green' : c.status.startsWith('In process') ? 'b-primary' : 'b-outline'}">${esc(c.status)}</span>${c.looking && c.status === 'Available' ? `<div class="tiny muted">${esc(c.looking)}</div>` : ''}` },
+      { t: 'Job status', sort: 'status', cls: 'stack-col', f: (c) => BB.jobStatusBadge(c.job_status || c.status) },
       { t: 'Applied', sort: 'created_at', desc: 1, f: (c) => fmtD(c.created_at), hideSm: 1 },
     ], r.rows, { sorted: q, open: (c) => `candidate:${c.id}`, select: true, scroll: true, empty: filtered ? 'No candidates match these filters.' : 'No candidates yet.' })}${BB.pager(r)}</div>`;
     // More filters stays open while filters in it are changed (each change redraws the list).
@@ -755,6 +756,7 @@
       if (b.dataset.bulk === 'download') { const rows = r.rows.filter((c) => ids.includes(c.id)); const csv = '﻿' + [['id', 'name', 'phone', 'job_wanted', 'city', 'experience', 'status'], ...rows.map((c) => [c.id, c.name, c.whatsapp, c.job_wanted, c.city, c.exp_total, c.status])].map((x) => x.map((v) => `"${String(v ?? '').replace(/"/g, '""')}"`).join(',')).join('\r\n'); const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' })); a.download = 'candidates-selected.csv'; a.click(); return; }
       if (b.dataset.bulk === 'delete') return BB.deleteRecords('candidate', ids);
       // the resume & details request on WhatsApp (skips anyone who already has both)
+      if (b.dataset.bulk === 'ask_status') return BB.confirm('Ask job status', `Send ${ids.length} candidate${ids.length === 1 ? '' : 's'} the WhatsApp question "Looking for a job / Not interested now"? Their tap sets the job status. Anyone placed through us or with an application in process is skipped.`, 'Send').then((ok) => ok && BB.post('/api/candidates/bulk', { ids, action: 'ask_status' }).then((x) => { BB.toast(`Asked ${x.done}${x.errors.length ? ` · ${x.errors.length} not sent (${x.errors[0].split(': ').slice(1).join(': ')})` : ''}`, !x.done); BB.refreshPage(); }).catch((e) => BB.fail(e)));
       if (b.dataset.bulk === 'ask_profile') return BB.confirm('Ask for resume & details', `Send ${ids.length} candidate${ids.length === 1 ? '' : 's'} the WhatsApp message asking for their resume, current and expected salary and notice period? Anyone who already has all of them is skipped.`, 'Send').then((ok) => ok && BB.post('/api/candidates/bulk', { ids, action: 'ask_profile' }).then((x) => { BB.toast(`Sent to ${x.done}${x.errors.length ? ` · ${x.errors.length} not sent (${x.errors[0].split(': ').slice(1).join(': ')})` : ''}`, !x.done); BB.refreshPage(); }).catch((e) => BB.fail(e)));
       const act = b.dataset.bulk; const n = `${ids.length} candidate${ids.length === 1 ? '' : 's'}`;
       // Shows what was done and, if some were skipped, why (e.g. another agency's candidate).

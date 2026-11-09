@@ -295,8 +295,29 @@ const BUSINESS_TYPES = ['Wholesaler', 'Manufacturer', 'Retailer'];
 const cleanBusiness = (v) => (Array.isArray(v) ? v : String(v || '').split(',')).map((x) => String(x).trim()).filter((x) => BUSINESS_TYPES.includes(x));
 // The job-seeker form's experience choices as years (the public form and the team's Create candidate form).
 // A candidate's looking status. Not looking, Not interested and Joined elsewhere count as off the market for matching and job alerts.
-const LOOKING = ['Actively looking', 'Open to offers', 'Not looking', 'Not interested', 'Not reachable', 'Joined elsewhere', 'Placed'];
-const NOT_LOOKING = ['Not looking', 'Not interested', 'Joined elsewhere'];
+// Job status. What the candidate tells us (LOOKING) is kept with the date they said it; what the team sees (JOB_STATUSES)
+// is worked out: placed through us and an application in process come first (from applications, never typed), then the
+// candidate's answer while it is fresh, else "Current status unknown" (and they can be asked again).
+const LOOKING = ['Actively looking', 'Not interested'];
+const NOT_LOOKING = ['Not interested'];
+const JOB_STATUSES = ['Actively looking', 'Not interested', 'Current status unknown', 'Placed - BBHS', 'Active application - BBHS'];
+const LOOK_FRESH = { 'Actively looking': 90, 'Not interested': 180 }; // days an answer counts
+// Every candidate's applications in one read: placed (joined, not left) and how many are in process.
+function appStates() { const m = new Map(); for (const a of all('SELECT candidate_id, result, left_date FROM applications')) { const s = m.get(a.candidate_id) || { placed: false, open: 0 }; if (a.result === 'Hired' && !a.left_date) s.placed = true; if (a.result === 'open') s.open++; m.set(a.candidate_id, s); } return m; }
+const appStateOf = (candId) => appStates().get(candId) || { placed: false, open: 0 };
+function jobStatusOf(c, st) {
+  const s = st || { placed: false, open: 0 };
+  if (s.placed) return 'Placed - BBHS';
+  if (s.open) return 'Active application - BBHS';
+  if (LOOK_FRESH[c.looking] && c.looking_at && daysBetween(c.looking_at) <= LOOK_FRESH[c.looking]) return c.looking;
+  return 'Current status unknown';
+}
+// The candidate (or the team for them) says where they stand: saved with today's date.
+function setLooking(candId, value, by, why) {
+  if (!LOOKING.includes(value)) return; const c = get('SELECT looking, not_interested_at FROM candidates WHERE id=?', candId); if (!c) return;
+  update('candidates', candId, { looking: value, looking_at: now(), not_interested_at: value === 'Not interested' ? (c.not_interested_at || now()) : null, last_updated: now() });
+  if (c.looking !== value) history((by && by.label) || 'System', 'job status', candId, 'looking', c.looking, `${value}${why ? ` (${why})` : ''}`);
+}
 const EXP_YEARS = { Fresher: 0, '1–3 years': 2, '3–5 years': 4, '5–10 years': 7, '10+ years': 12 };
 const JEW_YEARS = { 'No experience': 0, 'Less than 1 year': 0.5, '1–3 years': 2, '3–5 years': 4, '5–10 years': 7, '10+ years': 12 };
 const BUSINESS_OF = { 'Showroom B2C': ['Retailer'], 'Manufacturer B2B': ['Manufacturer', 'Wholesaler'], Both: ['Retailer', 'Manufacturer', 'Wholesaler'] };
@@ -373,10 +394,9 @@ function closePlacedApps(by = { label: 'System' }) {
 // and out of matching until they show interest again.
 function markInterest(candId, yes, by, note) {
   const c = get('SELECT * FROM candidates WHERE id=?', candId); if (!c) return;
-  if (yes) { if (c.not_interested_at || NOT_LOOKING.includes(c.looking)) update('candidates', candId, { not_interested_at: null, looking: 'Actively looking', last_updated: now() }); return; }
-  update('candidates', candId, { not_interested_at: now(), looking: 'Not interested', last_updated: now() });
+  if (yes) { setLooking(candId, 'Actively looking', by, 'showed interest in a job'); return; }
+  setLooking(candId, 'Not interested', by, note || 'not interested right now');
   insert('notes', { record_id: candId, text: note || 'Not interested right now', author: (by && by.label) || 'System', at: now() });
-  history((by && by.label) || 'System', 'not interested', candId, 'looking', c.looking, 'Not interested');
 }
 function bestMatches(job, limit = 10, forAlert = false) {
   const cands = all('SELECT * FROM candidates WHERE archived=0 AND junk=0 AND merged_into IS NULL AND removed=0');
@@ -547,7 +567,6 @@ function moveStep(appId, step, by, note) {
   }
   if (step === 'Joined') {
     createBillForApp({ ...app, ...patch }, by);
-    update('candidates', app.candidate_id, { looking: 'Placed' });
     // They have a job now: their other applications still in process close, and those recruiters are told.
     for (const o of all("SELECT * FROM applications WHERE candidate_id=? AND id<>? AND result='open'", app.candidate_id, appId)) {
       closeApplication(o.id, 'Joined elsewhere', by, `Joined ${job.title} (${job.id}) through ${appId}`);
@@ -1302,8 +1321,8 @@ function receiveReply(phone, text, button, opts = {}) {
   else if (t === 'need help' && ref && ref.ap) { update('applications', ref.ap, { at_risk: 1 }); const ap = get('SELECT * FROM applications WHERE id=?', ref.ap); alertUser(ap.owner_id, `${ap.id} at risk: candidate needs help`, ap.id, 'candidate'); effect = 'Marked at risk'; }
   else if (ref && ref.jb && t === 'not interested' && ptype === 'candidate') { markInterest(pid, false, by, `Not interested in ${ref.jb} (reply on WhatsApp)`); effect = `Marked not interested (${ref.jb})`; }
   else if (t === 'share details' && ptype === 'candidate') { const c = get('SELECT recruiter_id FROM candidates WHERE id=?', pid) || {}; const ap = ref && ref.ap ? get('SELECT owner_id FROM applications WHERE id=?', ref.ap) : null; const owner = (ap && ap.owner_id) || c.recruiter_id; if (owner) alertUser(owner, `${pid} wants to share their salary and notice details: call or message them`, pid, 'candidate'); sendSystemText('candidate', pid, 'Thank you. Please type your current salary, expected salary and notice period here, and we will update your profile.'); effect = 'Asked for details; recruiter alerted'; }
-  else if (t === 'not looking' && ptype === 'candidate') { update('candidates', pid, { looking: 'Not looking', last_updated: now() }); effect = 'Marked Not looking'; }
-  else if (t === 'still looking' && ptype === 'candidate') { update('candidates', pid, { looking: 'Actively looking', last_updated: now() }); effect = 'Marked Actively looking'; }
+  else if (['not looking', 'not interested now', 'not looking now', 'happy where i am'].includes(t) && ptype === 'candidate') { setLooking(pid, 'Not interested', by, 'reply on WhatsApp'); effect = 'Job status: Not interested'; }
+  else if (['still looking', 'looking for a job', 'yes, looking', 'actively looking'].includes(t) && ptype === 'candidate') { setLooking(pid, 'Actively looking', by, 'reply on WhatsApp'); effect = 'Job status: Actively looking'; }
   // Unread alert to the owner of this person.
   if (table) {
     const rec = get(`SELECT * FROM ${table} WHERE id=?`, pid);
@@ -1320,7 +1339,7 @@ function sendSystemText(ptype, pid, text) {
 module.exports = { stageStateOf, ownersOfJob, ownerMap, ownsApp, STAGES, stageOfApp, nextStageOf, reopenRefilled, adPlanFor, openAdApplications, placedOn, closePlacedApps, adLabel,
   STEPS, stepIdx, digits10, validPhone, inr, istDay, istFmt, istTime, istHour, inQuiet, next9am, daysBetween, addDays, hashPassword, checkPassword, newPassword, sha,
   activationState, checkActivation, waHeld, TEAMS, IV_MODES, clientSeesIv, addIvNote, CALL_OUTCOMES, logCall, jobList, deptOf, stateOf, person, fillFormat, windowOpenUntil, sendWA, setDispatcher, alertUser, link, agencyAdmin, superAdmins,
-  computeJobStatus, jobStatusReason, recalcJob, filledCount, appsOfJob, matchScore, jobsFor, cleanBusiness, BUSINESS_TYPES, EXP_YEARS, JEW_YEARS, LOOKING, NOT_LOOKING, ratingOf, bestMatches, isPlaced, salaryText, autoJobAlert,
+  computeJobStatus, jobStatusReason, recalcJob, filledCount, appsOfJob, matchScore, jobsFor, cleanBusiness, BUSINESS_TYPES, EXP_YEARS, JEW_YEARS, LOOKING, NOT_LOOKING, JOB_STATUSES, LOOK_FRESH, appStates, appStateOf, jobStatusOf, setLooking, ratingOf, bestMatches, isPlaced, salaryText, autoJobAlert,
   SAL_HIDDEN, feeFor, gstFor, fyOf, billView, refreshBill, createBillForApp, issueBill, upiLink,
   appHist, createApplication, moveStep, closeApplication, reopenApplication, screenApplication, SCREEN, jobsForRole, jobsForPerson, roleTokens, scheduleInterview, recordInterview, interviewView, ivVars, recordOffer, leftJob, jobAction,
   CONSENT_WORDING, saveConsent, intakeClient, intakeCandidate, assignLead, mergeRecords, resolveId, receiveReply, actorName,
