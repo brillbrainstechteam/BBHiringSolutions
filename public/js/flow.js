@@ -51,7 +51,7 @@
     box.oninput = sum;
     box.onclick = (e) => {
       if (e.target.closest('[data-frm]')) { e.target.closest('[data-frole]').remove(); sum(); }
-      if (e.target.closest('[data-fadd]')) { const all = readRoles(box); const last = all[all.length - 1] || {}; $('[data-frows]', box).insertAdjacentHTML('beforeend', roleRow({ location: last.location })); const n = $$('[data-frole]', box).pop(); wireCombo(n); BB.attachMics(n); sum(); $('[data-r=role]', n).focus(); n.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }
+      if (e.target.closest('[data-fadd]')) { const all = readRoles(box); const last = all[all.length - 1] || {}; $('[data-frows]', box).insertAdjacentHTML('afterbegin', roleRow({ location: last.location })); const n = $$('[data-frole]', box)[0]; wireCombo(n); BB.attachMics(n); sum(); $('[data-r=role]', n).focus(); n.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }
     };
     $$('[data-frole]', box).forEach(wireCombo); sum();
   };
@@ -84,7 +84,7 @@
   // The client's journey, step by step (the same 16-stage path as Update status): each step says where it stands, with
   // its button. Steps the software sees for itself tick on their own; the others are ticked here.
   const OB_BTN = {
-    intro_call: '<button class="btn sm" data-fcall>Call client</button>',
+    intro_call: '<button class="btn sm" data-fcall>Understand requirement</button>',
     requirement: '<button class="btn sm" data-fcall>Note requirement</button>',
     proposal: '<button class="btn sm" data-fmail="pitch">Send pitch deck</button>',
     agreement: '<button class="btn sm" data-fagree>Send agreement</button>',
@@ -177,7 +177,7 @@
           fill.disabled = false; fill.textContent = 'Fill roles from notes'; }; }, 0);
       const v = await BB.ask({ title: 'Client call notes', wide: true, fields: [`<div class="notice small flow-script">${esc(script)}</div>`,
         `<div class="vn-box"><div class="vn-top"><button type="button" class="vn-mic" data-vmic aria-label="Start recording">${BB.icon('mic')}</button><div class="grow"><b data-vstate>Tap the mic and speak</b><div class="vn-lang"><select data-vlang aria-label="Language"><option value="en-IN">English</option><option value="hi-IN" ${BB.voiceLang === 'hi-IN' ? 'selected' : ''}>Hindi</option></select></div></div><button type="button" class="btn sm" data-vfill>Fill roles from notes</button></div><label class="field"><span class="lab">Notes from the call</span><textarea data-vtext rows="4"></textarea></label><div class="small muted" data-vlive></div></div>`,
-        `<div class="field" data-froles data-f="call_roles"><div data-frows>${roleRow({ location: c.city || '' })}</div><div class="row between" style="margin-top:8px"><button type="button" class="btn sm" data-fadd>+ Add another role</button><span class="small muted" data-ftotal></span></div></div>`], ok: 'Save call notes', submit: (x) => { stopMic(); return BB.post(`/api/clients/${c.id}/calls`, { call_roles: readRoles($('.modal [data-froles]')), notes: $('.modal [data-vtext]').value }); } });
+        `<div class="field" data-froles data-f="call_roles"><div class="row between" style="margin-bottom:8px"><button type="button" class="btn sm" data-fadd>+ Add another role</button><span class="small muted" data-ftotal></span></div><div data-frows>${roleRow({ location: c.city || '' })}</div></div>`], ok: 'Save call notes', submit: (x) => { stopMic(); return BB.post(`/api/clients/${c.id}/calls`, { call_roles: readRoles($('.modal [data-froles]')), notes: $('.modal [data-vtext]').value }); } });
       if (v) done(v.roles ? `Saved with ${v.roles} role${v.roles === 1 ? '' : 's'}: open jobs from Client calls` : 'Call notes saved');
     });
     $$('[data-fmail]', el).forEach((b) => (b.onclick = () => F.composeMail([c.id], b.dataset.fmail, b.textContent.replace(/^Send /, ''))));
