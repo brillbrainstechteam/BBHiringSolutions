@@ -87,7 +87,7 @@ route('GET', '/api/call-script', T, () => ({ script: D.settings().call_script })
 // One call can carry many roles, each with its own count, location and department.
 function callRoles(lines) {
   const txt = (v) => String(v ?? '').trim();
-  const rows = (Array.isArray(lines) ? lines : []).map((x) => ({ role: txt(x.role), openings: txt(x.openings), location: txt(x.location), department: txt(x.department), skills: txt(x.skills), duties: txt(x.duties), notes: txt(x.notes) }));
+  const rows = (Array.isArray(lines) ? lines : []).map((x) => ({ role: txt(x.role), openings: txt(x.openings), location: txt(x.location), department: txt(x.department), skills: txt(x.skills), duties: txt(x.duties), notes: txt(x.notes), sal_from: Number(x.sal_from) > 0 ? Math.round(Number(x.sal_from)) : null, sal_to: Number(x.sal_to) > 0 ? Math.round(Number(x.sal_to)) : null }));
   const named = rows.filter((x) => x.role || x.openings);
   if (named.some((x) => !x.role)) throw httpError(400, 'Write the role for every count', 'call_roles');
   const noCount = named.find((x) => !/^[1-9]\d*$/.test(x.openings)); if (noCount) throw httpError(400, `Write how many openings for ${noCount.role}`, 'call_roles');
@@ -143,7 +143,7 @@ route('POST', '/api/clients/:id/calls/:call/jobs', T, (ctx) => {
   const c = loadClient(ctx); const k = get('SELECT * FROM client_calls WHERE id=? AND client_id=?', ctx.params.call, c.id); if (!k) throw httpError(404, 'Call not found');
   const lines = k.call_roles || []; const jobs = [];
   for (const x of lines.filter((l) => !l.job_id)) {
-    const j = TEAM.createJob(c, { title: x.role, city: x.location, openings: x.openings, skills: String(x.skills || k.skills || '').split(',').map((s) => s.trim()).filter(Boolean), department: x.department || undefined, notes: [x.notes, k.notes].filter(Boolean).join('\n'), recruiter_id: ctx.user.level === 'sub' ? ctx.user.id : undefined }, ctx.actor, false);
+    const j = TEAM.createJob(c, { title: x.role, city: x.location, openings: x.openings, skills: String(x.skills || k.skills || '').split(',').map((s) => s.trim()).filter(Boolean), department: x.department || undefined, sal_from: x.sal_from || undefined, sal_to: x.sal_to || undefined, salary_per: 'month', notes: [x.notes, k.notes].filter(Boolean).join('\n'), recruiter_id: ctx.user.level === 'sub' ? ctx.user.id : undefined }, ctx.actor, false);
     if (x.duties || k.duties) update('jobs', j.id, { jd: { ...(j.jd || {}), duties: x.duties || k.duties } });
     x.job_id = j.id; jobs.push(j.id);
   }
@@ -155,12 +155,13 @@ route('POST', '/api/clients/:id/thanks', T, (ctx) => {
   const c = loadClient(ctx);
   const r = L.sendWA({ ptype: 'client', pid: c.id, format: 'bbhs_client_thanks', by: ctx.actor, rule: 'client_thanks' });
   if (r && r.skipped) throw httpError(400, r.skipped);
+  update('clients', c.id, { onboarding: { ...(c.onboarding || {}), thanks: { done: true, date: now(), by: ctx.actor.label, note: r.status === 'held' ? 'Saved while messages are off' : 'Sent on WhatsApp' } } }); L.syncClientStage(c.id, ctx.actor);
   return { held: r.status === 'held', status: r.status };
 });
 route('POST', '/api/clients/:id/group', T, (ctx) => {
   const c = loadClient(ctx); const b = ctx.body || {};
   const g = { name: b.name || `${c.company} × BrillBrains`, link: b.link || '', dp_file: b.dp_file || (c.wa_group || {}).dp_file || null, created: !!b.created, at: b.created ? (c.wa_group || {}).at || now() : null, by: ctx.actor.label };
-  D.edit('clients', c.id, { wa_group: g }, ctx.actor.label, ctx.ip); return g;
+  D.edit('clients', c.id, { wa_group: g }, ctx.actor.label, ctx.ip); L.syncClientStage(c.id, ctx.actor); return g;
 });
 
 // ---------- email from the portal: one client or many ----------
@@ -193,9 +194,9 @@ route('POST', '/api/clients/email', T, (ctx) => {
     const eid = M.queue({ to, subject, text, html, kind: b.kind || 'client_mail', recordId: c.id, attachments: b.kind === 'pitch' ? [{ pitch: true }] : jdJob ? [{ jd_job: jdJob.id }] : cvApp ? [{ file_id: clientCvFor(cvApp.candidate_id, ctx.actor).id }] : isContract || b.attach_agreement ? [editedAgreement(c.id) ? { file_id: editedAgreement(c.id).id } : { agreement: true }] : [], force: isDoc, person: true });
     if (!eid) { out.skipped.push(`${c.company}: not a valid email`); continue; }
     if (cvApp) L.appHist(cvApp.id, cvApp.step, ctx.actor, `CV without phone and email emailed to ${to}`, 'paper');
-    if (isContract) {
-      update('clients', c.id, { onboarding: { ...(c.onboarding || {}), agreement: { done: true, date: now(), by: ctx.actor.label, note: 'Agreement emailed' } } }); L.syncClientStage(c.id, ctx.actor);
-    }
+    if (isContract) update('clients', c.id, { onboarding: { ...(c.onboarding || {}), agreement: { done: true, date: now(), by: ctx.actor.label, note: 'Agreement emailed' } } });
+    if (b.kind === 'pitch') update('clients', c.id, { onboarding: { ...(get('SELECT onboarding FROM clients WHERE id=?', c.id).onboarding || {}), proposal: { done: true, date: now(), by: ctx.actor.label, note: 'Pitch deck emailed' } } });
+    L.syncClientStage(c.id, ctx.actor);
     insert('notes', { record_id: c.id, text: `Email${get('SELECT status FROM emails WHERE id=?', eid).status === 'held' ? ' saved (messages are off)' : ' sent'}: ${subject}`, author: ctx.actor.label, at: now() });
     out.done++; if (get('SELECT status FROM emails WHERE id=?', eid).status === 'held') out.held++;
   }

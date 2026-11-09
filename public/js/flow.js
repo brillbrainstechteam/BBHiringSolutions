@@ -17,7 +17,7 @@
   const F = BB.flow = {};
 
   // ---------- client: from lead to active client ----------
-  const callRoleRows = (x) => `<div class="flow-call-roles">${x.call_roles.map((l, i) => `<div class="call-role"><div class="row between"><span class="grow"><b>${esc(l.role)}</b> · ${l.openings} ${l.openings === 1 ? 'opening' : 'openings'}${l.location ? ` · ${esc(l.location)}` : ''}${l.department ? ` · ${esc(l.department)}` : ''}</span>${l.job_id ? `<button class="btn sm" data-fopen="${esc(l.job_id)}">${esc(l.job_id)}</button>` : `<button class="btn sm" data-fline="${x.id}:${i}">Open job</button>`}</div>${l.skills || l.duties || l.notes ? `<dl class="kv" style="margin-top:6px">${[['Skills', l.skills], ['Responsibilities', l.duties], ['Notes', l.notes]].filter(([, v]) => v).map(([k, v]) => `<dt>${k}</dt><dd>${esc(v)}</dd>`).join('')}</dl>` : ''}</div>`).join('')}</div>`;
+  const callRoleRows = (x) => `<div class="flow-call-roles">${x.call_roles.map((l, i) => `<div class="call-role"><div class="row between"><span class="grow"><b>${esc(l.role)}</b> · ${l.openings} ${l.openings === 1 ? 'opening' : 'openings'}${l.location ? ` · ${esc(l.location)}` : ''}${l.department ? ` · ${esc(l.department)}` : ''}${l.sal_from || l.sal_to ? ` · ${inr(l.sal_from || l.sal_to)}${l.sal_to && l.sal_from && l.sal_to !== l.sal_from ? `–${inr(l.sal_to)}` : ''}/mo` : ''}</span>${l.job_id ? `<button class="btn sm" data-fopen="${esc(l.job_id)}">${esc(l.job_id)}</button>` : `<button class="btn sm" data-fline="${x.id}:${i}">Open job</button>`}</div>${l.skills || l.duties || l.notes ? `<dl class="kv" style="margin-top:6px">${[['Skills', l.skills], ['Responsibilities', l.duties], ['Notes', l.notes]].filter(([, v]) => v).map(([k, v]) => `<dt>${k}</dt><dd>${esc(v)}</dd>`).join('')}</dl>` : ''}</div>`).join('')}</div>`;
   // One card per role on the call: each has its own count, place, skills, duties and notes.
   const roleList = () => { const seen = new Map(); for (const j of [...BB.boot.jobs, ...(BB.addedRoles || [])]) if (!seen.has(j.title.toLowerCase())) seen.set(j.title.toLowerCase(), j); return [...seen.values()]; };
   const deptList = () => [...new Set([...(BB.boot.departments || []), ...BB.boot.jobs.map((j) => j.dept)].filter(Boolean))];
@@ -26,6 +26,7 @@
     <label class="field"><span class="lab">Openings</span><input data-r="openings" type="number" min="1" inputmode="numeric" value="${esc(l.openings || '')}"></label>
     <label class="field"><span class="lab">Location</span><input data-r="location" value="${esc(l.location || '')}"></label>
     <label class="field"><span class="lab">Department <span class="opt">(optional)</span></span><select data-r="department"><option value="">Choose…</option>${deptList().map((d) => `<option ${d === l.department ? 'selected' : ''}>${esc(d)}</option>`).join('')}</select></label></div>
+    <div class="grid g2">${field({ name: 'r_sal_from', label: 'Salary from (₹ a month)', type: 'number', opt: true, voice: false, attrs: 'data-r="sal_from" min="0" inputmode="numeric"', value: l.sal_from || '' })}${field({ name: 'r_sal_to', label: 'Salary to (₹ a month)', type: 'number', opt: true, voice: false, attrs: 'data-r="sal_to" min="0" inputmode="numeric"', value: l.sal_to || '' })}</div>
     ${field({ name: 'r_skills', label: 'Skills required', opt: true, attrs: 'data-r="skills"', value: l.skills || '' })}
     ${field({ name: 'r_duties', label: 'Roles and responsibilities expected', type: 'textarea', opt: true, attrs: 'data-r="duties"', value: l.duties || '' })}
     ${field({ name: 'r_notes', label: 'Other notes', type: 'textarea', opt: true, attrs: 'data-r="notes"', value: l.notes || '' })}</div>`;
@@ -56,6 +57,7 @@
   };
   // What the web says about a client, laid out to read during a call.
   const webLink = (u) => (/^https?:\/\//i.test(u) ? `<a href="${esc(u)}" target="_blank" rel="noopener">${esc(u.replace(/^https?:\/\/(www\.)?/i, '').replace(/\/$/, ''))}</a>` : esc(u));
+  F.clientInfo = (o) => clientInfo(o);
   const clientInfo = (o) => {
     const phones = String(o.phone || '').split(/[;,/]/).map((x) => x.trim()).filter(Boolean);
     const tile = (l, v) => (v ? `<div class="ci-tile"><div class="ci-lab">${l}</div><div class="ci-val">${v}</div></div>` : '');
@@ -112,10 +114,9 @@
   F.clientMore = (c) => {
     const g = c.wa_group || {}; const o = (c.extra || {}).online; const k = c.kyc || {}; const a = c.activation || {};
     const docs = [['Signed agreement', a.contract], ['GST certificate', k.gst], ['Business PAN', k.pan], ['Owner ID', k.owner_id]];
-    return `${BB.callsBlock({ party: 'client', client_id: c.id, apps: c.call_apps }, c.call_log, c.whatsapp)}
+    return `${BB.callsBlock({ party: 'client', client_id: c.id, apps: c.call_apps, noButtons: true }, c.call_log, c.whatsapp)}
       ${(c.calls || []).length ? `<div class="sec"><h3>Requirements from calls</h3><div class="stack-sm">${c.calls.map((x) => `<div class="card pad small"><div class="row between"><span class="faint">${fmtDT(x.at)} · ${esc(x.by)}</span>${x.call_roles ? (x.call_roles.filter((l) => !l.job_id).length ? `<button class="btn sm" data-fjobs="${x.id}">Open ${x.call_roles.filter((l) => !l.job_id).length > 1 ? 'all as draft jobs' : 'as a draft job'}</button>` : '') : `<button class="btn sm" data-fjob="${x.id}">Open a job from this</button>`}</div>${x.call_roles ? callRoleRows(x) : ''}<dl class="kv" style="margin-top:6px">${[...(x.call_roles ? [] : [['Openings', x.openings], ['Location', x.location], ['Department', x.department], ['Roles', x.roles]]), ['Skills', x.skills], ['Responsibilities', x.duties], ['Notes', x.notes]].filter(([, v]) => v).map(([k, v]) => `<dt>${k}</dt><dd>${esc(v)}</dd>`).join('')}</dl></div>`).join('')}</div></div>` : ''}
-      ${o ? clientInfo(o) : ''}
-      ${(c.mails || []).length ? `<div class="sec"><h3>Emails</h3>${c.mails.map((m) => `<div class="small">${fmtDT(m.at)} · ${esc(m.subject)} <span class="badge ${m.status === 'received' ? 'b-green' : 'b-outline'}">${m.status === 'received' ? 'Client replied' : esc(m.status)}</span></div>`).join('')}</div>` : ''}`;
+`;
   };
   // Everything about one client's agreement in one place: get it, edit it, send it, file the signed copy.
   const agreementBox = (c) => {

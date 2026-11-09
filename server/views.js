@@ -72,7 +72,7 @@ function onboardingView(c) {
   const ob = c.onboarding || {};
   const f = L.clientFacts(c);
   const auto = {
-    intro_call: f.intro, requirement: f.requirement, agreement: f.agreement,
+    intro_call: f.intro, requirement: f.requirement, proposal: f.proposal, agreement: f.agreement,
     kyc: ['gst', 'pan', 'owner_id'].every((k) => (c.kyc || {})[k]),
     contract: !!c.contract, jd_shared: f.jd_shared, jd_approved: f.jd_approved,
     account: c.account_status === 'Opened',

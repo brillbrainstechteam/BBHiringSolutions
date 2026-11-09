@@ -1115,15 +1115,17 @@ function clientFacts(c) {
   const ob = c.onboarding || {}; const done = (k) => !!(ob[k] && ob[k].done);
   const jobs = all('SELECT status, jd_status, jd_approved FROM jobs WHERE client_id=? AND archived=0', c.id).map((j) => ({ ...j, status: j.status || 'Draft' }));
   const msg = (f) => !!get("SELECT 1 FROM messages WHERE person_type='client' AND person_id=? AND format=? AND IFNULL(status,'') NOT IN ('failed','Failed') LIMIT 1", c.id, f);
-  const agreementAt = (ob.agreement && ob.agreement.done && ob.agreement.date) || null;
+  const mail = (kind) => get("SELECT COALESCE(sent_at, at) at FROM emails WHERE record_id=? AND kind=? AND status IN ('sent','queued','received') ORDER BY id LIMIT 1", c.id, kind);
+  const agreementMail = mail('contract'); const legacy = ob.proposal && /agreement emailed/i.test(ob.proposal.note || '') ? ob.proposal.date : null;
+  const agreementAt = (ob.agreement && ob.agreement.done && ob.agreement.date) || (agreementMail && agreementMail.at) || legacy || null;
   return {
     intro: done('intro_call') || !!get("SELECT 1 FROM calls WHERE client_id=? AND status='Done' LIMIT 1", c.id),
     requirement: done('requirement') || jobs.length > 0,
-    proposal: done('proposal'),
+    proposal: done('proposal') || !!mail('pitch'),
     agreement: done('agreement') || !!agreementAt,
     followup: !!agreementAt && !c.contract && daysBetween(agreementAt) >= 3,
     contract: !!c.contract,
-    jd_shared: jobs.some((j) => j.jd_status && j.jd_status !== 'Not written') || msg('bbhs_jd_approval'),
+    jd_shared: jobs.some((j) => j.jd_status && j.jd_status !== 'Not written') || msg('bbhs_jd_approval') || !!mail('jd'),
     jd_approved: jobs.some((j) => j.jd_status === 'Approved' || j.jd_approved),
     activated: !!c.activated_at,
     onboarded: !!c.activated_at && ONBOARD_STEPS.every((k) => onboardDone(c, k)),
