@@ -137,7 +137,7 @@
         ${notesBlock(c.id, c.notes, true)}
 </div><div data-cpane="history" hidden>${BB.flow.clientHistory(c)}</div>`,
       mount: (el) => {
-        wireCommon(el); BB.flow.clientMount(el, c);
+        wireCommon(el); BB.flow.clientMount(el, c); BB.flow.clientHistoryMount(el, c);
         // Profile / History switch at the top
         $$('[data-ctab]', el).forEach((b) => (b.onclick = () => { $$('[data-ctab]', el).forEach((x) => x.classList.toggle('on', x === b)); $$('[data-cpane]', el).forEach((p) => { p.hidden = p.dataset.cpane !== b.dataset.ctab; }); }));
         $$('[data-addpoc]', el).forEach((b) => (b.onclick = () => BB.addPoc(c).then((x) => x && after('Point of contact added'))));

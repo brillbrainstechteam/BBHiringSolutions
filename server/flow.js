@@ -166,6 +166,25 @@ route('POST', '/api/clients/:id/group', T, (ctx) => {
 
 // ---------- email from the portal: one client or many ----------
 const clientEmail = (c) => c.email || (c.extra || {}).hr_email || '';
+// Blanks an email can carry, filled from each client's own record (never from another client in the same send).
+const EMAIL_VARS = { contact: 'Contact name (or Sir/Madam)', first_name: 'Contact first name', company: 'Company name', city: 'City', state: 'State', poc: 'Point of contact name', client_id: 'Client ID', email: 'Client email', whatsapp: 'Client WhatsApp number', stage: 'Client stage', job: 'Job title (JD or CV emails)', sender: 'Your name', date: "Today's date", account_link: 'Client account link' };
+const VAR_ALIAS = { name: 'contact', client_name: 'company', company_name: 'company', phone: 'whatsapp', mobile: 'whatsapp', poc_name: 'poc', job_title: 'job' };
+const VAR_RE = /\{\{?\s*([a-zA-Z_]+)\s*\}?\}/g;
+function emailVars(c, sender, job) {
+  const contact = String(c.contact || '').trim(); const real = contact && contact.toLowerCase() !== String(c.company || '').trim().toLowerCase() ? contact : '';
+  const poc = (L.pocOf(c) || {}); const pocName = poc.poc ? poc.name : '';
+  return { contact: real || 'Sir/Madam', first_name: real ? real.split(/\s+/)[0] : 'Sir/Madam', company: c.company || '', city: c.city || '', state: c.state || '', poc: pocName || real || 'Sir/Madam', client_id: c.id, email: clientEmail(c), whatsapp: c.whatsapp || '', stage: c.stage || '', job: job || '', sender, date: new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Kolkata' }), account_link: L.link('my-account') };
+}
+const fillVars = (t, v) => String(t).replace(VAR_RE, (m, k) => { const key = VAR_ALIAS[k.toLowerCase()] || k.toLowerCase(); return Object.prototype.hasOwnProperty.call(v, key) ? String(v[key]) : m; });
+function unknownVars(...texts) { const bad = new Set(); for (const t of texts) for (const m of String(t || '').matchAll(VAR_RE)) { const k = m[1].toLowerCase(); if (!EMAIL_VARS[VAR_ALIAS[k] || k]) bad.add(m[0]); } return [...bad]; }
+// What each selected client will get, filled: shown in the email box before sending.
+route('POST', '/api/clients/email/preview', T, (ctx) => {
+  const b = ctx.body || {}; const ids = (b.ids || []).map(String).slice(0, 200);
+  const bad = unknownVars(b.subject, b.body);
+  const job = b.kind === 'jd' ? (get('SELECT title FROM jobs WHERE id=?', b.job) || {}).title : b.kind === 'cv' ? (get('SELECT j.title FROM applications a JOIN jobs j ON j.id=a.job_id WHERE a.id=?', b.job) || {}).title : '';
+  const rows = ids.map((id) => get('SELECT * FROM clients WHERE id=? AND removed=0', id)).filter((c) => c && seeClient(ctx.user, c)).slice(0, 5).map((c) => { const v = emailVars(c, ctx.user.name, job); return { id: c.id, company: c.company, to: (ids.length === 1 && String(b.to || '').trim()) || clientEmail(c), subject: fillVars(b.subject || '', v), body: fillVars(b.body || '', v) }; });
+  return { rows, unknown: bad, vars: EMAIL_VARS };
+});
 route('GET', '/api/email-templates', T, (ctx) => ({ templates: D.settings().email_templates, held: !!(D.settings().wa_pause || {}).email, can_send: M.configured(), from: D.ENV.smtp.from || '',
   recipients: String(ctx.query.ids || '').split(',').filter(Boolean).slice(0, 200).map((id) => get('SELECT * FROM clients WHERE id=? AND removed=0', id)).filter((c) => c && seeClient(ctx.user, c)).map((c) => ({ id: c.id, company: c.company, email: clientEmail(c), agreement: (editedAgreement(c.id) || {}).name || '' })) }));
 route('POST', '/api/clients/email', T, (ctx) => {
@@ -173,6 +192,7 @@ route('POST', '/api/clients/email', T, (ctx) => {
   if (!ids.length) throw httpError(400, 'Pick at least one client');
   if (!String(b.subject || '').trim()) throw httpError(400, 'Write the subject', 'subject');
   if (!String(b.body || '').trim()) throw httpError(400, 'Write the message', 'body');
+  { const bad = unknownVars(b.subject, b.body); if (bad.length) throw httpError(400, `${bad.join(', ')} ${bad.length === 1 ? 'is not a blank we can fill' : 'are not blanks we can fill'}. Use one of: ${Object.keys(EMAIL_VARS).map((k) => `{${k}}`).join(' ')} — or remove it. Nothing was sent.`, 'body'); }
   const out = { done: 0, held: 0, skipped: [] }; const isContract = b.kind === 'contract'; const isDoc = ['contract', 'pitch', 'jd', 'cv'].includes(b.kind);
   // These documents are sent by a person, so they go even while automatic messages are held.
   if (isDoc && !M.configured()) throw httpError(400, 'Email is not set up on the server yet, so this cannot go. Nothing was sent.');
@@ -188,7 +208,7 @@ route('POST', '/api/clients/email', T, (ctx) => {
     const c = get('SELECT * FROM clients WHERE id=? AND removed=0', id); if (!c || !seeClient(ctx.user, c)) { out.skipped.push(`${id}: not found`); continue; }
     const to = typed || clientEmail(c); if (!to) { if (ids.length === 1) throw httpError(400, 'Enter the client\'s email', 'to'); out.skipped.push(`${c.company}: no email`); continue; }
     if (typed && !clientEmail(c)) update('clients', c.id, { email: typed });
-    const fill = (t) => String(t).replace(/\{(company|contact|sender|job)\}/g, (m, k) => ({ company: c.company, contact: c.contact || 'Sir/Madam', sender, job: (jdJob || cvJob || {}).title || '' }[k]));
+    const vars = emailVars(c, sender, (jdJob || cvJob || {}).title || ''); const fill = (t) => fillVars(t, vars); // this client's own values only
     const subject = fill(b.subject); const text = fill(b.body);
     const html = M.layout(subject, text.split(/\n{2,}/).map((p) => `<p style="font-size:14px;line-height:1.65;margin:0 0 12px">${p.split('\n').map((x) => x.replace(/[&<>]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[ch]))).join('<br>')}</p>`).join(''));
     const eid = M.queue({ to, subject, text, html, kind: b.kind || 'client_mail', recordId: c.id, attachments: b.kind === 'pitch' ? [{ pitch: true }] : jdJob ? [{ jd_job: jdJob.id }] : cvApp ? [{ file_id: clientCvFor(cvApp.candidate_id, ctx.actor).id }] : isContract || b.attach_agreement ? [editedAgreement(c.id) ? { file_id: editedAgreement(c.id).id } : { agreement: true }] : [], force: isDoc, person: true });

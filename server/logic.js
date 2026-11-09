@@ -103,6 +103,10 @@ function person(type, id) {
     const c = get('SELECT * FROM candidates WHERE id=?', id); if (!c) return null;
     return { type, id, name: c.name, phone: c.whatsapp, lang: require('./lang').pick(c.language), opted_out: c.opted_out, consent: c.consent_alerts, agency_id: c.agency_id, record: c };
   }
+  if (type === 'partner') {
+    const p = get('SELECT * FROM partners WHERE id=?', id); if (!p) return null;
+    return { type, id: p.id, name: p.contact_name || p.name, company: p.name, phone: require('./partners').waNumber(p), lang: 'en', opted_out: p.opted_out, consent: 1, agency_id: null, record: { ...p, email: null } };
+  }
   if (type === 'user') {
     const u = get('SELECT * FROM users WHERE id=?', id); if (!u) return null;
     return { type, id, name: u.name, phone: u.whatsapp, lang: 'en', opted_out: 0, consent: 1, agency_id: u.agency_id, record: u };
@@ -1189,6 +1193,60 @@ function saveClientExtras(clientId, b, by) {
 }
 // The person to call: the main POC if there is one, else the contact on the account.
 const pocOf = (c) => { const list = ((c.extra || {}).pocs || []); const m = list.find((p) => p.main) || list[0]; return m ? { ...m, poc: true } : { name: c.contact || '', role: 'Contact', email: c.email || '', whatsapp: c.whatsapp || '', poc: false }; };
+// ---------- Auto-assigning client leads to agencies ----------
+// Score out of 100 for each active agency: efficiency 50% (joinings per client they handled, last 6 months),
+// lighter workload 30% (open applications and openings per active team member, fewer is better), location 10%
+// (same city, or same state), age with us 10% (how long the agency has worked with us). Each part is scaled
+// against the best agency, so the score compares agencies with each other.
+const AUTO_WEIGHTS = { efficiency: 50, workload: 30, location: 10, age: 10 };
+function agencyScores(client) {
+  const ags = all("SELECT * FROM agencies WHERE status='Active'"); if (!ags.length) return [];
+  const since = new Date(Date.now() - 180 * 86400000).toISOString();
+  const rows = ags.map((a) => {
+    const clients = get('SELECT COUNT(*) n FROM clients WHERE agency_id=? AND removed=0 AND created_at>=?', a.id, since).n;
+    const hires = get("SELECT COUNT(*) n FROM applications ap JOIN jobs j ON j.id=ap.job_id WHERE j.agency_id=? AND ap.result='Hired' AND ap.joined_at>=?", a.id, since).n;
+    const people = Math.max(1, get("SELECT COUNT(*) n FROM users WHERE agency_id=? AND status='On' AND level IN ('admin','sub')", a.id).n);
+    const openApps = get("SELECT COUNT(*) n FROM applications ap JOIN jobs j ON j.id=ap.job_id WHERE j.agency_id=? AND ap.result='open'", a.id).n;
+    const openJobs = get("SELECT COUNT(*) n FROM jobs WHERE agency_id=? AND archived=0 AND status IN ('Open','Sourcing','Interviewing','Offer stage')", a.id).n;
+    const city = String(client.city || '').trim().toLowerCase(); const st = String(client.state || stateOf(client.city) || '').toLowerCase();
+    const aCity = String(a.city || '').trim().toLowerCase();
+    const location = city && aCity && city === aCity ? 1 : st && aCity && String(stateOf(a.city) || '').toLowerCase() === st ? 0.5 : 0;
+    const ageDays = Math.max(0, daysBetween(a.since || a.created_at || now()));
+    return { id: a.id, name: a.name, eff: hires / Math.max(1, clients), load: (openApps + openJobs * 3) / people, location, age: ageDays, hires, clients, open: openApps };
+  });
+  const maxEff = Math.max(...rows.map((r) => r.eff)); const maxLoad = Math.max(...rows.map((r) => r.load)); const maxAge = Math.max(...rows.map((r) => r.age));
+  return rows.map((r) => {
+    const parts = { efficiency: maxEff > 0 ? r.eff / maxEff : 0.5, workload: maxLoad > 0 ? 1 - r.load / maxLoad : 1, location: r.location, age: maxAge > 0 ? r.age / maxAge : 1 };
+    const score = Math.round(Object.entries(AUTO_WEIGHTS).reduce((t, [k, w]) => t + parts[k] * w, 0));
+    return { id: r.id, name: r.name, score, parts: Object.fromEntries(Object.entries(parts).map(([k, v]) => [k, Math.round(v * AUTO_WEIGHTS[k])])), facts: { hires: r.hires, clients: r.clients, open: r.open } };
+  }).sort((a, b) => b.score - a.score);
+}
+const autoAssignOn = () => !!((settings().lead_auto_assign || {}).on);
+function autoAssignClient(clientId, by) {
+  const c = get('SELECT * FROM clients WHERE id=?', clientId); if (!c || c.agency_id || c.placeholder || c.internal) return null;
+  const sole = D.soleAgency();
+  // The only agency already works every client (shared). The record stays unallocated on purpose: an allocated
+  // job pays that agency a share of the fee, which is only meant once several agencies split the work.
+  if (sole) return { agency_id: sole, sole: true };
+  if (!autoAssignOn()) return null;
+  const best = agencyScores(c)[0]; if (!best) return null;
+  assignLead('client', c.id, best.id, { label: 'Auto-assignment' });
+  const fresh = get('SELECT extra FROM clients WHERE id=?', c.id); update('clients', c.id, { extra: { ...(fresh.extra || {}), auto_assigned: { agency_id: best.id, agency: best.name, score: best.score, parts: best.parts, at: now() } } });
+  return { agency_id: best.id, score: best.score };
+}
+// A client lead from Quick add or the leads Excel template: email required, HR email and POC checked,
+// roles with how many people (which ticks "Requirement received"), and an optional note.
+function quickClient(b, by, o = {}) {
+  needEmail(b); okHrEmail(b); cleanPoc({ name: b.poc_name, role: b.poc_role, email: b.poc_email, whatsapp: b.poc_whatsapp });
+  const lines = (Array.isArray(b.roles_list) ? b.roles_list : []).map((x) => ({ role: String(x.role || '').trim(), count: Math.max(0, Math.round(Number(x.count) || 0)) })).filter((x) => x.role);
+  if (lines.some((x) => !x.count)) throw httpError(400, `Write how many people for ${lines.find((x) => !x.count).role}`, 'roles_list');
+  const roles = lines.map((x) => `${x.role} × ${x.count}`).join(', ');
+  const r = intakeClient({ contact: b.name, company: b.company || b.name, whatsapp: b.phone, email: b.email, city: b.city, business_type: b.business_type || '', need: b.need || '', roles }, { source: b.source || 'Walk-in', by, ...o });
+  saveClientExtras(r.client.id, b, by);
+  if (lines.length) { const c = get('SELECT * FROM clients WHERE id=?', r.client.id); update('clients', c.id, { onboarding: { ...(c.onboarding || {}), requirement: { done: true, date: now(), by: actorName(by), note: roles } } }); syncClientStage(c.id, by); }
+  if (b.note) insert('notes', { record_id: r.client.id, text: b.note, author: actorName(by), at: now() });
+  return r;
+}
 function intakeClient(d, o) {
   const phone = digits10(d.whatsapp);
   const source = o.source || 'Website';
@@ -1220,7 +1278,9 @@ function intakeClient(d, o) {
   history(who, 'create', id, null, null, `Client ${d.company || d.contact} from ${source}`);
   if (o.consent !== false) saveConsent('client', id, source, o.wording);
   if (o.consent !== false && !o.silent) sendWA({ ptype: 'client', pid: id, format: 'bbhs_client_welcome', vars: { client_id: id, link: link('my-account') }, auto: true, rule: 'client_welcome', dedupe: `welcome:${id}` });
-  if (!agency && !o.silent) {
+  // One agency: every client is theirs. Several: the best-scoring agency when auto-assignment is on (else the super admin assigns).
+  if (!agency) { try { autoAssignClient(id, by); } catch (e) { console.error('auto-assign', id, e.message); } }
+  if (!agency && !o.silent && (D.soleAgency() || !get('SELECT agency_id FROM clients WHERE id=?', id).agency_id)) {
     const team = D.soleAgency() ? D.all("SELECT id, team FROM users WHERE agency_id=? AND status='On'", D.soleAgency()).filter((x) => (x.team || 'Recruitment') === 'Recruitment') : [];
     for (const s of [...superAdmins(), ...team]) insert('alerts', { user_id: s.id, text: `New client lead ${id} (${d.company || d.contact})`, record_id: id, read: 0, at: now() });
   }
@@ -1420,7 +1480,7 @@ function sendSystemText(ptype, pid, text) {
 module.exports = { stageStateOf, ownersOfJob, ownerMap, ownsApp, STAGES, stageOfApp, nextStageOf, reopenRefilled, adPlanFor, openAdApplications, placedOn, closePlacedApps, adLabel,
   STEPS, stepIdx, digits10, validPhone, inr, istDay, istFmt, istTime, istHour, inQuiet, next9am, daysBetween, addDays, hashPassword, checkPassword, newPassword, sha,
   activationState, checkActivation, waHeld, TEAMS, IV_MODES, clientSeesIv, addIvNote, CALL_OUTCOMES, logCall, jobList, deptOf, stateOf, person, fillFormat, windowOpenUntil, sendWA, setDispatcher, alertUser, link, agencyAdmin, superAdmins,
-  EMAIL_RE, needEmail, okHrEmail, cleanPoc, saveClientExtras, pocOf, CLIENT_MAIN, CLIENT_SIDE, ONBOARD_STEPS, clientFacts, onboardDone, earnedStage, syncClientStage, computeJobStatus, jobStatusReason, recalcJob, filledCount, appsOfJob, matchScore, jobsFor, cleanBusiness, BUSINESS_TYPES, EXP_YEARS, JEW_YEARS, LOOKING, NOT_LOOKING, JOB_STATUSES, LOOK_FRESH, appStates, appStateOf, jobStatusOf, setLooking, ratingOf, bestMatches, isPlaced, salaryText, autoJobAlert,
+  quickClient, AUTO_WEIGHTS, agencyScores, autoAssignOn, autoAssignClient, EMAIL_RE, needEmail, okHrEmail, cleanPoc, saveClientExtras, pocOf, CLIENT_MAIN, CLIENT_SIDE, ONBOARD_STEPS, clientFacts, onboardDone, earnedStage, syncClientStage, computeJobStatus, jobStatusReason, recalcJob, filledCount, appsOfJob, matchScore, jobsFor, cleanBusiness, BUSINESS_TYPES, EXP_YEARS, JEW_YEARS, LOOKING, NOT_LOOKING, JOB_STATUSES, LOOK_FRESH, appStates, appStateOf, jobStatusOf, setLooking, ratingOf, bestMatches, isPlaced, salaryText, autoJobAlert,
   SAL_HIDDEN, feeFor, gstFor, fyOf, billView, refreshBill, createBillForApp, issueBill, upiLink,
   appHist, createApplication, moveStep, closeApplication, reopenApplication, screenApplication, SCREEN, jobsForRole, jobsForPerson, roleTokens, scheduleInterview, recordInterview, interviewView, ivVars, recordOffer, leftJob, jobAction,
   CONSENT_WORDING, saveConsent, intakeClient, intakeCandidate, assignLead, mergeRecords, resolveId, receiveReply, actorName,

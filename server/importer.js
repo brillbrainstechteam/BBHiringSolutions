@@ -18,6 +18,15 @@ const FIELDS = {
     ['hr_name', 'HR name', ['hr name']], ['hr_email', 'HR email', ['hr email', 'email']], ['hr_mobile', 'HR mobile (second mobile no)', ['mobile no 2', 'hr mobile', 'mobile no.1']], ['remarks', 'Remarks', ['remarks']],
     ['last_updated', 'Last date updated', ['last date updated']], ['activation_date', 'Activation date', ['activation date']],
   ],
+  // Client leads template (Leads → Upload leads). Labels are the template's column headings.
+  leads: [
+    ['company', 'Company name', ['company name', 'company', 'client name', 'business name']], ['name', 'Contact name', ['contact name', 'contact person', 'owner name', 'name']],
+    ['hr_email', 'HR email ID', ['hr email id', 'hr email']], ['poc_name', 'POC name', ['poc name', 'point of contact']], ['poc_role', 'POC designation', ['poc designation', 'poc role']],
+    ['poc_email', 'POC email ID', ['poc email id', 'poc email']], ['poc_whatsapp', 'POC WhatsApp number', ['poc whatsapp number', 'poc whatsapp', 'poc mobile']],
+    ['phone', 'WhatsApp number', ['whatsapp number', 'whatsapp', 'mobile', 'phone']], ['email', 'Email ID', ['email id', 'email']], ['city', 'City', ['city', 'location']],
+    ['business_type', 'Business type', ['business type', 'business']], ['need', 'When hiring', ['when hiring', 'need', 'when do they want to hire']],
+    ['roles', 'Roles and how many', ['roles and how many', 'roles', 'job details']], ['source', 'Source', ['source']], ['note', 'Note', ['note', 'notes', 'remarks']],
+  ],
   jobs: [
     ['created_at', 'Date', ['date']], ['client_name', 'Client name', ['client name', 'client']], ['city', 'Area / location', ['area / location', 'location', 'area', 'city']], ['title', 'Position open', ['position open', 'position', 'job title']],
     ['old_code', 'Job code', ['job code', 'code']], ['openings', 'No. of vacancy', ['no. of vacancy', 'vacancy', 'openings']], ['salary', 'Salary range', ['salary range', 'salary']], ['notice', 'Notice period', ['notice period', 'notice']],
@@ -153,6 +162,23 @@ function runImport(kind, rows, map, opts) {
         if (rem) { D.insert('notes', { record_id: id, text: rem, author: 'Import', at: D.now() }); if (/not to be approached/i.test(rem)) D.update('clients', id, { dnc: 1 }); }
         if (val(r, 'last_updated')) D.insert('notes', { record_id: id, text: `Last date updated (old sheet): ${val(r, 'last_updated')}`, author: 'Import', at: D.now() });
         if (d.extra.activation_date) D.update('clients', id, { contract: JSON.stringify({ imported: true, at: d.extra.activation_date }), onboarding: { contract: { done: true, date: d.extra.activation_date, by: 'Import' } } });
+      } else if (kind === 'leads') {
+        const company = val(r, 'company'); if (/^example\b/i.test(company)) return; // the template's example row
+        if (!company && !val(r, 'name') && !val(r, 'phone')) return; // empty row
+        const bt = val(r, 'business_type'); const btU = bt.toUpperCase(); const lc = bt.toLowerCase();
+        const business_type = (btU.includes('B2B') && btU.includes('B2C')) || lc === 'both' ? 'Both' : btU.includes('B2B') || lc.startsWith('manufact') ? 'Manufacturer B2B' : btU.includes('B2C') || lc.startsWith('showroom') || lc.startsWith('retail') ? 'Showroom B2C' : bt;
+        const needs = ['Hiring now', 'Hiring soon', 'Just exploring']; const need = needs.find((x) => x.toLowerCase() === val(r, 'need').toLowerCase()) || val(r, 'need');
+        const roles_list = val(r, 'roles').split(/[,;\n]+/).map((x) => x.trim()).filter(Boolean).map((x) => {
+          let m = x.match(/^(.*?)[\s]*[x×*:\-–=]\s*(\d+)\s*$/i); if (m && m[1].trim()) return { role: m[1].trim(), count: Number(m[2]) };
+          m = x.match(/^(\d+)\s+(.+)$/); if (m) return { role: m[2].trim(), count: Number(m[1]) };
+          return { role: x, count: 1 };
+        });
+        const b = { company, name: val(r, 'name') || company, phone: L.digits10(val(r, 'phone')) || val(r, 'phone'), email: val(r, 'email'), hr_email: val(r, 'hr_email'), city: val(r, 'city'), business_type, need, roles_list, source: val(r, 'source') || opts.source || 'Excel import',
+          poc_name: val(r, 'poc_name'), poc_role: val(r, 'poc_role'), poc_email: val(r, 'poc_email'), poc_whatsapp: L.digits10(val(r, 'poc_whatsapp')) || val(r, 'poc_whatsapp'), note: val(r, 'note') };
+        if (!b.company) throw new Error('Company name missing');
+        if (!b.phone) throw new Error('WhatsApp number missing');
+        const res = L.quickClient(b, by, { silent, consent: false });
+        res.isNew ? result.created++ : result.updated++;
       } else if (kind === 'jobs') {
         const cl = clientByName(val(r, 'client_name'));
         if (!cl) throw new Error(`Client "${val(r, 'client_name')}" not found`);

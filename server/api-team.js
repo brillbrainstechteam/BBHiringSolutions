@@ -543,8 +543,9 @@ route('GET', '/api/leads', T, (ctx) => {
   const u = ctx.user; const sup = isSuper(u);
   if (ctx.query.format && !sup) throw httpError(403, 'Only the super admin downloads leads.');
   const q = ctx.query; const days = Number(q.days) || 30; const since = new Date(Date.now() - days * 86400000).toISOString();
+  const autoSince = new Date(Date.now() - 7 * 86400000).toISOString(); // auto-assigned leads stay in view for a week
   const filt = (r) => (!q.source || many(q.source).includes(r.source)) && (!q.agency || (q.agency === 'none' ? !r.agency_id : r.agency_id === q.agency)) && (!q.new || r.is_new) && (!q.from || L.istDay(r.created_at) >= q.from) && (!q.to || L.istDay(r.created_at) <= q.to);
-  const clients = all('SELECT * FROM clients WHERE junk=0 AND old_client=0 AND merged_into IS NULL AND removed=0 ORDER BY created_at DESC').filter((c) => seeClient(u, c) && (!c.agency_id || q.all) && filt(c)).map(V.clientView);
+  const clients = all('SELECT * FROM clients WHERE junk=0 AND old_client=0 AND merged_into IS NULL AND removed=0 ORDER BY created_at DESC').filter((c) => seeClient(u, c) && (!c.agency_id || q.all || ((c.extra || {}).auto_assigned && (c.extra.auto_assigned.at || '') >= autoSince)) && filt(c)).map(V.clientView);
   const match = candMatch(q);
   const cands = !sup ? [] : all('SELECT * FROM candidates WHERE junk=0 AND merged_into IS NULL AND removed=0 ORDER BY created_at DESC').filter((c) => ((!c.agency_id && c.is_new) || q.all) && filt(c) && match(c));
   const check = [ // the candidate rows show on the Candidates page (Needs checking tab)
@@ -561,7 +562,12 @@ route('GET', '/api/leads', T, (ctx) => {
     if (q.tab === 'check') return page(ctx, check, 'leads-to-check', ['id', 'type', 'label', 'whatsapp', 'email', 'source', 'needs_check', 'possible_repeat_of']);
     return page(ctx, pick(clients), 'client-leads', ['id', 'company', 'contact', 'whatsapp', 'email', 'city', 'state', 'business_type', 'need', 'roles', 'stage', 'source', 'created_at', 'agency_name']);
   }
-  return { clients, candidates: cands, check, sources: srcCount, hires, stages: D.settings().client_stages, agencies: all("SELECT id, name FROM agencies WHERE status='Active'"), can_allocate: R.canAllocate(u), can_download: sup, shared: R.sharedWith(u) };
+  return { clients, candidates: cands, check, sources: srcCount, hires, stages: D.settings().client_stages, agencies: all("SELECT id, name FROM agencies WHERE status='Active'"), can_allocate: R.canAllocate(u), can_download: sup, shared: R.sharedWith(u), auto: sup ? { on: L.autoAssignOn(), weights: L.AUTO_WEIGHTS } : null };
+});
+// How each agency scores right now for a new lead (the super admin sees this beside the auto-assignment switch).
+route('GET', '/api/leads/auto-scores', T, (ctx) => {
+  if (!isSuper(ctx.user)) throw httpError(403, 'Only the super admin sees this.');
+  return { on: L.autoAssignOn(), weights: L.AUTO_WEIGHTS, agencies: L.agencyScores({ city: ctx.query.city || '' }) };
 });
 route('POST', '/api/leads/assign', T, (ctx) => {
   const { type, ids, agency_id } = ctx.body; const u = ctx.user;
@@ -627,12 +633,7 @@ route('POST', '/api/leads/junk', T, (ctx) => {
 });
 route('POST', '/api/leads/quick', T, (ctx) => {
   const b = ctx.body; const by = { ...ctx.actor };
-  if (b.type === 'client') { L.needEmail(b); L.okHrEmail(b); L.cleanPoc({ name: b.poc_name, role: b.poc_role, email: b.poc_email, whatsapp: b.poc_whatsapp });
-    const lines = (Array.isArray(b.roles_list) ? b.roles_list : []).map((x) => ({ role: String(x.role || '').trim(), count: Math.max(0, Math.round(Number(x.count) || 0)) })).filter((x) => x.role);
-    if (lines.some((x) => !x.count)) throw httpError(400, `Write how many people for ${lines.find((x) => !x.count).role}`, 'roles_list');
-    const roles = lines.map((x) => `${x.role} × ${x.count}`).join(', ');
-    const r = L.intakeClient({ contact: b.name, company: b.company || b.name, whatsapp: b.phone, email: b.email, city: b.city, business_type: b.business_type || '', need: b.need || '', roles }, { source: b.source || 'Walk-in', by }); L.saveClientExtras(r.client.id, b, ctx.actor);
-    if (lines.length) { const c = get('SELECT * FROM clients WHERE id=?', r.client.id); update('clients', c.id, { onboarding: { ...(c.onboarding || {}), requirement: { done: true, date: now(), by: ctx.actor.label, note: roles } } }); L.syncClientStage(c.id, ctx.actor); } if (b.note) insert('notes', { record_id: r.client.id, text: b.note, author: ctx.actor.label, at: now() }); return { id: r.client.id, isNew: r.isNew }; }
+  if (b.type === 'client') { const r = L.quickClient(b, by); return { id: r.client.id, isNew: r.isNew }; }
   const r = L.intakeCandidate({ name: b.name, whatsapp: b.phone, city: b.city, job_wanted: b.job_wanted }, { source: b.source || 'Walk-in', by });
   if (b.note) insert('notes', { record_id: r.candidate.id, text: b.note, author: ctx.actor.label, at: now() });
   return { id: r.candidate.id, isNew: r.isNew };
@@ -681,17 +682,19 @@ function clientPast(c, u) {
   const hired = apps.filter((a) => a.result === 'Hired'); const money = true;
   const bills = all("SELECT * FROM bills WHERE client_id=? AND status NOT IN ('Draft','Cancelled') AND credit_of IS NULL", c.id);
   const uniq = (l) => [...new Set(l.filter(Boolean))];
+  const closedJob = (j) => ['Closed', 'Filled'].includes(j.status);
+  // Each item says what it is (type, for the filters), where it leads (open: a panel; go: a page) and its full text (detail, for search).
   const line = [
-    ...all('SELECT * FROM client_calls WHERE client_id=? AND roles<>\'\'', c.id).map((x) => ({ at: x.at, kind: 'Requirement call', text: x.roles, by: x.by })),
-    ...all("SELECT * FROM calls WHERE client_id=? AND status='Done'", c.id).map((x) => ({ at: x.at, kind: x.party === 'client' ? 'Call with client' : 'Call with candidate', text: `${x.outcome}. ${(x.topics || []).join(', ')}. ${x.note || ''}`, by: x.by })),
-    ...all("SELECT subject, status, at FROM emails WHERE record_id=? AND status IN ('sent','received')", c.id).map((x) => ({ at: x.at, kind: x.status === 'received' ? 'Client replied' : 'Email sent', text: x.subject })),
-    ...all(`SELECT format, text, at, sent_by, direction FROM messages WHERE person_type='client' AND person_id=? AND status NOT IN ('held','failed')${msgHide(u)}`, c.id).map((x) => ({ at: x.at, kind: x.direction === 'in' ? 'WhatsApp from client' : 'WhatsApp sent', text: String(x.text || '').slice(0, 90), by: x.sent_by })),
-    ...all("SELECT text, author, at FROM notes WHERE record_id=? AND author<>'Email inbox' AND text NOT LIKE 'Client call%' AND text NOT LIKE 'Email %'", c.id).map((x) => ({ at: x.at, kind: 'Note', text: String(x.text).slice(0, 120), by: x.author })),
-    ...jobs.map((j) => ({ at: j.created_at, kind: 'Job opening', text: `${j.title}${j.city ? `, ${j.city}` : ''} · ${j.openings} ${j.openings === 1 ? 'opening' : 'openings'}` })),
-    ...hired.map((a) => ({ at: a.joined_at || a.step_since, kind: 'Hired', text: `${a.person} as ${a.job_title}` })),
-    ...(money ? bills.map((b) => ({ at: b.issued_at || b.date, kind: 'Bill', text: `${b.bill_no || 'Bill'} · ₹${Math.round(b.fee).toLocaleString('en-IN')}` })) : []),
-  ].filter((x) => x.at).sort((a, b) => (a.at < b.at ? 1 : -1)).slice(0, 60);
-  return { jobs: jobs.length, open: jobs.filter((j) => !['Closed', 'Filled'].includes(j.status)).length, applications: apps.length, sent: apps.filter((a) => L.stepIdx(a.step) >= 3).length, hires: hired.length, fees: money ? bills.reduce((t, b) => t + (b.fee || 0), 0) : null,
+    ...all('SELECT * FROM client_calls WHERE client_id=? AND roles<>\'\'', c.id).map((x) => ({ at: x.at, type: 'call', kind: 'Requirement call', text: x.roles, detail: [x.roles && `Roles: ${x.roles}`, x.location && `Location: ${x.location}`, x.skills && `Skills: ${x.skills}`, x.duties && `Duties: ${x.duties}`, x.notes && `Notes: ${x.notes}`].filter(Boolean).join('\n'), by: x.by, open: x.job_id ? `job:${x.job_id}` : null })),
+    ...all("SELECT * FROM calls WHERE client_id=? AND status='Done'", c.id).map((x) => ({ at: x.at, type: 'call', kind: x.party === 'client' ? 'Call with client' : 'Call with candidate', text: [x.outcome, (x.topics || []).join(', ')].filter(Boolean).join(' · '), detail: x.note || '', by: x.by, open: x.party !== 'client' && x.candidate_id ? `candidate:${x.candidate_id}` : null })),
+    ...all("SELECT id, subject, status, at, text, to_addr FROM emails WHERE record_id=? AND status IN ('sent','received')", c.id).map((x) => ({ at: x.at, type: 'email', kind: x.status === 'received' ? 'Email from client' : 'Email sent', text: x.subject, detail: `${x.to_addr ? `To: ${x.to_addr}\n\n` : ''}${String(x.text || '').slice(0, 1500)}` })),
+    ...all(`SELECT format, text, at, sent_by, direction FROM messages WHERE person_type='client' AND person_id=? AND status NOT IN ('held','failed')${msgHide(u)}`, c.id).map((x) => ({ at: x.at, type: 'wa', kind: x.direction === 'in' ? 'WhatsApp from client' : 'WhatsApp sent', text: String(x.text || '').replace(/\s+/g, ' ').slice(0, 110), detail: String(x.text || ''), by: x.sent_by, go: `whatsapp?t=client:${c.id}` })),
+    ...all("SELECT text, author, at FROM notes WHERE record_id=? AND author<>'Email inbox' AND text NOT LIKE 'Client call%' AND text NOT LIKE 'Email %'", c.id).map((x) => ({ at: x.at, type: 'note', kind: 'Note', text: String(x.text).replace(/\s+/g, ' ').slice(0, 140), detail: String(x.text).length > 140 ? String(x.text) : '', by: x.author })),
+    ...jobs.map((j) => ({ at: j.created_at, type: closedJob(j) ? 'closed' : 'job', kind: closedJob(j) ? `Job opening · ${j.status}` : 'Job opening', text: `${j.title}${j.city ? `, ${j.city}` : ''} · ${j.filled || 0} of ${j.openings} filled`, status: j.status, open: `job:${j.id}` })),
+    ...hired.map((a) => ({ at: a.joined_at || a.step_since, type: 'hire', kind: 'Hired', text: `${a.person} as ${a.job_title}`, open: `application:${a.id}` })),
+    ...(money ? bills.map((b) => ({ at: b.issued_at || b.date, type: 'bill', kind: 'Bill', text: `${b.bill_no || 'Bill'} · ₹${Math.round(b.fee).toLocaleString('en-IN')} · ${b.status}`, open: `bill:${b.id}` })) : []),
+  ].filter((x) => x.at).sort((a, b) => (a.at < b.at ? 1 : -1)).slice(0, 400);
+  return { jobs: jobs.length, open: jobs.filter((j) => !closedJob(j)).length, closed: jobs.filter(closedJob).length, calls: line.filter((x) => x.type === 'call').length, talks: line.filter((x) => x.type === 'wa' || x.type === 'email').length, applications: apps.length, sent: apps.filter((a) => L.stepIdx(a.step) >= 3).length, hires: hired.length, fees: money ? bills.reduce((t, b) => t + (b.fee || 0), 0) : null,
     roles_hired: uniq(hired.map((a) => a.job_title)), roles_asked: uniq(jobs.map((j) => j.title)), hired: hired.map((a) => ({ name: a.person, role: a.job_title, date: a.joined_at || a.step_since })), timeline: line };
 }
 route('GET', '/api/clients/:id', T, (ctx) => {
@@ -1578,6 +1581,12 @@ route('GET', '/api/segments/:id/candidates', T, (ctx) => {
 });
 
 // ---------- Excel import ----------
+// The client leads template: the same columns as Quick add lead, with one example row (skipped on upload).
+route('GET', '/api/import/template/leads', T, () => {
+  const head = I.FIELDS.leads.map(([, label]) => label);
+  const ex = { company: 'EXAMPLE – delete this row', name: 'Ramesh Soni', phone: '9876543210', email: 'owner@example.com', hr_email: 'hr@example.com', city: 'Jaipur', business_type: 'Showroom B2C', need: 'Hiring now', roles: 'Sales Executive x 2, Cashier x 1', source: 'Referral', poc_name: 'Neha Jain', poc_role: 'HR manager', poc_email: 'neha@example.com', poc_whatsapp: '9876500000', note: 'Met at the trade fair' };
+  return { __file: { name: 'client-leads-template.xlsx', mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', buf: F.toXLSX([head, I.FIELDS.leads.map(([k]) => ex[k] || '')], 'Client leads') } };
+});
 route('POST', '/api/import/preview', T, (ctx) => {
   const { kind, name, base64, source } = ctx.body; if (!I.FIELDS[kind]) throw httpError(400, 'Pick what you are uploading');
   const rows = F.readSpreadsheet(name, base64); if (!rows.length) throw httpError(400, 'The file has no rows.');
@@ -2412,9 +2421,9 @@ route('POST', '/api/roles/role', T, (ctx) => {
 });
 
 // ---------- settings (super admin) ----------
-const EDITABLE = ['ticket', 'team_login', 'languages', 'aftercare', 'google_review_url', 'eval_criteria', 'call_topics', 'call_gate', 'accounts_email', 'resume_alert_pct', 'expense_tree', 'expense_accounts', 'revenue_kinds', 'call_script', 'email_templates', 'creative_template', 'hiring_channels', 'landing_roles', 'wa_pause', 'business', 'industries', 'default_industry', 'hidden_jobs', 'departments', 'cities', 'skills', 'client_stages', 'closing_reasons', 'job_close_reasons', 'reopen_reasons', 'lead_sources', 'src_tags', 'fee', 'agency_share_pct', 'gst', 'replacement_days', 'payment_days', 'targets', 'log_deadline', 'quiet', 'daily_limit', 'bulk_budget', 'match', 'languages', 'id_start', 'bill_prefix', 'retention_years', 'team_idle_hours', 'formats', 'auto_rules', 'crm', 'posting_channels', 'gap_targets', 'templates', 'jd_template', 'jd_templates'];
+const EDITABLE = ['ticket', 'team_login', 'languages', 'aftercare', 'google_review_url', 'eval_criteria', 'call_topics', 'call_gate', 'accounts_email', 'resume_alert_pct', 'expense_tree', 'expense_accounts', 'revenue_kinds', 'call_script', 'email_templates', 'creative_template', 'hiring_channels', 'landing_roles', 'wa_pause', 'business', 'industries', 'default_industry', 'hidden_jobs', 'departments', 'cities', 'skills', 'client_stages', 'closing_reasons', 'job_close_reasons', 'reopen_reasons', 'lead_sources', 'src_tags', 'fee', 'agency_share_pct', 'gst', 'replacement_days', 'payment_days', 'targets', 'log_deadline', 'quiet', 'daily_limit', 'bulk_budget', 'match', 'languages', 'id_start', 'bill_prefix', 'retention_years', 'team_idle_hours', 'formats', 'auto_rules', 'crm', 'posting_channels', 'gap_targets', 'templates', 'jd_template', 'jd_templates', 'lead_auto_assign'];
 // Everyone in the team can set up what goes out. Connection secrets and the checks on the team's own activity stay with the super admin.
-const SUPER_ONLY = ['ticket', 'crm', 'resume_alert_pct', 'call_gate', 'google_review_url', 'team_login'];
+const SUPER_ONLY = ['lead_auto_assign', 'ticket', 'crm', 'resume_alert_pct', 'call_gate', 'google_review_url', 'team_login'];
 route('GET', '/api/settings', T, (ctx) => { const s = { ...D.settings() }; if (!isSuper(ctx.user)) { for (const k of SUPER_ONLY) delete s[k]; return s; } s.crm = { ...s.crm, token: s.crm.token ? '••••••••' : '', webhook_secret: s.crm.from_env && s.crm.from_env.webhook_secret ? '••••••••' : s.crm.webhook_secret }; return s; });
 route('POST', '/api/health/mail', SUPER, async () => require('./mailbox').check());
 route('POST', '/api/health/email', SUPER, (ctx) => {

@@ -43,17 +43,18 @@
   const menuFor = (u) => (u.accounts_only ? MENU.filter((m) => ACCOUNTS_MENU.includes(m[0])) : u.channel_only ? MENU.filter((m) => ['channels', 'agreement', 'logins'].includes(m[0])) : MENU.filter((m) => m[0] !== 'channels' && !['acclients', 'accandidates'].includes(m[0]) && (m[0] !== 'leads' || u.leads) && (!m[3] || m[3].includes(u.level))));
   const MENU = [
     ['myday', 'My day', 'sun', ['sub']], ['dashboard', 'Dashboard', 'grid'], ['leads', 'Leads', 'inbox', null, 'leads'],
-    ['clients', 'Clients', 'building'], ['candidates', 'Candidates', 'users', null, 'cand_new'], ['jobs', 'Job openings', 'brief'], ['channels', 'Digital Reach', 'flow'], ['applications', 'Applications', 'flow'],
+    ['clients', 'Clients', 'building'], ['vendors', 'Vendors', 'brief'], ['candidates', 'Candidates', 'users', null, 'cand_new'], ['jobs', 'Job openings', 'brief'], ['channels', 'Digital Reach', 'flow'], ['applications', 'Applications', 'flow'],
     ['interviews', 'Interviews', 'cal', null, 'pending'], ['aftercare', 'Offer', 'check'], ['whatsapp', 'WhatsApp', 'chat', null, 'unread'], ['campaigns', 'Campaigns', 'flow'],
     ['performance', 'Performance', 'chart'], ['tasks', 'Tasks', 'note'], ['reviews', 'Recruiter reviews', 'star', ['super']], ['logs', 'Daily logs', 'note', ['super']], ['accounts', 'Invoicing', 'note'], ['acclients', 'Clients', 'building'], ['accandidates', 'Offers & joinings', 'users'], ['bills', 'Profit & Loss', 'rupee'],
     ['reports', 'Reports', 'report'], ['agreement', 'Recruitment Agreement', 'note'], ['logins', 'Logins & team', 'key'], ['settings', 'Settings', 'cog'],
   ];
-  const GROUP = { agreement: 'Admin', channels: 'Hiring', myday: 'Overview', dashboard: 'Overview', leads: 'Hiring', clients: 'Hiring', jobs: 'Hiring', candidates: 'Hiring', applications: 'Hiring', interviews: 'Hiring', aftercare: 'Hiring', reviews: 'Team', whatsapp: 'Messages', campaigns: 'Messages', performance: 'Team', tasks: 'Team', logs: 'Team', accounts: 'Financials', acclients: 'Financials', accandidates: 'Financials', bills: 'Financials', reports: 'Financials', logins: 'Admin', settings: 'Admin' };
+  const GROUP = { agreement: 'Admin', channels: 'Hiring', myday: 'Overview', dashboard: 'Overview', leads: 'Hiring', clients: 'Hiring', vendors: 'Hiring', jobs: 'Hiring', candidates: 'Hiring', applications: 'Hiring', interviews: 'Hiring', aftercare: 'Hiring', reviews: 'Team', whatsapp: 'Messages', campaigns: 'Messages', performance: 'Team', tasks: 'Team', logs: 'Team', accounts: 'Financials', acclients: 'Financials', accandidates: 'Financials', bills: 'Financials', reports: 'Financials', logins: 'Admin', settings: 'Admin' };
   const HELP = {
     agreement: 'The standard Recruitment Agreement. Clients see the same copy in their account.',
     channels: 'Every channel for every open job. Change the owner in the Owner column. Copy a job\'s link, post it, then click the cell to update it. Everyone sees the same page.',
     myday: 'Everything you need to do today: interviews, results to record, follow-ups and stuck applications.',
     dashboard: 'Counts and the Needs attention list. Every item has a WhatsApp button to nudge the right person.',
+    vendors: 'Institutes and colleges whose students we place. Every partner search is saved here. WhatsApp them, start the follow-up sequence and keep the status of each.',
     clients: 'Jewellery businesses that hire through us. Open one to see onboarding, job openings and chats.',
     jobs: 'Each role a client wants to fill. The status is worked out from its applications — never typed by hand (except On hold and Closed).',
     candidates: 'Every candidate from every door lands here, with New and Unassigned views. Domain and skills are read from each CV automatically. The resume bank is shared by all agencies. Segments are saved groups of candidates that stay up to date. Phone numbers show only for your own agency\'s candidates.',

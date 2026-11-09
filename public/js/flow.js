@@ -72,14 +72,48 @@
       <div class="ci-foot"><span class="ci-cost">About ₹${o.cost_inr || 1} charged for this search</span><span class="row"><button class="btn sm" data-flook>Search again · about ₹${o.cost_inr || 1}</button><button class="btn sm primary" data-fuse>Use these details</button></span></div></details>`;
   };
   // The client's past with us: counts first, then roles, hires and every interaction.
+  // Clickable tiles (each filters the timeline or opens the list it counts), then a searchable timeline by month.
+  const H_TYPES = [['all', 'Everything', 'layers'], ['job', 'Open openings', 'brief'], ['closed', 'Closed openings', 'check'], ['call', 'Calls', 'cal'], ['talk', 'Conversations', 'chat'], ['note', 'Notes', 'note'], ['hire', 'Hires', 'users'], ['bill', 'Bills', 'rupee']];
+  const H_ICON = { job: 'brief', closed: 'check', call: 'cal', wa: 'chat', email: 'inbox', note: 'note', hire: 'users', bill: 'rupee' };
+  const hMatch = (x, f) => f === 'all' || x.type === f || (f === 'talk' && (x.type === 'wa' || x.type === 'email'));
   F.clientHistory = (c) => {
-    const p = c.past || {}; const tile = (l, v) => `<div class="ci-tile"><div class="ci-lab">${l}</div><div class="hist-num">${v}</div></div>`;
-    const chips = (l) => (l || []).map((x) => `<span class="badge b-outline">${esc(x)}</span>`).join('') || '<span class="faint small">None yet.</span>';
-    return `<div class="sec"><h3>Summary</h3><div class="hist-grid">${tile('Job openings', p.jobs || 0)}${tile('Open now', p.open || 0)}${tile('Candidates sent', p.sent || 0)}${tile('Candidates hired', p.hires || 0)}${p.fees === null || p.fees === undefined ? '' : tile('Fees billed', inr(p.fees))}</div></div>
-      <div class="sec"><h3>Roles hired for</h3><div class="row">${chips(p.roles_hired)}</div></div>
-      <div class="sec"><h3>Roles asked for</h3><div class="row">${chips(p.roles_asked)}</div></div>
-      ${(p.hired || []).length ? `<div class="sec"><h3>Candidates hired</h3>${p.hired.map((x) => `<div class="hist-row"><span class="grow"><b>${esc(x.name)}</b> · ${esc(x.role)}</span><span class="small muted">${fmtD(x.date)}</span></div>`).join('')}</div>` : ''}
-      <div class="sec"><h3>Past interactions</h3>${(p.timeline || []).map((x) => `<div class="hist-row"><span class="badge b-outline">${esc(x.kind)}</span><span class="grow small">${esc(x.text)}${x.by ? ` <span class="faint">· ${esc(x.by)}</span>` : ''}</span><span class="small muted nw">${fmtD(x.at)}</span></div>`).join('') || '<div class="faint small">Nothing yet.</div>'}</div>`;
+    const p = c.past || {}; const tl = p.timeline || [];
+    const n = (f) => tl.filter((x) => hMatch(x, f)).length;
+    const tile = (l, v, attr, sub) => `<button type="button" class="hx-tile" ${attr}><span class="hx-lab">${l}</span><span class="hx-num">${v}</span>${sub ? `<span class="hx-sub">${sub}</span>` : ''}</button>`;
+    const chips = (l) => (l || []).map((x) => `<button type="button" class="badge b-outline hx-role" data-hq="${esc(x)}">${esc(x)}</button>`).join('') || '<span class="faint small">None yet.</span>';
+    return `<div class="hx">
+      <div class="hx-tiles">${tile('Job openings', p.jobs || 0, 'data-hf="all-jobs"', 'all time')}${tile('Open now', p.open || 0, 'data-hf="job"', 'see them')}${tile('Closed', p.closed || 0, 'data-hf="closed"', 'filled or closed')}${tile('Calls', p.calls || 0, 'data-hf="call"', 'call logs')}${tile('Conversations', p.talks || 0, 'data-hf="talk"', 'WhatsApp and email')}${tile('Candidates sent', p.sent || 0, `data-hgo="applications?client=${esc(c.id)}"`, 'open applications')}${tile('Hired', p.hires || 0, 'data-hf="hire"', 'joined')}${p.fees === null || p.fees === undefined ? '' : tile('Fees billed', inr(p.fees), 'data-hf="bill"', 'bills')}</div>
+      <div class="hx-roles"><div><span class="hx-cap">Roles asked for</span> ${chips(p.roles_asked)}</div><div><span class="hx-cap">Roles hired for</span> ${chips(p.roles_hired)}</div></div>
+      <div class="hx-bar"><label class="hx-search">${BB.icon ? BB.icon('search') : ''}<input type="search" placeholder="Search calls, messages, openings, notes…" data-hsearch aria-label="Search the history"></label>
+        <div class="hx-chips">${H_TYPES.map(([k, l]) => `<button type="button" class="hx-chip ${k === 'all' ? 'on' : ''}" data-htype="${k}">${l} <span>${n(k)}</span></button>`).join('')}</div></div>
+      <div data-hlist></div></div>`;
+  };
+  F.clientHistoryMount = (el, c) => {
+    const root = $('.hx', el); if (!root) return;
+    const tl = (c.past || {}).timeline || []; let type = 'all'; let term = '';
+    const list = $('[data-hlist]', root);
+    const month = (d) => new Date(d).toLocaleDateString('en-IN', { month: 'long', year: 'numeric', timeZone: 'Asia/Kolkata' });
+    const hi = (s) => { const t = esc(s); if (!term) return t; const re = new RegExp(`(${term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'ig'); return t.replace(re, '<mark>$1</mark>'); };
+    const draw = () => {
+      const words = term.toLowerCase();
+      const rows = tl.filter((x) => hMatch(x, type) && (!words || [x.kind, x.text, x.detail, x.by].some((v) => String(v || '').toLowerCase().includes(words))));
+      let cur = ''; let html = '';
+      for (const x of rows) {
+        const m = month(x.at); if (m !== cur) { html += `<div class="hx-month">${m}</div>`; cur = m; }
+        const link = x.open ? `data-open="${esc(x.open)}"` : x.go ? `data-hgo="${esc(x.go)}"` : '';
+        const more = x.detail && x.detail !== x.text;
+        html += `<div class="hx-item t-${x.type} ${link ? 'link' : ''}" ${link} ${link ? 'role="button" tabindex="0"' : ''}><span class="hx-ico">${BB.icon ? BB.icon(H_ICON[x.type] || 'note') : ''}</span><div class="hx-body"><div class="hx-top"><b>${esc(x.kind)}</b><span class="hx-when">${fmtD(x.at)}${x.by ? ` · ${esc(x.by)}` : ''}</span></div><div class="hx-text">${hi(x.text || '')}</div>${more ? `<details class="hx-more" onclick="event.stopPropagation()"><summary>${x.type === 'call' ? 'Call notes' : 'Full text'}</summary><div class="hx-detail">${hi(x.detail)}</div></details>` : ''}</div>${link ? '<span class="hx-go" aria-hidden="true">›</span>' : ''}</div>`;
+      }
+      list.innerHTML = html || `<div class="hx-empty">${term ? `Nothing matches “${esc(term)}”.` : 'Nothing here yet.'}</div>`;
+      if (term) $$('details.hx-more', list).forEach((d) => { if (d.querySelector('mark')) d.open = true; });
+    };
+    const setType = (k) => { type = k; $$('[data-htype]', root).forEach((b) => b.classList.toggle('on', b.dataset.htype === k)); draw(); };
+    $$('[data-htype]', root).forEach((b) => (b.onclick = () => setType(b.dataset.htype)));
+    $$('[data-hf]', root).forEach((b) => (b.onclick = () => { const k = b.dataset.hf; if (k === 'all-jobs') { term = ''; $('[data-hsearch]', root).value = ''; type = 'all'; $$('[data-htype]', root).forEach((x) => x.classList.remove('on')); list.innerHTML = ''; const rows = tl.filter((x) => x.type === 'job' || x.type === 'closed'); type = '__jobs'; list.innerHTML = rows.map((x) => `<div class="hx-item t-${x.type} link" data-open="${esc(x.open)}" role="button" tabindex="0"><span class="hx-ico">${BB.icon ? BB.icon(H_ICON[x.type]) : ''}</span><div class="hx-body"><div class="hx-top"><b>${esc(x.kind)}</b><span class="hx-when">${fmtD(x.at)}</span></div><div class="hx-text">${esc(x.text)}</div></div><span class="hx-go">›</span></div>`).join('') || '<div class="hx-empty">No job openings yet.</div>'; return; } setType(k); list.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }));
+    root.addEventListener('click', (e) => { const g = e.target.closest('[data-hgo]'); if (g) { e.preventDefault(); BB.go(`team/${g.dataset.hgo}`); } const r = e.target.closest('[data-hq]'); if (r) { term = r.dataset.hq; $('[data-hsearch]', root).value = term; setType('all'); } });
+    root.addEventListener('keydown', (e) => { if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('.hx-item.link')) { e.preventDefault(); e.target.click(); } });
+    let t; $('[data-hsearch]', root).oninput = (e) => { clearTimeout(t); t = setTimeout(() => { term = e.target.value.trim(); if (type === '__jobs') type = 'all'; draw(); }, 150); };
+    draw();
   };
   // The client's journey, step by step (the same 16-stage path as Update status): each step says where it stands, with
   // its button. Steps the software sees for itself tick on their own; the others are ticked here.
@@ -142,7 +176,19 @@
     const t = await BB.api(`/api/email-templates?ids=${ids.join(',')}`); const tp = t.templates[kind] || t.templates.general;
     const contract = kind === 'contract'; const doc = { contract: 'Recruitment Agreement', pitch: 'BrillBrains Hiring Solutions Pitch Deck', jd: 'Job description (PDF)', cv: 'Candidate CV, without phone and email' }[kind]; const held = t.held && !doc; const one = t.recipients.length === 1 ? t.recipients[0] : null; const none = t.recipients.filter((x) => !x.email);
     const who = `<div class="small muted">${t.from ? `From: <b>${esc(t.from)}</b>` : ''}${one ? '' : `<div>To: each client's saved email (${t.recipients.length - none.length} of ${t.recipients.length})${none.length ? `. No email for ${none.slice(0, 3).map((x) => esc(x.company)).join(', ')}${none.length > 3 ? ` and ${none.length - 3} more` : ''}` : ''}</div>`}</div>`;
-    const v = await BB.ask({ title: label, wide: true, fields: [who, ...(one ? [{ name: 'to', label: 'To', type: 'email', value: one.email }] : []), { name: 'subject', label: 'Subject', value: tp.subject }, { name: 'body', label: 'Message', type: 'textarea', value: tp.body, voice: false }, doc ? `<div class="small muted">Attached: ${contract ? (one ? esc(one.agreement || doc) : `${doc}, or the client's edited copy`) : doc}</div>` : { name: 'attach_agreement', label: 'Attach the Recruitment Agreement', type: 'check' }], ok: held ? 'Save for later' : 'Send', submit: (x) => BB.post('/api/clients/email', { ids, kind, job, ...x }) });
+    const v = await BB.ask({ title: label, wide: true, fields: [who, ...(one ? [{ name: 'to', label: 'To', type: 'email', value: one.email }] : []), { name: 'subject', label: 'Subject', value: tp.subject }, { name: 'body', label: 'Message', type: 'textarea', value: tp.body, voice: false }, `<div class="mail-vars"><span class="small muted">Blanks, filled from each client's own details:</span> ${['contact', 'company', 'city', 'poc', 'sender', ...(kind === 'jd' || kind === 'cv' ? ['job'] : []), 'date'].map((k) => `<button type="button" class="chip mail-var" data-mvar="${k}">{${k}}</button>`).join('')} <button type="button" class="btn sm ghost" data-mprev>Preview ${one ? 'the email' : `for ${Math.min(5, t.recipients.length)} client${t.recipients.length === 1 ? '' : 's'}`}</button></div><div data-mprevbox></div>`, doc ? `<div class="small muted">Attached: ${contract ? (one ? esc(one.agreement || doc) : `${doc}, or the client's edited copy`) : doc}</div>` : { name: 'attach_agreement', label: 'Attach the Recruitment Agreement', type: 'check' }], ok: held ? 'Save for later' : 'Send', submit: (x) => BB.post('/api/clients/email', { ids, kind, job, ...x }),
+      mount: (m) => {
+        let last = null; const box = () => $('[name=body]', m);
+        $('[name=subject]', m).addEventListener('focus', (e) => { last = e.target; }); box().addEventListener('focus', (e) => { last = e.target; });
+        $$('[data-mvar]', m).forEach((b) => (b.onclick = () => { const f = last || box(); const s = f.selectionStart ?? f.value.length; f.value = `${f.value.slice(0, s)}{${b.dataset.mvar}}${f.value.slice(f.selectionEnd ?? s)}`; f.focus(); f.selectionStart = f.selectionEnd = s + b.dataset.mvar.length + 2; }));
+        $('[data-mprev]', m).onclick = async () => {
+          const out = $('[data-mprevbox]', m); const to = $('[name=to]', m);
+          try {
+            const r = await BB.post('/api/clients/email/preview', { ids, kind, job, subject: $('[name=subject]', m).value, body: box().value, to: to ? to.value : '' });
+            out.innerHTML = `${r.unknown.length ? `<div class="notice warn small">${r.unknown.map(esc).join(', ')} cannot be filled — fix or remove ${r.unknown.length === 1 ? 'it' : 'them'} before sending.</div>` : ''}<div class="mail-prev">${r.rows.map((x) => `<div class="mail-prev-1"><div class="tiny muted">${esc(x.company)} · to ${esc(x.to || 'no email saved')}</div><b class="small">${esc(x.subject)}</b><div class="small mail-prev-body">${esc(x.body)}</div></div>`).join('')}</div>${ids.length > r.rows.length ? `<div class="tiny muted">Showing ${r.rows.length} of ${ids.length}; every client gets their own details the same way.</div>` : ''}`;
+          } catch (e) { BB.fail(e); }
+        };
+      } });
     if (v) done(`${v.done} of ${ids.length} ${v.held ? 'saved' : 'sent'}${v.skipped.length ? ` · ${v.skipped[0]}` : ''}`);
   };
   // Voice notes on a call: speak or type, and the roles in it wait on the client, ready to become jobs.
