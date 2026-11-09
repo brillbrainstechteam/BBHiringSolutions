@@ -2461,8 +2461,9 @@ function metaBody(text) {
   if (/\}\}\s*$/.test(body)) body = body.replace(/\s*$/, '.');
   return { body, order };
 }
-route('POST', '/api/settings/formats/push', T, async (ctx) => {
-  const s = D.settings(); const names = (ctx.body.names || []).filter((k) => s.formats[k]);
+route('POST', '/api/settings/formats/push', T, async (ctx) => pushFormats(ctx.body.names || [], ctx.actor.label));
+async function pushFormats(namesIn, who) {
+  const s = D.settings(); const names = namesIn.filter((k) => s.formats[k]);
   if (!names.length) throw httpError(400, 'Select the formats to send.');
   // Meta refuses a name and language it already has ("Invalid parameter"), so those are left out and said so.
   const have = {}; for (const t of (await crmCall('/templates', 'GET')).templates || []) (have[t.name] = have[t.name] || {})[t.language] = t.status;
@@ -2483,9 +2484,19 @@ route('POST', '/api/settings/formats/push', T, async (ctx) => {
     for (const x of skipped) mark(x.name, x.language, (have[x.name] || {})[x.language]);
     D.setSetting('formats', fm); }
   const hint = (e) => (/invalid parameter/i.test(e || '') ? `${e}: usually the name was used before (deleted in the last 4 weeks) or a blank sits at the very start or end` : e);
-  D.history(ctx.actor.label, 'templates sent to Meta', null, null, null, `${templates.length} templates`);
+  D.history(who, 'templates sent to Meta', null, null, null, `${templates.length} templates`);
   return { ...out, results: [...(out.results || []).map((r) => (r.ok ? r : { ...r, error: hint(r.error) })), ...skipped] };
-});
+}
+// One time, on the copy where the CRM is set up: the two vendor outreach messages go to Meta for approval.
+setTimeout(async () => {
+  try {
+    const s = D.settings(); if (D.ENV.name !== "live" || (s.done_once || []).includes("push_partner_formats") || !s.crm || !s.crm.send_url || !s.crm.token) return;
+    const r = await pushFormats(['bbhs_partner_outreach', 'bbhs_partner_followup'], 'System (vendor messages)');
+    console.log('vendor formats sent to Meta:', JSON.stringify(r.results || r).slice(0, 600));
+    D.setHealth('partner_formats_push', `${D.now()} ${JSON.stringify(r.results || []).slice(0, 400)}`);
+    D.setSetting('done_once', [...(D.settings().done_once || []), 'push_partner_formats']);
+  } catch (e) { console.error('vendor formats push failed:', e.message); }
+}, 15000);
 async function syncFormats(by) {
   const out = await crmCall('/templates', 'GET');
   const s = D.settings(); const formats = JSON.parse(JSON.stringify(s.formats)); const seen = {};
