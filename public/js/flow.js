@@ -160,6 +160,9 @@
     mic.onclick = () => { if (!SR) return BB.toast('Recording works in Chrome or Edge. You can type here instead.', true); if (on) stop(); else { on = true; show(true); start(); } };
     return stop;
   };
+  // The call script as a short guide: one numbered step per line, the part before the colon as its heading.
+  const callGuide = (script) => { const lines = String(script || '').split(/\n+/).map((x) => x.trim()).filter(Boolean); if (!lines.length) return '';
+    return `<div class="call-guide"><div class="call-guide-h">Call guide</div><ol>${lines.map((l) => { const m = /^([^:]{2,40}):\s*(.+)$/.exec(l); return `<li>${m ? `<b>${esc(m[1])}</b><span>${esc(m[2].charAt(0).toUpperCase() + m[2].slice(1))}</span>` : `<span>${esc(l)}</span>`}</li>`; }).join('')}</ol></div>`; };
   F.clientMount = (el, c) => {
     const on = (s, fn) => $$(s, el).forEach((b) => { b.onclick = fn; });
     // A step done by hand: tick it here; the stage moves on its own.
@@ -175,7 +178,7 @@
         const fill = $('.modal [data-vfill]'); fill.onclick = async () => { const text = $('.modal [data-vtext]').value.trim(); if (text.length < 10) return BB.toast('Say or type the notes first', true); fill.disabled = true; fill.textContent = 'Reading…';
           try { const r = await BB.post(`/api/clients/${c.id}/read-notes`, { text }); if (!r.roles.length) BB.toast('No roles found in the notes', true); else { $('[data-frows]', box).innerHTML = r.roles.map(roleRow).join(''); $$('[data-frole]', box).forEach(wireCombo); BB.attachMics(box); box.dispatchEvent(new Event('input')); BB.toast(`${r.roles.length} role${r.roles.length === 1 ? '' : 's'} filled in. Check them before saving.`); } } catch (e) { BB.fail(e); }
           fill.disabled = false; fill.textContent = 'Fill roles from notes'; }; }, 0);
-      const v = await BB.ask({ title: 'Client call notes', wide: true, fields: [`<div class="notice small flow-script">${esc(script)}</div>`,
+      const v = await BB.ask({ title: 'Client call notes', wide: true, fields: [callGuide(script),
         `<div class="vn-box"><div class="vn-top"><button type="button" class="vn-mic" data-vmic aria-label="Start recording">${BB.icon('mic')}</button><div class="grow"><b data-vstate>Tap the mic and speak</b><div class="vn-lang"><select data-vlang aria-label="Language"><option value="en-IN">English</option><option value="hi-IN" ${BB.voiceLang === 'hi-IN' ? 'selected' : ''}>Hindi</option></select></div></div><button type="button" class="btn sm" data-vfill>Fill roles from notes</button></div><label class="field"><span class="lab">Notes from the call</span><textarea data-vtext rows="4"></textarea></label><div class="small muted" data-vlive></div></div>`,
         `<div class="field" data-froles data-f="call_roles"><div class="row between" style="margin-bottom:8px"><button type="button" class="btn sm" data-fadd>+ Add another role</button><span class="small muted" data-ftotal></span></div><div data-frows>${roleRow({ location: c.city || '' })}</div></div>`], ok: 'Save call notes', submit: (x) => { stopMic(); return BB.post(`/api/clients/${c.id}/calls`, { call_roles: readRoles($('.modal [data-froles]')), notes: $('.modal [data-vtext]').value }); } });
       if (v) done(v.roles ? `Saved with ${v.roles} role${v.roles === 1 ? '' : 's'}: open jobs from Client calls` : 'Call notes saved');
