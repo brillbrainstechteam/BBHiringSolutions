@@ -42,6 +42,7 @@
         <div data-only="job" class="stack">
           <label class="field" data-f="experience"><span class="lab">Experience <span class="opt">(optional)</span></span><div class="choice">${EXPERIENCE.map((x) => `<label style="min-width:96px"><input type="radio" name="experience" value="${x}"> ${x}</label>`).join('')}</div></label>
           ${field({ name: 'exp_jewellery', label: 'Experience in the jewellery industry', type: 'select', opt: true, options: JEWEL_EXP, placeholder: 'Select years' })}
+          ${field({ name: 'current_company', label: 'Current or last company', opt: true, placeholder: 'e.g. Tanishq, PC Jeweller · fills in from your CV' })}
           <div class="field" data-f="skills"><span class="lab">Your skills <span class="opt">(optional · tap all that fit)</span></span><div data-skillbox class="skill-groups"></div>
             <div class="row skill-add"><input data-skillnew placeholder="Another skill, e.g. Kundan setting" maxlength="40"><button type="button" class="btn sm" data-skilladd>Add</button></div></div>
           <div data-only="job" data-jobpicks class="hidden"></div>
@@ -117,7 +118,7 @@
       if (!check(form, rules)) return;
       const body = mode === 'hire'
         ? { contact: v.name, company: v.company, whatsapp: v.whatsapp, email, city: v.city, state: v.state, business_type: v.business_type, need: v.need, roles: v.roles, website: v.website, src: q.src, lang: BB.lang }
-        : { name: v.name, whatsapp: v.whatsapp, email, city: v.city, state: v.state, job_wanted: v.job_wanted, job_other: v.job_other, experience: v.experience, exp_business: v.exp_business, exp_jewellery: v.exp_jewellery, pref_channel: v.pref_channel, pref_time: v.pref_time, pref_days: v.pref_days, skills: [...picked], cv, website: v.website, lang: BB.lang, src: q.src || BB.adSource() || undefined, ...BB.adParams(), job: q.job, ref: q.ref, jobs: $$('[name=jobs]:checked', form).map((x) => x.value) };
+        : { name: v.name, whatsapp: v.whatsapp, email, city: v.city, state: v.state, job_wanted: v.job_wanted, job_other: v.job_other, experience: v.experience, exp_business: v.exp_business, exp_jewellery: v.exp_jewellery, pref_channel: v.pref_channel, pref_time: v.pref_time, pref_days: v.pref_days, current_company: v.current_company, skills: [...picked], cv, website: v.website, lang: BB.lang, src: q.src || BB.adSource() || undefined, ...BB.adParams(), job: q.job, ref: q.ref, jobs: $$('[name=jobs]:checked', form).map((x) => x.value) };
       const btn = $('[data-send]', card); btn.disabled = true; btn.textContent = 'Sending…';
       try {
         const res = await BB.post(mode === 'hire' ? '/api/public/hire' : '/api/public/apply', body, { kind: null });
@@ -141,7 +142,7 @@
     try { f = (await BB.post('/api/public/cv-read', { name: cv.name, base64: cv.base64 }, { kind: null })).fields || {}; } catch { msg.textContent = ''; return; }
     const form = $('form', card); const done = [];
     const put = (name, val, label) => { const el = $(`[name="${name}"]`, form); if (!el || val === undefined || val === null || val === '' || String(el.value).trim()) return; el.value = val; el.dispatchEvent(new Event('input', { bubbles: true })); done.push(label); };
-    put('name', f.name, 'name'); put('email', f.email, 'email'); put('whatsapp', f.whatsapp, 'WhatsApp'); put('city', f.city, 'city'); put('state', f.state, 'state');
+    put('name', f.name, 'name'); put('email', f.email, 'email'); put('whatsapp', f.whatsapp, 'WhatsApp'); put('city', f.city, 'city'); put('state', f.state, 'state'); put('current_company', f.current_company, 'current company');
     const sel = $('[name=job_wanted]', form);
     if (f.job_wanted && !sel.value) { sel.value = f.job_wanted; if (sel.value !== f.job_wanted) { sel.value = 'Other'; $('[name=job_other]', form).value = f.job_wanted; } sel.dispatchEvent(new Event('change')); done.push('job'); }
     if (f.exp_total !== undefined && !$('[name=experience]:checked', form)) {

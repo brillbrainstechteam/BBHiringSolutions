@@ -441,6 +441,7 @@ function candMatch(q) {
     if (q.dept && !list('dept').includes(c.department) && !also.some((x) => list('dept').includes(L.deptOf(x)))) return false;
     if (q.job && c.job_wanted !== q.job && !list('job').includes(c.job_wanted) && !also.some((x) => x === q.job || list('job').includes(x))) return false; // a typed role may hold a comma
     if (q.source && !list('source').includes(c.source)) return false;
+    if (q.company) { const co = String(c.current_company || '').replace(/\s+/g, ' ').trim().toLowerCase(); if (!list('company').some((x) => x.toLowerCase() === co)) return false; }
     if (q.domain && !list('domain').includes(c.domain || 'Not read yet')) return false;
     if (q.biz && !(c.exp_business || []).some((x) => (q.biz === 'B2C' ? x === 'Retailer' : x !== 'Retailer'))) return false;
     if (q.city && !list('city').some((x) => c.city === x || (c.work_cities || []).includes(x))) return false;
@@ -1109,6 +1110,7 @@ const FACETS = {
   city: (c) => [c.city, ...(c.work_cities || [])],
   state: (c) => [c.state || L.stateOf(c.city)],
   source: (c) => [c.source],
+  company: (c) => [String(c.current_company || '').replace(/\s+/g, ' ').trim()],
 };
 function candFacets(q, u) {
   const base = candBase(q, u); const pool = all('SELECT * FROM candidates WHERE merged_into IS NULL AND removed=0 AND junk=0').filter(base);
@@ -1442,7 +1444,7 @@ route('POST', '/api/tieups', T, (ctx) => {
 // ---------- segments (saved candidate searches) ----------
 // A segment is a named set of resume-bank filters. Its owner sees it; shared ones are seen by the whole team.
 // The list of people is worked out again each time, so counts and downloads are always current.
-const SEG_KEYS = ['q', 'industry', 'domain', 'skills', 'skillgroup', 'worked', 'biz', 'cv', 'dept', 'job', 'city', 'state', 'ad', 'jewellery', 'from', 'to', 'exp_min', 'exp_max', 'sal_min', 'sal_max', 'looking', 'status', 'source', 'updated', 'notice', 'stale', 'archived'];
+const SEG_KEYS = ['q', 'industry', 'domain', 'skills', 'skillgroup', 'worked', 'biz', 'cv', 'company', 'dept', 'job', 'city', 'state', 'ad', 'jewellery', 'from', 'to', 'exp_min', 'exp_max', 'sal_min', 'sal_max', 'looking', 'status', 'source', 'updated', 'notice', 'stale', 'archived'];
 const segQuery = (raw) => { const q = typeof raw === 'string' ? JSON.parse(raw || '{}') : raw || {}; return Object.fromEntries(SEG_KEYS.filter((k) => q[k] !== undefined && q[k] !== null && q[k] !== '').map((k) => [k, String(q[k])])); };
 const segVisible = (u) => all('SELECT s.*, us.name AS owner_name FROM saved_searches s LEFT JOIN users us ON us.id=s.user_id WHERE s.user_id=? OR s.shared=1 ORDER BY s.name COLLATE NOCASE', u.id);
 function segOwn(ctx) {

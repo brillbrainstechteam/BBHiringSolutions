@@ -492,6 +492,7 @@ route('POST', '/api/public/apply', { rate: { key: 'form', max: 60, minutes: 60 }
   { const mailer = require('./mailer'); const rec = get('SELECT * FROM candidates WHERE id=?', r.candidate.id); if (r.isNew) mailer.newLead('candidate', rec); mailer.confirmToPerson('candidate', rec); }
   if (refBy && r.isNew) insert('notes', { record_id: r.candidate.id, text: `Referred by ${refBy}`, author: 'Form', at: now() });
   L.setLooking(r.candidate.id, 'Actively looking', null, 'applied on the website');
+  const co = String(b.current_company || '').replace(/\s+/g, ' ').trim().slice(0, 80); if (co.length > 1) update('candidates', r.candidate.id, { current_company: co });
   // Skills ticked on the form (grouped there) join whatever the profile already has.
   const formSkills = (Array.isArray(b.skills) ? b.skills : []).map((x) => String(x || '').replace(/\s+/g, ' ').trim().slice(0, 40)).filter((x) => x.length > 1).slice(0, 40);
   if (formSkills.length) { const cur = get('SELECT skills FROM candidates WHERE id=?', r.candidate.id) || {}; const have = Array.isArray(cur.skills) ? cur.skills : []; const low = new Set(have.map((x) => String(x).toLowerCase())); update('candidates', r.candidate.id, { skills: [...have, ...formSkills.filter((x) => !low.has(x.toLowerCase()))] }); }
