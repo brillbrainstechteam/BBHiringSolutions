@@ -164,6 +164,80 @@ route('POST', '/api/clients/:id/group', T, (ctx) => {
   D.edit('clients', c.id, { wa_group: g }, ctx.actor.label, ctx.ip); L.syncClientStage(c.id, ctx.actor); return g;
 });
 
+// ---------- JD builder: from the requirement call to an approved JD (and an open job) ----------
+// Every role the client gave on calls, with its JD state; roles already made into jobs show that job's JD.
+const pm = (y) => (y ? Math.round(y / 12) : null);
+function jdRoles(c) {
+  const jobs = all('SELECT * FROM jobs WHERE client_id=? AND archived=0 ORDER BY created_at DESC', c.id);
+  const out = []; const seen = new Set();
+  for (const k of all('SELECT * FROM client_calls WHERE client_id=? ORDER BY at DESC', c.id)) {
+    (k.call_roles || []).forEach((x, i) => {
+      const j = x.job_id ? jobs.find((y) => y.id === x.job_id) : null; if (j) seen.add(j.id);
+      out.push({ key: `call:${k.id}:${i}`, role: x.role, openings: x.openings, location: x.location || c.city || '', department: x.department, sal_from: x.sal_from, sal_to: x.sal_to, skills: x.skills, duties: x.duties, notes: x.notes, call: { id: k.id, at: k.at, by: k.by, notes: k.notes || '' }, job: j ? jobCard(j) : null });
+    });
+  }
+  for (const j of jobs) if (!seen.has(j.id)) out.push({ key: `job:${j.id}`, role: j.title, openings: j.openings, location: j.city, department: j.department, sal_from: pm(j.sal_from), sal_to: pm(j.sal_to), skills: (j.skills || []).join(', '), duties: '', notes: j.notes || '', call: null, job: jobCard(j) });
+  return out;
+}
+const jobCard = (j) => ({ id: j.id, title: j.title, status: j.status || 'Draft', jd_status: j.jd_status, jd_approved: !!j.jd_approved, jd_note: j.jd_note || '', jd: TEAM.cleanJd({ ...(j.jd || {}) }), exp_from: j.exp_from, exp_to: j.exp_to, sal_from: pm(j.sal_from), sal_to: pm(j.sal_to), openings: j.openings, city: j.city });
+function clientFacts(c) {
+  const ex = c.extra || {}; const o = ex.online || {};
+  return { business: c.business_type || '', city: c.city || '', state: c.state || '', industry: c.industry || 'Jewellery', company_size: ex.team_size || o.team_size || '', established: ex.est_year || o.est_year || '', showrooms: ex.showrooms || o.showrooms || '', scale: ex.op_scale || o.operations || '', what_they_do: o.about || '', products: o.products || '', sells_to: o.customers || '' };
+}
+route('GET', '/api/clients/:id/jd-builder', T, (ctx) => {
+  const c = loadClient(ctx);
+  return { roles: jdRoles(c), sections: TEAM.jdSections(), ai: require('./jdwriter').available(), model: require('./llm').provider() === 'openai' ? (process.env.OPENAI_MODEL || 'gpt-5.4-nano') : 'Claude', pool: Object.keys(D.settings().jd_templates || {}), email: clientEmail(c), can_email: M.configured() };
+});
+// AI: the whole JD, or one section, from the call, the client and what is written so far.
+route('POST', '/api/clients/:id/jd/ai', { auth: 'team', rate: { key: 'jdwrite', max: 40, minutes: 60 } }, async (ctx) => {
+  const c = loadClient(ctx); const b = ctx.body || {}; const r = b.role || {};
+  if (!String(r.title || '').trim()) throw httpError(400, 'Write the role first', 'title');
+  const facts = {
+    client: clientFacts(c),
+    role: { title: r.title, openings: r.openings || '', location: r.location || c.city || '', department: r.department || '', experience_years: [r.exp_from, r.exp_to].filter((x) => x !== '' && x != null).join(' to '), salary_per_month_rupees: [r.sal_from, r.sal_to].filter((x) => x).join(' to '), skills: r.skills || '' },
+    jewellery_industry_experience: { need: b.jewel_need || 'Preferred', years: b.jewel_years || '', detail: b.jewel_note || '' },
+    call: { what_the_client_said: String(b.call_notes || '').slice(0, 4000) },
+    current: Object.fromEntries(Object.entries(b.current || {}).filter(([, v]) => String(v || '').trim()).map(([k, v]) => [k, String(v).slice(0, 2000)])),
+  };
+  const jd = await require('./jdwriter').write(facts, TEAM.jdSections(), { only: b.only || null, instruction: String(b.instruction || '').slice(0, 300) });
+  D.history(ctx.actor.label, 'AI JD', c.id, null, null, `${r.title}${b.only ? ` · ${b.only}` : ''}`);
+  return { jd };
+});
+// Save the JD on the role's job (making the job, as a draft, the first time), and send it for approval when asked.
+route('POST', '/api/clients/:id/jd', T, (ctx) => {
+  const c = loadClient(ctx); const b = ctx.body || {}; const r = b.role || {};
+  const title = String(r.title || '').trim(); if (!title) throw httpError(400, 'Write the role', 'title');
+  const num = (v) => (v === '' || v == null ? null : Number(v));
+  let j = r.job_id ? get('SELECT * FROM jobs WHERE id=? AND client_id=?', r.job_id, c.id) : null;
+  if (r.job_id && !j) throw httpError(404, 'Job not found');
+  const facts = { title, city: String(r.location || c.city || '').trim(), openings: Math.max(1, Number(r.openings) || 1), sal_from: num(r.sal_from), sal_to: num(r.sal_to), exp_from: num(r.exp_from), exp_to: num(r.exp_to), department: r.department || undefined };
+  if (b.send && !facts.sal_from && !facts.sal_to) throw httpError(400, 'Add the salary before sending the JD to the client', 'sal_from');
+  if (!j) {
+    j = TEAM.createJob(c, { ...facts, salary_per: 'month', skills: String(r.skills || '').split(',').map((s) => s.trim()).filter(Boolean), notes: String(b.call_notes || '').slice(0, 2000), recruiter_id: ctx.user.level === 'sub' ? ctx.user.id : undefined }, ctx.actor, false);
+    const m = /^call:(\d+):(\d+)$/.exec(String(r.key || ''));
+    if (m) { const k = get('SELECT * FROM client_calls WHERE id=? AND client_id=?', m[1], c.id); if (k && (k.call_roles || [])[m[2]]) { const lines = k.call_roles; lines[m[2]].job_id = j.id; update('client_calls', k.id, { call_roles: lines }); } }
+  } else {
+    const patch = { title, city: facts.city, openings: facts.openings, exp_from: facts.exp_from, exp_to: facts.exp_to };
+    if (facts.sal_from || facts.sal_to) { patch.sal_from = facts.sal_from ? facts.sal_from * 12 : null; patch.sal_to = facts.sal_to ? facts.sal_to * 12 : null; }
+    D.edit('jobs', j.id, patch, ctx.actor.label, ctx.ip);
+  }
+  const jd = TEAM.cleanJd({ ...(j.jd || {}), ...(b.jd || {}) });
+  const approved = b.approved_by_client;
+  const status = approved ? 'Approved' : b.send ? 'Waiting for client' : (j.jd_status === 'Not written' || !j.jd_status ? 'Draft' : j.jd_status === 'Changes asked' ? 'Changes asked' : j.jd_status);
+  D.edit('jobs', j.id, { jd, jd_status: status }, ctx.actor.label, ctx.ip);
+  if (b.save_pool || !(D.settings().jd_templates || {})[title]) D.setSetting('jd_templates', { ...(D.settings().jd_templates || {}), [title]: jd });
+  let sent = null;
+  if (b.send) {
+    insert('job_history', { job_id: j.id, at: now(), status: 'JD sent', by: ctx.actor.label, note: 'Sent to client for approval' });
+    const w = L.sendWA({ ptype: 'client', pid: c.id, format: 'bbhs_jd_approval', vars: { job: title, job_id: j.id, link: L.link('my-account') }, jb: j.id, by: ctx.actor, auto: true, rule: 'jd_approval' });
+    sent = w && w.skipped ? `WhatsApp not sent: ${w.skipped}` : 'WhatsApp sent';
+  }
+  if (approved) { L.jobAction(j.id, 'approve_jd', { note: `Client approved (${String(approved).slice(0, 80)}), marked by ${ctx.actor.label}` }, ctx.actor); insert('job_history', { job_id: j.id, at: now(), status: 'JD approved', by: ctx.actor.label, note: String(approved).slice(0, 200) }); }
+  L.syncClientStage(c.id, ctx.actor);
+  const fresh = get('SELECT * FROM jobs WHERE id=?', j.id);
+  return { job: jobCard(fresh), sent };
+});
+
 // ---------- email from the portal: one client or many ----------
 const clientEmail = (c) => c.email || (c.extra || {}).hr_email || '';
 // Blanks an email can carry, filled from each client's own record (never from another client in the same send).

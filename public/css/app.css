@@ -2446,3 +2446,21 @@ a.pipe-step { text-decoration: none; cursor: pointer; } a.pipe-step:hover { bord
 .seg-chip { display: inline-block; max-width: 100%; white-space: normal; overflow-wrap: anywhere; line-height: 1.4; font-size: 12.5px; padding: 3px 10px; border: 1px solid #DCE5F1; border-radius: 10px; background: #fff; color: #334155; }
 .seg-chip .seg-k { color: #64748B; } .seg-chip b { font-weight: 600; color: #0F172A; }
 .seg-acts-col { width: 1%; } .seg-acts { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; min-width: 300px; max-width: 460px; }
+
+/* JD builder */
+.modal.jdb-modal { max-width: min(1180px, 96vw); width: 96vw; }
+.jdb-roles { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px; }
+.jdb-role { border: 1px solid #DCE5F1; background: #fff; border-radius: 10px; padding: 6px 10px; font: inherit; font-size: 13px; cursor: pointer; display: inline-flex; gap: 6px; align-items: center; }
+.jdb-role.on { border-color: #0F9E8A; background: #F0FAF7; box-shadow: 0 0 0 2px rgba(15,158,138,.15); } .jdb-role.add { border-style: dashed; color: #0B6E60; }
+.jdb-empty { text-align: center; padding: 36px 12px; color: #475569; }
+.jdb-grid { display: grid; grid-template-columns: 340px 1fr; gap: 18px; align-items: start; }
+.jdb-side { position: sticky; top: 0; display: flex; flex-direction: column; gap: 8px; background: #F8FAFC; border: 1px solid #EEF2F7; border-radius: 12px; padding: 12px; }
+.jdb-side textarea { width: 100%; font: inherit; font-size: 13px; border: 1px solid #DCE5F1; border-radius: 10px; padding: 8px; resize: vertical; }
+.jdb-client { font-size: 12.5px; border-top: 1px solid #E2E8F0; padding-top: 8px; }
+.jdb-ai { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 8px; } .jdb-ai input { flex: 1 1 240px; border: 1px solid #DCE5F1; border-radius: 10px; padding: 8px 10px; font: inherit; font-size: 13px; }
+.jdb-sec { margin-bottom: 12px; } .jdb-sec-h { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.jdb-sec textarea { width: 100%; margin-top: 4px; font: inherit; font-size: 13.5px; line-height: 1.5; border: 1px solid #DCE5F1; border-radius: 10px; padding: 8px 10px; resize: vertical; transition: background .6s; }
+.jdb-sec textarea:focus, .jdb-side textarea:focus, .jdb-ai input:focus { outline: none; border-color: #0F9E8A; }
+.jdb-new { background: #ECFDF5 !important; }
+@media (max-width: 860px) { .jdb-grid { grid-template-columns: 1fr; } .jdb-side { position: static; } }
+.jd-view { display: grid; gap: 8px; margin: 8px 0; } .jd-sec .small { white-space: pre-wrap; }

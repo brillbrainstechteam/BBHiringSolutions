@@ -1049,8 +1049,11 @@ route('POST', '/api/jobs/:id/jd', T, (ctx) => {
   return get('SELECT * FROM jobs WHERE id=?', j.id);
 });
 // ---------- JD pool: one JD per role, and AI writing ----------
-const JD_KEYS = ['summary', 'duties', 'must', 'good', 'education', 'languages', 'timings', 'benefits', 'incentives', 'location', 'jewel_need', 'jewel_years', 'jewel_note'];
-const cleanJd = (v) => Object.fromEntries(JD_KEYS.map((k) => [k, String((v || {})[k] ?? '').slice(0, 4000)]));
+const JD_KEYS = ['about', 'summary', 'duties', 'must', 'good', 'experience', 'education', 'languages', 'salary', 'timings', 'benefits', 'incentives', 'location', 'reporting', 'jewel_need', 'jewel_years', 'jewel_note'];
+const jdSections = () => (Array.isArray(D.settings().jd_sections) && D.settings().jd_sections.length ? D.settings().jd_sections : require('./defaults').defaultSettings().jd_sections);
+module.exports.jdSections = jdSections;
+const cleanJd = (v) => Object.fromEntries([...new Set([...JD_KEYS, ...jdSections().map((x) => x.key)])].map((k) => [k, String((v || {})[k] ?? '').slice(0, 4000)]));
+module.exports.cleanJd = (v) => cleanJd(v);
 route('GET', '/api/jd-pool', T, () => ({ pool: D.settings().jd_templates || {}, standard: D.settings().jd_template, ai: require('./jdwriter').available() }));
 route('POST', '/api/jd-pool', T, (ctx) => {
   const title = String(ctx.body.title || '').trim(); if (!title) throw httpError(400, 'Pick the role');
@@ -1078,7 +1081,7 @@ route('POST', '/api/jd-pool/upload', { ...T, rate: { key: 'jdwrite', max: 60, mi
 route('POST', '/api/jd/write', { auth: 'team', rate: { key: 'jdwrite', max: 30, minutes: 60 } }, async (ctx) => {
   const b = ctx.body || {}; if (!b.title) throw httpError(400, 'Pick the role');
   const facts = { title: b.title, city: b.city || '', experience: b.experience || '', salary: b.salary || '', jewellery_industry_experience: { need: b.jewel_need || 'Preferred', years: b.jewel_years || '', detail: b.jewel_note || '' }, extra_notes: String(b.notes || '').slice(0, 1500) };
-  return { jd: cleanJd(await require('./jdwriter').write(facts)) };
+  return { jd: cleanJd(await require('./jdwriter').writeSimple(facts)) };
 });
 // The jewellery line of a JD ("Required · 2+ years · diamond retail"), for the PDF and the client.
 const jewelLine = (jd) => (jd && jd.jewel_need ? [jd.jewel_need, jd.jewel_years ? `${jd.jewel_years}+ years` : '', jd.jewel_note].filter(Boolean).join(' · ') : '');
@@ -1098,7 +1101,9 @@ function jdPdf(j) {
   const jd = jdOf(j); const c = get('SELECT * FROM clients WHERE id=?', j.client_id);
   const L2 = [{ text: `${j.title} — ${j.city}`, size: 13, bold: true }, ''];
   if (jewelLine(jd)) jd.jewel_text = jewelLine(jd);
-  for (const [k, lab] of [['summary', 'Role summary'], ['duties', 'Duties'], ['jewel_text', 'Jewellery industry experience'], ['must', 'Must-have skills'], ['good', 'Good to have'], ['education', 'Education'], ['languages', 'Languages'], ['salary', 'Salary'], ['timings', 'Timings'], ['benefits', 'Benefits'], ['incentives', 'Incentives'], ['location', 'Location']]) {
+  const order = jdSections().map((x) => [x.key, x.label]); const at = order.findIndex(([k]) => k === 'duties');
+  order.splice(at >= 0 ? at + 1 : order.length, 0, ['jewel_text', 'Jewellery industry experience']);
+  for (const [k, lab] of order) {
     const v = k === 'salary' ? (jd.salary || L.salaryText(j)) : jd[k]; if (v) { L2.push({ text: lab, bold: true }); for (const line of String(v).split('\n')) L2.push(line); L2.push(''); }
   }
   L2.push(`Apply: ${L.link('apply', `?job=${j.id}`)}`);
@@ -1134,7 +1139,7 @@ function jdHtml(id) {
       if (l.length <= 48 && (/:$/.test(l) || (/^[A-Z][^.!?]*$/.test(l) && l.split(' ').length <= 6))) out += `<h2>${e(l.replace(/:$/, ''))}</h2>`; else out += `<p>${e(l)}</p>`;
     }
     close(); return out; };
-  const secs = [['summary', 'About the role'], ['duties', 'What you will do'], ['jewel_text', 'Jewellery industry experience'], ['must', 'Must have'], ['good', 'Good to have'], ['education', 'Education'], ['languages', 'Languages'], ['timings', 'Timings'], ['benefits', 'Benefits'], ['incentives', 'Incentives']]
+  const secs = ((o) => { const i = o.findIndex(([k]) => k === 'duties'); o.splice(i >= 0 ? i + 1 : o.length, 0, ['jewel_text', 'Jewellery industry experience']); return o; })(jdSections().filter((x) => x.public !== false && x.key !== 'location').map((x) => [x.key, x.key === 'summary' ? 'About the role' : x.key === 'duties' ? 'What you will do' : x.label]))
     .filter(([k]) => jd[k]).map(([k, l]) => `<section><h2>${l}</h2>${list(jd[k])}</section>`).join('');
   const facts = [['Location', j.city], ['Experience', j.exp_from != null ? `${j.exp_from}${j.exp_to != null ? `–${j.exp_to}` : '+'} years` : ''], ['Openings', j.openings]].filter(([, x]) => x);
   const title = `${j.title} · ${j.city}`;
@@ -2429,7 +2434,7 @@ route('POST', '/api/roles/role', T, (ctx) => {
 });
 
 // ---------- settings (super admin) ----------
-const EDITABLE = ['ticket', 'team_login', 'languages', 'aftercare', 'google_review_url', 'eval_criteria', 'call_topics', 'call_gate', 'accounts_email', 'resume_alert_pct', 'expense_tree', 'expense_accounts', 'revenue_kinds', 'call_script', 'email_templates', 'creative_template', 'hiring_channels', 'landing_roles', 'wa_pause', 'business', 'industries', 'default_industry', 'hidden_jobs', 'departments', 'cities', 'skills', 'client_stages', 'closing_reasons', 'job_close_reasons', 'reopen_reasons', 'lead_sources', 'src_tags', 'fee', 'agency_share_pct', 'gst', 'replacement_days', 'payment_days', 'targets', 'log_deadline', 'quiet', 'daily_limit', 'bulk_budget', 'match', 'languages', 'id_start', 'bill_prefix', 'retention_years', 'team_idle_hours', 'formats', 'auto_rules', 'crm', 'posting_channels', 'gap_targets', 'templates', 'jd_template', 'jd_templates', 'lead_auto_assign'];
+const EDITABLE = ['ticket', 'team_login', 'languages', 'aftercare', 'google_review_url', 'eval_criteria', 'call_topics', 'call_gate', 'accounts_email', 'resume_alert_pct', 'expense_tree', 'expense_accounts', 'revenue_kinds', 'call_script', 'email_templates', 'creative_template', 'hiring_channels', 'landing_roles', 'wa_pause', 'business', 'industries', 'default_industry', 'hidden_jobs', 'departments', 'cities', 'skills', 'client_stages', 'closing_reasons', 'job_close_reasons', 'reopen_reasons', 'lead_sources', 'src_tags', 'fee', 'agency_share_pct', 'gst', 'replacement_days', 'payment_days', 'targets', 'log_deadline', 'quiet', 'daily_limit', 'bulk_budget', 'match', 'languages', 'id_start', 'bill_prefix', 'retention_years', 'team_idle_hours', 'formats', 'auto_rules', 'crm', 'posting_channels', 'gap_targets', 'templates', 'jd_template', 'jd_templates', 'lead_auto_assign', 'jd_sections'];
 // Everyone in the team can set up what goes out. Connection secrets and the checks on the team's own activity stay with the super admin.
 const SUPER_ONLY = ['lead_auto_assign', 'ticket', 'crm', 'resume_alert_pct', 'call_gate', 'google_review_url', 'team_login'];
 route('GET', '/api/settings', T, (ctx) => { const s = { ...D.settings() }; if (!isSuper(ctx.user)) { for (const k of SUPER_ONLY) delete s[k]; return s; } s.crm = { ...s.crm, token: s.crm.token ? '••••••••' : '', webhook_secret: s.crm.from_env && s.crm.from_env.webhook_secret ? '••••••••' : s.crm.webhook_secret }; return s; });

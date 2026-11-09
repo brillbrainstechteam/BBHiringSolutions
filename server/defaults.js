@@ -311,5 +311,23 @@ module.exports.defaultSettings = () => ({
     joining_checklist: 'Documents received\nID card issued\nSystem login made\nIntroduced to team',
   },
   jd_templates: {},
+  // The sections every job description has, in this order (JD builder, the PDF the client approves, the public JD page).
+  // bullets: one point per line. public: false keeps a section off the candidates' page (salary stays private).
+  jd_sections: [
+    { key: 'about', label: 'About the employer', hint: 'Two or three lines on the business: what it does, how big it is, how long it has run. Never its name.' },
+    { key: 'summary', label: 'Role summary', hint: 'Two or three sentences: the role, who it serves, what doing it well looks like.' },
+    { key: 'duties', label: 'Key responsibilities', hint: 'Six to eight specific duties, one per line.', bullets: true },
+    { key: 'must', label: 'Must-have skills and experience', hint: 'Four to seven requirements, one per line.', bullets: true },
+    { key: 'good', label: 'Good to have', hint: 'Two to four extras, one per line.', bullets: true },
+    { key: 'experience', label: 'Experience', hint: 'Total years and the kind of experience wanted.' },
+    { key: 'education', label: 'Education', hint: 'Minimum qualification.' },
+    { key: 'languages', label: 'Languages', hint: 'Languages needed for the work.' },
+    { key: 'salary', label: 'Salary', hint: 'Only the salary given. Shown to the client, never on the candidates\' page.', public: false },
+    { key: 'incentives', label: 'Incentives', hint: 'Only if given or usual for the role (e.g. sales incentives).' },
+    { key: 'timings', label: 'Working days and timings', hint: 'Only if given.' },
+    { key: 'benefits', label: 'Benefits', hint: 'Only if given.' },
+    { key: 'location', label: 'Location', hint: 'Area and city of the workplace.' },
+    { key: 'reporting', label: 'Reports to', hint: 'Who this person reports to, if known.' },
+  ],
   jd_template: { summary: 'We are hiring a {job} for our {city} team.', duties: '', must: '', good: '', timings: '10:30 am - 8:00 pm, 6 days a week', benefits: 'Incentives on sales, festival bonus', incentives: '', location: '{city}' },
 });

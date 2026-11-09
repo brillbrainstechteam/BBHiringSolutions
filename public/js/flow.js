@@ -213,10 +213,7 @@
     // A step done by hand: tick it here; the stage moves on its own.
     $$('[data-obtick]', el).forEach((x) => (x.onchange = async () => { try { await BB.post(`/api/clients/${c.id}/onboarding`, { item: x.dataset.obtick, done: x.checked }); BB.toast(x.checked ? 'Marked done' : 'Marked not done'); BB.open('client', c.id); } catch (e) { x.checked = !x.checked; BB.fail(e); } }));
     // Create & share JD: the job opening whose JD is not approved yet (or the new opening, first).
-    on('[data-fjd]', async () => { const js = (c.jobs || []).filter((j) => !j.archived && !j.jd_approved && j.jd_status !== 'Approved');
-      if (!js.length) { const any = (c.jobs || []).find((j) => !j.archived); if (any) return BB.open('job', any.id); BB.toast('Make the job opening first; its JD is written and shared from there.'); return BB.newJob(c.id); }
-      if (js.length === 1) return BB.open('job', js[0].id);
-      const v = await BB.ask({ title: 'Which job opening?', fields: [{ name: 'job', label: 'Job opening', type: 'select', options: js.map((j) => [j.id, `${j.title} · ${j.city || ''} (${j.id})`]), placeholder: false }], ok: 'Open' }); if (v) BB.open('job', v.job); });
+    on('[data-fjd]', () => F.jdBuilder(c));
     on('[data-fcall]', async () => {
       const { script } = await BB.api('/api/call-script'); let stopMic = () => {};
       setTimeout(() => { const box = $('.modal [data-froles]'); if (!box) return; wireRoles(box); stopMic = wireVoice($('.modal'));
@@ -483,6 +480,89 @@
       `<div class="grid g4">${field({ name: 'sal_from', label: 'Salary from / month', type: 'number' })}${field({ name: 'sal_to', label: 'Salary to / month', type: 'number', opt: true })}${field({ name: 'exp_from', label: 'Exp from (yrs)', type: 'number', opt: true })}${field({ name: 'exp_to', label: 'Exp to (yrs)', type: 'number', opt: true })}</div>`,
       { name: 'notes', label: 'Notes', type: 'textarea', opt: true }], ok: 'Create openings', submit: (x) => BB.post('/api/jobs/mass', { ...x, salary_per: 'month' }) });
     if (v) done(`${v.jobs.length} openings made for ${v.total} people`);
+  };
+
+  // ---------- JD builder (client view): call → JD with AI → client approves → the job opens ----------
+  const JD_STATE = { 'Not written': ['No JD yet', 'b-outline'], Draft: ['Draft', 'b-outline'], 'Waiting for client': ['With client', 'b-amber'], 'Changes asked': ['Changes asked', 'b-red'], Approved: ['Approved · job open', 'b-green'] };
+  const jdBadge = (r) => { const s = r.job ? (r.job.jd_approved ? 'Approved' : r.job.jd_status || 'Not written') : 'Not written'; const [t, cls] = JD_STATE[s] || [s, 'b-outline']; return `<span class="badge ${cls} tiny">${t}</span>`; };
+  F.jdBuilder = async (c, pick) => {
+    let d; try { d = await BB.api(`/api/clients/${c.id}/jd-builder`); } catch (e) { return BB.fail(e); }
+    const roles = d.roles.slice(); const work = {}; // edits kept per role while switching
+    let cur = null;
+    const callText = (r) => [r.skills && `Skills: ${r.skills}`, r.duties && `Duties: ${r.duties}`, r.notes && `Notes on this role: ${r.notes}`, r.call && r.call.notes && `Call notes: ${r.call.notes}`].filter(Boolean).join('\n');
+    const start = (r) => work[r.key] || (work[r.key] = {
+      role: { key: r.key, job_id: r.job ? r.job.id : null, title: r.role || '', openings: r.openings || 1, location: r.location || c.city || '', department: r.department || '', sal_from: (r.job && r.job.sal_from) || r.sal_from || '', sal_to: (r.job && r.job.sal_to) || r.sal_to || '', exp_from: r.job && r.job.exp_from != null ? r.job.exp_from : '', exp_to: r.job && r.job.exp_to != null ? r.job.exp_to : '', skills: r.skills || '' },
+      jd: { ...((r.job && r.job.jd) || {}) }, call_notes: callText(r),
+    });
+    const ex = c.extra || {}; const on2 = ex.online || {};
+    const facts = [c.business_type, c.city, (ex.team_size || on2.team_size) && `${ex.team_size || on2.team_size} employees`, (ex.est_year || on2.est_year) && `since ${ex.est_year || on2.est_year}`].filter(Boolean);
+    const m = BB.modal({ title: `Create &amp; share JD · ${esc(c.company)}`, wide: true, body: '<div class="jdb" data-jdb></div>', foot: '<span class="small muted grow" data-jdstate></span><button class="btn" data-jdsave>Save draft</button><button class="btn" data-jdok title="The client said yes on a call, WhatsApp or email">Client approved it</button><button class="btn primary" data-jdsend>Save &amp; send to client</button>' });
+    m.el.classList.add('jdb-modal');
+    const root = $('[data-jdb]', m.el);
+    const collect = () => { if (!cur) return; const w = work[cur.key]; $$('[data-rf]', root).forEach((i) => { w.role[i.dataset.rf] = i.value; }); $$('[data-sec]', root).forEach((t) => { w.jd[t.dataset.sec] = t.value; }); $$('[data-jw]', root).forEach((i) => { w.jd[i.dataset.jw] = i.value; }); const cn = $('[data-callnotes]', root); if (cn) w.call_notes = cn.value; };
+    const draw = () => {
+      const w = cur ? start(cur) : null;
+      root.innerHTML = `<div class="jdb-roles"><span class="small muted">Roles from calls:</span>${roles.map((r) => `<button type="button" class="jdb-role ${cur && cur.key === r.key ? 'on' : ''}" data-rk="${esc(r.key)}"><b>${esc(r.role || 'New role')}</b>${r.openings ? ` <span class="tiny">× ${r.openings}</span>` : ''} ${jdBadge(r)}</button>`).join('') || '<span class="small faint">No roles noted yet.</span>'}<button type="button" class="jdb-role add" data-rnew>+ Another role</button></div>
+      ${!w ? `<div class="jdb-empty"><p>Pick a role above to write its job description.</p><p class="small muted">Roles come from <b>Understand requirement</b> calls. A role without a call can be added with <b>+ Another role</b>.</p></div>` : `
+      ${cur.job && cur.job.jd_status === 'Changes asked' && cur.job.jd_note ? `<div class="notice warn small"><b>The client asked for changes:</b> ${esc(cur.job.jd_note)}</div>` : ''}
+      <div class="jdb-grid"><aside class="jdb-side">
+        <h4 class="form-sec">The role</h4>
+        <label class="field"><span class="lab">Job title</span><input data-rf="title" list="jdb-titles" value="${esc(w.role.title)}"></label><datalist id="jdb-titles">${(BB.boot.jobs || []).map((j) => `<option value="${esc(j.title)}">`).join('')}</datalist>
+        <div class="grid g2"><label class="field"><span class="lab">Openings</span><input type="number" min="1" data-rf="openings" value="${esc(w.role.openings)}"></label><label class="field"><span class="lab">Location</span><input data-rf="location" list="cities" value="${esc(w.role.location)}"></label></div>
+        <div class="grid g2"><label class="field"><span class="lab">Salary from (₹ / month)</span><input type="number" data-rf="sal_from" value="${esc(w.role.sal_from)}"></label><label class="field"><span class="lab">Salary to (₹ / month)</span><input type="number" data-rf="sal_to" value="${esc(w.role.sal_to)}"></label></div>
+        <div class="grid g2"><label class="field"><span class="lab">Experience from (years)</span><input type="number" data-rf="exp_from" value="${esc(w.role.exp_from)}"></label><label class="field"><span class="lab">Experience to (years)</span><input type="number" data-rf="exp_to" value="${esc(w.role.exp_to)}"></label></div>
+        <label class="field"><span class="lab">Skills <span class="opt">(comma separated)</span></span><input data-rf="skills" value="${esc(w.role.skills)}"></label>
+        <div class="grid g3"><label class="field"><span class="lab">Jewellery experience</span><select data-jw="jewel_need">${['Required', 'Preferred', 'Not required'].map((x) => `<option ${((w.jd.jewel_need || 'Preferred') === x) ? 'selected' : ''}>${x}</option>`).join('')}</select></label><label class="field"><span class="lab">Years</span><input type="number" data-jw="jewel_years" value="${esc(w.jd.jewel_years || '')}"></label><label class="field"><span class="lab">Kind</span><input data-jw="jewel_note" placeholder="e.g. diamond retail" value="${esc(w.jd.jewel_note || '')}"></label></div>
+        <h4 class="form-sec">What the client said</h4>
+        <textarea data-callnotes rows="7" placeholder="Paste or type what the client said about this role: duties, targets, products, software, timings, benefits…">${esc(w.call_notes)}</textarea>
+        <div class="tiny muted">${cur.call ? `From the call on ${fmtD(cur.call.at)} by ${esc(cur.call.by || '')}. ` : ''}The AI writes only from this, the role above and the client's details.</div>
+        <div class="jdb-client"><b>Client</b> ${facts.length ? esc(facts.join(' · ')) : '<span class="faint">No details yet</span>'}${!(ex.team_size || on2.team_size) || !(ex.est_year || on2.est_year) ? '<div class="tiny muted">Company size or year missing: fetch Client info for a better "About the employer".</div>' : ''}</div>
+      </aside>
+      <section class="jdb-main">
+        <div class="jdb-ai">${d.ai ? `<button type="button" class="btn primary" data-aiall>✦ Write the full JD with AI</button><input data-aiwhat placeholder="Tell the AI (optional), e.g. focus on target-based selling" aria-label="Instruction for the AI">` : '<span class="small muted">AI writing is not set up on the server.</span>'}${d.pool.includes(w.role.title) ? '<button type="button" class="btn sm" data-pool>Fill from JD pool</button>' : ''}</div>
+        <div class="tiny muted" style="margin:-4px 0 8px">Model: ${esc(d.model)} · about ₹0.10 a JD. Check every section before sending: you are responsible for what the client sees.</div>
+        ${d.sections.map((s) => `<div class="jdb-sec"><div class="jdb-sec-h"><label for="jds-${s.key}"><b>${esc(s.label)}</b>${s.public === false ? ' <span class="badge b-outline tiny" title="Client sees it; candidates do not">Client only</span>' : ''}</label>${d.ai ? `<button type="button" class="btn sm ghost" data-aione="${s.key}">✦ Rewrite</button>` : ''}</div><div class="tiny muted">${esc(s.hint || '')}</div><textarea id="jds-${s.key}" data-sec="${s.key}" rows="${s.bullets ? 6 : 2}">${esc(w.jd[s.key] || '')}</textarea></div>`).join('')}
+      </section></div>`}`;
+      const st = $('[data-jdstate]', m.el); if (st) st.innerHTML = cur ? `${jdBadge(cur)}${cur.job ? ` <span class="tiny">Job ${esc(cur.job.id)} · ${esc(cur.job.status)}</span>` : ' <span class="tiny">Saving makes the job opening as a draft; it opens when the client approves.</span>'}` : '';
+      $$('[data-jdsave], [data-jdok], [data-jdsend]', m.el).forEach((b) => { b.disabled = !cur; }); const okb = $('[data-jdok]', m.el); if (okb) okb.hidden = !!(cur && cur.job && cur.job.jd_approved);
+      $$('[data-rk]', root).forEach((b) => (b.onclick = () => { collect(); cur = roles.find((r) => r.key === b.dataset.rk); draw(); }));
+      $('[data-rnew]', root).onclick = () => { collect(); const r = { key: `new:${Date.now()}`, role: '', openings: 1, location: c.city || '', call: null, job: null }; roles.push(r); cur = r; draw(); $('[data-rf=title]', root).focus(); };
+      if (!w) return;
+      const busy = (b, on, txt) => { b.disabled = on; if (txt) b.textContent = txt; };
+      const ai = async (only, btn) => {
+        collect(); const w2 = work[cur.key]; if (!w2.role.title.trim()) return BB.toast('Write the job title first', true);
+        const label = btn.textContent; busy(btn, true, only ? 'Writing…' : 'Writing the JD… (about 20 seconds)');
+        try {
+          const r = await BB.post(`/api/clients/${c.id}/jd/ai`, { role: w2.role, call_notes: w2.call_notes, jewel_need: w2.jd.jewel_need, jewel_years: w2.jd.jewel_years, jewel_note: w2.jd.jewel_note, current: w2.jd, only, instruction: ($('[data-aiwhat]', root) || {}).value || '' });
+          for (const [k, v] of Object.entries(r.jd)) if (v || only) { w2.jd[k] = v; const t = $(`[data-sec="${k}"]`, root); if (t) { t.value = v; t.classList.add('jdb-new'); setTimeout(() => t.classList.remove('jdb-new'), 1500); } }
+          BB.toast(only ? 'Section rewritten' : 'JD written: read it through and edit before sending');
+        } catch (e) { BB.fail(e); } finally { busy(btn, false, label); }
+      };
+      const all2 = $('[data-aiall]', root); if (all2) all2.onclick = () => ai(null, all2);
+      $$('[data-aione]', root).forEach((b) => (b.onclick = () => ai(b.dataset.aione, b)));
+      const pl = $('[data-pool]', root); if (pl) pl.onclick = async () => { const p = await BB.api('/api/jd-pool'); const t = p.pool[work[cur.key].role.title]; if (t) { for (const [k, v] of Object.entries(t)) { if (v) { const x = $(`[data-sec="${k}"]`, root) || $(`[data-jw="${k}"]`, root); if (x) x.value = v; } } collect(); BB.toast('Filled from the JD pool'); } };
+    };
+    const save = async (how) => {
+      collect(); const w = work[cur.key];
+      const body = { role: w.role, jd: w.jd, call_notes: w.call_notes };
+      if (how === 'send') {
+        const empty = d.sections.filter((s) => ['summary', 'duties', 'must'].includes(s.key) && !String(w.jd[s.key] || '').trim()).map((s) => s.label);
+        if (empty.length) return BB.toast(`Fill ${empty.join(', ')} before sending`, true);
+        if (!(await BB.confirm('Send the JD to the client', `The client gets a WhatsApp message to approve the ${esc(w.role.title)} JD in their account${d.email && d.can_email ? ', and you can email it as a PDF next' : ''}. The job opens as soon as they approve.`, 'Send'))) return;
+        body.send = true;
+      }
+      if (how === 'ok') { const v = await BB.ask({ title: 'The client approved this JD', note: 'The job opening goes live straight away.', fields: [{ name: 'how', label: 'How did they approve?', type: 'select', options: ['On a call', 'On WhatsApp', 'By email', 'In person'], placeholder: false }], ok: 'Mark approved' }); if (!v) return; body.approved_by_client = v.how; }
+      try {
+        const r = await BB.post(`/api/clients/${c.id}/jd`, body);
+        cur.job = r.job; cur.key = cur.key.startsWith('new:') ? `job:${r.job.id}` : cur.key; work[cur.key] = { ...w, role: { ...w.role, job_id: r.job.id } };
+        BB.toast(how === 'send' ? `Sent for approval${r.sent ? ` · ${r.sent}` : ''}` : how === 'ok' ? 'Approved: the job opening is live' : `Saved as draft · job ${r.job.id}`);
+        draw(); if (BB.refreshPanel) BB.refreshPanel();
+        if (how === 'send' && d.email && d.can_email && await BB.confirm('Email the JD too?', `Send the ${esc(w.role.title)} JD as a PDF to ${esc(d.email)}.`, 'Write the email')) F.composeMail([c.id], 'jd', 'Send job description', r.job.id);
+      } catch (e) { BB.fail(e); }
+    };
+    $('[data-jdsave]', m.el).onclick = () => save('draft'); $('[data-jdsend]', m.el).onclick = () => save('send'); $('[data-jdok]', m.el).onclick = () => save('ok');
+    cur = pick ? roles.find((r) => r.key === pick || (r.job && r.job.id === pick)) : roles.find((r) => !r.job || (!r.job.jd_approved && r.job.jd_status !== 'Waiting for client')) || null;
+    draw();
   };
 
   // ---------- clients page: lead or active, email in bulk ----------
