@@ -108,6 +108,9 @@ const FORMATS = {
   bbhs_jd_approval: { type: 'Utility', approved: false, buttons: [],
     en: "Hello {name},\n\nThe job description for your *{job}* opening is ready.\n\nPlease review and approve it so we can start sending you candidates: {link}\n\nThank you.",
     hi: "नमस्ते {name},\n\nआपकी *{job}* नौकरी का जॉब डिस्क्रिप्शन तैयार है।\n\nकृपया देखकर मंज़ूर करें, ताकि हम उम्मीदवार भेजना शुरू कर सकें: {link}\n\nधन्यवाद।" },
+  bbhs_documents_request: { type: 'Utility', approved: false, buttons: [],
+    en: "Hello {name},\n\nTo move ahead, please upload these documents:\n{documents}\n\nUpload them here (it takes 2 minutes): {link}\n\nThey are kept private and used only to verify your profile.\n\nThank you.",
+    hi: "नमस्ते {name},\n\nआगे बढ़ने के लिए कृपया ये दस्तावेज़ अपलोड करें:\n{documents}\n\nयहाँ अपलोड करें (2 मिनट लगते हैं): {link}\n\nये निजी रखे जाते हैं और सिर्फ़ आपकी प्रोफ़ाइल की जाँच के लिए इस्तेमाल होते हैं।\n\nधन्यवाद।" },
   bbhs_still_looking: { type: 'Utility', approved: false, buttons: ['Looking for a job', 'Not interested now'],
     en: "Hello {name},\n\nWe want to send you only the jobs that suit you. Which of these fits you right now?\n\nTap a button below. You can also update your profile here: {link}\n\nThank you.",
     hi: "नमस्ते {name},\n\nहम आपको सिर्फ़ वही नौकरियाँ भेजना चाहते हैं जो आपके लिए सही हों। अभी आपके लिए कौन-सा सही है?\n\nनीचे एक बटन दबाएँ। आप यहाँ अपनी प्रोफ़ाइल भी अपडेट कर सकते हैं: {link}\n\nधन्यवाद।" },
@@ -157,6 +160,7 @@ const AUTO_RULES = [
   { key: 'log_reminder', when: '30 minutes before log deadline', to: 'Anyone without a log', format: 'bbhs_log_reminder', on: true },
   { key: 'day_summary', when: 'Every evening', to: 'Each admin and super admin', format: 'bbhs_day_summary', on: true },
   { key: 'monthly_summary', when: '1st of every month', to: 'Client', format: 'bbhs_monthly_summary', on: true },
+  { key: 'docs_internal', when: 'Offer made on a BrillBrains opening: ask for Aadhaar, PAN, address, education, experience letters, salary proof and EPF history (once per application)', to: 'Candidate', format: 'bbhs_documents_request', on: true },
   { key: 'still_looking', when: 'Daily, up to 40: candidates in the database with no application in process, not placed, and no fresh job status (people who came to us themselves; bulk imports are left out). Their reply sets the job status.', to: 'Candidate', format: 'bbhs_still_looking', on: false },
   // Off: candidates cannot log in to their profile (no login code is sent, the login links are hidden).
   // Emails to the team's notification address (NOTIFY_EMAILS) when a lead comes in.
@@ -219,7 +223,7 @@ module.exports.defaultSettings = () => ({
     { name: 'Other', subs: ['Miscellaneous'] },
   ],
   expense_accounts: ['Axis Bank Current Account', 'Cash', 'UPI', 'Via Staff'],
-  revenue_kinds: ['Recruitment fee', 'Retainer', 'Training', 'Other'],
+  revenue_kinds: ['Recruitment fee', 'Retainer', 'Training', 'Background verification', 'Other'],
   call_script: 'Introduce BrillBrains: jewellery industry specialists since 2011, 100+ brands empowered.\nUnderstand the need: note every field below during the call.\nExplain the terms: fee, payment days and the free replacement window in the Recruitment Agreement.\nClose: if they agree, send the agreement to their email.',
   email_templates: {
     contract: { subject: 'Recruitment Agreement from BrillBrains Hiring Solutions', body: 'Hello {contact},\n\nThank you for speaking with us. Our Recruitment Agreement is attached.\n\nPlease sign it and reply to this email with the signed copy. Your account goes active once we have it.\n\nPlease also send your KYC papers: GST certificate, business PAN and owner ID proof.\n\nRegards,\n{sender}\nBrillBrains Hiring Solutions' },

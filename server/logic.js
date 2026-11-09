@@ -556,6 +556,7 @@ function moveStep(appId, step, by, note) {
   appHist(appId, step, by, note);
   history(actorName(by), 'step', appId, 'step', app.step, step);
   const job = get('SELECT * FROM jobs WHERE id=?', app.job_id);
+  if (step === 'Offer made') require('./verify').autoInternal({ ...app, ...patch }, by); // our own openings: ask for the joining documents
   if (step === 'Sent to client') {
     try { require('./flow').clientCvFor(app.candidate_id, by); } catch (e) { console.error('Client CV', appId, e.message); }
     try { if (require('./profilelink').beforeClient(app.candidate_id, appId)) appHist(appId, step, by, 'Profile over 90 days old: asked the candidate for an updated resume and details', 'note'); } catch (e) { console.error('Profile refresh', appId, e.message); }

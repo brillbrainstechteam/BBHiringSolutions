@@ -284,6 +284,13 @@ function ensureSettings() {
     setSetting('auto_rules', settings().auto_rules.map((r) => (r.key === 'still_looking' ? { ...r, when: defs.auto_rules.find((x) => x.key === 'still_looking').when } : r)));
     setSetting('done_once', [...(settings().done_once || []), 'job_status_v2']);
   }
+  // Documents and verification: the request message, the rule for our own openings, and the revenue kind.
+  if (!once.includes('verify_docs_v1')) {
+    const f = settings().formats || {}; if (!f.bbhs_documents_request) setSetting('formats', { ...f, bbhs_documents_request: defs.formats.bbhs_documents_request });
+    const rules = settings().auto_rules || []; if (!rules.some((r) => r.key === 'docs_internal')) setSetting('auto_rules', [...rules, defs.auto_rules.find((r) => r.key === 'docs_internal')]);
+    const rk = settings().revenue_kinds || []; if (!rk.includes('Background verification')) setSetting('revenue_kinds', [...rk.filter((x) => x !== 'Other'), 'Background verification', ...(rk.includes('Other') ? ['Other'] : [])]);
+    setSetting('done_once', [...(settings().done_once || []), 'verify_docs_v1']);
+  }
   if (!once.includes('rules_profile_update')) {
     const keys = ['profile_screening', 'profile_before_client', 'profile_refresh_90']; const have = new Set(settings().auto_rules.map((x) => x.key));
     setSetting('auto_rules', [...settings().auto_rules, ...defs.auto_rules.filter((x) => keys.includes(x.key) && !have.has(x.key))]);

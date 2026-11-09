@@ -2311,3 +2311,12 @@ a.pipe-step { text-decoration: none; cursor: pointer; } a.pipe-step:hover { bord
 .rep-tip { position: fixed; z-index: 400; pointer-events: none; background: var(--navy); color: #fff; font-size: 12.5px; font-weight: 600; padding: 6px 10px; border-radius: 8px; box-shadow: var(--shadow-lg); max-width: 280px; }
 @media (max-width: 1000px) { .rep-grid { grid-template-columns: 1fr; } .rep-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .rep-pair { grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); } .rep-pair .rep-donut svg { width: 120px; height: 120px; }
+
+/* Verification: orders on the candidate, the documents dialog, the client's card line and package picker */
+.verify-orders { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
+.verify-order { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); }
+.vdocs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 14px; } .vdocs label { gap: 8px; align-items: center; }
+@media (max-width: 640px) { .vdocs { grid-template-columns: 1fr; } }
+.verify-client { display: flex; flex-direction: column; gap: 6px; padding-top: 8px; border-top: 1px dashed var(--border); }
+.ver-pkg { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 12px; cursor: pointer; }
+.ver-pkg:has(input:checked) { border-color: var(--teal, #0F5E5A); background: #EAF9F5; }

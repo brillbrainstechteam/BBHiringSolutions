@@ -271,6 +271,11 @@
     if (a.availability) return { key: 'interview', label: 'Times shared, confirming', cls: 'b-primary' };
     return { key: 'waiting', label: 'Waiting for your times', cls: 'b-amber' };
   };
+  // Background verification: order it for a candidate we sent; the report downloads here when it is done.
+  let VER = null; const loadVer = async () => { try { VER = await BB.api('/api/client/verify'); } catch { VER = { packages: [], orders: [] }; } };
+  const verifyLine = (a) => { if (!VER || !VER.packages.length || a.st.key === 'closed') return ''; const mine = VER.orders.filter((o) => o.app_id === a.id && o.status !== 'Cancelled');
+    return `<div class="verify-client">${mine.map((o) => `<div class="row between small"><span><b>Verification ${esc(o.name)}</b> · ${esc(o.no)} · ${o.status === 'Completed' ? `<span class="badge ${o.problem ? 'b-red' : 'b-green'}">${o.problem ? 'Problem found' : 'All clear'}</span>` : `<span class="badge b-amber">In progress · ${esc(o.progress)} checks done</span>`}</span>${o.report ? `<button class="btn sm" data-vreport="${o.id}">Download report</button>` : ''}</div>`).join('')}
+      <div class="row small"><button class="btn sm ghost" data-vorder="${esc(a.id)}" data-vname="${esc(a.name)}">${mine.length ? '+ Another verification' : 'Verify this candidate'}</button><span class="faint">ID, employment history, court records and more · from ₹${Math.min(...VER.packages.map((p) => p.price))}</span></div></div>`; };
   let candFilter = 'active'; let candJob = '';
   function candidates(el) {
     const all = D.candidates.map((a) => ({ ...a, st: stage(a) }));
@@ -292,8 +297,14 @@
       ${a.short_cv ? `<div class="row small"><button class="btn sm" data-file="${a.short_cv}">Short CV</button><span class="faint">Contact details stay with our team, who arrange everything.</span></div>` : ''}
       ${a.result === 'open' && ['Sent to client', 'Client interview'].includes(a.step) ? (a.availability ? `<div class="notice small"><b>✓ Availability shared</b> · ${fmtD(a.availability.at)}<div>${esc(a.availability.text.replace(/^Interview availability from [^:]*: /, ''))}</div><a href="#" data-avail="${a.id}" data-name="${esc(a.name)}">Change times</a></div>` : `<div class="row"><button class="btn primary" data-avail="${a.id}" data-name="${esc(a.name)}">Share interview availability</button><span class="small muted">Our team fixes the interview with the candidate.</span></div>`) : ''}
       ${(a.result === 'open' && ['Offer made', 'Offer accepted'].includes(a.step)) || a.result === 'Hired' ? offerBox(a) : ''}
+      ${verifyLine(a)}
     </div>`).join('')}</div>` : `<div class="card empty">${D.candidates.length ? 'Nobody here right now.' : 'No profiles yet. When our team sends you profiles, they show here and on WhatsApp.'}</div>`}`;
     $$('[data-cf]', el).forEach((b) => (b.onclick = () => { candFilter = b.dataset.cf; candidates(el); }));
+    if (!VER) { loadVer().then(() => { if (VER.packages.length) candidates(el); }); }
+    $$('[data-vreport]', el).forEach((b) => (b.onclick = () => BB.download(`/api/client/verify/${b.dataset.vreport}/report`)));
+    $$('[data-vorder]', el).forEach((b) => (b.onclick = () => BB.ask({ title: `Verify ${esc(b.dataset.vname)}`, note: 'Our team asks the candidate for the documents, checks each one on official sites and with past employers, and sends you a report here. Charged on your next bill (plus GST).', fields: [
+      `<div class="field"><span class="lab">Pick a check</span><div class="stack-sm">${VER.packages.map((p, i) => `<label class="ver-pkg"><input type="radio" name="package" value="${esc(p.key)}" ${p.key === 'standard' || (!VER.packages.some((x) => x.key === 'standard') && !i) ? 'checked' : ''}><span class="grow"><b>${esc(p.name)}</b><span class="small muted"> — ${esc(p.about)}</span></span><b>₹${Number(p.price).toLocaleString('en-IN')}</b></label>`).join('')}</div></div>`], ok: 'Order verification',
+      submit: (v) => BB.post('/api/client/verify', { app_id: b.dataset.vorder, package: v.package }) }).then(async (r) => { if (r) { BB.toast(`${r.no} ordered. We will update you here.`); await loadVer(); candidates(el); } })));
     const cj = $('[data-cj]', el); if (cj) cj.onchange = () => { candJob = cj.value; candidates(el); };
     $$('[data-file]', el).forEach((b) => (b.onclick = () => BB.openFile(b.dataset.file)));
     // Each option is a window on one day: date, from, to (e.g. 25 Oct, 11:00 am – 1:00 pm).

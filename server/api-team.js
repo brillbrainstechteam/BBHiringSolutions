@@ -1862,7 +1862,7 @@ route('POST', '/api/wa/compose', T, (ctx) => {
   const b = ctx.body; const p = L.person(b.ptype, b.pid); if (!p) throw httpError(404, 'Person not found');
   if (b.ptype !== 'candidate') mustSee(seeThread(ctx.user, b.ptype, b.pid) || isSuper(ctx.user) || b.ptype === 'user', 'person');
   const s = D.settings(); const vars = composeVars(b, p); const app = b.ap ? get('SELECT * FROM applications WHERE id=?', b.ap) : null;
-  const forType = { client: ['bbhs_client_welcome', 'bbhs_shortlist_ready', 'bbhs_feedback_request', 'bbhs_bill_raised', 'bbhs_payment_reminder', 'bbhs_jd_approval'], candidate: ['bbhs_candidate_welcome', 'bbhs_details_request', 'bbhs_interview_scheduled', 'bbhs_interview_reminder', 'bbhs_offer', 'bbhs_joining_reminder', 'bbhs_post_join_checkin', 'bbhs_job_alert', 'bbhs_still_looking', 'bbhs_consent_request'], user: ['bbhs_team_task_alert', 'bbhs_log_reminder', 'bbhs_day_summary'] }[b.ptype];
+  const forType = { client: ['bbhs_client_welcome', 'bbhs_shortlist_ready', 'bbhs_feedback_request', 'bbhs_bill_raised', 'bbhs_payment_reminder', 'bbhs_jd_approval'], candidate: ['bbhs_candidate_welcome', 'bbhs_details_request', 'bbhs_interview_scheduled', 'bbhs_interview_reminder', 'bbhs_offer', 'bbhs_joining_reminder', 'bbhs_post_join_checkin', 'bbhs_job_alert', 'bbhs_still_looking', 'bbhs_documents_request', 'bbhs_consent_request'], user: ['bbhs_team_task_alert', 'bbhs_log_reminder', 'bbhs_day_summary'] }[b.ptype];
   const suggested = [b.format, ...(app ? [suggestFor(app)].filter((x) => x && x.ptype === b.ptype).map((x) => x.format) : [])].filter(Boolean);
   const showPhone = b.ptype !== 'candidate' || R.phoneVisible(ctx.user, p.record);
   return {
