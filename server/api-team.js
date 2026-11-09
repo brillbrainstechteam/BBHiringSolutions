@@ -1037,7 +1037,7 @@ function jdHtml(id) {
     close(); return out; };
   const secs = [['summary', 'About the role'], ['duties', 'What you will do'], ['jewel_text', 'Jewellery industry experience'], ['must', 'Must have'], ['good', 'Good to have'], ['education', 'Education'], ['languages', 'Languages'], ['timings', 'Timings'], ['benefits', 'Benefits'], ['incentives', 'Incentives']]
     .filter(([k]) => jd[k]).map(([k, l]) => `<section><h2>${l}</h2>${list(jd[k])}</section>`).join('');
-  const facts = [['Location', j.city], ['Salary', jd.salary || L.salaryText(j)], ['Experience', j.exp_from != null ? `${j.exp_from}${j.exp_to != null ? `–${j.exp_to}` : '+'} years` : ''], ['Openings', j.openings]].filter(([, x]) => x);
+  const facts = [['Location', j.city], ['Experience', j.exp_from != null ? `${j.exp_from}${j.exp_to != null ? `–${j.exp_to}` : '+'} years` : ''], ['Openings', j.openings]].filter(([, x]) => x);
   const title = `${j.title} · ${j.city}`;
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${e(title)} · ${e(b.name)}</title>
 <meta name="description" content="${e(String(jd.summary || `${j.title} job in ${j.city}`).slice(0, 160))}"><meta property="og:title" content="${e(title)}"><meta property="og:description" content="${e(String(jd.summary || '').slice(0, 200))}"><meta name="robots" content="noindex">
@@ -1068,7 +1068,7 @@ route('POST', '/api/jobs/:id/alert', T, (ctx) => {
   const format = fm.bbhs_job_interest && fm.bbhs_job_interest.approved && !fm.bbhs_job_interest.off ? 'bbhs_job_interest' : fm.bbhs_job_alert && fm.bbhs_job_alert.approved && !fm.bbhs_job_alert.off ? 'bbhs_job_alert' : null;
   if (!format) throw httpError(400, 'The job interest message (bbhs_job_interest) is waiting for Meta approval. Send it from Settings → Message formats; until then, call and use Interested / Not interested.');
   for (const cid of targets.slice(0, budget)) {
-    const r = L.sendWA({ ptype: 'candidate', pid: cid, format, vars: { job: j.title, city: j.city, salary: L.salaryText(j), link: L.link(`jd/${j.id}`) }, jb: j.id, by: ctx.actor, bulk: true, dedupe: `alert:${j.id}:${cid}` });
+    const r = L.sendWA({ ptype: 'candidate', pid: cid, format, vars: { job: j.title, city: j.city, salary: L.SAL_HIDDEN, link: L.link(`jd/${j.id}`) }, jb: j.id, by: ctx.actor, bulk: true, dedupe: `alert:${j.id}:${cid}` });
     if (r.skipped) skipped.push(`${cid}: ${r.skipped}`); else sent++;
   }
   return { sent, skipped };
@@ -1278,7 +1278,7 @@ route('POST', '/api/candidates/bulk', T, (ctx) => {
     for (const id of ids.slice(0, D.settings().bulk_budget)) { const r = require('./profilelink').ask(id, ctx.actor, false); if (r && r.skipped) out.errors.push(`${id}: ${r.skipped}`); else out.done++; }
   } else if (action === 'alert') {
     const j = get('SELECT * FROM jobs WHERE id=?', job_id); if (!j) throw httpError(400, 'Pick a job');
-    for (const id of ids.slice(0, D.settings().bulk_budget)) { const r = L.sendWA({ ptype: 'candidate', pid: id, format: 'bbhs_job_alert', vars: { job: j.title, city: j.city, salary: L.salaryText(j) }, jb: j.id, by: ctx.actor, bulk: true, dedupe: `alert:${j.id}:${id}` }); if (r.skipped) out.errors.push(`${id}: ${r.skipped}`); else out.done++; }
+    for (const id of ids.slice(0, D.settings().bulk_budget)) { const r = L.sendWA({ ptype: 'candidate', pid: id, format: 'bbhs_job_alert', vars: { job: j.title, city: j.city, salary: L.SAL_HIDDEN }, jb: j.id, by: ctx.actor, bulk: true, dedupe: `alert:${j.id}:${id}` }); if (r.skipped) out.errors.push(`${id}: ${r.skipped}`); else out.done++; }
   } else return bulkUpdate(ctx, out);
   return out;
 });
@@ -1743,7 +1743,7 @@ function composeVars(b, p) {
   const s = D.settings(); const vars = { name: p.name };
   let job = b.jb ? get('SELECT * FROM jobs WHERE id=?', b.jb) : null; const app = b.ap ? get('SELECT * FROM applications WHERE id=?', b.ap) : null;
   if (app && !job) job = get('SELECT * FROM jobs WHERE id=?', app.job_id);
-  if (job) { const cl = get('SELECT * FROM clients WHERE id=?', job.client_id); Object.assign(vars, { job: job.title, job_id: job.id, city: job.city, salary: L.salaryText(job), company: cl.company, count: get("SELECT COUNT(*) c FROM applications WHERE job_id=? AND step='Sent to client' AND result='open'", job.id).c }); }
+  if (job) { const cl = get('SELECT * FROM clients WHERE id=?', job.client_id); Object.assign(vars, { job: job.title, job_id: job.id, city: job.city, salary: L.SAL_HIDDEN, company: cl.company, count: get("SELECT COUNT(*) c FROM applications WHERE job_id=? AND step='Sent to client' AND result='open'", job.id).c }); }
   if (app) { const cand = get('SELECT * FROM candidates WHERE id=?', app.candidate_id); Object.assign(vars, { candidate: cand.name, ctc: L.inr(app.offer_ctc), joining_date: L.istFmt(app.joining_date, false), date: L.istFmt(app.joining_date, false), days: app.joined_at ? L.daysBetween(app.joined_at) : '' }); }
   const iv = b.iv ? get('SELECT * FROM interviews WHERE id=?', b.iv) : (app ? get("SELECT * FROM interviews WHERE app_id=? AND status IN ('Scheduled','Rescheduled') ORDER BY at", app.id) : null);
   if (iv && job) Object.assign(vars, L.ivVars(iv, job));
@@ -2114,9 +2114,9 @@ route('POST', '/api/campaigns', T, (ctx) => {
     if (wa && !waReady) { wa = false; if (channel === 'preferred' && c.email) mail = true; skip('WhatsApp format waiting for Meta approval'); }
     if (wa && !c.whatsapp) { wa = false; skip('No WhatsApp number'); }
     if (mail && !c.email) { mail = false; skip('No email'); }
-    if (wa) { try { const r = L.sendWA({ ptype: 'candidate', pid: c.id, format: waFormat, vars: kind === 'job' ? { job: job.title, city: job.city, salary: L.salaryText(job) } : kind === 'prefs' ? {} : { message: fill(text, c) }, rule: kind === 'prefs' ? 'pref1-bulk' : undefined, jb: job ? job.id : null, by: ctx.actor, bulk: true, noEmailCopy: true, sendLater: when || undefined, dedupe: `camp:${id}:${c.id}` }); if (r.skipped) skip(r.skipped); else out.wa++; } catch (e) { skip(e.message); } }
+    if (wa) { try { const r = L.sendWA({ ptype: 'candidate', pid: c.id, format: waFormat, vars: kind === 'job' ? { job: job.title, city: job.city, salary: L.SAL_HIDDEN } : kind === 'prefs' ? {} : { message: fill(text, c) }, rule: kind === 'prefs' ? 'pref1-bulk' : undefined, jb: job ? job.id : null, by: ctx.actor, bulk: true, noEmailCopy: true, sendLater: when || undefined, dedupe: `camp:${id}:${c.id}` }); if (r.skipped) skip(r.skipped); else out.wa++; } catch (e) { skip(e.message); } }
     if (mail) {
-      const sub = kind === 'job' ? `New job: ${job.title}, ${job.city}` : fill(subject, c); const body = kind === 'job' ? `Hello ${c.name || 'there'},\n\nWe have a ${job.title} opening in ${job.city}${L.salaryText(job) ? `, ${L.salaryText(job)}` : ''}. If you are interested, reply to this email or open your profile: ${link}\n\nBrillBrains Hiring Solutions` : `${fill(text, c)}\n\nBrillBrains Hiring Solutions`;
+      const sub = kind === 'job' ? `New job: ${job.title}, ${job.city}` : fill(subject, c); const body = kind === 'job' ? `Hello ${c.name || 'there'},\n\nWe have a ${job.title} opening in ${job.city}. If you are interested, reply to this email or open your profile: ${link}\n\nBrillBrains Hiring Solutions` : `${fill(text, c)}\n\nBrillBrains Hiring Solutions`;
       const html = M.layout(sub, body.split(/\n{2,}/).map((x) => `<p style="font-size:14px;line-height:1.65;margin:0 0 12px">${x.replace(/[&<>]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[ch])).replace(/\n/g, '<br>')}</p>`).join(''));
       if (M.queue({ to: c.email, subject: sub, text: body, html, kind: 'campaign', recordId: c.id, sendAfter: when || undefined, dedupe: `camp:${id}:${c.id}:mail` })) out.email++; else skip('Email not valid');
     }

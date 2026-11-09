@@ -393,9 +393,11 @@ function autoJobAlert(jobId) {
   // the "are you interested?" message with the job's page once Meta approves it; the plain job alert until then
   const format = fm.bbhs_job_interest && fm.bbhs_job_interest.approved && !fm.bbhs_job_interest.off ? 'bbhs_job_interest' : 'bbhs_job_alert';
   for (const m of bestMatches(job, 30, true).filter((m) => m.score >= strong)) {
-    sendWA({ ptype: 'candidate', pid: m.c.id, format, vars: { job: job.title, city: job.city, salary: salaryText(job), link: link(`jd/${job.id}`) }, jb: job.id, auto: true, rule: 'job_alert', dedupe: `alert:${job.id}:${m.c.id}` });
+    sendWA({ ptype: 'candidate', pid: m.c.id, format, vars: { job: job.title, city: job.city, salary: SAL_HIDDEN, link: link(`jd/${job.id}`) }, jb: job.id, auto: true, rule: 'job_alert', dedupe: `alert:${job.id}:${m.c.id}` });
   }
 }
+// Candidates never see a job's salary: messages whose approved text has a salary slot get this instead.
+const SAL_HIDDEN = 'Discussed on the call';
 // one figure when the range is a single amount (₹40,000 a month, not ₹40,000–₹40,000)
 const salaryText = (j) => { const lo = Math.round((j.sal_from || j.sal_to) / 12); const hi = Math.round((j.sal_to || j.sal_from) / 12); return j.sal_from || j.sal_to ? (lo === hi ? `${inr(lo)} a month` : `${inr(lo)}–${inr(hi)} a month`) : 'as per experience'; };
 
@@ -1319,7 +1321,7 @@ module.exports = { stageStateOf, ownersOfJob, ownerMap, ownsApp, STAGES, stageOf
   STEPS, stepIdx, digits10, validPhone, inr, istDay, istFmt, istTime, istHour, inQuiet, next9am, daysBetween, addDays, hashPassword, checkPassword, newPassword, sha,
   activationState, checkActivation, waHeld, TEAMS, IV_MODES, clientSeesIv, addIvNote, CALL_OUTCOMES, logCall, jobList, deptOf, stateOf, person, fillFormat, windowOpenUntil, sendWA, setDispatcher, alertUser, link, agencyAdmin, superAdmins,
   computeJobStatus, jobStatusReason, recalcJob, filledCount, appsOfJob, matchScore, jobsFor, cleanBusiness, BUSINESS_TYPES, EXP_YEARS, JEW_YEARS, LOOKING, NOT_LOOKING, ratingOf, bestMatches, isPlaced, salaryText, autoJobAlert,
-  feeFor, gstFor, fyOf, billView, refreshBill, createBillForApp, issueBill, upiLink,
+  SAL_HIDDEN, feeFor, gstFor, fyOf, billView, refreshBill, createBillForApp, issueBill, upiLink,
   appHist, createApplication, moveStep, closeApplication, reopenApplication, screenApplication, SCREEN, jobsForRole, jobsForPerson, roleTokens, scheduleInterview, recordInterview, interviewView, ivVars, recordOffer, leftJob, jobAction,
   CONSENT_WORDING, saveConsent, intakeClient, intakeCandidate, assignLead, mergeRecords, resolveId, receiveReply, actorName,
 };
