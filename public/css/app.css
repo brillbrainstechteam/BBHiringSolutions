@@ -2228,3 +2228,9 @@ a.pipe-step { text-decoration: none; cursor: pointer; } a.pipe-step:hover { bord
 .dsec-note { margin-left: 8px; font: 600 12.5px var(--font); padding: 3px 10px; border-radius: 999px; background: #FBEFD2; color: #8A5A0E; }
 .dsec-note.warn { background: #FDE8E6; color: #B4332A; }
 .dt-cl td:nth-child(4), .dt-cl td:nth-child(5) { text-align: center !important; } .dt-cl th:nth-child(4), .dt-cl th:nth-child(5) { text-align: center !important; }
+/* Candidates: count, quick views, Clear and segments stay on one row */
+@media (min-width: 1100px) { .cand-result { flex-wrap: nowrap; } .cand-views { flex-wrap: nowrap; } }
+.cand-views { gap: 6px; } .cand-views .chip { height: 36px; padding: 0 12px; font-size: 13.5px; white-space: nowrap; } .cand-views .chip span { margin-left: 4px; }
+.cand-seg { gap: 6px; } .cand-seg select { width: 170px; max-width: 170px; }
+.cand-clear { flex: none; display: inline-flex; align-items: center; gap: 4px; height: 36px; padding: 0 10px; border: 0; border-radius: 999px; background: none; font: 600 13px var(--font); color: var(--muted); cursor: pointer; white-space: nowrap; }
+.cand-clear:hover { background: var(--surface-2); color: var(--ink); } .cand-clear span { font-size: 11px; }
