@@ -62,7 +62,7 @@
       <div class="row" style="margin-top:8px">${upcoming ? `${i.confirmed ? '<span class="cp-ok">✓ Confirmed</span>' : `<button class="btn sm primary" data-confirm="${i.id}">I'll be there</button>`}<button class="btn sm" data-resch="${i.id}">Ask to reschedule</button>` : `<span class="badge b-outline">${esc(i.view_status)}</span>`}</div></div></div>`;
   };
   const jobCard = (j) => `<div class="cp-job"><div class="cp-match" style="--p:${j.score}" title="How well this job matches your profile"><b>${j.score}%</b><span>match</span></div>
-    <div class="grow"><h3>${esc(j.title)}</h3><div class="small muted">${[j.company, j.city, j.salary, j.exp].filter(Boolean).map(esc).join(' · ')}</div>
+    <div class="grow"><h3>${esc(j.title)}</h3><div class="small muted">${[j.company, j.city, j.exp].filter(Boolean).map(esc).join(' · ')}</div>
     ${j.reasons.length ? `<div class="cp-reasons">${j.reasons.map((r) => `<span>✓ ${esc(r)}</span>`).join('')}</div>` : ''}</div>
     <button class="btn primary" data-apply="${j.id}">Apply</button></div>`;
   const step = (a) => `<div class="cp-app-mini"><div class="row between"><b>${esc(a.job_title)}</b><span class="small muted">${esc(a.company)}</span></div>${BB.tracker(a.step, a.result)}</div>`;

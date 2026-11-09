@@ -62,7 +62,7 @@
       let d; try { d = await (await fetch('/api/public/jobs?all=1')).json(); } catch { return; }
       const jobs = (d && d.jobs) || []; if (!jobs.length) return;
       const pre = new Set([q.job, ...((q.adjobs || []).map((j) => j.id))].filter(Boolean).map((x) => String(x).toUpperCase()));
-      box.innerHTML = `<div class="field"><label>Openings you want to apply for <span class="opt">(optional · tick one or more)</span></label><div class="job-picks">${jobs.map((j) => `<label class="job-pick"><input type="checkbox" name="jobs" value="${esc(j.id)}" ${pre.has(j.id) ? 'checked' : ''}><span><b>${esc(j.title)}</b><span class="muted small"> · ${esc(j.city || '')}${j.salary ? ` · ${esc(j.salary)}` : ''}</span></span></label>`).join('')}</div></div>`;
+      box.innerHTML = `<div class="field"><label>Openings you want to apply for <span class="opt">(optional · tick one or more)</span></label><div class="job-picks">${jobs.map((j) => `<label class="job-pick"><input type="checkbox" name="jobs" value="${esc(j.id)}" ${pre.has(j.id) ? 'checked' : ''}><span><b>${esc(j.title)}</b><span class="muted small"> · ${esc(j.city || '')}</span></span></label>`).join('')}</div></div>`;
       box.classList.remove('hidden');
     })();
     const apply = () => {

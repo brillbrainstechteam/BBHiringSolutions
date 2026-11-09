@@ -191,7 +191,7 @@
   const jobCard = (j, i) => `<a class="job-card rv" style="--d:${(i % 3) * 70}ms" href="/apply?job=${encodeURIComponent(j.id)}&want=${encodeURIComponent(j.title)}${j.city ? `&city=${encodeURIComponent(j.city)}` : ''}">
       <div class="jc-top"><span class="jc-group">${esc(j.group)}</span>${j.seats > 1 ? `<span class="pill">${j.seats} openings</span>` : ''}</div>
       <b class="jc-title">${esc(j.title)}</b>
-      <div class="jc-meta"><span data-no-i18n>${esc(j.city || 'India')}</span><span>${esc(j.salary)}</span>${j.exp ? `<span>${esc(j.exp)}</span>` : ''}</div>
+      <div class="jc-meta"><span data-no-i18n>${esc(j.city || 'India')}</span>${j.exp ? `<span>${esc(j.exp)}</span>` : ''}</div>
       <div class="jc-foot"><span class="faint small">${ago(j.posted)}</span><span class="jc-go">Apply →</span></div></a>`;
 
   const groupOf = (t) => ((BB.boot.jobs || []).find((j) => j.title === t) || {}).group || 'Other roles';
@@ -199,7 +199,6 @@
   const featCard = (j, i) => `<a class="job-card feat rv" style="--d:${(i % 3) * 70}ms" href="/apply?want=${encodeURIComponent(j.title)}">
       <div class="jc-top"><span class="jc-group">${esc(j.group)}</span><span class="pill">Hiring now</span></div>
       <b class="jc-title">${esc(j.title)}</b>
-      <div class="jc-meta"><span>Salary as per experience</span></div>
       <div class="jc-foot"><span class="faint small">Multiple openings</span><span class="jc-go">Apply →</span></div></a>`;
 
   // Openings: the latest ones, or what the search asked for (p: want, city, group). scroll: bring the results into view.

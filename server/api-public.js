@@ -45,7 +45,7 @@ route('GET', '/api/public/jobs', { rate: { key: 'pubjobs', max: 240, minutes: 60
   const open = all('SELECT * FROM jobs WHERE archived=0 AND is_sample=0 ORDER BY created_at DESC').map((j) => V.jobView(j)).filter((j) => ['Open', 'Sourcing', 'Interviewing', 'Offer stage'].includes(j.status));
   const groups = {}; for (const x of L.jobList()) groups[x.title] = x.group;
   const seats = (j) => Math.max(1, (j.openings || 1) - (j.filled || 0));
-  const card = (j) => ({ id: j.id, title: j.title, city: j.city, salary: L.salaryText(j), exp: j.exp_from !== null && j.exp_from !== undefined ? `${j.exp_from}–${j.exp_to ?? '+'} yrs` : '', group: groups[j.title] || 'Other roles', seats: seats(j), posted: j.created_at });
+  const card = (j) => ({ id: j.id, title: j.title, city: j.city, exp: j.exp_from !== null && j.exp_from !== undefined ? `${j.exp_from}–${j.exp_to ?? '+'} yrs` : '', group: groups[j.title] || 'Other roles', seats: seats(j), posted: j.created_at });
   const byGroup = {}; for (const j of open) { const g = groups[j.title] || 'Other roles'; byGroup[g] = (byGroup[g] || 0) + seats(j); }
   const low = (v) => String(v || '').trim().toLowerCase();
   const title = low(q.title); const city = low(q.city); const group = String(q.group || '').trim();
@@ -752,7 +752,7 @@ route('GET', '/api/cand/me', K, (ctx) => {
   const onJob = new Set(apps.filter((a) => a.result === 'open' || a.result === 'Hired').map((a) => a.id));
   const appliedJobs = new Set(all("SELECT job_id FROM applications WHERE candidate_id=? AND result='open'", c.id).map((r) => r.job_id));
   const jobs = all('SELECT * FROM jobs WHERE archived=0').map((j) => V.jobView(j)).filter((j) => ['Open', 'Sourcing', 'Interviewing', 'Offer stage'].includes(j.status) && !appliedJobs.has(j.id))
-    .map((j) => { const m = L.matchScore(c, j, rating); const cl = get('SELECT * FROM clients WHERE id=?', j.client_id); return { id: j.id, title: j.title, city: j.city, company: companyLabel(cl), salary: L.salaryText(j), exp: j.exp_from !== null ? `${j.exp_from}–${j.exp_to ?? '+'} yrs` : '', score: m.score, reasons: m.reasons }; })
+    .map((j) => { const m = L.matchScore(c, j, rating); const cl = get('SELECT * FROM clients WHERE id=?', j.client_id); return { id: j.id, title: j.title, city: j.city, company: companyLabel(cl), exp: j.exp_from !== null ? `${j.exp_from}–${j.exp_to ?? '+'} yrs` : '', score: m.score, reasons: m.reasons }; })
     .filter((j) => j.score >= s.match.show).sort((a, b) => b.score - a.score);
   const next = apps.flatMap((a) => a.interviews.filter((i) => ['Scheduled', 'Rescheduled'].includes(i.status) && i.at > now()).map((i) => ({ ...i, app: a.id, job_title: a.job_title, company: a.company }))).sort((a, b) => (a.at < b.at ? -1 : 1))[0] || null;
   const offer = apps.find((a) => a.result === 'open' && a.step === 'Offer made') || null;
