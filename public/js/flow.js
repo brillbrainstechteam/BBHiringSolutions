@@ -79,18 +79,35 @@
       ${(p.hired || []).length ? `<div class="sec"><h3>Candidates hired</h3>${p.hired.map((x) => `<div class="hist-row"><span class="grow"><b>${esc(x.name)}</b> · ${esc(x.role)}</span><span class="small muted">${fmtD(x.date)}</span></div>`).join('')}</div>` : ''}
       <div class="sec"><h3>Past interactions</h3>${(p.timeline || []).map((x) => `<div class="hist-row"><span class="badge b-outline">${esc(x.kind)}</span><span class="grow small">${esc(x.text)}${x.by ? ` <span class="faint">· ${esc(x.by)}</span>` : ''}</span><span class="small muted nw">${fmtD(x.at)}</span></div>`).join('') || '<div class="faint small">Nothing yet.</div>'}</div>`;
   };
-  // The client's onboarding in order: pitch deck, agreement, KYC papers, WhatsApp group, thank-you. Each step says
-  // where it stands, with its button.
+  // The client's journey, step by step (the same 16-stage path as Update status): each step says where it stands, with
+  // its button. Steps the software sees for itself tick on their own; the others are ticked here.
+  const OB_BTN = {
+    intro_call: '<button class="btn sm" data-fcall>Call client</button>',
+    requirement: '<button class="btn sm" data-fcall>Note requirement</button>',
+    proposal: '<button class="btn sm" data-fmail="pitch">Send pitch deck</button>',
+    agreement: '<button class="btn sm" data-fagree>Send agreement</button>',
+    kyc: '<button class="btn sm" data-fmail="kyc">Ask for KYC</button>',
+    contract: '<button class="btn sm" data-fagree>View agreement</button>',
+    jd_shared: '<button class="btn sm" data-fjd>Create &amp; share JD</button>',
+    jd_approved: '<button class="btn sm" data-fjd>See JD</button>',
+    group_dp: '<button class="btn sm" data-fgroup>Set up group</button>',
+    thanks: '<button class="btn sm" data-fthanks>Send thank-you</button>',
+    first_job: '<button class="btn sm" data-newjob>New job opening</button>',
+  };
+  const OB_AUTO = ['kyc', 'contract', 'jd_shared', 'jd_approved', 'account', 'first_job'];
   F.client = (c) => {
-    const a = c.activation || {}; const k = c.kyc || {}; const g = c.wa_group || {};
-    const papers = [['GST', k.gst], ['PAN', k.pan], ['Owner ID', k.owner_id]]; const got = papers.filter(([, x]) => x).length;
-    const step = (n, title, status, cls, btn) => `<div class="ob-step"><span class="ob-n ${cls === 'b-green' ? 'done' : ''}">${cls === 'b-green' ? '✓' : n}</span><div class="grow"><b>${title}</b><div class="tiny muted">${status}</div></div>${btn}</div>`;
-    return `<div class="sec card pad onboard"><div class="row between"><h3 style="margin:0">Onboarding</h3><span class="small muted">${[a.contract, got === papers.length, g.created].filter(Boolean).length} of 3 key steps done</span></div>
-      ${step(1, 'Pitch deck', 'Our introduction, by email', '', '<button class="btn sm" data-fmail="pitch">Send pitch deck</button>')}
-      ${step(2, 'Recruitment agreement', a.contract ? 'Signed' : 'Not signed yet', a.contract ? 'b-green' : '', `<button class="btn sm ${a.contract ? '' : 'primary'}" data-fagree>${a.contract ? 'View agreement' : 'Agreement'}</button>`)}
-      ${step(3, 'KYC papers', `${papers.map(([l, x]) => `${x ? '✓' : '○'} ${l}`).join(' · ')}`, got === papers.length ? 'b-green' : '', '<button class="btn sm" data-fmail="kyc">Ask for KYC</button>')}
-      ${step(4, 'WhatsApp group', g.created ? `${esc(g.name || 'Created')}${g.link ? ` · <a href="${esc(g.link)}" target="_blank" rel="noopener">invite link</a>` : ''}` : g.name ? `${esc(g.name)} · to create` : 'Not set up', g.created ? 'b-green' : '', `<button class="btn sm" data-fgroup>${g.name ? 'Update' : 'Set up'}</button>`)}
-      ${step(5, 'Thank-you message', 'On WhatsApp, once they are on board', '', '<button class="btn sm" data-fthanks>Send thank-you</button>')}</div>`;
+    const k = c.kyc || {}; const g = c.wa_group || {}; const items = c.onboarding_items || [];
+    const papers = [['GST', k.gst], ['PAN', k.pan], ['Owner ID', k.owner_id]];
+    const sub = (it) => (it.key === 'kyc' ? papers.map(([l, x]) => `${x ? '✓' : '○'} ${l}`).join(' · ') : it.key === 'group_dp' && g.name ? `${esc(g.name)}${g.link ? ` · <a href="${esc(g.link)}" target="_blank" rel="noopener">invite link</a>` : ''}` : it.done && it.date ? `Done ${fmtD(it.date)}${it.by ? ` · ${esc(it.by)}` : ''}` : it.done ? 'Done' : OB_AUTO.includes(it.key) ? 'Ticks itself when it happens' : 'Not done yet');
+    const row = (it, n) => { const tick = !OB_AUTO.includes(it.key); const btn = it.done && ['proposal', 'agreement', 'thanks', 'group_dp', 'intro_call', 'requirement', 'kyc'].includes(it.key) ? '' : (OB_BTN[it.key] || '');
+      return `<div class="ob-step ${it.done ? 'is-done' : ''}"><span class="ob-n ${it.done ? 'done' : ''}">${it.done ? '✓' : n}</span><div class="grow"><b>${esc(it.label.replace(/^Onboarding: /, ''))}</b><div class="tiny muted">${sub(it)}</div></div>${btn}${tick ? `<label class="ob-tick" title="${it.done ? 'Done' : 'Mark done'}"><input type="checkbox" data-obtick="${esc(it.key)}" ${it.done ? 'checked' : ''}> ${it.done ? 'Done' : 'Mark done'}</label>` : ''}</div>`; };
+    const main = items.filter((it) => it.group !== 'onboarding'); const onb = items.filter((it) => it.group === 'onboarding');
+    const done = items.filter((it) => it.done).length; let n = 0;
+    const before = main.filter((it) => it.key !== 'first_job'); const last = main.filter((it) => it.key === 'first_job');
+    return `<div class="sec card pad onboard"><div class="row between"><h3 style="margin:0">Client journey</h3><span class="small muted"><span class="badge b-primary">${esc(c.stage || '')}</span> · ${done} of ${items.length} steps done</span></div>
+      ${before.map((it) => row(it, ++n)).join('')}
+      ${onb.length ? `<div class="ob-group"><div class="ob-group-h">Client onboarding</div>${onb.map((it) => row(it, ++n)).join('')}</div>` : ''}
+      ${last.map((it) => row(it, ++n)).join('')}</div>`;
   };
   F.clientMore = (c) => {
     const g = c.wa_group || {}; const o = (c.extra || {}).online; const k = c.kyc || {}; const a = c.activation || {};
@@ -143,7 +160,14 @@
     return stop;
   };
   F.clientMount = (el, c) => {
-    const on = (s, fn) => { const b = $(s, el); if (b) b.onclick = fn; };
+    const on = (s, fn) => $$(s, el).forEach((b) => { b.onclick = fn; });
+    // A step done by hand: tick it here; the stage moves on its own.
+    $$('[data-obtick]', el).forEach((x) => (x.onchange = async () => { try { await BB.post(`/api/clients/${c.id}/onboarding`, { item: x.dataset.obtick, done: x.checked }); BB.toast(x.checked ? 'Marked done' : 'Marked not done'); BB.open('client', c.id); } catch (e) { x.checked = !x.checked; BB.fail(e); } }));
+    // Create & share JD: the job opening whose JD is not approved yet (or the new opening, first).
+    on('[data-fjd]', async () => { const js = (c.jobs || []).filter((j) => !j.archived && !j.jd_approved && j.jd_status !== 'Approved');
+      if (!js.length) { const any = (c.jobs || []).find((j) => !j.archived); if (any) return BB.open('job', any.id); BB.toast('Make the job opening first; its JD is written and shared from there.'); return BB.newJob(c.id); }
+      if (js.length === 1) return BB.open('job', js[0].id);
+      const v = await BB.ask({ title: 'Which job opening?', fields: [{ name: 'job', label: 'Job opening', type: 'select', options: js.map((j) => [j.id, `${j.title} · ${j.city || ''} (${j.id})`]), placeholder: false }], ok: 'Open' }); if (v) BB.open('job', v.job); });
     on('[data-fcall]', async () => {
       const { script } = await BB.api('/api/call-script'); let stopMic = () => {};
       setTimeout(() => { const box = $('.modal [data-froles]'); if (!box) return; wireRoles(box); stopMic = wireVoice($('.modal'));
@@ -155,7 +179,7 @@
         `<div class="field" data-froles data-f="call_roles"><div data-frows>${roleRow({ location: c.city || '' })}</div><div class="row between" style="margin-top:8px"><button type="button" class="btn sm" data-fadd>+ Add another role</button><span class="small muted" data-ftotal></span></div></div>`], ok: 'Save call notes', submit: (x) => { stopMic(); return BB.post(`/api/clients/${c.id}/calls`, { call_roles: readRoles($('.modal [data-froles]')), notes: $('.modal [data-vtext]').value }); } });
       if (v) done(v.roles ? `Saved with ${v.roles} role${v.roles === 1 ? '' : 's'}: open jobs from Client calls` : 'Call notes saved');
     });
-    $$('[data-fmail]', el).forEach((b) => (b.onclick = () => F.composeMail([c.id], b.dataset.fmail, b.textContent)));
+    $$('[data-fmail]', el).forEach((b) => (b.onclick = () => F.composeMail([c.id], b.dataset.fmail, b.textContent.replace(/^Send /, ''))));
     on('[data-fthanks]', () => act(() => BB.post(`/api/clients/${c.id}/thanks`), (r) => (r.held ? 'Saved: messages are off for now' : 'Sent')));
     on('[data-fagree]', () => agreementBox(c));
     $$('[data-flook]', el).forEach((lk) => (lk.onclick = async () => {

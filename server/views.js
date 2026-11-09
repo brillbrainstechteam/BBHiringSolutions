@@ -61,10 +61,10 @@ const ONBOARDING = [
   { key: 'jd_shared', label: 'JD and R&R shared', stage: 'JD and R&R shared' },
   { key: 'jd_approved', label: 'JD and R&R approved', stage: 'JD and R&R approved' },
   { key: 'account', label: 'Account opened' },
-  { key: 'group_dp', label: 'Onboarding: WhatsApp group and DP created', group: 'onboarding' },
-  { key: 'welcome', label: 'Onboarding: welcome message sent', group: 'onboarding' },
-  { key: 'req_confirmed', label: 'Onboarding: requirement confirmed', group: 'onboarding' },
-  { key: 'thanks', label: 'Onboarding: thank-you message sent', group: 'onboarding', stage: 'Client onboarded' },
+  { key: 'group_dp', label: 'WhatsApp group and DP created', group: 'onboarding' },
+  { key: 'welcome', label: 'Welcome message sent', group: 'onboarding' },
+  { key: 'req_confirmed', label: 'Requirement confirmed', group: 'onboarding' },
+  { key: 'thanks', label: 'Thank-you message sent', group: 'onboarding', stage: 'Client onboarded' },
   { key: 'first_job', label: 'Job opening activated', stage: 'Job opening activated' },
 ];
 // Some checklist items tick themselves from the data.
