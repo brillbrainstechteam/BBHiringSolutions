@@ -2202,3 +2202,21 @@ a.pipe-step { text-decoration: none; cursor: pointer; } a.pipe-step:hover { bord
 .dt-wrap::-webkit-scrollbar-track, .tbl-wrap::-webkit-scrollbar-track { background: #FBF8F0; border-radius: 8px; }
 .dt-wrap::-webkit-scrollbar-thumb, .tbl-wrap::-webkit-scrollbar-thumb { background: #EADFC2; border-radius: 8px; }
 .dt-wrap::-webkit-scrollbar-thumb:hover, .tbl-wrap::-webkit-scrollbar-thumb:hover { background: #DCCB9E; }
+
+/* Dashboard tables, round 2: one-row toolbars, dropdowns sized to their text, a tidy pinned Actions column */
+.dt-bar { flex-wrap: wrap; gap: 8px; }
+.dt-search { flex: 1 1 220px; max-width: 320px; min-width: 180px; }
+.dt-sel { flex: none; padding: 0 2px 0 10px; }
+.dt-sel select { padding: 0 26px 0 2px; background-position: right 6px center; background-size: 14px; white-space: nowrap; text-overflow: ellipsis; }
+.dt-cols > summary.dt-btn::after { margin-left: 6px; }
+.dt-act { width: 64px; }
+.dt-cl th.dt-act, .dt-cl td.dt-act { position: sticky; right: 0; z-index: 2; background: #fff; box-shadow: -8px 0 10px -8px rgba(16, 29, 59, .14); }
+.dt-cl th.dt-act { background: var(--dt-head); z-index: 3; }
+.dt-cl tr.ticked td.dt-act { background: #F6FBF9; } .dt-cl .dt-job td.dt-act { background: #FAFBFD; }
+.dt-more { display: inline-block; position: static; }
+.dt-more > summary.dt-dots::after { display: none !important; content: none !important; }
+.dt-dots { width: 34px; height: 34px; padding: 0; margin: 0 auto; display: grid; place-items: center; border: 1px solid var(--dt-line); border-radius: 10px; background: #fff; color: #4A5675; transition: background .15s, border-color .15s, color .15s; }
+.dt-dots svg { width: 18px; height: 18px; }
+.dt-dots:hover, .dt-more[open] > .dt-dots { background: var(--dt-mint); border-color: var(--dt-mint-b); color: var(--dt-teal); }
+.dt-more .step-pop { position: absolute; right: 12px; top: auto; margin-top: 6px; width: 200px; z-index: 20; }
+.dt-cl td.dt-act { position: sticky; }

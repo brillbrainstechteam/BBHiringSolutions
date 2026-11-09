@@ -55,6 +55,8 @@
   const pager = (st, total) => { const pages = Math.max(1, Math.ceil(total / st.per)); const from = total ? (st.page - 1) * st.per + 1 : 0; const to = Math.min(total, st.page * st.per);
     return `<div class="dt-foot"><label class="dt-per">Rows per page <select data-dtper>${[10, 25, 50].map((n) => `<option ${n === st.per ? 'selected' : ''}>${n}</option>`).join('')}</select></label><span class="dt-range">${from}–${to} of ${total}</span><span class="grow"></span>
       <button type="button" class="btn sm" data-dtpage="${st.page - 1}" ${st.page <= 1 ? 'disabled' : ''}>‹ Previous</button>${Array.from({ length: pages }, (_, i) => i + 1).filter((p) => p === 1 || p === pages || Math.abs(p - st.page) <= 1).map((p, i, l) => `${i && p - l[i - 1] > 1 ? '<span class="dt-gap">…</span>' : ''}<button type="button" class="dt-pg ${p === st.page ? 'on' : ''}" data-dtpage="${p}">${p}</button>`).join('')}<button type="button" class="btn sm" data-dtpage="${st.page + 1}" ${st.page >= pages ? 'disabled' : ''}>Next ›</button></div>`; };
+  const fitCtx = document.createElement('canvas').getContext('2d');
+  const fitSelects = (root) => $$('.dt-sel select', root).forEach((sel) => { const cs = getComputedStyle(sel); fitCtx.font = `${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`; const t = (sel.selectedOptions[0] || {}).text || ''; sel.style.width = `${Math.ceil(fitCtx.measureText(t).width) + 34}px`; });
   const cmp = (a, b) => (typeof a === 'number' && typeof b === 'number' ? a - b : String(a ?? '').localeCompare(String(b ?? ''), undefined, { sensitivity: 'base' }));
 
   // Agencies: search, agency filter, sort (menu or column), export, pages.
@@ -79,6 +81,7 @@
       $('[data-dtper]', box).onchange = (e) => { st.per = Number(e.target.value); st.page = 1; draw(); };
       $('[data-dtexport]', box).onclick = () => csvDownload('agencies.csv', cols.map((c) => c[1]), rowsNow().map((a) => cols.map(([k]) => a[k])));
       const rs = $('[data-dtreset]', box); if (rs) rs.onclick = (e) => { e.preventDefault(); Object.assign(st, { q: '', ag: '', page: 1 }); draw(); };
+      fitSelects(box);
       $$('[data-hag]', box).forEach((b) => (b.onclick = (e) => { e.preventDefault(); BB.setQ({ agency: b.dataset.hag }); }));
     };
     draw();
@@ -108,7 +111,7 @@
         <label class="dt-sel">${svg('<path d="M3 5h18l-7 8v6l-4-2v-4z"/>')}<select data-dtticket><option value="">Ticket type: All</option><option value="High" ${st.ticket === 'High' ? 'selected' : ''}>High ticket</option><option value="Low" ${st.ticket === 'Low' ? 'selected' : ''}>Low ticket</option></select></label>
         <label class="dt-sel">${svg('<path d="M3 5h18l-7 8v6l-4-2v-4z"/>')}<select data-dtstage><option value="">Stage: All</option>${h.stages.map((s) => `<option value="${s}" ${st.stage === s ? 'selected' : ''}>${STAGE_LABEL[s] || s}</option>`).join('')}</select></label>
         <label class="dt-sel">${svg('<path d="M7 4v16M3 8l4-4 4 4M17 20V4M13 16l4 4 4-4"/>')}<select data-dtsort>${SORTS.map(([v, l]) => `<option value="${v}" ${`${st.sort}:${st.dir}` === v ? 'selected' : ''}>Sort: ${l}</option>`).join('')}${SORTS.some(([v]) => v === `${st.sort}:${st.dir}`) ? '' : '<option selected>Sort: column</option>'}</select></label>
-        <span class="grow"></span><span class="dt-vdiv"></span>
+        <span class="grow"></span>
         <details class="step-menu dt-cols"><summary class="btn sm dt-btn">${svg('<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16M15 4v16"/>')} Columns</summary><div class="step-pop right dt-colpop">${COLS.map(([k, t]) => `<label class="row small"><input type="checkbox" data-dtcol="${k}" ${hidden.has(k) ? '' : 'checked'}> ${esc(t)}</label>`).join('')}</div></details>
         <button type="button" class="btn sm dt-btn" data-dtexport>${BB.icon('download')} Export</button>
         <button type="button" class="btn sm dt-primary" data-dtbulk ${st.sel.size ? '' : 'disabled'}>${svg('<path d="m12 3 9 5-9 5-9-5z"/><path d="m3 13 9 5 9-5"/>')} Bulk update${st.sel.size ? ` (${st.sel.size})` : ''}</button></div>
@@ -116,8 +119,8 @@
         <tbody>${rows.map((r) => `<tr class="dt-row ${st.sel.has(r.id) ? 'ticked' : ''}"><td class="dt-ck"><input type="checkbox" data-dtck="${esc(r.id)}" ${st.sel.has(r.id) ? 'checked' : ''} aria-label="Tick ${esc(r.company)}"></td><td class="dt-tg"><button type="button" class="dt-tog ${st.open.has(r.id) ? 'open' : ''}" data-dttog="${esc(r.id)}" aria-label="Show job openings" ${r.jobs.length ? '' : 'disabled'}>▶</button></td>
           <td><div class="dt-client"><a href="#" class="dt-link" data-open="client:${esc(r.id)}">${esc(r.company)}</a><span class="dt-pill ${r.ticket === 'High' ? 'hi' : 'lo'}">${r.ticket} ticket</span></div>${isSuper(me) ? `<div class="dt-sub">${esc(r.agency)}</div>` : ''}</td>
           ${cols.map(([k]) => `<td class="num">${cell(r, k)}</td>`).join('')}
-          <td class="dt-act"><details class="step-menu dt-more"><summary class="dt-dots" aria-label="Actions for ${esc(r.company)}">⋮</summary><div class="step-pop right" role="menu"><button type="button" role="menuitem" data-open="client:${esc(r.id)}">Open client</button><button type="button" role="menuitem" data-dtnewjob="${esc(r.id)}">New job opening</button><button type="button" role="menuitem" data-hgo="${esc(BB.qs({ client: r.id }))}">See applications</button><button type="button" role="menuitem" data-dtjobs="${esc(r.id)}">See job openings</button></div></details></td></tr>
-          ${st.open.has(r.id) ? r.jobs.map((j) => `<tr class="dt-job"><td></td><td></td><td><a href="#" data-open="job:${esc(j.id)}">${esc(j.title)}</a> <span class="tiny muted">${esc(j.city || '')} · ${esc(j.status || '')} · ${salRange(j)}</span></td>${cols.map(([k]) => `<td class="num">${jcell(j, k)}</td>`).join('')}<td></td></tr>`).join('') : ''}`).join('')
+          <td class="dt-act"><details class="step-menu dt-more"><summary class="dt-dots" aria-label="Actions for ${esc(r.company)}" title="Actions">${svg('<circle cx="12" cy="5" r="1.6" fill="currentColor"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/><circle cx="12" cy="19" r="1.6" fill="currentColor"/>', 0)}</summary><div class="step-pop right" role="menu"><button type="button" role="menuitem" data-open="client:${esc(r.id)}">Open client</button><button type="button" role="menuitem" data-dtnewjob="${esc(r.id)}">New job opening</button><button type="button" role="menuitem" data-hgo="${esc(BB.qs({ client: r.id }))}">See applications</button><button type="button" role="menuitem" data-dtjobs="${esc(r.id)}">See job openings</button></div></details></td></tr>
+          ${st.open.has(r.id) ? r.jobs.map((j) => `<tr class="dt-job"><td></td><td></td><td><a href="#" data-open="job:${esc(j.id)}">${esc(j.title)}</a> <span class="tiny muted">${esc(j.city || '')} · ${esc(j.status || '')} · ${salRange(j)}</span></td>${cols.map(([k]) => `<td class="num">${jcell(j, k)}</td>`).join('')}<td class="dt-act"></td></tr>`).join('') : ''}`).join('')
           || `<tr><td colspan="${cols.length + 4}"><div class="dt-empty">No clients match these filters. <a href="#" data-dtreset>Reset filters</a></div></td></tr>`}</tbody></table></div>${pager(st, all.length)}`;
       const q = $('[data-dtq]', box); q.oninput = () => { st.q = q.value; st.page = 1; draw(); const x = $('[data-dtq]', box); x.focus(); x.setSelectionRange(x.value.length, x.value.length); };
       $('[data-dtticket]', box).onchange = (e) => { st.ticket = e.target.value; st.page = 1; draw(); };
@@ -136,6 +139,7 @@
       const rs = $('[data-dtreset]', box); if (rs) rs.onclick = (e) => { e.preventDefault(); Object.assign(st, { q: '', ticket: '', stage: '', page: 1 }); st.onStage && st.onStage(); draw(); };
       $('[data-dtexport]', box).onclick = () => csvDownload('clients-and-job-openings.csv', ['Client', 'Ticket', 'Agency', ...COLS.map((c) => c[1])], (st.sel.size ? rowsNow().filter((r) => st.sel.has(r.id)) : rowsNow()).map((r) => [r.company, r.ticket, r.agency, ...COLS.map(([k]) => val(r, k))]));
       $('[data-dtbulk]', box).onclick = () => bulk();
+      fitSelects(box);
       box.onclick = (e) => $$('details.step-menu', box).forEach((d) => { if (!d.contains(e.target) || e.target.closest('[role=menuitem]')) d.open = false; });
     };
     const bulk = async () => {
