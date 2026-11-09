@@ -525,6 +525,11 @@ BB.route = () => {
 };
 // Brand lockup: mark | BrillBrains / Hiring Solutions / tagline (as on the website).
 // The full logo on wide screens, the BB mark where space is tight; the tagline names the part of the site.
+// Skill groups (from the server): the group of any skill, listed or typed.
+BB.skillGroupNames = () => [...((BB.boot.skill_groups || {}).groups || []).map((g) => g.name), (BB.boot.skill_groups || {}).other || 'Other skills'];
+BB.skillGroupOf = (skill) => { const sg = BB.boot.skill_groups || { groups: [] }; const low = String(skill || '').toLowerCase().trim();
+  const ex = sg.groups.find((g) => g.skills.some((x) => x.toLowerCase() === low)); if (ex) return ex.name;
+  const pat = sg.groups.find((g) => { try { return new RegExp(g.match, g.flags).test(skill); } catch { return false; } }); return pat ? pat.name : (sg.other || 'Other skills'); };
 BB.brand = (tagline, href = '/') => {
   const name = BB.boot.business.name || 'BrillBrains Hiring Solutions';
   return `<a class="brand" href="${href}"><img class="brand-logo" src="/img/logo.png" alt="${esc(name)}"><img class="brand-mark" src="/img/icon.png" alt="${esc(name)}">${tagline ? `<span class="brand-tag">${esc(tagline)}</span>` : ''}</a>`;

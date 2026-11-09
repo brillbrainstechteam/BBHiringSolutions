@@ -445,6 +445,7 @@ function candMatch(q) {
     if (q.biz && !(c.exp_business || []).some((x) => (q.biz === 'B2C' ? x === 'Retailer' : x !== 'Retailer'))) return false;
     if (q.city && !list('city').some((x) => c.city === x || (c.work_cities || []).includes(x))) return false;
     if (q.state && !list('state').includes(c.state || L.stateOf(c.city))) return false;
+    if (q.skillgroup) { const SK = require('./skills'); const gs = SK.groups(D.settings()); if (!(c.skills || []).some((s) => many(q.skillgroup).includes(SK.groupOf(s, gs)))) return false; }
     if (q.skills) { const has = (c.skills || []).map((x) => String(x).toLowerCase()); if (!list('skills').some((x) => has.includes(x.toLowerCase()))) return false; }
     if (q.ad && ![c.ad_campaign, c.ad_set, c.ad_name].includes(q.ad)) return false;
     if (from || to) { const day = L.istDay(c.created_at); if ((from && day < from) || (to && day > to)) return false; }
@@ -1084,17 +1085,107 @@ route('POST', '/api/jobs/:id/send-profiles', T, (ctx) => {
 
 // ---------- candidates (resume bank) ----------
 // The resume bank as filtered by q (the same filters a segment saves), as this user may see it.
-function candRows(q, u) {
-  const fresh = q.updated ? Number(q.updated) : null; const match = candMatch(q);
+// Everything but the dropdown filters (those are candMatch): archived, notice, looking, tie-up, agency, new, freshness, search.
+function candBase(q, u) {
+  const fresh = q.updated ? Number(q.updated) : null;
   const ind = q.industry || 'all'; const inInd = (c) => ind === 'all' || (c.industry || 'Jewellery') === ind; // old segments may still carry an industry
-  return all('SELECT * FROM candidates WHERE merged_into IS NULL AND removed=0 AND junk=0 ORDER BY created_at DESC')
-    .filter((c) => (q.archived ? c.archived : !c.archived) && inInd(c) && match(c) && (!q.notice || (c.notice_days ?? 999) <= Number(q.notice))
-      && (!q.looking || c.looking === q.looking) && (!q.tieup || String(c.tieup_id) === String(q.tieup)) && (!q.agency || (q.agency === 'none' ? !c.agency_id : c.agency_id === q.agency)) && (!q.new || c.is_new)
+  return (c) => (q.archived ? c.archived : !c.archived) && inInd(c) && (!q.notice || (c.notice_days ?? 999) <= Number(q.notice))
+      && (!q.looking || c.looking === q.looking) && (!q.tieup || String(c.tieup_id) === String(q.tieup)) && (!q.agency || (q.agency === 'none' ? !c.agency_id : q.agency === 'any' ? !!c.agency_id : c.agency_id === q.agency)) && (!q.new || c.is_new)
+      && (!q.cv || (q.cv === 'yes' ? !!c.cv_file : !c.cv_file))
       && (!fresh || L.daysBetween(c.last_updated || c.created_at) <= fresh) && (!q.stale || L.daysBetween(c.last_updated || c.created_at) > 90)
-      && like(q.q, c.id, c.name, R.phoneVisible(u, c) ? c.whatsapp : '', c.job_wanted, (c.also_roles || []).join(' '), c.city, c.current_company, c.old_code, c.domain, (c.skills || []).join(' ')))
+      && like(q.q, c.id, c.name, R.phoneVisible(u, c) ? c.whatsapp : '', c.job_wanted, (c.also_roles || []).join(' '), c.city, c.current_company, c.old_code, c.domain, (c.skills || []).join(' '));
+}
+// The values each dropdown can still offer, with counts: worked out from the candidates matching every OTHER filter,
+// so picking Design narrows designations and skills to what Design candidates have (and so on, in any order).
+const FACETS = {
+  domain: (c) => [c.domain || 'Not read yet'],
+  dept: (c) => [c.department, ...(c.also_roles || []).map((x) => L.deptOf(x))],
+  job: (c) => [c.job_wanted, ...(c.also_roles || [])],
+  skills: (c) => (c.skills || []).map((x) => String(x).trim()),
+  city: (c) => [c.city, ...(c.work_cities || [])],
+  state: (c) => [c.state || L.stateOf(c.city)],
+  source: (c) => [c.source],
+};
+function candFacets(q, u) {
+  const base = candBase(q, u); const pool = all('SELECT * FROM candidates WHERE merged_into IS NULL AND removed=0 AND junk=0').filter(base);
+  const out = {};
+  for (const [k, vals] of Object.entries(FACETS)) {
+    const m = candMatch({ ...q, [k]: '' }); const tally = new Map();
+    for (const c of pool) if (m(c)) for (const v of new Set(vals(c).filter(Boolean))) tally.set(v, (tally.get(v) || 0) + 1);
+    out[k] = [...tally.entries()].sort((a, b) => b[1] - a[1] || String(a[0]).localeCompare(String(b[0]))).slice(0, k === 'skills' ? 400 : 300);
+  }
+  return out;
+}
+function candRows(q, u) {
+  const match = candMatch(q); const base = candBase(q, u);
+  return all('SELECT * FROM candidates WHERE merged_into IS NULL AND removed=0 AND junk=0 ORDER BY created_at DESC')
+    .filter((c) => base(c) && match(c))
     .map((c) => ({ ...candidateOut(u, c), status: V.candStatus(c.id) }))
     .filter((c) => !q.status || c.status.startsWith(q.status));
 }
+// ---------- Add to the lists: a domain, department, designation or skill that is not there yet (admins) ----------
+route('POST', '/api/taxonomy', T, (ctx) => {
+  if (!['super', 'admin'].includes(ctx.user.level)) throw httpError(403, 'Admins add to these lists.');
+  const b = ctx.body || {}; const name = String(b.name || '').replace(/\s+/g, ' ').trim().slice(0, 60);
+  if (name.length < 2) throw httpError(400, 'Type the name', 'name');
+  const s = D.settings(); const same = (l) => (l || []).some((x) => String(x).toLowerCase() === name.toLowerCase());
+  const save = (k, v) => { D.setSetting(k, v); D.history(ctx.actor.label, 'setting', 'settings', k, null, `added ${name}`); };
+  if (b.kind === 'domain') { if (same(s.industry_list)) throw httpError(400, `${name} is already a domain`, 'name'); save('industry_list', [...(s.industry_list || []), name]); }
+  else if (b.kind === 'dept') { if (same(s.departments)) throw httpError(400, `${name} is already a department`, 'name'); save('departments', [...(s.departments || []), name]); }
+  else if (b.kind === 'job') {
+    const dept = String(b.dept || '').trim(); if (!dept) throw httpError(400, 'Pick its department', 'dept');
+    const inds = JSON.parse(JSON.stringify(s.industries)); const key = s.default_industry && inds[s.default_industry] ? s.default_industry : Object.keys(inds)[0]; const groups = inds[key].groups;
+    if (Object.values(groups).some((g) => same(g.jobs))) throw httpError(400, `${name} is already a designation`, 'name');
+    const gname = Object.keys(groups).find((g) => groups[g].dept === dept) || dept; groups[gname] = groups[gname] || { dept, jobs: [] }; groups[gname].jobs.push(name);
+    save('industries', inds); if (!(s.departments || []).includes(dept)) save('departments', [...(s.departments || []), dept]);
+  } else if (b.kind === 'skill') {
+    const SK = require('./skills'); const group = SK.GROUPS.some((g) => g.name === b.group) ? b.group : SK.groupOf(name);
+    const cur = SK.groups(s); if (cur.some((g) => same(g.skills))) throw httpError(400, `${name} is already a skill`, 'name');
+    const own = { ...(s.skill_groups || {}) }; own[group] = [...(own[group] || (cur.find((g) => g.name === group) || { skills: [] }).skills), name]; save('skill_groups', own);
+  } else throw httpError(400, 'Pick what to add');
+  return { ok: true, name };
+});
+// ---------- Candidate reports: counts by group, each with the filter that opens those candidates ----------
+route('GET', '/api/candidates/report', T, (ctx) => {
+  const q = { ...ctx.query }; const u = ctx.user; const SK = require('./skills');
+  const base = candBase(q, u); const match = candMatch(q);
+  const rows = all('SELECT * FROM candidates WHERE merged_into IS NULL AND removed=0 AND junk=0').filter((c) => base(c) && match(c));
+  const tally = (fn) => { const m = new Map(); for (const c of rows) for (const v of new Set([].concat(fn(c)).filter((x) => x !== null && x !== undefined && x !== ''))) m.set(v, (m.get(v) || 0) + 1); return m; };
+  const top = (m, n, f) => [...m.entries()].sort((a, b) => b[1] - a[1]).slice(0, n).map(([k, v]) => ({ label: String(k), n: v, f: f(k) }));
+  const groups = SK.groups(D.settings());
+  const expBand = (y) => (y === null || y === undefined ? null : y === 0 ? 'Fresher' : y < 3 ? '1–2 years' : y < 6 ? '3–5 years' : y < 11 ? '6–10 years' : '10+ years');
+  const EXP = [['Fresher', { exp_min: '0', exp_max: '0' }], ['1–2 years', { exp_min: '0.1', exp_max: '2.99' }], ['3–5 years', { exp_min: '3', exp_max: '5.99' }], ['6–10 years', { exp_min: '6', exp_max: '10.99' }], ['10+ years', { exp_min: '11' }]];
+  const expM = tally((c) => expBand(c.exp_total));
+  const jewBand = (y) => (y === null || y === undefined ? null : y === 0 ? '0' : y < 1 ? 'lt1' : y < 3 ? '1-3' : y < 5 ? '3-5' : y < 10 ? '5-10' : '10+');
+  const JEW = [['0', 'None'], ['lt1', 'Under 1 year'], ['1-3', '1–3 years'], ['3-5', '3–5 years'], ['5-10', '5–10 years'], ['10+', '10+ years']];
+  const jewM = tally((c) => jewBand(c.exp_jewellery));
+  const lookM = tally((c) => c.looking || 'Not asked yet');
+  // Added per week, the last 12 weeks (India time, weeks start Monday)
+  const weeks = []; const day0 = new Date(`${L.istDay()}T00:00:00Z`); const dow = (day0.getUTCDay() + 6) % 7; const mon = new Date(day0.getTime() - dow * 86400000);
+  for (let i = 11; i >= 0; i--) { const s = new Date(mon.getTime() - i * 7 * 86400000); const e = new Date(s.getTime() + 6 * 86400000); const from = s.toISOString().slice(0, 10); const to = e.toISOString().slice(0, 10); weeks.push({ label: from, to, n: rows.filter((c) => { const d = L.istDay(c.created_at); return d >= from && d <= to; }).length, f: { from, to } }); }
+  return {
+    total: rows.length,
+    tiles: [
+      { label: 'New, not yet seen', n: rows.filter((c) => c.is_new).length, f: { new: '1' } },
+      { label: 'Not assigned to an agency', n: rows.filter((c) => !c.agency_id).length, f: { agency: 'none' } },
+      { label: 'No resume on file', n: rows.filter((c) => !c.cv_file).length, f: { cv: 'no' } },
+      { label: 'Actively looking', n: rows.filter((c) => c.looking === 'Actively looking').length, f: { looking: 'Actively looking' } },
+    ],
+    dept: top(tally((c) => c.department || 'Not set'), 12, (k) => (k === 'Not set' ? null : { dept: k })),
+    job: top(tally((c) => c.job_wanted || 'Not set'), 12, (k) => (k === 'Not set' ? null : { job: k })),
+    domain: top(tally((c) => c.domain || 'Not read yet'), 10, (k) => ({ domain: k })),
+    city: top(tally((c) => c.city || 'Not set'), 12, (k) => (k === 'Not set' ? null : { city: k })),
+    source: top(tally((c) => c.source || 'Not set'), 10, (k) => (k === 'Not set' ? null : { source: k })),
+    skill_group: [...groups.map((g) => g.name), SK.OTHER].map((g) => ({ label: g, n: rows.filter((c) => (c.skills || []).some((s) => SK.groupOf(s, groups) === g)).length, f: { skillgroup: g } })).filter((x) => x.n).sort((a, b) => b.n - a.n),
+    skills: top(tally((c) => (c.skills || []).map((s) => String(s).trim())), 15, (k) => ({ skills: k })),
+    exp: EXP.map(([l, f]) => ({ label: l, n: expM.get(l) || 0, f })).concat([{ label: 'Not given', n: rows.filter((c) => c.exp_total === null || c.exp_total === undefined).length, f: null }]),
+    jewellery: JEW.map(([k, l]) => ({ label: l, n: jewM.get(k) || 0, f: { jewellery: k } })),
+    looking: top(lookM, 6, (k) => (k === 'Not asked yet' ? null : { looking: k })),
+    assigned: [{ label: 'Assigned', n: rows.filter((c) => c.agency_id).length, f: { agency: 'any' } }, { label: 'Not assigned', n: rows.filter((c) => !c.agency_id).length, f: { agency: 'none' } }],
+    resume: [{ label: 'Resume on file', n: rows.filter((c) => c.cv_file).length, f: { cv: 'yes' } }, { label: 'No resume', n: rows.filter((c) => !c.cv_file).length, f: { cv: 'no' } }],
+    weeks,
+  };
+});
 // Every matching candidate's CV in one zip, with the list as Excel. Downloads are for the super admin only.
 route('GET', '/api/candidates/cvs.zip', { auth: 'team', levels: ['super'] }, (ctx) => {
   const rows = candRows(ctx.query, ctx.user); const files = {}; let size = 0; let skipped = 0;
@@ -1121,7 +1212,7 @@ route('GET', '/api/candidates', T, (ctx) => {
   ctx.designations = [...new Set(all('SELECT industry, job_wanted, also_roles FROM candidates WHERE merged_into IS NULL AND removed=0 AND junk=0').filter(inInd).flatMap((c) => [c.job_wanted, ...(c.also_roles || [])]).filter(Boolean))].sort();
   // Only the super admin downloads candidates (as filtered on screen); agencies and recruiters work in the portal.
   if (['csv', 'xlsx'].includes(ctx.query.format) && !isSuper(u)) throw httpError(403, 'Only the super admin can download candidates.');
-  return { ...page(ctx, rows, 'candidates', [...CAND_EXPORT, [(r) => L.adLabel(r), 'ad'], 'status']), designations: ctx.designations, ads: adOptions('candidates'), quick: ctx.quick };
+  return { ...page(ctx, rows, 'candidates', [...CAND_EXPORT, [(r) => L.adLabel(r), 'ad'], 'status']), designations: ctx.designations, ads: adOptions('candidates'), quick: ctx.quick, facets: ['csv', 'xlsx'].includes(ctx.query.format) ? undefined : candFacets(q, u) };
 });
 route('POST', '/api/candidates', T, async (ctx) => {
   // Same questions and checks as the public job-seeker form (api-public /apply), plus salary, notice, industry and source.

@@ -260,8 +260,18 @@
   const CAND_MORE = ['from', 'to', 'exp_min', 'exp_max', 'sal_min', 'sal_max'];
   // A drop-down of tick boxes (several values at once), saved as "a,b,c" in the address.
   // Options are values, or [value, label] pairs.
-  const multiSel = (k, all, plural, opts, val) => { const on = String(val || '').split(',').filter(Boolean); const vOf = (o) => (Array.isArray(o) ? o[0] : o); const lOf = (o) => (Array.isArray(o) ? o[1] : o);
-    return `<details class="msel" data-msel="${k}"><summary>${on.length === 0 ? all : on.length === 1 ? esc(lOf(opts.find((o) => vOf(o) === on[0]) || on[0])) : `${on.length} ${plural}`}</summary><div class="msel-pop">${opts.length > 8 ? '<input class="msel-find" placeholder="Find…" data-mfind>' : ''}<div class="msel-list">${[...opts].sort((a, b) => Number(on.includes(vOf(b))) - Number(on.includes(vOf(a)))).map((o) => `<label class="row small"><input type="checkbox" value="${esc(vOf(o))}" ${on.includes(vOf(o)) ? 'checked' : ''}> ${esc(lOf(o))}</label>`).join('')}</div><div class="row msel-foot"><button type="button" class="btn sm ghost" data-mclear>Clear</button><button type="button" class="btn sm primary" data-mapply>Apply</button></div></div></details>`; };
+  // x: { counts: Map(value → how many), group: (value) → heading, add: 'domain' | 'dept' | 'job' | 'skill' (admins add new ones) }
+  const multiSel = (k, all, plural, opts, val, x = {}) => { const on = String(val || '').split(',').filter(Boolean); const vOf = (o) => (Array.isArray(o) ? o[0] : o); const lOf = (o) => (Array.isArray(o) ? o[1] : o);
+    // With counts, only values that still have candidates are offered (plus the ticked ones).
+    let list = x.counts ? opts.filter((o) => on.includes(vOf(o)) || x.counts.get(vOf(o))) : [...opts];
+    if (x.counts) for (const v of x.counts.keys()) if (!list.some((o) => vOf(o) === v)) list.push(v);
+    list.sort((a, b) => Number(on.includes(vOf(b))) - Number(on.includes(vOf(a))) || (x.counts ? (x.counts.get(vOf(b)) || 0) - (x.counts.get(vOf(a)) || 0) : 0));
+    const item = (o) => `<label class="row small"><input type="checkbox" value="${esc(vOf(o))}" ${on.includes(vOf(o)) ? 'checked' : ''}> <span class="grow">${esc(lOf(o))}</span>${x.counts ? `<span class="msel-n">${x.counts.get(vOf(o)) || 0}</span>` : ''}</label>`;
+    let body;
+    if (x.group) { const by = new Map(); for (const o of list) { const g = x.group(vOf(o)); if (!by.has(g)) by.set(g, []); by.get(g).push(o); } const order = BB.skillGroupNames(); body = [...by.entries()].sort((a, b) => order.indexOf(a[0]) - order.indexOf(b[0])).map(([g, l]) => `<div class="msel-grp" data-mgrp>${esc(g)}</div>${l.map(item).join('')}`).join(''); }
+    else body = list.map(item).join('');
+    const canAdd = x.add && BB.me && ['super', 'admin'].includes(BB.me.user.level);
+    return `<details class="msel" data-msel="${k}"${canAdd ? ` data-madd="${x.add}"` : ''}><summary>${on.length === 0 ? all : on.length === 1 ? esc(lOf(opts.find((o) => vOf(o) === on[0]) || on[0])) : `${on.length} ${plural}`}</summary><div class="msel-pop">${list.length > 8 || canAdd ? `<input class="msel-find" placeholder="${canAdd ? 'Find or add…' : 'Find…'}" data-mfind>` : ''}${canAdd ? '<button type="button" class="msel-add" data-maddbtn hidden></button>' : ''}<div class="msel-list">${body || '<div class="msel-none small muted">Nothing here with these filters</div>'}</div><div class="row msel-foot"><button type="button" class="btn sm ghost" data-mclear>Clear</button><button type="button" class="btn sm primary" data-mapply>Apply</button></div></div></details>`; };
   // A click outside closes an open list (one list at a time).
   document.addEventListener('click', (e) => { document.querySelectorAll('.msel[open]').forEach((d) => { if (!d.contains(e.target)) d.open = false; }); });
   BB.wireMultiSel = (root) => $$('[data-msel]', root).forEach((d) => {
@@ -281,24 +291,44 @@
       list.style.maxHeight = `${Math.min(260, room)}px`; };
     const onMove = () => place();
     d.addEventListener('toggle', () => { if (d.open) { place(); addEventListener('resize', onMove); addEventListener('scroll', onMove, true); const f = $('[data-mfind]', d); if (f) f.focus(); } else { removeEventListener('resize', onMove); removeEventListener('scroll', onMove, true); if (!done && picked() !== was) go(picked()); } });
-    const fd = $('[data-mfind]', d); if (fd) fd.oninput = () => { const w = fd.value.trim().toLowerCase(); $$('.msel-list label', d).forEach((l) => { l.hidden = !!w && !l.textContent.toLowerCase().includes(w); }); };
+    const addBtn = $('[data-maddbtn]', d); const kind = d.dataset.madd; const KIND = { domain: 'domain', dept: 'department', job: 'designation', skill: 'skill' };
+    const fd = $('[data-mfind]', d); if (fd) fd.oninput = () => { const w = fd.value.trim().toLowerCase(); $$('.msel-list label', d).forEach((l) => { l.hidden = !!w && !l.textContent.toLowerCase().includes(w); });
+      $$('[data-mgrp]', d).forEach((h) => { let n = h.nextElementSibling; let any = false; while (n && !n.matches('[data-mgrp]')) { if (n.matches('label') && !n.hidden) any = true; n = n.nextElementSibling; } h.hidden = !any; });
+      if (addBtn) { const exact = $$('.msel-list input', d).some((i) => i.value.toLowerCase() === w); addBtn.hidden = !w || exact || w.length < 2; addBtn.textContent = `+ Add “${fd.value.trim()}” as a new ${KIND[kind]}`; } };
+    if (addBtn) addBtn.onclick = async () => {
+      const name = fd.value.trim(); const extra = {};
+      if (kind === 'job') { const v = await BB.ask({ title: `New designation: ${esc(name)}`, fields: [{ name: 'dept', label: 'Department', type: 'select', options: BB.boot.departments || [] }], ok: 'Add designation' }); if (!v) return; extra.dept = v.dept; }
+      if (kind === 'skill') { const v = await BB.ask({ title: `New skill: ${esc(name)}`, fields: [{ name: 'group', label: 'Skill group', type: 'select', options: BB.skillGroupNames().slice(0, -1), value: BB.skillGroupOf(name), placeholder: false }], ok: 'Add skill' }); if (!v) return; extra.group = v.group; }
+      try { await BB.post('/api/taxonomy', { kind, name, ...extra }); BB.boot = await (await fetch('/api/bootstrap')).json(); BB.toast(`${name} added as a ${KIND[kind]}`); BB.refreshPage(); } catch (e) { BB.fail(e); }
+    };
   });
-  function candFilters(q, desigs, skills) {
+  function candFilters(q, desigs, skills, facets) {
+    const cnt = (k) => (facets && facets[k] ? new Map(facets[k]) : null);
     const s = BB.boot;
     const sel = (k, label, opts) => `<select data-f="${k}"><option value="">${label}</option>${opts.map((o) => { const [v, t] = Array.isArray(o) ? o : [o, o]; return `<option value="${esc(v)}" ${String(q[k] || '') === String(v) ? 'selected' : ''}>${esc(t)}</option>`; }).join('')}</select>`;
     const states = [...new Set((s.places || []).map((x) => x.state).filter(Boolean))].sort();
     const n = (k, ph) => `<input type="number" min="0" placeholder="${ph}" data-f="${k}" value="${esc(q[k] || '')}">`;
     return {
-      main: `${multiSel('domain', 'All domains', 'domains', [...(s.industry_list || []), 'Other', 'Not clear', 'Not read yet'], q.domain)}${multiSel('dept', 'All departments', 'departments', s.departments || [], q.dept)}${multiSel('job', 'All designations', 'designations', desigs, q.job)}${multiSel('skills', 'All skills', 'skills', skills || [], q.skills)}${multiSel('city', 'All cities', 'cities', s.cities || [], q.city)}${multiSel('state', 'All states', 'states', states, q.state)}${multiSel('source', 'All sources', 'sources', [...new Set([...(s.lead_sources || []), ...String(q.source || '').split(',').filter(Boolean)])], q.source)}${sel('jewellery', 'Jewellery experience', [['0', 'Jewellery: no experience'], ['lt1', 'Jewellery: under 1 year'], ['1-3', 'Jewellery: 1–3 years'], ['3-5', 'Jewellery: 3–5 years'], ['5-10', 'Jewellery: 5–10 years'], ['10+', 'Jewellery: 10+ years']])}`,
+      main: `${multiSel('domain', 'All domains', 'domains', [...(s.industry_list || []), 'Other', 'Not clear', 'Not read yet'], q.domain, { counts: cnt('domain'), add: 'domain' })}${multiSel('dept', 'All departments', 'departments', s.departments || [], q.dept, { counts: cnt('dept'), add: 'dept' })}${multiSel('job', 'All designations', 'designations', desigs, q.job, { counts: cnt('job'), add: 'job' })}${multiSel('skills', 'All skills', 'skills', skills || [], q.skills, { counts: cnt('skills'), group: BB.skillGroupOf, add: 'skill' })}${multiSel('city', 'All cities', 'cities', s.cities || [], q.city, { counts: cnt('city') })}${multiSel('state', 'All states', 'states', states, q.state, { counts: cnt('state') })}${multiSel('source', 'All sources', 'sources', [...new Set([...(s.lead_sources || []), ...String(q.source || '').split(',').filter(Boolean)])], q.source, { counts: cnt('source') })}${sel('jewellery', 'Jewellery experience', [['0', 'Jewellery: no experience'], ['lt1', 'Jewellery: under 1 year'], ['1-3', 'Jewellery: 1–3 years'], ['3-5', 'Jewellery: 3–5 years'], ['5-10', 'Jewellery: 5–10 years'], ['10+', 'Jewellery: 10+ years']])}`,
       more: `<div class="grid g2"><label class="mf"><span>Applied from</span><input type="date" data-f="from" value="${esc(q.from || '')}"></label><label class="mf"><span>Applied up to</span><input type="date" data-f="to" value="${esc(q.to || '')}"></label></div>
         <div class="grid g4"><label class="mf"><span>Experience from (years)</span>${n('exp_min', 'Min')}</label><label class="mf"><span>Experience up to (years)</span>${n('exp_max', 'Max')}</label><label class="mf"><span>Expected salary from (₹/month)</span>${n('sal_min', 'Min')}</label><label class="mf"><span>Expected salary up to (₹/month)</span>${n('sal_max', 'Max')}</label></div>`,
       count: (extra = []) => [...CAND_MORE, ...extra].filter((k) => q[k]).length,
     };
   }
+  // The filters in use, one chip per value, each with ✕ to take just that one off.
+  const CHIP_LABEL = { q: 'Search', domain: 'Domain', dept: 'Department', job: 'Designation', skills: 'Skill', city: 'City', state: 'State', source: 'Source', jewellery: 'Jewellery', biz: 'B2B / B2C', looking: 'Job status', status: 'Status', ad: 'Ad', new: 'New', agency: 'Agency', from: 'Applied from', to: 'Applied up to', exp_min: 'Experience from', exp_max: 'Experience up to', sal_min: 'Expected salary from', sal_max: 'Expected salary up to', notice: 'Notice up to', updated: 'Updated in', stale: 'Not updated 90+ days', skillgroup: 'Skill group', cv: 'Resume' };
+  const JEW_TXT = { 0: 'none', lt1: 'under 1 year', '1-3': '1–3 years', '3-5': '3–5 years', '5-10': '5–10 years', '10+': '10+ years' };
+  const MULTI = ['domain', 'dept', 'job', 'skills', 'skillgroup', 'city', 'state', 'source'];
+  const activeChips = (q) => { const chips = [];
+    for (const k of Object.keys(CHIP_LABEL)) { const v = q[k]; if (!v) continue;
+      if (MULTI.includes(k)) for (const one of String(v).split(',').filter(Boolean)) chips.push([k, one, `${CHIP_LABEL[k]}: ${one}`]);
+      else chips.push([k, '', k === 'new' ? 'New only' : k === 'cv' ? (v === 'yes' ? 'Resume on file' : 'No resume') : k === 'agency' ? (v === 'none' ? 'Unassigned' : v === 'any' ? 'Assigned to an agency' : `Agency: ${v}`) : k === 'stale' ? CHIP_LABEL[k] : k === 'jewellery' ? `Jewellery: ${JEW_TXT[v] || v}` : k === 'updated' ? `Updated in the last ${v} days` : `${CHIP_LABEL[k]}: ${v}`]); }
+    return chips.length ? `<div class="fchips" aria-label="Filters in use">${chips.map(([k, one, t]) => `<span class="fchip">${esc(t)}<button type="button" data-fx="${esc(k)}" data-fxv="${esc(one)}" aria-label="Remove ${esc(t)}">✕</button></span>`).join('')}</div>` : ''; };
+  const wireChips = (el, q) => $$('[data-fx]', el).forEach((b) => (b.onclick = () => { const k = b.dataset.fx; const one = b.dataset.fxv; BB.setQ({ [k]: one ? String(q[k] || '').split(',').filter((x) => x && x !== one).join(',') : '', page: 1 }); }));
   const jewYrs = (y) => (y === null || y === undefined ? '—' : y === 0 ? 'None' : `${y} yrs`);
   const moreBtn = (n) => `More filters${n ? ` <span class="badge b-primary tiny">${n}</span>` : ''}`;
-  const anyCandFilter = (q) => ['domain', 'skills', 'source', 'new', 'agency', 'dept', 'job', 'city', 'state', 'jewellery', 'ad', ...CAND_MORE].some((k) => q[k]);
-  const clearCandFilters = () => BB.setQ(Object.fromEntries(['domain', 'skills', 'new', 'agency', 'dept', 'job', 'city', 'state', 'jewellery', 'ad', ...CAND_MORE, 'q', 'source', 'looking', 'status', 'notice', 'updated', 'stale'].map((k) => [k, ''])));
+  const anyCandFilter = (q) => ['skillgroup', 'cv', 'domain', 'skills', 'source', 'new', 'agency', 'dept', 'job', 'city', 'state', 'jewellery', 'ad', ...CAND_MORE].some((k) => q[k]);
+  const clearCandFilters = () => BB.setQ(Object.fromEntries(['skillgroup', 'cv', 'domain', 'skills', 'new', 'agency', 'dept', 'job', 'city', 'state', 'jewellery', 'ad', ...CAND_MORE, 'q', 'source', 'looking', 'status', 'notice', 'updated', 'stale'].map((k) => [k, ''])));
 
   // Possible repeats and records with a problem, with a Merge button (Leads for clients, Candidates for candidates).
   const checkTable = (rows) => BB.table([{ t: 'Name', f: (r) => esc(r.label || '—') }, { t: 'Problem', f: (r) => `${r.needs_check ? `<span class="badge b-amber">${esc(r.needs_check)}</span>` : ''}${r.possible_repeat_of ? `<span class="badge b-amber">Possible repeat of ${esc(r.possible_repeat_of)}</span>` : ''}` }, { t: 'Source', f: (r) => esc(r.source) }, { t: '', f: (r) => `<div class="row nowrap" onclick="event.stopPropagation()">${r.possible_repeat_of ? `<button class="btn sm" data-merge="${r.type}:${r.possible_repeat_of}:${r.id}">Merge</button>` : ''}</div>` }], rows, { open: (r) => `${r.type}:${r.id}`, empty: 'Nothing to check.' });
@@ -573,14 +603,60 @@
     }));
   }
 
+  // ---------- Candidates › Reports: charts on the resume bank (as filtered), every bar and slice opens those candidates ----------
+  const REP_KEEP = ['q', 'domain', 'dept', 'job', 'skills', 'skillgroup', 'city', 'state', 'source', 'jewellery', 'biz', 'looking', 'status', 'ad', 'new', 'agency', 'cv', 'from', 'to', 'exp_min', 'exp_max', 'sal_min', 'sal_max', 'notice', 'updated', 'stale'];
+  const reportsTab = async (body, q) => {
+    const base = Object.fromEntries(REP_KEEP.filter((k) => q[k]).map((k) => [k, q[k]]));
+    body.innerHTML = '<div class="empty">Loading…</div>';
+    let r; try { r = await BB.api(`/api/candidates/report?${BB.qs(base)}`); } catch (e) { body.innerHTML = `<div class="card empty">${esc(e.message)}</div>`; return; }
+    const go = (f) => { if (!f) return; const next = { ...base }; for (const k of ['exp_min', 'exp_max', 'from', 'to']) if (k in f) delete next[k]; BB.go(`team/candidates?${BB.qs({ ...next, ...f })}`); };
+    const fmt = (n) => Number(n).toLocaleString('en-IN'); const pct = (n) => (r.total ? `${Math.round((n / r.total) * 100)}%` : '0%');
+    const enc = (f) => (f ? esc(JSON.stringify(f)) : '');
+    // Horizontal bars: label, bar, count (the count is always written, so no legend is needed)
+    const hbars = (list, unit = 'candidates') => { const max = Math.max(1, ...list.map((x) => x.n)); return list.length ? `<div class="rep-hbars">${list.map((x) => `<button type="button" class="rep-hb ${x.f ? '' : 'flat'}" ${x.f ? `data-rgo="${enc(x.f)}"` : 'disabled'} data-tip="${esc(`${x.label}: ${fmt(x.n)} ${unit} (${pct(x.n)})`)}"><span class="rep-hb-l">${esc(x.label)}</span><span class="rep-hb-t"><i style="width:${Math.max(2, (x.n / max) * 100)}%"></i></span><span class="rep-hb-v">${fmt(x.n)}</span></button>`).join('')}</div>` : '<div class="rep-none">No candidates here</div>'; };
+    // Columns for ordered bands (experience, weeks): value on top, label below
+    const cols = (list, lab = (x) => x.label) => { const max = Math.max(1, ...list.map((x) => x.n)); return `<div class="rep-cols" style="--n:${list.length}">${list.map((x) => `<button type="button" class="rep-col ${x.f ? '' : 'flat'}" ${x.f ? `data-rgo="${enc(x.f)}"` : 'disabled'} data-tip="${esc(`${lab(x)}: ${fmt(x.n)} candidates`)}"><span class="rep-col-v">${x.n ? fmt(x.n) : ''}</span><span class="rep-col-b"><i style="height:${x.n ? Math.max(3, (x.n / max) * 100) : 0}%"></i></span><span class="rep-col-l">${esc(lab(x))}</span></button>`).join('')}</div>`; };
+    // Donut for a small part-to-whole (2–6 parts): slices in the fixed palette order, 2px gaps, legend with counts
+    const donut = (list, title) => { const parts = list.filter((x) => x.n); const tot = parts.reduce((t, x) => t + x.n, 0) || 1; const R = 42; const C = 2 * Math.PI * R; let off = 0;
+      const segs = parts.map((x, i) => { const len = (x.n / tot) * C; const gap = parts.length > 1 ? Math.min(2, len / 2) : 0; const s = `<circle class="rep-seg s${i + 1} ${x.f ? '' : 'flat'}" r="${R}" cx="60" cy="60" stroke-dasharray="${Math.max(0, len - gap)} ${C}" stroke-dashoffset="${-off}" ${x.f ? `data-rgo="${enc(x.f)}"` : ''} data-tip="${esc(`${x.label}: ${fmt(x.n)} (${Math.round((x.n / tot) * 100)}%)`)}"></circle>`; off += len; return s; }).join('');
+      return `<div class="rep-donut"><svg viewBox="0 0 120 120" role="img" aria-label="${esc(title)}"><circle class="rep-seg-bg" r="${R}" cx="60" cy="60"></circle><g transform="rotate(-90 60 60)">${segs}</g><text x="60" y="58" class="rep-dn-v">${fmt(tot)}</text><text x="60" y="74" class="rep-dn-l">candidates</text></svg>
+        <ul class="rep-legend">${parts.map((x, i) => `<li><button type="button" ${x.f ? `data-rgo="${enc(x.f)}"` : 'disabled'}><span class="rep-sw s${i + 1}"></span><span class="grow">${esc(x.label)}</span><b>${fmt(x.n)}</b><span class="rep-pc">${Math.round((x.n / tot) * 100)}%</span></button></li>`).join('')}</ul></div>`; };
+    const card = (title, sub, inner, wide) => `<section class="card rep-card ${wide ? 'wide' : ''}"><h3 class="dsec-h">${title}</h3>${sub ? `<div class="rep-sub">${sub}</div>` : ''}${inner}</section>`;
+    const wk = (x) => { const d = new Date(`${x.label}T00:00:00Z`); return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', timeZone: 'UTC' }); };
+    body.innerHTML = `<div class="rep stack">
+      <div class="card rep-head"><div class="rep-total"><b>${fmt(r.total)}</b> candidates${Object.keys(base).length ? ' with these filters' : ''}</div>${activeChips(q)}<span class="grow"></span><button type="button" class="btn sm" data-rbank>Open in resume bank →</button></div>
+      <div class="rep-tiles">${r.tiles.map((t) => `<button type="button" class="card rep-tile" data-rgo="${enc(t.f)}"><span class="rep-tile-l">${esc(t.label)}</span><span class="rep-tile-v">${fmt(t.n)}</span><span class="rep-tile-s">${pct(t.n)} of these candidates · open</span></button>`).join('')}</div>
+      <div class="rep-grid">
+        ${card('Departments', 'Click a bar to see those candidates', hbars(r.dept))}
+        ${card('Designations', 'Top 12 roles candidates want', hbars(r.job))}
+        ${card('Skill groups', 'Candidates with at least one skill in the group', hbars(r.skill_group))}
+        ${card('Top skills', 'The 15 most common skills', hbars(r.skills))}
+        ${card('Total experience', '', cols(r.exp))}
+        ${card('Jewellery industry experience', '', cols(r.jewellery))}
+        ${card('Job status', 'What candidates said about looking for a job', donut(r.looking, 'Job status'))}
+        ${card('Assignment and resumes', '', `<div class="rep-pair">${donut(r.assigned, 'Assigned to an agency')}${donut(r.resume, 'Resume on file')}</div>`)}
+        ${card('Cities', 'Top 12 cities', hbars(r.city))}
+        ${card('Sources', 'Where candidates came from', hbars(r.source))}
+        ${card('Domains', '', hbars(r.domain))}
+        ${card('Added per week', 'The last 12 weeks', cols(r.weeks, wk))}
+      </div><div class="rep-tip" role="tooltip" hidden></div></div>`;
+    $$('[data-rgo]', body).forEach((b) => (b.onclick = () => go(JSON.parse(b.dataset.rgo))));
+    $('[data-rbank]', body).onclick = () => BB.go(`team/candidates?${BB.qs(base)}`);
+    wireChips(body, q);
+    const tip = $('.rep-tip', body);
+    body.onmousemove = (e) => { const t = e.target.closest('[data-tip]'); if (!t) { tip.hidden = true; return; } tip.textContent = t.dataset.tip; tip.hidden = false; const x = Math.min(e.clientX + 14, innerWidth - tip.offsetWidth - 8); tip.style.left = `${x}px`; tip.style.top = `${e.clientY + 16}px`; };
+    body.onmouseleave = () => { tip.hidden = true; };
+  };
+
   // ---------- Candidates: resume bank, gap view, tie-ups, Excel import ----------
   P.candidates = async (ctx) => {
     const { el, actions, q } = ctx; const tab = q.tab || 'bank';
     // Gap view is hidden for now (its page still works at ?tab=gap); put ['gap', 'Gap view'] back in this list to show it.
-    el.innerHTML = `<div class="tabs">${[['bank', 'Resume bank'], ['segments', 'Segments'], ...(ctx.me.level === 'super' ? [['check', 'Needs checking']] : []), ['tieups', 'Tie-ups'], ['import', 'Upload Excel']].map(([k, l]) => `<button data-tab="${k}" class="${tab === k ? 'on' : ''}">${l}</button>`).join('')}</div><div data-tabbody></div>`;
+    el.innerHTML = `<div class="tabs">${[['bank', 'Resume bank'], ['reports', 'Reports'], ['segments', 'Segments'], ...(ctx.me.level === 'super' ? [['check', 'Needs checking']] : []), ['tieups', 'Tie-ups'], ['import', 'Upload Excel']].map(([k, l]) => `<button data-tab="${k}" class="${tab === k ? 'on' : ''}">${l}</button>`).join('')}</div><div data-tabbody></div>`;
     $$('[data-tab]', el).forEach((b) => (b.onclick = () => BB.setQ({ tab: b.dataset.tab === 'bank' ? '' : b.dataset.tab, page: '', seg: '' })));
     const body = $('[data-tabbody]', el); actions.innerHTML = '';
     if (tab === 'segments') return segmentsTab(body, actions, q, ctx.me);
+    if (tab === 'reports') return reportsTab(body, q);
     if (tab === 'campaigns') return BB.go('team/campaigns');
     if (tab === 'gap') return gapView(body);
     if (tab === 'check') { const d = await BB.api('/api/leads'); body.innerHTML = `<div class="card">${checkTable(d.check.filter((r) => r.type === 'candidate'))}</div>`; $$('[data-merge]', body).forEach((b) => (b.onclick = () => { const [type, a, c] = b.dataset.merge.split(':'); BB.mergeScreen(type, a, c); })); return; }
@@ -618,7 +694,7 @@
     // Industry: Jewellery unless another (or "All industries") is picked; designations follow the industry.
     const desigs = [...new Set([...s.jobs.map((j) => j.title), ...(r.designations || [])])];
     const sel = (k, label, opts) => `<select data-f="${k}"><option value="">${label}</option>${opts.map((o) => { const [v, t] = Array.isArray(o) ? o : [o, o]; return `<option value="${esc(v)}" ${String(q[k] || '') === String(v) ? 'selected' : ''}>${esc(t)}</option>`; }).join('')}</select>`;
-    const cf = candFilters(q, desigs, (r.quick || {}).skills);
+    const cf = candFilters(q, desigs, (r.quick || {}).skills, r.facets);
     const total = r.total ?? r.rows.length; const filtered = anyCandFilter(q) || q.q || q.biz || q.looking || q.status || q.updated || q.notice || q.stale;
     const LOOK_BADGE = { 'Actively looking': 'b-green', 'Open to offers': 'b-primary', 'Not reachable': 'b-amber', Placed: 'b-gold' };
     const bulkBtn = (a, label, cls = '') => `<button class="btn sm ${cls}" data-bulk="${a}" disabled>${label}</button>`;
@@ -632,6 +708,7 @@
         ${cf.more}
         <div class="grid g2"><label class="mf"><span>Profile last updated</span>${sel('updated', 'Any time', [['7', 'Last 7 days'], ['30', 'Last 30 days'], ['90', 'Last 90 days']])}</label><label class="mf"><span>Notice period up to (days)</span><input type="number" min="0" placeholder="Days" data-f="notice" value="${esc(q.notice || '')}"></label></div>
         <label class="row small mf-check"><input type="checkbox" data-f="stale" ${q.stale ? 'checked' : ''}> Only profiles not updated in 90+ days</label></div></details></div>
+      ${activeChips(q)}
       <div class="cand-result"><div class="cand-count"><b>${total}</b> candidate${total === 1 ? '' : 's'}</div>
         ${superAdmin && r.quick ? `<div class="chips cand-views"><button class="chip ${!q.new && !q.agency ? 'on' : ''}" data-view="">All <span>${r.quick.all ?? r.total ?? ''}</span></button><button class="chip ${q.new ? 'on' : ''}" data-view="new">New <span>${r.quick.new}</span></button><button class="chip ${q.agency === 'none' ? 'on' : ''}" data-view="none">Unassigned <span>${r.quick.unassigned}</span></button>${r.quick.check ? `<button class="chip" data-view="check">Needs checking <span>${r.quick.check}</span></button>` : ''}</div>` : ''}
         <div class="row cand-seg">${filtered ? '<button class="cand-clear" data-clear title="Clear all filters"><span aria-hidden="true">✕</span> Clear</button>' : ''}${saved.length ? sel('saved', 'Open a segment…', saved.map((x) => [x.id, x.name])) : ''}${editing ? `<button class="btn sm primary" data-updseg>Update “${esc(editing.name)}”</button>` : ''}<button class="btn sm" data-save>${editing ? 'Save as new segment' : 'Save as segment'}</button></div></div>
@@ -667,7 +744,7 @@
       wireSegButtons(el, () => seg);
     } else {
       let t; $('[data-q]', el).oninput = (e) => { clearTimeout(t); t = setTimeout(() => BB.setQ({ q: e.target.value, page: 1 }), 350); };
-      BB.wireMultiSel(el); $$('[data-f]', el).forEach((i) => (i.onchange = () => { if (i.dataset.f === 'saved') { if (i.value) openSeg(i.value); return; } BB.setQ({ [i.dataset.f]: i.type === 'checkbox' ? (i.checked ? '1' : '') : i.value, ...(i.dataset.f === 'industry' ? { job: '' } : {}), page: 1 }); }));
+      BB.wireMultiSel(el); wireChips(el, q); $$('[data-f]', el).forEach((i) => (i.onchange = () => { if (i.dataset.f === 'saved') { if (i.value) openSeg(i.value); return; } BB.setQ({ [i.dataset.f]: i.type === 'checkbox' ? (i.checked ? '1' : '') : i.value, ...(i.dataset.f === 'industry' ? { job: '' } : {}), page: 1 }); }));
       const filtersNow = { ...q, page: undefined, tab: undefined, editseg: undefined };
       $('[data-save]', el).onclick = () => BB.ask({ title: 'Save as segment', fields: [{ name: 'name', label: 'Segment name', placeholder: 'e.g. Jaipur sales, 3+ yrs jewellery' }], submit: (v) => BB.post('/api/saved-searches', { name: v.name, query: filtersNow }) }).then((x) => { if (x) { BB.toast('Segment saved'); openSeg(x.id); } });
       const upd = $('[data-updseg]', el); if (upd) upd.onclick = async () => { try { await BB.patch(`/api/segments/${editing.id}`, { query: filtersNow }); BB.toast(`“${editing.name}” updated`); openSeg(editing.id); } catch (e) { BB.fail(e); } };

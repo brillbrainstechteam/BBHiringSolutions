@@ -42,6 +42,8 @@
         <div data-only="job" class="stack">
           <label class="field" data-f="experience"><span class="lab">Experience <span class="opt">(optional)</span></span><div class="choice">${EXPERIENCE.map((x) => `<label style="min-width:96px"><input type="radio" name="experience" value="${x}"> ${x}</label>`).join('')}</div></label>
           ${field({ name: 'exp_jewellery', label: 'Experience in the jewellery industry', type: 'select', opt: true, options: JEWEL_EXP, placeholder: 'Select years' })}
+          <div class="field" data-f="skills"><span class="lab">Your skills <span class="opt">(optional · tap all that fit)</span></span><div data-skillbox class="skill-groups"></div>
+            <div class="row skill-add"><input data-skillnew placeholder="Another skill, e.g. Kundan setting" maxlength="40"><button type="button" class="btn sm" data-skilladd>Add</button></div></div>
           <div data-only="job" data-jobpicks class="hidden"></div>
           ${BB.boot.contact_prefs ? `<div class="grid g3 pref-row">${field({ name: 'pref_channel', label: 'Best way to reach you', type: 'select', opt: true, options: BB.boot.contact_prefs.channel, placeholder: 'Any' })}${field({ name: 'pref_time', label: 'Best time to call', type: 'select', opt: true, options: BB.boot.contact_prefs.time, placeholder: 'Any time' })}${field({ name: 'pref_days', label: 'Best days', type: 'select', opt: true, options: BB.boot.contact_prefs.days, placeholder: 'Any day' })}</div>` : ''}
           <div class="field hidden" data-f="exp_business" data-expbiz><span class="lab">Where have you worked?</span><div class="choice biz-choice">${BUSINESS.map((x) => `<label><input type="checkbox" name="exp_business" value="${x}"> ${x}</label>`).join('')}</div><span class="hint">Tick all that apply.</span></div>
@@ -75,7 +77,23 @@
       onMode && onMode(mode);
     };
     $$('[data-mode]', card).forEach((b) => (b.onclick = () => { mode = b.dataset.mode; apply(); }));
-    $('[name=job_wanted]', card).onchange = (e) => $('[data-other]', card).classList.toggle('hidden', e.target.value !== 'Other');
+    // Skills, grouped: the groups this job needs first, the rest folded under "More skills". Picks survive a job change.
+    const picked = new Set();
+    const drawSkills = () => {
+      const box = $('[data-skillbox]', card); if (!box) return; const sg = BB.boot.skill_groups; if (!sg) { box.closest('[data-f]').classList.add('hidden'); return; }
+      const jw = $('[name=job_wanted]', card).value; const dept = ((BB.boot.jobs || []).find((j) => j.title === jw) || {}).dept;
+      const first = (sg.by_dept || {})[dept] || ['Soft skills', 'Computer & office', 'Languages'];
+      const chip = (x) => `<button type="button" class="skill-chip ${picked.has(x) ? 'on' : ''}" data-sk="${esc(x)}" aria-pressed="${picked.has(x)}">${esc(x)}</button>`;
+      const grp = (g) => `<div class="skill-grp"><div class="skill-grp-h">${esc(g.name)}</div><div class="skill-chips">${g.skills.map(chip).join('')}</div></div>`;
+      const main = first.map((n) => sg.groups.find((g) => g.name === n)).filter(Boolean); const rest = sg.groups.filter((g) => !first.includes(g.name));
+      const extra = [...picked].filter((x) => !sg.groups.some((g) => g.skills.includes(x)));
+      box.innerHTML = `${main.map(grp).join('')}${extra.length ? grp({ name: 'Added by you', skills: extra }) : ''}<details class="skill-more"><summary>More skills</summary>${rest.map(grp).join('')}</details>`;
+      $$('[data-sk]', box).forEach((b) => (b.onclick = () => { const x = b.dataset.sk; if (picked.has(x)) picked.delete(x); else picked.add(x); $$(`[data-sk="${CSS.escape(x)}"]`, box).forEach((c) => { c.classList.toggle('on', picked.has(x)); c.setAttribute('aria-pressed', picked.has(x)); }); }));
+    };
+    const addSkill = () => { const i = $('[data-skillnew]', card); const v = i.value.replace(/\s+/g, ' ').trim(); if (v.length < 2) return; const known = (BB.boot.skills || []).find((x) => x.toLowerCase() === v.toLowerCase()); picked.add(known || v); i.value = ''; drawSkills(); };
+    if ($('[data-skilladd]', card)) { $('[data-skilladd]', card).onclick = addSkill; $('[data-skillnew]', card).onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); addSkill(); } }; }
+    drawSkills();
+    $('[name=job_wanted]', card).onchange = (e) => { $('[data-other]', card).classList.toggle('hidden', e.target.value !== 'Other'); drawSkills(); };
     $('[data-cv]', card).onclick = async () => {
       cv = await BB.pickFile(); $('[data-cv-name]', card).textContent = cv ? cv.name : 'PDF or Word, max 10 MB';
       if (cv) fillFromCv(card, cv);
@@ -99,7 +117,7 @@
       if (!check(form, rules)) return;
       const body = mode === 'hire'
         ? { contact: v.name, company: v.company, whatsapp: v.whatsapp, email, city: v.city, state: v.state, business_type: v.business_type, need: v.need, roles: v.roles, website: v.website, src: q.src, lang: BB.lang }
-        : { name: v.name, whatsapp: v.whatsapp, email, city: v.city, state: v.state, job_wanted: v.job_wanted, job_other: v.job_other, experience: v.experience, exp_business: v.exp_business, exp_jewellery: v.exp_jewellery, pref_channel: v.pref_channel, pref_time: v.pref_time, pref_days: v.pref_days, cv, website: v.website, lang: BB.lang, src: q.src || BB.adSource() || undefined, ...BB.adParams(), job: q.job, ref: q.ref, jobs: $$('[name=jobs]:checked', form).map((x) => x.value) };
+        : { name: v.name, whatsapp: v.whatsapp, email, city: v.city, state: v.state, job_wanted: v.job_wanted, job_other: v.job_other, experience: v.experience, exp_business: v.exp_business, exp_jewellery: v.exp_jewellery, pref_channel: v.pref_channel, pref_time: v.pref_time, pref_days: v.pref_days, skills: [...picked], cv, website: v.website, lang: BB.lang, src: q.src || BB.adSource() || undefined, ...BB.adParams(), job: q.job, ref: q.ref, jobs: $$('[name=jobs]:checked', form).map((x) => x.value) };
       const btn = $('[data-send]', card); btn.disabled = true; btn.textContent = 'Sending…';
       try {
         const res = await BB.post(mode === 'hire' ? '/api/public/hire' : '/api/public/apply', body, { kind: null });
