@@ -598,7 +598,7 @@
   const SEG_LABEL = [['q', 'Search'], ['industry', 'Industry', (v) => (v === 'all' ? 'All industries' : v)], ['domain', 'Domain'], ['skills', 'Skills'], ['dept', 'Department'], ['job', 'Designation'], ['city', 'City'], ['state', 'State'], ['jewellery', 'Jewellery', (v) => JEW_LABEL[v] || v],
     ['from', 'Applied from'], ['to', 'Applied up to'], ['exp_min', 'Experience from', (v) => `${v} yrs`], ['exp_max', 'Experience up to', (v) => `${v} yrs`], ['sal_min', 'Expected salary from', (v) => `${inr(v)}/mo`], ['sal_max', 'Expected salary up to', (v) => `${inr(v)}/mo`],
     ['biz', 'B2B / B2C'], ['worked', 'Worked at'], ['company', 'Current company'], ['looking', 'Current job status'], ['status', 'Status'], ['source', 'Source'], ['ad', 'Ad campaign'], ['updated', 'Updated in last', (v) => `${v} days`], ['notice', 'Notice up to', (v) => `${v} days`], ['stale', 'Not updated in 90+ days', () => 'yes'], ['archived', 'Archived', () => 'yes']];
-  const segChips = (q) => SEG_LABEL.filter(([k]) => q[k]).map(([k, l, f]) => `<span class="chip">${esc(l)}: <b>${esc(f ? f(q[k]) : q[k])}</b></span>`).join('') || '<span class="faint">All candidates</span>';
+  const segChips = (q) => SEG_LABEL.filter(([k]) => q[k]).map(([k, l, f]) => `<span class="seg-chip"><span class="seg-k">${esc(l)}:</span> <b>${esc(f ? f(q[k]) : q[k])}</b></span>`).join('') || '<span class="faint">All candidates</span>';
 
   // Share / rename / delete / copy link / download buttons, the same in the segment list and on an open segment.
   const wireSegButtons = (root, find) => {
@@ -619,11 +619,11 @@
     $('[data-new]', actions).onclick = () => { BB.setQ({ tab: '', seg: '', page: '' }); BB.toast('Pick the filters, then tap "Save as segment"'); };
     el.innerHTML = `<p class="muted small" style="margin:0 0 12px">A segment is a saved set of candidate filters. Its list updates itself as candidates join or change. Open one to work on its candidates with the same actions as the resume bank. Shared segments are visible to the whole team.</p>
       <div class="card cand-table">${d.segments.length ? BB.table([
-        { t: 'Segment', cls: 'wrap', f: (s) => `<b>${esc(s.name)}</b>${s.shared ? ' <span class="badge b-primary tiny">Shared</span>' : ''}<div class="row" style="gap:4px;margin-top:4px">${segChips(s.query)}</div>` },
+        { t: 'Segment', cls: 'wrap seg-col', f: (s) => `<b>${esc(s.name)}</b>${s.shared ? ' <span class="badge b-primary tiny">Shared</span>' : ''}<div class="seg-chips">${segChips(s.query)}</div>` },
         { t: 'Candidates', num: 1, f: (s) => `<b>${s.count}</b>` },
         { t: 'Made by', f: (s) => (s.mine ? 'You' : esc(s.owner)), hideSm: 1 },
         { t: 'Updated', f: (s) => (s.updated_at ? `<span class="nw">${BB.daysAgo(s.updated_at)}</span>` : '—'), hideSm: 1 },
-        { t: '', f: (s) => `<div class="row nowrap" onclick="event.stopPropagation()">${segButtons(s, d.can_download, true)}</div>` },
+        { t: '', cls: 'seg-acts-col', f: (s) => `<div class="seg-acts" onclick="event.stopPropagation()">${segButtons(s, d.can_download, true)}</div>` },
       ], d.segments) : '<div class="pad muted">No segments yet. Tap <b>+ New segment</b>, pick filters in the resume bank, then <b>Save as segment</b>.</div>'}</div>`;
     $$('[data-segopen]', el).forEach((b) => (b.onclick = () => BB.setQ({ tab: 'segments', seg: b.dataset.segopen, page: '' })));
     $$('[data-segsend]', el).forEach((b) => (b.onclick = () => BB.flow.campaign({ segment: b.dataset.segsend, label: b.dataset.segname })));
@@ -711,7 +711,7 @@
   P.candidates = async (ctx) => {
     const { el, actions, q } = ctx; const tab = q.tab || 'bank';
     // Gap view is hidden for now (its page still works at ?tab=gap); put ['gap', 'Gap view'] back in this list to show it.
-    el.innerHTML = `<div class="tabs">${[['bank', 'Resume bank'], ['reports', 'Reports'], ['verifications', 'Verifications'], ['segments', 'Segments'], ...(ctx.me.level === 'super' ? [['check', 'Needs checking']] : []), ['tieups', 'Tie-ups'], ['import', 'Upload Excel']].map(([k, l]) => `<button data-tab="${k}" class="${tab === k ? 'on' : ''}">${l}</button>`).join('')}</div><div data-tabbody></div>`;
+    el.innerHTML = `<div class="tabs">${[['bank', 'Resume bank'], ['reports', 'Reports'], ['segments', 'Segments'], ...(ctx.me.level === 'super' ? [['check', 'Needs checking']] : []), ['tieups', 'Tie-ups'], ['import', 'Upload Excel'], ['verifications', 'Verifications']].map(([k, l]) => `<button data-tab="${k}" class="${tab === k ? 'on' : ''}">${l}</button>`).join('')}</div><div data-tabbody></div>`;
     $$('[data-tab]', el).forEach((b) => (b.onclick = () => BB.setQ({ tab: b.dataset.tab === 'bank' ? '' : b.dataset.tab, page: '', seg: '' })));
     const body = $('[data-tabbody]', el); actions.innerHTML = '';
     if (tab === 'segments') return segmentsTab(body, actions, q, ctx.me);
@@ -883,8 +883,24 @@
   async function tieups(el) {
     const list = await BB.api('/api/tieups');
     el.innerHTML = `<div class="row" style="margin-bottom:10px"><span class="muted small grow">Colleges, institutes and local agencies that send us candidate lists. Upload a list from the Upload Excel tab and pick the tie-up to link each candidate to it.</span><button class="btn primary sm" data-add>+ Add tie-up</button></div>
-      <div class="card">${BB.table([{ t: 'Name', f: (t) => `<b>${esc(t.name)}</b>` }, { t: 'Type', f: (t) => esc(t.type) }, { t: 'City', f: (t) => esc(t.city) }, { t: 'Contact', f: (t) => `${esc(t.contact)} <span class="mono small">${esc(t.phone)}</span>` }, { t: 'Owner', f: (t) => esc(t.owner_name) }, { t: 'Last list', f: (t) => fmtD(t.last_list) }, { t: 'Candidates', num: 1, f: (t) => `<a href="/team/candidates?tieup=${t.id}">${t.candidates}</a>` }, { t: '', f: (t) => `<button class="btn sm" data-edit="${t.id}">Edit</button>` }], list)}</div>`;
-    const form = (t = {}) => BB.ask({ title: t.id ? 'Edit tie-up' : 'Add tie-up', fields: [{ name: 'name', label: 'Name', value: t.name }, `<div class="grid g2">${field({ name: 'type', label: 'Type', type: 'select', options: ['College', 'Institute', 'Local agency'], value: t.type || 'College', placeholder: false })}${field({ name: 'city', label: 'City', value: t.city, list: 'cities' })}</div>`, `<div class="grid g2">${field({ name: 'contact', label: 'Contact person', value: t.contact })}${field({ name: 'phone', label: 'Phone', value: t.phone })}</div>`], submit: (v) => BB.post('/api/tieups', { ...v, id: t.id }) }).then((x) => x && BB.refreshPage());
+      <div class="card">${BB.table([{ t: 'College / institute', f: (t) => `<b>${esc(t.name)}</b><div class="tiny muted">${esc([t.type, t.city].filter(Boolean).join(' · '))}</div>` },
+        { t: 'Contact', f: (t) => `${t.contact ? `<div class="small"><b>${esc(t.contact)}</b>${t.designation ? ` <span class="tiny muted">${esc(t.designation)}</span>` : ''}</div>` : ''}${t.phone ? `<div class="tiny mono">${esc(t.phone)}</div>` : ''}${t.email ? `<div class="tiny muted">${esc(t.email)}</div>` : ''}${!t.contact && !t.phone && !t.email ? '<span class="faint">—</span>' : ''}` },
+        { t: 'Roles they shared for', f: (t) => (t.roles ? `<div class="small" style="max-width:260px">${esc(t.roles)}</div>` : '<span class="faint">—</span>') },
+        { t: 'Tie-up date', f: (t) => `<span class="nw small">${t.tieup_date ? fmtD(t.tieup_date) : '—'}</span>` }, { t: 'Last list', f: (t) => `<span class="nw small">${t.last_list ? fmtD(t.last_list) : '—'}</span>` },
+        { t: 'Candidates given', num: 1, f: (t) => `${t.shared_count ? `<b>${t.shared_count}</b> <span class="tiny muted">said</span><br>` : ''}<a href="/team/candidates?tieup=${t.id}">${t.candidates} in our bank</a>` },
+        { t: 'Owner', f: (t) => esc(t.owner_name || '') }, { t: '', f: (t) => `<button class="btn sm" data-edit="${t.id}">Edit</button>` }], list, { scroll: true, empty: 'No tie-ups yet. Add the colleges and institutes that send you candidate lists.' })}</div>`;
+    const form = (t = {}) => BB.ask({ title: t.id ? `Edit tie-up · ${t.name}` : 'Add tie-up', wide: true, ok: t.id ? 'Save' : 'Add tie-up', fields: [
+      '<h4 class="form-sec">College or institute</h4>',
+      `<div class="grid g2">${field({ name: 'name', label: 'Name of the college / institute / agency', value: t.name || '' })}${field({ name: 'type', label: 'Type', type: 'select', options: ['College', 'Institute', 'Training centre', 'Local agency'], value: t.type || 'College', placeholder: false })}</div>`,
+      `<div class="grid g2">${field({ name: 'city', label: 'City', value: t.city || '', list: 'cities' })}${field({ name: 'tieup_date', label: 'Tie-up date', type: 'date', value: t.tieup_date ? String(t.tieup_date).slice(0, 10) : BB.istDay ? BB.istDay() : '', opt: true })}</div>`,
+      '<h4 class="form-sec">Contact person</h4>',
+      `<div class="grid g2">${field({ name: 'contact', label: 'Name', value: t.contact || '', opt: true })}${field({ name: 'designation', label: 'Designation', value: t.designation || '', opt: true, placeholder: 'e.g. Placement officer, HOD' })}</div>`,
+      `<div class="grid g2">${field({ name: 'phone', label: 'Phone / WhatsApp', type: 'tel', phone: true, value: t.phone || '', opt: true })}${field({ name: 'email', label: 'Email ID', type: 'email', value: t.email || '', opt: true, voice: false })}</div>`,
+      '<h4 class="form-sec">Candidate list</h4>',
+      field({ name: 'roles', label: 'Designations / roles they shared candidates for', value: t.roles || '', opt: true, placeholder: 'e.g. CAD designer, Sales executive, Jewellery designer' }),
+      `<div class="grid g2">${field({ name: 'shared_count', label: 'How many candidates they have given', type: 'number', value: t.shared_count ?? '', opt: true, voice: false })}${field({ name: 'last_list', label: 'Date of the last list', type: 'date', value: t.last_list ? String(t.last_list).slice(0, 10) : '', opt: true })}</div>`,
+      field({ name: 'note', label: 'Note', value: t.note || '', opt: true, placeholder: 'Terms agreed, batch passing out, anything to remember' })],
+      submit: (v) => BB.post('/api/tieups', { ...v, id: t.id }) }).then((x) => x && (BB.toast(t.id ? 'Tie-up saved' : 'Tie-up added'), BB.refreshPage()));
     $('[data-add]', el).onclick = () => form();
     $$('[data-edit]', el).forEach((b) => (b.onclick = () => form(list.find((x) => String(x.id) === b.dataset.edit))));
   }

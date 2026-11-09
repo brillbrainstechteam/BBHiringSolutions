@@ -14,7 +14,7 @@ CREATE TABLE IF NOT EXISTS partner_activity (id INTEGER PRIMARY KEY AUTOINCREMEN
 CREATE INDEX IF NOT EXISTS ix_pact ON partner_activity(partner_id);
 `);
 // Vendors database: contact person, WhatsApp number, owner, and where the follow-up sequence is.
-for (const col of ['contact_name TEXT', 'whatsapp TEXT', 'owner_id TEXT', 'seq_on INTEGER DEFAULT 0', 'seq_step INTEGER DEFAULT 0', 'seq_start TEXT', 'next_at TEXT', 'last_contact_at TEXT', 'opted_out INTEGER DEFAULT 0']) { try { D.db.exec(`ALTER TABLE partners ADD COLUMN ${col}`); } catch { /* already there */ } }
+for (const col of ['contact_role TEXT', 'contact_name TEXT', 'whatsapp TEXT', 'owner_id TEXT', 'seq_on INTEGER DEFAULT 0', 'seq_step INTEGER DEFAULT 0', 'seq_start TEXT', 'next_at TEXT', 'last_contact_at TEXT', 'opted_out INTEGER DEFAULT 0']) { try { D.db.exec(`ALTER TABLE partners ADD COLUMN ${col}`); } catch { /* already there */ } }
 
 const STATUSES = ['New', 'Contacted', 'Interested', 'Meeting fixed', 'Partner', 'Not interested', 'Not relevant'];
 // Follow-ups stop by themselves once a vendor reaches one of these (a person takes it from there).
@@ -63,6 +63,10 @@ route('POST', '/api/partners/search', ADMIN, async (ctx) => {
   const b = ctx.body || {}; const q = { type: String(b.type || '').trim(), industry: String(b.industry || 'Jewellery').trim(), course: String(b.course || '').trim(), state: String(b.state || '').trim(), city: String(b.city || '').trim(), area: String(b.area || '').trim(), km: Number(b.km) || 0 };
   if (!q.city && !q.state) throw httpError(400, 'Enter a city or a state', 'city');
   if (!q.type && !q.course) throw httpError(400, 'Enter the type of institute or the course', 'type');
+  // The same search again finds the same places (and costs again): point to what is already saved instead.
+  const norm = (x) => JSON.stringify(['type', 'industry', 'course', 'state', 'city', 'area', 'km'].map((k) => String(x[k] ?? '').trim().toLowerCase().replace(/\s+/g, ' ')));
+  const same = all('SELECT * FROM partner_searches ORDER BY id DESC').find((x) => { try { return norm(JSON.parse(x.query || '{}')) === norm(q); } catch { return false; } });
+  if (same && !b.again) throw httpError(409, `This search was already run on ${new Date(same.at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' })} by ${same.by} (${same.found} found, ${same.added} saved). Those institutes are already in the Vendors database.`);
   const where = [q.area, q.city, q.state].filter(Boolean).join(', ');
   const r = await LLM.webLookup({ system: SYSTEM, name: 'institutes', schema: SCHEMA, maxTokens: 2500, searches: 2,
     user: `Find: ${q.type || 'institutes'}${q.course ? ` teaching ${q.course}` : ''}\nIndustry the students will work in: ${q.industry}\nWhere: ${where}${q.km ? `, within ${q.km} km of ${q.area || q.city || q.state}` : ''}\nReturn up to 15.` });
@@ -78,15 +82,23 @@ route('POST', '/api/partners/search', ADMIN, async (ctx) => {
   return { found: places.length, added, cost_inr: cost };
 });
 route('POST', '/api/partners', T, (ctx) => {
-  const b = ctx.body || {}; if (!String(b.name || '').trim()) throw httpError(400, 'Enter the name', 'name');
-  insert('partners', { name: b.name.trim(), type: b.type || '', industry: 'Jewellery', courses: b.courses || '', address: b.address || '', area: b.area || '', city: b.city || '', state: b.state || '', distance_km: null, phone: b.phone || '', email: b.email || '', website: b.website || '', source_url: '', why: '', status: 'New', note: b.note || '', search_id: null, by: ctx.actor.label, at: now() });
-  return { id: get('SELECT last_insert_rowid() id').id };
+  const L = require('./logic'); const b = ctx.body || {}; const t = (k) => String(b[k] || '').trim();
+  if (!t('name')) throw httpError(400, 'Enter the name of the institute or college', 'name');
+  if (!t('city')) throw httpError(400, 'Enter the city', 'city');
+  const dup = get('SELECT id, status FROM partners WHERE lower(name)=lower(?) AND lower(city)=lower(?)', t('name'), t('city'));
+  if (dup) throw httpError(409, `${t('name')}, ${t('city')} is already in the Vendors database (status: ${dup.status}).`, 'name');
+  const wa = t('whatsapp') ? L.digits10(t('whatsapp')) : ''; if (wa && !L.validPhone(wa)) throw httpError(400, 'Enter a 10-digit WhatsApp number starting with 6, 7, 8 or 9', 'whatsapp');
+  if (t('email') && !L.EMAIL_RE.test(t('email'))) throw httpError(400, 'Enter a valid email ID, or leave it empty', 'email');
+  if (!wa && !t('phone') && !t('email')) throw httpError(400, 'Enter at least one way to reach them: WhatsApp number, phone or email ID', 'whatsapp');
+  insert('partners', { name: t('name'), type: t('type'), industry: t('industry') || 'Jewellery', courses: t('courses'), address: t('address'), area: t('area'), city: t('city'), state: t('state'), distance_km: null, phone: t('phone'), email: t('email'), website: t('website'), source_url: '', why: '', status: STATUSES.includes(b.status) ? b.status : 'New', note: t('note'), search_id: null, by: ctx.actor.label, at: now(), contact_name: t('contact_name'), contact_role: t('contact_role'), whatsapp: wa || null, owner_id: ctx.user.id });
+  const id = get('SELECT last_insert_rowid() id').id; act(id, 'note', 'Added by hand', ctx.actor.label);
+  return { id };
 });
 route('PATCH', '/api/partners/:id', T, (ctx) => {
   const p = get('SELECT * FROM partners WHERE id=?', ctx.params.id); if (!p) throw httpError(404, 'Partner not found');
   const b = ctx.body || {}; const patch = {};
   if (b.status !== undefined) { if (!STATUSES.includes(b.status)) throw httpError(400, 'Pick a status'); patch.status = b.status; }
-  for (const k of ['note', 'phone', 'email', 'website', 'courses', 'contact_name', 'whatsapp', 'owner_id']) if (b[k] !== undefined) patch[k] = String(b[k]).slice(0, 2000);
+  for (const k of ['note', 'phone', 'email', 'website', 'courses', 'contact_name', 'contact_role', 'whatsapp', 'owner_id', 'address', 'area', 'city', 'state', 'type']) if (b[k] !== undefined) patch[k] = String(b[k]).slice(0, 2000);
   if (patch.whatsapp) { const L = require('./logic'); const w = L.digits10(patch.whatsapp); if (!L.validPhone(w)) throw httpError(400, 'Enter a 10-digit WhatsApp number starting with 6, 7, 8 or 9', 'whatsapp'); patch.whatsapp = w; }
   if (patch.status && STOP.includes(patch.status) && p.seq_on) { patch.seq_on = 0; patch.next_at = null; }
   update('partners', p.id, patch); D.history(ctx.actor.label, 'partner', String(p.id), null, null, JSON.stringify(patch));

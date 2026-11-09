@@ -8,7 +8,7 @@
   const waIcon = () => (BB.icon ? BB.icon('chat') : '');
 
   // ---------- shared bits ----------
-  const contactCell = (p) => `${p.contact_name ? `<div class="small"><b>${esc(p.contact_name)}</b></div>` : ''}${p.wa ? `<div class="small mono">${esc(p.wa)} <span class="badge b-green tiny">WhatsApp</span></div>` : p.phone ? `<div class="small mono">${esc(p.phone)}</div>` : ''}${p.email ? `<div class="tiny muted">${esc(p.email)}</div>` : ''}${!p.wa && !p.phone && !p.email ? '<span class="faint">—</span>' : ''}`;
+  const contactCell = (p) => `${p.contact_name ? `<div class="small"><b>${esc(p.contact_name)}</b>${p.contact_role ? ` <span class="tiny muted">${esc(p.contact_role)}</span>` : ''}</div>` : ''}${p.wa ? `<div class="small mono">${esc(p.wa)} <span class="badge b-green tiny">WhatsApp</span></div>` : p.phone ? `<div class="small mono">${esc(p.phone)}</div>` : ''}${p.email ? `<div class="tiny muted">${esc(p.email)}</div>` : ''}${!p.wa && !p.phone && !p.email ? '<span class="faint">—</span>' : ''}`;
   const whereCell = (p) => `${esc([p.area, p.city].filter(Boolean).join(', ') || '—')}${p.distance_km != null ? `<div class="tiny muted">~${Math.round(p.distance_km)} km</div>` : ''}`;
   const nameCell = (p) => `<b>${esc(p.name)}</b><div class="tiny muted">${esc(p.type || '')}</div>${p.website ? `<a class="tiny" href="${esc(p.website)}" target="_blank" rel="noopener">Website</a>` : ''}`;
   const followCell = (p) => {
@@ -30,7 +30,8 @@
   }
   function edit(p) {
     BB.ask({ title: p.name, fields: [
-      `<div class="grid g2">${field({ name: 'contact_name', label: 'Contact person', value: p.contact_name || '', opt: true })}${field({ name: 'whatsapp', label: 'WhatsApp number', type: 'tel', phone: true, value: p.whatsapp || '', opt: true })}</div>`,
+      `<div class="grid g3">${field({ name: 'contact_name', label: 'Contact person', value: p.contact_name || '', opt: true })}${field({ name: 'contact_role', label: 'Designation', value: p.contact_role || '', opt: true })}${field({ name: 'whatsapp', label: 'WhatsApp number', type: 'tel', phone: true, value: p.whatsapp || '', opt: true })}</div>`,
+      `<div class="grid g3">${field({ name: 'area', label: 'Area', value: p.area || '', opt: true, voice: false })}${field({ name: 'city', label: 'City', value: p.city || '', opt: true, voice: false, list: 'cities' })}${field({ name: 'state', label: 'State', value: p.state || '', opt: true, voice: false })}</div>`,
       `<div class="grid g2">${field({ name: 'phone', label: 'Other phone', value: p.phone || '', opt: true, voice: false })}${field({ name: 'email', label: 'Email', value: p.email || '', opt: true, voice: false })}</div>`,
       { name: 'website', label: 'Website', value: p.website || '', opt: true, voice: false },
       { name: 'note', label: 'Note (who you spoke to, what was agreed)', type: 'textarea', value: p.note || '', opt: true }], ok: 'Save',
@@ -41,13 +42,25 @@
     const ICON = { whatsapp: 'chat', status: 'flow', note: 'note', sequence: 'cal', task: 'check', skipped: 'eye', error: 'eye' };
     BB.modal({ title: `${p.name} · activity`, body: `${p.note ? `<div class="notice small" style="margin-bottom:10px"><b>Note:</b> ${esc(p.note)}</div>` : ''}<div class="v-acts">${d.rows.map((a) => `<div class="v-act"><span class="v-act-i">${BB.icon ? BB.icon(ICON[a.kind] || 'note') : ''}</span><div><div class="small">${esc(a.text)}</div><div class="tiny muted">${BB.fmtDT ? BB.fmtDT(a.at) : fmtD(a.at)} · ${esc(a.by || '')}</div></div></div>`).join('') || '<p class="small muted">Nothing yet. WhatsApp them or start follow-ups.</p>'}</div>` });
   }
-  const addByHand = (types) => BB.ask({ title: 'Add a vendor', fields: [{ name: 'name', label: 'Name of the institute or college' }, { name: 'type', label: 'Type of institute', opt: true, list: 'ptypes2' }, `<datalist id="ptypes2">${(types || []).map((t) => `<option value="${esc(t)}">`).join('')}</datalist>`, { name: 'courses', label: 'Courses', opt: true }, `<div class="grid g3">${field({ name: 'area', label: 'Area', opt: true, voice: false })}${field({ name: 'city', label: 'City', opt: true, voice: false, list: 'cities' })}${field({ name: 'state', label: 'State', opt: true, voice: false })}</div>`, `<div class="grid g2">${field({ name: 'phone', label: 'Phone', opt: true, voice: false })}${field({ name: 'email', label: 'Email', opt: true, voice: false })}</div>`, { name: 'website', label: 'Website', opt: true, voice: false }], ok: 'Add', submit: (v) => BB.post('/api/partners', v) }).then((x) => x && (BB.toast('Added to Vendors'), BB.refreshPage()));
+  const addByHand = (types, statuses) => BB.ask({ title: 'Add a partner', wide: true, note: 'An institute, college or training centre whose students we can place. It is saved in Vendors, ready for WhatsApp and follow-ups.', ok: 'Add partner', fields: [
+    '<h4 class="form-sec">Institute</h4>',
+    `<div class="grid g2">${field({ name: 'name', label: 'Name of the institute or college' })}${field({ name: 'type', label: 'Type of institute', opt: true, list: 'ptypes2', placeholder: 'e.g. Jewellery design college' })}</div><datalist id="ptypes2">${(types || []).map((t) => `<option value="${esc(t)}">`).join('')}</datalist>`,
+    `<div class="grid g2">${field({ name: 'courses', label: 'Courses they teach', opt: true, placeholder: 'e.g. Jewellery CAD, gemmology, retail sales' })}${field({ name: 'website', label: 'Website', opt: true, voice: false, placeholder: 'https://' })}</div>`,
+    '<h4 class="form-sec">Where</h4>',
+    field({ name: 'address', label: 'Address', opt: true }),
+    `<div class="grid g3">${field({ name: 'area', label: 'Area', opt: true, voice: false })}${field({ name: 'city', label: 'City', voice: false, list: 'cities' })}${field({ name: 'state', label: 'State', opt: true, voice: false })}</div>`,
+    '<h4 class="form-sec">Contact person</h4>',
+    `<div class="grid g2">${field({ name: 'contact_name', label: 'Name', opt: true })}${field({ name: 'contact_role', label: 'Designation', opt: true, placeholder: 'e.g. Placement officer, Director' })}</div>`,
+    `<div class="grid g3">${field({ name: 'whatsapp', label: 'WhatsApp number', type: 'tel', phone: true, opt: true })}${field({ name: 'phone', label: 'Other phone / landline', opt: true, voice: false })}${field({ name: 'email', label: 'Email ID', type: 'email', opt: true, voice: false })}</div>`,
+    '<h4 class="form-sec">Status</h4>',
+    `<div class="grid g2">${field({ name: 'status', label: 'Status', type: 'select', options: statuses || ['New'], value: 'New', placeholder: false })}${field({ name: 'note', label: 'Note', opt: true, placeholder: 'Who you spoke to, what was agreed' })}</div>`],
+    submit: (v) => BB.post('/api/partners', { ...v, whatsapp: BB.spokenToDigits ? BB.spokenToDigits(v.whatsapp) || v.whatsapp : v.whatsapp }) }).then((x) => x && (BB.toast('Partner added to Vendors'), BB.refreshPage()));
 
   // ---------- Leads → Partners: search, and what the last search found ----------
   BB.partners = async ({ el, q, tabs }) => {
     const sid = q.search || 'last';
     const d = await BB.api(`/api/partners?${BB.qs({ search: sid })}`);
-    const search = d.can_search ? `<form class="card pad stack-sm" data-psearch style="margin-bottom:14px"><div class="row between"><h3 style="margin:0">Find institutes and colleges</h3><span class="small muted">About ₹${d.estimate.low}–${d.estimate.high} a search${d.spent_inr ? ` · ₹${d.spent_inr} spent so far` : ''}</span></div>
+    const search = d.can_search ? `<form class="card pad stack-sm" data-psearch style="margin-bottom:14px"><div class="row between"><h3 style="margin:0">Find institutes and colleges</h3><span class="cost-note">${BB.icon ? BB.icon('rupee') : ''}<i>Each search costs about ₹${d.estimate.low}–${d.estimate.high}${d.spent_inr ? `; ₹${d.spent_inr} spent so far` : ''}</i></span></div>
       <div class="grid g3"><label class="field"><span class="lab">Type of institute</span><input name="type" list="ptypes" placeholder="e.g. CAD / jewellery design institute"><datalist id="ptypes">${d.types.map((t) => `<option value="${esc(t)}">`).join('')}</datalist></label>${field({ name: 'course', label: 'Course or job they train for', opt: true, voice: false, placeholder: 'e.g. Jewellery CAD (Rhino, Matrix), gemmology' })}${field({ name: 'industry', label: 'Industry', value: 'Jewellery', voice: false })}</div>
       <div class="grid g4">${field({ name: 'state', label: 'State', voice: false, placeholder: 'e.g. Maharashtra' })}${field({ name: 'city', label: 'City', voice: false, list: 'cities', placeholder: 'e.g. Mumbai' })}${field({ name: 'area', label: 'Area', opt: true, voice: false, placeholder: 'e.g. Andheri' })}${field({ name: 'km', label: 'Within (km)', type: 'number', opt: true, voice: false, value: 25 })}</div>
       ${d.ai ? '' : '<div class="notice small">Search needs the OpenAI key on the server.</div>'}<div class="row"><button class="btn primary" ${d.ai ? '' : 'disabled'}>Search</button><span class="small muted">Everything found is saved in <a href="/team/vendors" data-tlink>Vendors</a>, ready for WhatsApp outreach and follow-ups.</span></div></form>`
@@ -55,25 +68,30 @@
     const cur = d.searches.find((x) => String(x.id) === String(sid === 'last' ? d.last_search : sid));
     const label = (x) => `${esc([x.query.type, x.query.course].filter(Boolean).join(', ') || 'Search')} · ${esc([x.query.area, x.query.city, x.query.state].filter(Boolean).join(', '))}${x.query.km ? ` · ${x.query.km} km` : ''}`;
     el.innerHTML = `${tabs}${search}
-      <section class="card pad"><div class="row between" style="margin-bottom:8px"><h3 style="margin:0">${cur ? `Found in: ${label(cur)}` : 'Search results'} <span class="small muted">${cur ? `${fmtD(cur.at)} · ${cur.found} found, ${cur.added} new` : ''}</span></h3><a class="btn sm" href="/team/vendors" data-tlink>Open Vendors (${d.total})</a></div>
+      <section class="card pad"><div class="row between" style="margin-bottom:8px"><h3 style="margin:0">${cur ? `Found in: ${label(cur)}` : 'Search results'} <span class="small muted">${cur ? `${fmtD(cur.at)} · ${cur.found} found, ${cur.added} new` : ''}</span></h3><div class="row" style="gap:8px"><button class="btn primary add-partner" data-padd>+ Add partner</button><a class="btn" href="/team/vendors" data-tlink>Open Vendors (${d.total})</a></div></div>
       ${BB.table([{ t: 'Institute', f: nameCell }, { t: 'Courses', f: (p) => `<div class="small" style="max-width:300px">${esc(p.courses || '—')}</div>${p.why ? `<div class="tiny muted">${esc(p.why)}</div>` : ''}` }, { t: 'Where', f: whereCell }, { t: 'Contact', f: contactCell }, { t: 'Status', f: (p) => `<span class="badge ${ST_CLS[p.status] || 'b-outline'}">${esc(p.status)}</span>` }, { t: '', f: (p) => `<button class="btn sm" data-pwa="${p.id}">${waIcon()} WhatsApp</button>` }], d.rows, { empty: cur ? 'Nothing new came back from this search (places already saved are not repeated).' : 'Run a search above. Results are saved in Vendors.' })}</section>
       ${d.searches.length ? `<details class="sec card pad" style="margin-top:14px"><summary><b>Past searches</b> <span class="muted">${d.searches.length}</span></summary><div class="stack-sm" style="margin-top:8px">${d.searches.map((x) => `<div class="small"><a href="#" data-psid="${x.id}">${fmtD(x.at)} · ${label(x)}</a> · ${x.found} found, ${x.added} new · <b>₹${x.cost_inr}</b> · ${esc(x.by)}</div>`).join('')}</div></details>` : ''}`;
     $$('[data-tab]', el).forEach((b) => (b.onclick = () => BB.setQ({ tab: b.dataset.tab, status: '', pq: '', search: '' })));
     $$('[data-psid]', el).forEach((a) => (a.onclick = (e) => { e.preventDefault(); BB.setQ({ search: a.dataset.psid }); }));
+    $('[data-padd]', el).onclick = () => addByHand(d.types, d.statuses);
     $$('[data-pwa]', el).forEach((b) => (b.onclick = () => whatsapp(d.rows.find((x) => String(x.id) === b.dataset.pwa), d.statuses)));
     const f = $('[data-psearch]', el); if (f) f.onsubmit = async (e) => {
       e.preventDefault(); const v = BB.formValues(f); const btn = $('button.primary', f);
       if (!(await BB.confirm('Search the web', `This search costs about ₹${d.estimate.low}–${d.estimate.high} on the OpenAI account. The exact amount shows when it finishes.`, 'Search'))) return;
       btn.disabled = true; btn.textContent = 'Searching… (up to a minute)';
-      try { const r = await BB.post('/api/partners/search', v); BB.toast(`${r.found} found, ${r.added} new saved to Vendors · cost ₹${r.cost_inr}`); BB.setQ({ search: '' }); BB.refreshPage(); } catch (er) { BB.fail(er); btn.disabled = false; btn.textContent = 'Search'; }
+      try { const r = await BB.post('/api/partners/search', v); BB.toast(`${r.found} found, ${r.added} new saved to Vendors · cost ₹${r.cost_inr}`); BB.setQ({ search: '' }); BB.refreshPage(); } catch (er) {
+        btn.disabled = false; btn.textContent = 'Search';
+        if (er && (er.status === 409 || /already run/i.test(er.message || ''))) BB.modal({ title: 'Already searched', body: `<p>${esc(er.message || 'This search was already run.')}</p><p class="small muted">Searching again would cost again and bring back the same places. Change the type, course, place or distance for a new search.</p><div class="row" style="margin-top:12px"><a class="btn primary" href="/team/vendors" data-tlink>Open Vendors</a></div>` });
+        else BB.fail(er);
+      }
     };
   };
 
   // ---------- Vendors page: the database ----------
   BB.vendors = async ({ el, actions, q }) => {
     const d = await BB.api(`/api/partners?${BB.qs({ status: q.status, q: q.pq, city: q.city, type: q.type, due: q.due, seq: q.seq })}`);
-    actions.innerHTML = `<a class="btn" href="/team/leads?tab=partners" data-tlink>${BB.icon ? BB.icon('search') : ''} Find more</a><button class="btn primary" data-padd>+ Add vendor</button>`;
-    $('[data-padd]', actions).onclick = () => addByHand(d.types);
+    actions.innerHTML = `<a class="btn" href="/team/leads?tab=partners" data-tlink>${BB.icon ? BB.icon('search') : ''} Find more</a><button class="btn primary" data-padd>+ Add partner</button>`;
+    $('[data-padd]', actions).onclick = () => addByHand(d.types, d.statuses);
     const st = q.status || '';
     const seqHow = d.sequence.map((s, i) => `<li><b>Day ${s.day}</b> · ${esc(s.label)}${s.kind === 'whatsapp' ? ` <span class="tiny ${d.wa_ready[s.format === 'bbhs_partner_followup' ? 'followup' : 'outreach'] ? 'v-ok' : 'muted'}">${d.wa_ready[s.format === 'bbhs_partner_followup' ? 'followup' : 'outreach'] ? 'goes from the business number' : 'a task for you to send (until Meta approves the message)'}</span>` : ' <span class="tiny muted">a task for the owner</span>'}${i === 0 ? '' : ''}</li>`).join('');
     el.innerHTML = `<div class="v-chips">${['', ...d.statuses].map((x) => `<button class="chip ${st === x && !q.due ? 'on' : ''}" data-pst="${esc(x)}">${x || 'All'} <span class="faint">${x ? d.counts[x] : d.total}</span></button>`).join('')}<button class="chip ${q.due ? 'on' : ''} ${d.due ? 'v-duechip' : ''}" data-pdue>Follow-up due <span class="faint">${d.due}</span></button></div>

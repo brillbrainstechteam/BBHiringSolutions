@@ -1532,10 +1532,18 @@ route('POST', '/api/gap/target', T, (ctx) => {
   D.setSetting('gap_targets', t); D.history(ctx.actor.label, 'gap target', null, cell, null, target || 'cleared'); return { ok: true };
 });
 route('GET', '/api/tieups', T, () => all('SELECT t.*, (SELECT COUNT(*) FROM candidates c WHERE c.tieup_id=t.id) AS candidates FROM tieups t ORDER BY name').map((t) => ({ ...t, owner_name: V.userName(t.owner_id) })));
+for (const col of ['email TEXT', 'designation TEXT', 'tieup_date TEXT', 'roles TEXT', 'shared_count INTEGER', 'note TEXT']) { try { D.db.exec(`ALTER TABLE tieups ADD COLUMN ${col}`); } catch { /* already there */ } }
 route('POST', '/api/tieups', T, (ctx) => {
-  const b = ctx.body; if (!b.name) throw httpError(400, 'Enter the name', 'name');
-  if (b.id) { D.edit('tieups', b.id, { name: b.name, type: b.type, city: b.city, contact: b.contact, phone: L.digits10(b.phone), owner_id: b.owner_id, last_list: b.last_list }, ctx.actor.label); return { id: b.id }; }
-  const r = D.run('INSERT INTO tieups (name,type,city,contact,phone,owner_id,last_list) VALUES (?,?,?,?,?,?,?)', b.name, b.type || 'College', b.city || '', b.contact || '', L.digits10(b.phone), b.owner_id || ctx.user.id, b.last_list || null);
+  const b = ctx.body; const t = (k) => String(b[k] ?? '').trim();
+  if (!t('name')) throw httpError(400, 'Enter the name of the college or institute', 'name');
+  if (!t('city')) throw httpError(400, 'Enter the city', 'city');
+  if (t('email') && !L.EMAIL_RE.test(t('email'))) throw httpError(400, 'Enter a valid email ID, or leave it empty', 'email');
+  if (t('phone') && !L.validPhone(L.digits10(t('phone')))) throw httpError(400, 'Enter a 10-digit mobile number, or leave it empty', 'phone');
+  if (t('shared_count') && !(Number(t('shared_count')) >= 0)) throw httpError(400, 'Enter how many candidates as a number', 'shared_count');
+  const rec = { name: t('name'), type: t('type') || 'College', city: t('city'), contact: t('contact'), designation: t('designation'), phone: L.digits10(t('phone')) || '', email: t('email'), tieup_date: t('tieup_date') || null, roles: t('roles'), shared_count: t('shared_count') ? Math.round(Number(t('shared_count'))) : null, last_list: t('last_list') || null, note: t('note') };
+  if (b.id) { D.edit('tieups', b.id, rec, ctx.actor.label); return { id: b.id }; }
+  if (get('SELECT 1 FROM tieups WHERE lower(name)=lower(?) AND lower(city)=lower(?)', rec.name, rec.city)) throw httpError(409, `${rec.name}, ${rec.city} is already a tie-up.`, 'name');
+  const r = D.run('INSERT INTO tieups (name,type,city,contact,phone,owner_id,last_list,email,designation,tieup_date,roles,shared_count,note) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)', rec.name, rec.type, rec.city, rec.contact, rec.phone, b.owner_id || ctx.user.id, rec.last_list, rec.email, rec.designation, rec.tieup_date, rec.roles, rec.shared_count, rec.note);
   D.history(ctx.actor.label, 'create', `TU-${r.lastInsertRowid}`, null, null, b.name); return { id: Number(r.lastInsertRowid) };
 });
 // ---------- segments (saved candidate searches) ----------

@@ -2433,3 +2433,16 @@ a.pipe-step { text-decoration: none; cursor: pointer; } a.pipe-step:hover { bord
 .hx-empty { padding: 18px; text-align: center; color: #94A3B8; font-size: 13px; }
 
 .v-actions .row { flex-direction: column; align-items: stretch; gap: 4px !important; } .v-actions .btn { justify-content: center; }
+
+.cost-note { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: #64748B; background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 999px; padding: 3px 10px; }
+.cost-note svg { width: 13px; height: 13px; color: #94A3B8; } .cost-note i { font-style: italic; }
+.add-partner { min-height: 38px; padding-left: 16px; padding-right: 16px; }
+.form-sec { margin: 6px 0 -4px; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: #0B6E60; border-top: 1px solid #EEF2F7; padding-top: 10px; }
+.form-sec:first-of-type { border-top: 0; padding-top: 0; }
+
+/* Segments list: filters wrap as text, actions wrap instead of running off the card */
+.seg-col { min-width: 260px; max-width: 420px; }
+.seg-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.seg-chip { display: inline-block; max-width: 100%; white-space: normal; overflow-wrap: anywhere; line-height: 1.4; font-size: 12.5px; padding: 3px 10px; border: 1px solid #DCE5F1; border-radius: 10px; background: #fff; color: #334155; }
+.seg-chip .seg-k { color: #64748B; } .seg-chip b { font-weight: 600; color: #0F172A; }
+.seg-acts-col { width: 1%; } .seg-acts { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; min-width: 300px; max-width: 460px; }
