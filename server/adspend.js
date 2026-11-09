@@ -125,8 +125,19 @@ async function fetchMeta(from, to, by) {
   return { rows: got.length, spent: Math.round(spent), from, to };
 }
 // Once a day after 6 am IST, from the timer: the last three days (Meta keeps adjusting the latest figures).
+// Once, when Meta is first connected: the last 12 months, three months at a time, so every ad already run is in.
+let backfilling = false;
+async function backfill() {
+  if (backfilling || get("SELECT 1 FROM health WHERE key='meta_backfill_done' AND value!=''")) return; backfilling = true;
+  try {
+    for (let back = 365; back > 0; back -= 90) { const from = istAgo(back); const to = istAgo(Math.max(1, back - 89)); if (from > to) continue; await fetchMeta(from, to, { label: 'First fetch (last 12 months)' }); }
+    D.setHealth('meta_backfill_done', now());
+  } catch (e) { D.setHealth('meta_spend_error', `${now()} ${e.message}`); } finally { backfilling = false; }
+}
 function daily() {
-  if (!metaCfg() || new Date(Date.now() + 5.5 * 3600000).getUTCHours() < 6) return;
+  if (!metaCfg()) return;
+  backfill();
+  if (new Date(Date.now() + 5.5 * 3600000).getUTCHours() < 6) return;
   const today = istAgo(0); const h = get("SELECT value FROM health WHERE key='meta_spend_day'"); if (h && h.value === today) return;
   D.setHealth('meta_spend_day', today);
   fetchMeta(istAgo(3), istAgo(1), { label: 'Daily fetch' }).catch((e) => { D.setHealth('meta_spend_error', `${now()} ${e.message}`); require('./alerts').devAlert('Meta ad spend fetch failed', e.message); });
