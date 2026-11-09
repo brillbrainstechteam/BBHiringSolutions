@@ -1172,6 +1172,23 @@ function checkActivation(clientId, by) {
   if (c.owner_id) alertUser(c.owner_id, `${c.company} is now an active client: signed contract is in`, c.id, false);
   return true;
 }
+// Client email (required on every client form), HR email (optional) and points of contact: the person we call and
+// message for day-to-day work when it is not the owner. Each POC: name, role, email, WhatsApp; one is the main one.
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+function needEmail(b, field = 'email') { const e = String(b[field] || '').trim(); if (!e) throw httpError(400, 'Enter the email ID', field); if (!EMAIL_RE.test(e)) throw httpError(400, 'Enter a valid email ID', field); b[field] = e; }
+function okHrEmail(b) { const e = String(b.hr_email || '').trim(); if (e && !EMAIL_RE.test(e)) throw httpError(400, 'Enter a valid HR email ID, or leave it empty', 'hr_email'); b.hr_email = e; }
+function cleanPoc(p) { const name = String(p.name || '').trim(); if (!name) return null; const w = digits10(p.whatsapp || ''); const email = String(p.email || '').trim();
+  if (p.whatsapp && !validPhone(w)) throw httpError(400, 'Enter a 10-digit WhatsApp number for the point of contact', 'poc_whatsapp'); if (email && !EMAIL_RE.test(email)) throw httpError(400, 'Enter a valid email for the point of contact', 'poc_email');
+  return { name: name.slice(0, 80), role: String(p.role || '').trim().slice(0, 60), email, whatsapp: w || '' }; }
+function saveClientExtras(clientId, b, by) {
+  const c = get('SELECT * FROM clients WHERE id=?', clientId); if (!c) return; const ex = { ...(c.extra || {}) }; let changed = false;
+  if (b.hr_email) { ex.hr_email = b.hr_email; changed = true; }
+  const poc = cleanPoc({ name: b.poc_name, role: b.poc_role, email: b.poc_email, whatsapp: b.poc_whatsapp });
+  if (poc) { const list = Array.isArray(ex.pocs) ? ex.pocs : []; if (!list.some((x) => x.name.toLowerCase() === poc.name.toLowerCase() && x.whatsapp === poc.whatsapp)) { list.push({ ...poc, main: !list.length, by: actorName(by), at: now() }); ex.pocs = list; changed = true; } }
+  if (changed) update('clients', clientId, { extra: ex });
+}
+// The person to call: the main POC if there is one, else the contact on the account.
+const pocOf = (c) => { const list = ((c.extra || {}).pocs || []); const m = list.find((p) => p.main) || list[0]; return m ? { ...m, poc: true } : { name: c.contact || '', role: 'Contact', email: c.email || '', whatsapp: c.whatsapp || '', poc: false }; };
 function intakeClient(d, o) {
   const phone = digits10(d.whatsapp);
   const source = o.source || 'Website';
@@ -1403,7 +1420,7 @@ function sendSystemText(ptype, pid, text) {
 module.exports = { stageStateOf, ownersOfJob, ownerMap, ownsApp, STAGES, stageOfApp, nextStageOf, reopenRefilled, adPlanFor, openAdApplications, placedOn, closePlacedApps, adLabel,
   STEPS, stepIdx, digits10, validPhone, inr, istDay, istFmt, istTime, istHour, inQuiet, next9am, daysBetween, addDays, hashPassword, checkPassword, newPassword, sha,
   activationState, checkActivation, waHeld, TEAMS, IV_MODES, clientSeesIv, addIvNote, CALL_OUTCOMES, logCall, jobList, deptOf, stateOf, person, fillFormat, windowOpenUntil, sendWA, setDispatcher, alertUser, link, agencyAdmin, superAdmins,
-  CLIENT_MAIN, CLIENT_SIDE, ONBOARD_STEPS, clientFacts, onboardDone, earnedStage, syncClientStage, computeJobStatus, jobStatusReason, recalcJob, filledCount, appsOfJob, matchScore, jobsFor, cleanBusiness, BUSINESS_TYPES, EXP_YEARS, JEW_YEARS, LOOKING, NOT_LOOKING, JOB_STATUSES, LOOK_FRESH, appStates, appStateOf, jobStatusOf, setLooking, ratingOf, bestMatches, isPlaced, salaryText, autoJobAlert,
+  EMAIL_RE, needEmail, okHrEmail, cleanPoc, saveClientExtras, pocOf, CLIENT_MAIN, CLIENT_SIDE, ONBOARD_STEPS, clientFacts, onboardDone, earnedStage, syncClientStage, computeJobStatus, jobStatusReason, recalcJob, filledCount, appsOfJob, matchScore, jobsFor, cleanBusiness, BUSINESS_TYPES, EXP_YEARS, JEW_YEARS, LOOKING, NOT_LOOKING, JOB_STATUSES, LOOK_FRESH, appStates, appStateOf, jobStatusOf, setLooking, ratingOf, bestMatches, isPlaced, salaryText, autoJobAlert,
   SAL_HIDDEN, feeFor, gstFor, fyOf, billView, refreshBill, createBillForApp, issueBill, upiLink,
   appHist, createApplication, moveStep, closeApplication, reopenApplication, screenApplication, SCREEN, jobsForRole, jobsForPerson, roleTokens, scheduleInterview, recordInterview, interviewView, ivVars, recordOffer, leftJob, jobAction,
   CONSENT_WORDING, saveConsent, intakeClient, intakeCandidate, assignLead, mergeRecords, resolveId, receiveReply, actorName,

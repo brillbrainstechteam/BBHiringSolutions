@@ -31,13 +31,14 @@
         ${q.ref ? `<div class="notice small" data-only="job">Referred by a friend (${esc(String(q.ref).toUpperCase())}).</div>` : ''}
         <div class="cv-first" data-only="job" data-f="cv"><div class="cv-ic" aria-hidden="true">CV</div><div class="grow"><b>Your CV / resume</b> <span class="opt">· required</span><div class="muted small" data-cv-name>PDF or Word, max 10 MB</div><div class="small" data-cv-msg></div></div><button type="button" class="btn" data-cv>Attach CV</button></div>
         <div class="grid g2">${field({ name: 'name', label: 'Your name' })}<div data-only="hire">${field({ name: 'company', label: 'Company name' })}</div><div data-only="job">${field({ name: 'email', label: 'Email', type: 'email', opt: true, placeholder: 'For a confirmation email', attrs: 'autocomplete="email"' })}</div></div>
-        <div class="grid g2">${field({ name: 'whatsapp', label: 'Mobile number (WhatsApp) · required', type: 'tel', phone: true, placeholder: '10-digit mobile number', attrs: 'inputmode="numeric" maxlength="14" autocomplete="tel" required' })}<div data-only="hire">${field({ name: 'email_hire', label: 'Email', type: 'email', opt: true, placeholder: 'For a confirmation email', attrs: 'autocomplete="email"' })}</div><div data-only="job"><label class="field" data-f="job_wanted"><span class="lab">Job you want</span><select name="job_wanted">${BB.jobOptions(q.want || '', true, q.ind)}</select></label></div></div>
+        <div class="grid g2">${field({ name: 'whatsapp', label: 'Mobile number (WhatsApp) · required', type: 'tel', phone: true, placeholder: '10-digit mobile number', attrs: 'inputmode="numeric" maxlength="14" autocomplete="tel" required' })}<div data-only="hire">${field({ name: 'email_hire', label: 'Email ID · required', type: 'email', placeholder: 'For the agreement and updates', attrs: 'autocomplete="email"' })}</div><div data-only="job"><label class="field" data-f="job_wanted"><span class="lab">Job you want</span><select name="job_wanted">${BB.jobOptions(q.want || '', true, q.ind)}</select></label></div></div>
         <div class="hidden" data-other>${field({ name: 'job_other', label: 'Type the job you want' })}</div>
         <div class="grid g2">${field({ name: 'city', label: 'City', list: 'cities', value: q.city || '', placeholder: 'Start typing your city…' })}${field({ name: 'state', label: 'State', placeholder: 'Fills in from the city', voice: false })}</div>
         <div data-only="hire" class="stack">
           ${field({ name: 'business_type', label: 'Your business', type: 'choice', options: [['Showroom B2C', 'B2C'], ['Manufacturer B2B', 'B2B'], ['Both', 'Both']] })}
           ${field({ name: 'need', label: 'When do you want to hire?', type: 'choice', options: ['Hiring now', 'Hiring soon', 'Just exploring'] })}
           ${field({ name: 'roles', label: 'Which roles?', opt: true, placeholder: 'e.g. 2 sales executives, 1 cashier' })}
+          ${field({ name: 'hr_email', label: 'HR email ID', type: 'email', opt: true, placeholder: 'If someone else handles hiring', attrs: 'autocomplete="off"' })}
         </div>
         <div data-only="job" class="stack">
           <label class="field" data-f="experience"><span class="lab">Experience <span class="opt">(optional)</span></span><div class="choice">${EXPERIENCE.map((x) => `<label style="min-width:96px"><input type="radio" name="experience" value="${x}"> ${x}</label>`).join('')}</div></label>
@@ -109,7 +110,7 @@
       const email = mode === 'hire' ? v.email_hire : v.email;
       const common = [['name', v.name, 'Please enter your name'], ['whatsapp', phoneOk(v.whatsapp), 'Enter a 10-digit WhatsApp number starting with 6, 7, 8 or 9'], [mode === 'hire' ? 'email_hire' : 'email', emailOk(email), 'Enter a valid email, or leave it empty']];
       const rules = mode === 'hire'
-        ? [...common, ['company', v.company, 'Please enter your company name'], ['city', v.city, 'Please enter your city'], ['business_type', v.business_type, 'Pick your type of business'], ['need', v.need, 'Tell us when you want to hire']]
+        ? [...common, ['email_hire', !!email && emailOk(email), 'Enter your email ID'], ['hr_email', !v.hr_email || emailOk(v.hr_email), 'Enter a valid HR email ID, or leave it empty'], ['company', v.company, 'Please enter your company name'], ['city', v.city, 'Please enter your city'], ['business_type', v.business_type, 'Pick your type of business'], ['need', v.need, 'Tell us when you want to hire']]
         : [...common, ['job_wanted', v.job_wanted, 'Pick the job you want'], ['job_other', v.job_wanted !== 'Other' || v.job_other, 'Type the job you want'], ['city', v.city, 'Please enter the city you want to work in']];
       v.exp_business = $$('[name=exp_business]:checked', form).map((x) => x.value);
       if (mode === 'job' && v.experience && v.experience !== 'Fresher') rules.push(['exp_business', v.exp_business.length, 'Tick where you have worked: wholesaler, manufacturer or retailer']);
@@ -117,7 +118,7 @@
       rules.push(['consent', v.consent, 'Please tick to agree before sending']);
       if (!check(form, rules)) return;
       const body = mode === 'hire'
-        ? { contact: v.name, company: v.company, whatsapp: v.whatsapp, email, city: v.city, state: v.state, business_type: v.business_type, need: v.need, roles: v.roles, website: v.website, src: q.src, lang: BB.lang }
+        ? { contact: v.name, company: v.company, whatsapp: v.whatsapp, email, city: v.city, state: v.state, business_type: v.business_type, need: v.need, roles: v.roles, hr_email: v.hr_email, website: v.website, src: q.src, lang: BB.lang }
         : { name: v.name, whatsapp: v.whatsapp, email, city: v.city, state: v.state, job_wanted: v.job_wanted, job_other: v.job_other, experience: v.experience, exp_business: v.exp_business, exp_jewellery: v.exp_jewellery, pref_channel: v.pref_channel, pref_time: v.pref_time, pref_days: v.pref_days, current_company: v.current_company, skills: [...picked], cv, website: v.website, lang: BB.lang, src: q.src || BB.adSource() || undefined, ...BB.adParams(), job: q.job, ref: q.ref, jobs: $$('[name=jobs]:checked', form).map((x) => x.value) };
       const btn = $('[data-send]', card); btn.disabled = true; btn.textContent = 'Sending…';
       try {

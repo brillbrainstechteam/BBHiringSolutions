@@ -441,9 +441,8 @@ route('POST', '/api/public/hire', { rate: { key: 'form', max: 60, minutes: 60 } 
   if (!b.city) throw httpError(400, 'Please enter your city', 'city');
   if (!b.business_type) throw httpError(400, 'Pick your type of business', 'business_type');
   if (!b.need) throw httpError(400, 'Tell us when you need staff', 'need');
-  if (b.email) b.email = String(b.email).trim();
-  if (b.email && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(String(b.email).trim())) throw httpError(400, 'Enter a valid email, or leave it empty', 'email');
-  const r = L.intakeClient({ ...b, language: b.lang }, { source: srcFrom(b) });
+  L.needEmail(b); L.okHrEmail(b);
+  const r = L.intakeClient({ ...b, language: b.lang }, { source: srcFrom(b) }); L.saveClientExtras(r.client.id, b, null);
   const mailer = require('./mailer');
   if (r.isNew) mailer.newLead('client', r.client);
   mailer.confirmToPerson('client', r.client);

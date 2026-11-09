@@ -47,7 +47,7 @@ function appView(a) {
 }
 function clientView(c) {
   const jobs = all('SELECT * FROM jobs WHERE client_id=? AND archived=0', c.id).map((j) => jobView(j));
-  return { ...c, lifecycle: c.activated_at ? 'Active client' : 'Lead', agency_name: agencyName(c.agency_id), owner_name: [c.owner_id, ...(Array.isArray(c.owners) ? c.owners : [])].filter((x, i, l) => x && l.indexOf(x) === i).map(userName).filter(Boolean).join(', ') || userName(c.owner_id), owner_ids: [c.owner_id, ...(Array.isArray(c.owners) ? c.owners : [])].filter((x, i, l) => x && l.indexOf(x) === i), jobs_open: jobs.filter((j) => !['Closed', 'Filled'].includes(j.status)).length, jobs_total: jobs.length };
+  return { ...c, poc: L.pocOf(c), lifecycle: c.activated_at ? 'Active client' : 'Lead', agency_name: agencyName(c.agency_id), owner_name: [c.owner_id, ...(Array.isArray(c.owners) ? c.owners : [])].filter((x, i, l) => x && l.indexOf(x) === i).map(userName).filter(Boolean).join(', ') || userName(c.owner_id), owner_ids: [c.owner_id, ...(Array.isArray(c.owners) ? c.owners : [])].filter((x, i, l) => x && l.indexOf(x) === i), jobs_open: jobs.filter((j) => !['Closed', 'Filled'].includes(j.status)).length, jobs_total: jobs.length };
 }
 const ONBOARDING = [
   { key: 'intro_call', label: 'Intro call: requirement understanding', stage: 'Requirement understanding' },

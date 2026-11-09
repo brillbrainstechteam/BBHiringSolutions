@@ -166,11 +166,19 @@
   BB.quickLead = () => quickLead();
   function quickLead() {
     // Leads are clients only; candidates are added from the Candidates page.
-    BB.ask({ title: 'Quick add lead', ok: 'Add lead', fields: [
-      `<div class="grid g2">${field({ name: 'name', label: 'Name' })}${field({ name: 'phone', label: 'WhatsApp number', type: 'tel', phone: true })}</div>`,
-      `<div class="grid g2">${field({ name: 'company', label: 'Company', opt: true })}${field({ name: 'city', label: 'City', list: 'cities', opt: true })}</div>`,
-      { name: 'source', label: 'Source', type: 'select', options: BB.boot.lead_sources, value: 'Walk-in' }, { name: 'note', label: 'Note', type: 'textarea', opt: true },
-    ], submit: (v) => BB.post('/api/leads/quick', { ...v, type: 'client', phone: BB.spokenToDigits(v.phone) || v.phone }) }).then((r) => { if (r) { BB.toast(r.isNew ? `${r.id} added` : `Already in the system as ${r.id} — details added`); BB.open(r.id.startsWith('CL') ? 'client' : 'candidate', r.id); BB.refreshPage && BB.refreshPage(); } });
+    const roleRow = () => `<div class="grid ql-role" data-qlrole><input placeholder="Role, e.g. Sales Executive" data-qr="role" list="ql-roles"><input type="number" min="1" placeholder="How many" data-qr="count" inputmode="numeric"><button type="button" class="btn sm ghost" data-qlx aria-label="Remove this role">×</button></div>`;
+    BB.ask({ title: 'Quick add lead', wide: true, ok: 'Add lead', fields: [
+      `<div class="grid g2">${field({ name: 'company', label: 'Company name' })}${field({ name: 'name', label: 'Contact name' })}</div>`,
+      `<div class="grid g2">${field({ name: 'phone', label: 'WhatsApp number', type: 'tel', phone: true })}${field({ name: 'city', label: 'City', list: 'cities', opt: true })}</div>`,
+      `<div class="grid g2">${field({ name: 'email', label: 'Email ID', type: 'email', voice: false })}${field({ name: 'hr_email', label: 'HR email ID', type: 'email', opt: true, voice: false })}</div>`,
+      { name: 'business_type', label: 'Business', type: 'choice', options: ['Showroom B2C', 'Manufacturer B2B', 'Both'], opt: true },
+      { name: 'need', label: 'When do they want to hire?', type: 'choice', options: ['Hiring now', 'Hiring soon', 'Just exploring'], opt: true },
+      `<div class="field"><span class="lab">Job details <span class="opt">(roles and how many people)</span></span><div class="stack-sm" data-qlroles>${roleRow()}</div><button type="button" class="btn sm" data-qladd style="margin-top:8px">+ Add another role</button><datalist id="ql-roles">${(BB.boot.jobs || []).map((j) => `<option value="${esc(j.title)}">`).join('')}</datalist></div>`,
+      { name: 'source', label: 'Source', type: 'select', options: BB.boot.lead_sources, value: 'Walk-in' },
+      BB.pocFields(),
+      { name: 'note', label: 'Note', type: 'textarea', opt: true },
+    ], mount: (m) => { const box = $('[data-qlroles]', m); $('[data-qladd]', m).onclick = () => { box.insertAdjacentHTML('beforeend', roleRow()); $('[data-qr=role]', box.lastElementChild).focus(); }; box.onclick = (e) => { const x = e.target.closest('[data-qlx]'); if (x && box.children.length > 1) x.closest('[data-qlrole]').remove(); else if (x) $$('input', x.closest('[data-qlrole]')).forEach((i) => { i.value = ''; }); }; },
+    submit: (v) => BB.post('/api/leads/quick', { ...v, roles_list: $$('.modal [data-qlrole]').map((r) => ({ role: $('[data-qr=role]', r).value.trim(), count: $('[data-qr=count]', r).value })).filter((x) => x.role || x.count), type: 'client', phone: BB.spokenToDigits(v.phone) || v.phone }) }).then((r) => { if (r) { BB.toast(r.isNew ? `${r.id} added` : `Already in the system as ${r.id} — details added`); BB.open(r.id.startsWith('CL') ? 'client' : 'candidate', r.id); BB.refreshPage && BB.refreshPage(); } });
   }
   function changePassword(forced) {
     const html = `<div class="stack">${forced ? '<div class="notice small">Please set your own password before you start (at least 8 characters).</div>' : ''}${field({ name: 'old', label: 'Current password', type: 'password', voice: false })}${field({ name: 'password', label: 'New password', type: 'password', voice: false, hint: 'At least 8 characters' })}</div>`;

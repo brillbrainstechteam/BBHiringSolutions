@@ -2368,3 +2368,8 @@ a.pipe-step { text-decoration: none; cursor: pointer; } a.pipe-step:hover { bord
 .mw-stage:hover { border-color: #B5E7DD; background: #F6FBF9; text-decoration: none; } .mw-stage span { font-size: 13px; color: var(--muted); } .mw-stage b { font: 800 24px/1.1 var(--display); color: var(--ink); }
 .mw-perf { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; } .mw-perf div { display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; border-radius: 12px; background: #F7FAFD; } .mw-perf span { font-size: 12px; color: var(--muted); } .mw-perf b { font: 800 20px var(--display); color: var(--ink); }
 @media (max-width: 900px) { .mw-stages { grid-template-columns: repeat(3, minmax(0, 1fr)); } .mw-perf { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+
+.poc-col { min-width: 190px; } .poc-cell b { font-size: 13.5px; } .poc-cell .tiny { color: var(--muted); }
+.poc-box { border: 1px dashed #DCE5F1; border-radius: 12px; padding: 10px 12px; } .poc-box > summary { cursor: pointer; }
+.cl-person.main { border-color: #B5E7DD; background: #F6FBF9; }
+.ql-role { grid-template-columns: 1fr 120px 40px; gap: 8px; align-items: center; }

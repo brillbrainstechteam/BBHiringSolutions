@@ -368,15 +368,21 @@ route('POST', '/api/me/focus', T, (ctx) => { const f = String(ctx.body.focus || 
 route('GET', '/api/my-work', T, (ctx) => {
   const u = ctx.user; const today = L.istDay(); const om = L.ownerMap(); const since30 = new Date(Date.now() - 30 * 86400000).toISOString(); const month = `${today.slice(0, 7)}-01`;
   const owns = (row, main) => row[main] === u.id || (Array.isArray(row.owners) && row.owners.includes(u.id));
-  const clients = all('SELECT * FROM clients WHERE removed=0 AND archived=0 AND merged_into IS NULL').filter((c) => !c.placeholder && !c.internal && owns(c, 'owner_id'));
-  const myJobs = all('SELECT * FROM jobs WHERE archived=0').filter((j) => (om.get(j.id) || []).includes(u.id)).map((j) => V.jobView(j));
-  const apps = all("SELECT * FROM applications WHERE result='open'").filter((a) => L.ownsApp(u.id, a, om));
+  let clients = all('SELECT * FROM clients WHERE removed=0 AND archived=0 AND merged_into IS NULL').filter((c) => !c.placeholder && !c.internal && owns(c, 'owner_id'));
+  let myJobs = all('SELECT * FROM jobs WHERE archived=0').filter((j) => (om.get(j.id) || []).includes(u.id)).map((j) => V.jobView(j));
+  let apps = all("SELECT * FROM applications WHERE result='open'").filter((a) => L.ownsApp(u.id, a, om));
   const tasks = all("SELECT * FROM tasks WHERE removed=0 AND status!='Done'").filter((t) => taskOwnerIds(t).includes(u.id));
+  // Nothing allocated to this person yet: they see all the team's work (their agency), so nothing waits unseen.
+  const everyone = !clients.length && !myJobs.length && !apps.length && !tasks.length;
+  if (everyone) {
+    clients = all('SELECT * FROM clients WHERE removed=0 AND archived=0 AND merged_into IS NULL').filter((c) => !c.placeholder && !c.internal && seeClient(u, c));
+    myJobs = visibleJobs(u).map((j) => V.jobView(j)); apps = visibleApps(u).filter((a) => a.result === 'open');
+  }
   const areaClient = tasks.filter((t) => /client|lead|onboard|agreement|proposal|jd|requirement|kyc/i.test(`${t.area} ${t.title}`)).length;
   const areaCand = tasks.filter((t) => /candidate|screen|interview|sourc|call|resume|cv|offer|joining/i.test(`${t.area} ${t.title}`)).length;
   const clientScore = clients.length * 3 + areaClient * 2; const candScore = apps.length + myJobs.length + areaCand * 2;
-  const pick = u.work_focus || 'auto';
-  const show = pick === 'clients' ? { clients: true, candidates: false } : pick === 'candidates' ? { clients: false, candidates: true } : pick === 'both' ? { clients: true, candidates: true }
+  const pick = u.work_focus || 'auto'; if (everyone && pick === 'auto') u.work_focus = 'both';
+  const show = pick === 'clients' ? { clients: true, candidates: false } : pick === 'candidates' ? { clients: false, candidates: true } : pick === 'both' || everyone ? { clients: true, candidates: true }
     : { clients: clientScore > 0 || u.level === 'admin', candidates: candScore > 0 || u.level === 'sub' };
   const lead = show.clients && show.candidates ? (clientScore >= candScore ? 'clients' : 'candidates') : show.clients ? 'clients' : 'candidates';
   const it = (text, open, when) => ({ text, open, when: when || null }); const co = (c) => ({ type: 'client', id: c.id });
@@ -401,7 +407,7 @@ route('GET', '/api/my-work', T, (ctx) => {
   const perf = perfOf(u.id, since30);
   const candSnap = { open_apps: apps.length, by_stage: stageCounts(apps), interviews_week: all("SELECT at, app_id FROM interviews WHERE status IN ('Scheduled','Rescheduled') AND at>=? AND at<=?", new Date().toISOString(), new Date(Date.now() + 7 * 86400000).toISOString()).filter((i) => apps.some((a) => a.id === i.app_id)).length,
     calls7: get('SELECT COUNT(*) n FROM calls WHERE user_id=? AND at>=?', u.id, new Date(Date.now() - 7 * 86400000).toISOString()).n };
-  return { focus: pick, show, lead, stages: L.STAGES, client: { actions: clientActions, stages, snap: clientSnap }, candidate: { jobs: jobsOut.slice(0, 12), snap: candSnap, perf },
+  return { focus: pick, everyone, show, lead, stages: L.STAGES, client: { actions: clientActions, stages, snap: clientSnap }, candidate: { jobs: jobsOut.slice(0, 12), snap: candSnap, perf },
     tasks: { open: tasks.length, overdue: tasks.filter((t) => t.due_date && t.due_date < today).length } };
 });
 
@@ -621,7 +627,12 @@ route('POST', '/api/leads/junk', T, (ctx) => {
 });
 route('POST', '/api/leads/quick', T, (ctx) => {
   const b = ctx.body; const by = { ...ctx.actor };
-  if (b.type === 'client') { const r = L.intakeClient({ contact: b.name, company: b.company || b.name, whatsapp: b.phone, city: b.city, need: b.note }, { source: b.source || 'Walk-in', by }); if (b.note) insert('notes', { record_id: r.client.id, text: b.note, author: ctx.actor.label, at: now() }); return { id: r.client.id, isNew: r.isNew }; }
+  if (b.type === 'client') { L.needEmail(b); L.okHrEmail(b); L.cleanPoc({ name: b.poc_name, role: b.poc_role, email: b.poc_email, whatsapp: b.poc_whatsapp });
+    const lines = (Array.isArray(b.roles_list) ? b.roles_list : []).map((x) => ({ role: String(x.role || '').trim(), count: Math.max(0, Math.round(Number(x.count) || 0)) })).filter((x) => x.role);
+    if (lines.some((x) => !x.count)) throw httpError(400, `Write how many people for ${lines.find((x) => !x.count).role}`, 'roles_list');
+    const roles = lines.map((x) => `${x.role} × ${x.count}`).join(', ');
+    const r = L.intakeClient({ contact: b.name, company: b.company || b.name, whatsapp: b.phone, email: b.email, city: b.city, business_type: b.business_type || '', need: b.need || '', roles }, { source: b.source || 'Walk-in', by }); L.saveClientExtras(r.client.id, b, ctx.actor);
+    if (lines.length) { const c = get('SELECT * FROM clients WHERE id=?', r.client.id); update('clients', c.id, { onboarding: { ...(c.onboarding || {}), requirement: { done: true, date: now(), by: ctx.actor.label, note: roles } } }); L.syncClientStage(c.id, ctx.actor); } if (b.note) insert('notes', { record_id: r.client.id, text: b.note, author: ctx.actor.label, at: now() }); return { id: r.client.id, isNew: r.isNew }; }
   const r = L.intakeCandidate({ name: b.name, whatsapp: b.phone, city: b.city, job_wanted: b.job_wanted }, { source: b.source || 'Walk-in', by });
   if (b.note) insert('notes', { record_id: r.candidate.id, text: b.note, author: ctx.actor.label, at: now() });
   return { id: r.candidate.id, isNew: r.isNew };
@@ -646,8 +657,17 @@ route('GET', '/api/clients', T, (ctx) => {
     .map(V.clientView);
   return page(ctx, sortBy(rows, q, ['company', 'city', 'lifecycle', 'stage', 'agency_name', 'jobs_open', 'account_status']), 'clients', ['id', 'company', 'contact', 'whatsapp', 'city', 'business_type', 'stage', 'agency_name', 'owner_name', 'jobs_open', 'jobs_total', 'account_status', 'source']);
 });
+route('POST', '/api/clients/:id/pocs', T, (ctx) => {
+  const c = get('SELECT * FROM clients WHERE id=?', ctx.params.id); mustSee(c && seeClient(ctx.user, c), 'client'); const b = ctx.body || {}; const ex = { ...(c.extra || {}) }; let list = Array.isArray(ex.pocs) ? [...ex.pocs] : [];
+  if (b.remove !== undefined) list = list.filter((_, i) => i !== Number(b.remove));
+  else if (b.main !== undefined) list = list.map((p, i) => ({ ...p, main: i === Number(b.main) }));
+  else { const p = L.cleanPoc(b); if (!p) throw httpError(400, 'Write the name', 'name'); if (!p.whatsapp && !p.email) throw httpError(400, 'Add a WhatsApp number or an email', 'whatsapp'); if (b.main || !list.length) list = list.map((x) => ({ ...x, main: false })); list.push({ ...p, main: !!b.main || !list.length, by: ctx.actor.label, at: now() }); }
+  if (list.length && !list.some((p) => p.main)) list[0].main = true;
+  D.edit('clients', c.id, { extra: { ...ex, pocs: list } }, ctx.actor.label, ctx.ip); return { pocs: list };
+});
 route('POST', '/api/clients', T, (ctx) => {
-  const b = ctx.body; const r = L.intakeClient(b, { source: b.source || `Created by ${ctx.actor.label}`, by: ctx.actor });
+  const b = ctx.body; L.needEmail(b); L.okHrEmail(b); L.cleanPoc({ name: b.poc_name, role: b.poc_role, email: b.poc_email, whatsapp: b.poc_whatsapp });
+  const r = L.intakeClient(b, { source: b.source || `Created by ${ctx.actor.label}`, by: ctx.actor }); L.saveClientExtras(r.client.id, b, ctx.actor);
   if (!r.isNew && !seeClient(ctx.user, r.client)) throw httpError(400, `This number already belongs to ${r.client.id} in another agency.`);
   if (r.isNew && ctx.user.level !== 'super') update('clients', r.client.id, { agency_id: ctx.user.agency_id, owner_id: ctx.user.id, is_new: 0 });
   return { id: r.client.id, isNew: r.isNew };

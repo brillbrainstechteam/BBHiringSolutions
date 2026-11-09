@@ -525,6 +525,13 @@ BB.route = () => {
 };
 // Brand lockup: mark | BrillBrains / Hiring Solutions / tagline (as on the website).
 // The full logo on wide screens, the BB mark where space is tight; the tagline names the part of the site.
+// Point of contact (if not the owner): the person we call and message for day-to-day work.
+BB.pocFields = () => `<details class="poc-box"><summary><b>Point of contact</b> <span class="small muted">if it is not the owner (optional)</span></summary><div class="grid g2" style="margin-top:8px">${BB.field({ name: 'poc_name', label: 'Name', opt: true })}${BB.field({ name: 'poc_role', label: 'Designation or role', opt: true, placeholder: 'e.g. HR manager' })}${BB.field({ name: 'poc_email', label: 'Email ID', type: 'email', opt: true, voice: false })}${BB.field({ name: 'poc_whatsapp', label: 'WhatsApp number', type: 'tel', phone: true, opt: true })}</div></details>`;
+BB.addPoc = (c) => BB.ask({ title: `Add a point of contact · ${String(c.company || '').replace(/[<>&"]/g, '')}`, note: 'The person we call and message for day-to-day work on this account.', fields: [
+  `<div class="grid g2">${BB.field({ name: 'name', label: 'Name' })}${BB.field({ name: 'role', label: 'Designation or role', opt: true, placeholder: 'e.g. HR manager, Store manager' })}</div>`,
+  `<div class="grid g2">${BB.field({ name: 'email', label: 'Email ID', type: 'email', opt: true, voice: false })}${BB.field({ name: 'whatsapp', label: 'WhatsApp number', type: 'tel', phone: true, opt: true })}</div>`,
+  { name: 'main', label: 'Make this the main point of contact', type: 'check' }], ok: 'Add',
+  submit: (v) => BB.post(`/api/clients/${c.id}/pocs`, { ...v, whatsapp: BB.spokenToDigits ? BB.spokenToDigits(v.whatsapp) || v.whatsapp : v.whatsapp, main: !!v.main }) });
 // Client stage "Requirement later": when to ask them again (a follow-up for the owner). null = cancelled.
 BB.askRequirementLater = (who) => BB.ask({ title: `Requirement later${who ? ` · ${String(who).replace(/[<>&"]/g, '')}` : ''}`, note: 'When should we ask them for the requirement? The client owner gets a reminder on that day.', fields: [
   { name: 'follow_up_at', label: 'Follow up on', type: 'datetime-local', value: BB.toLocalInput ? BB.toLocalInput(new Date(Date.now() + 14 * 86400000)) : '' },
