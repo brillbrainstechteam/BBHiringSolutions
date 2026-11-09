@@ -2355,3 +2355,16 @@ a.pipe-step { text-decoration: none; cursor: pointer; } a.pipe-step:hover { bord
 .call-guide li b { font-size: 13.5px; color: var(--ink); line-height: 1.3; }
 .call-guide li span { font-size: 13px; color: var(--muted); line-height: 1.45; }
 @media (max-width: 700px) { .call-guide ol { grid-template-columns: 1fr; } }
+
+.remind-people { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 14px; max-height: 200px; overflow: auto; } .remind-people label { gap: 8px; }
+.cl-people { display: flex; flex-direction: column; gap: 8px; } .cl-person { display: flex; gap: 10px; padding: 10px 12px; border: 1px solid #DCE5F1; border-radius: 12px; }
+
+/* My work (admin and sub admin dashboards) */
+.mw-bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.mw-tiles .kpi { min-height: 0; padding: 14px 16px; } .mw-tiles .kpi-v { font-size: 26px; } .mw-sub { font-size: 12px; font-weight: 600; color: var(--muted); font-family: var(--font); }
+.mw-h { margin: 18px 0 10px; font-size: 13px; font-weight: 700; color: var(--ink); }
+.mw-stages { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; }
+.mw-stage { display: flex; flex-direction: column; gap: 2px; padding: 12px 14px; border: 1px solid #DCE5F1; border-radius: 12px; color: inherit; text-decoration: none; }
+.mw-stage:hover { border-color: #B5E7DD; background: #F6FBF9; text-decoration: none; } .mw-stage span { font-size: 13px; color: var(--muted); } .mw-stage b { font: 800 24px/1.1 var(--display); color: var(--ink); }
+.mw-perf { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; } .mw-perf div { display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; border-radius: 12px; background: #F7FAFD; } .mw-perf span { font-size: 12px; color: var(--muted); } .mw-perf b { font: 800 20px var(--display); color: var(--ink); }
+@media (max-width: 900px) { .mw-stages { grid-template-columns: repeat(3, minmax(0, 1fr)); } .mw-perf { grid-template-columns: repeat(3, minmax(0, 1fr)); } }

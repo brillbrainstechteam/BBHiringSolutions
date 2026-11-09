@@ -115,7 +115,6 @@
     const g = c.wa_group || {}; const o = (c.extra || {}).online; const k = c.kyc || {}; const a = c.activation || {};
     const docs = [['Signed agreement', a.contract], ['GST certificate', k.gst], ['Business PAN', k.pan], ['Owner ID', k.owner_id]];
     return `${BB.callsBlock({ party: 'client', client_id: c.id, apps: c.call_apps, noButtons: true }, c.call_log, c.whatsapp)}
-      ${(c.calls || []).length ? `<div class="sec"><h3>Requirements from calls</h3><div class="stack-sm">${c.calls.map((x) => `<div class="card pad small"><div class="row between"><span class="faint">${fmtDT(x.at)} · ${esc(x.by)}</span>${x.call_roles ? (x.call_roles.filter((l) => !l.job_id).length ? `<button class="btn sm" data-fjobs="${x.id}">Open ${x.call_roles.filter((l) => !l.job_id).length > 1 ? 'all as draft jobs' : 'as a draft job'}</button>` : '') : `<button class="btn sm" data-fjob="${x.id}">Open a job from this</button>`}</div>${x.call_roles ? callRoleRows(x) : ''}<dl class="kv" style="margin-top:6px">${[...(x.call_roles ? [] : [['Openings', x.openings], ['Location', x.location], ['Department', x.department], ['Roles', x.roles]]), ['Skills', x.skills], ['Responsibilities', x.duties], ['Notes', x.notes]].filter(([, v]) => v).map(([k, v]) => `<dt>${k}</dt><dd>${esc(v)}</dd>`).join('')}</dl></div>`).join('')}</div></div>` : ''}
 `;
   };
   // Everything about one client's agreement in one place: get it, edit it, send it, file the signed copy.

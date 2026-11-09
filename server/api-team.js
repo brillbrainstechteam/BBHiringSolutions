@@ -362,6 +362,49 @@ route('GET', '/api/health', T, (ctx) => {
   return out;
 });
 
+// ---------- My work (admin and sub admin dashboards): client work and candidate work, by what each person does ----------
+const FOCUS = ['auto', 'clients', 'candidates', 'both'];
+route('POST', '/api/me/focus', T, (ctx) => { const f = String(ctx.body.focus || 'auto'); if (!FOCUS.includes(f)) throw httpError(400, 'Pick what to show'); update('users', ctx.user.id, { work_focus: f === 'auto' ? null : f }); return { ok: true }; });
+route('GET', '/api/my-work', T, (ctx) => {
+  const u = ctx.user; const today = L.istDay(); const om = L.ownerMap(); const since30 = new Date(Date.now() - 30 * 86400000).toISOString(); const month = `${today.slice(0, 7)}-01`;
+  const owns = (row, main) => row[main] === u.id || (Array.isArray(row.owners) && row.owners.includes(u.id));
+  const clients = all('SELECT * FROM clients WHERE removed=0 AND archived=0 AND merged_into IS NULL').filter((c) => !c.placeholder && !c.internal && owns(c, 'owner_id'));
+  const myJobs = all('SELECT * FROM jobs WHERE archived=0').filter((j) => (om.get(j.id) || []).includes(u.id)).map((j) => V.jobView(j));
+  const apps = all("SELECT * FROM applications WHERE result='open'").filter((a) => L.ownsApp(u.id, a, om));
+  const tasks = all("SELECT * FROM tasks WHERE removed=0 AND status!='Done'").filter((t) => taskOwnerIds(t).includes(u.id));
+  const areaClient = tasks.filter((t) => /client|lead|onboard|agreement|proposal|jd|requirement|kyc/i.test(`${t.area} ${t.title}`)).length;
+  const areaCand = tasks.filter((t) => /candidate|screen|interview|sourc|call|resume|cv|offer|joining/i.test(`${t.area} ${t.title}`)).length;
+  const clientScore = clients.length * 3 + areaClient * 2; const candScore = apps.length + myJobs.length + areaCand * 2;
+  const pick = u.work_focus || 'auto';
+  const show = pick === 'clients' ? { clients: true, candidates: false } : pick === 'candidates' ? { clients: false, candidates: true } : pick === 'both' ? { clients: true, candidates: true }
+    : { clients: clientScore > 0 || u.level === 'admin', candidates: candScore > 0 || u.level === 'sub' };
+  const lead = show.clients && show.candidates ? (clientScore >= candScore ? 'clients' : 'candidates') : show.clients ? 'clients' : 'candidates';
+  const it = (text, open, when) => ({ text, open, when: when || null }); const co = (c) => ({ type: 'client', id: c.id });
+  // Client work: what to do next on each client, by stage and journey step
+  const facts = new Map(clients.map((c) => [c.id, L.clientFacts(c)]));
+  const fu = all("SELECT * FROM followups WHERE done=0 AND for_user=? AND at<=?", u.id, new Date(`${today}T23:59:59+05:30`).toISOString()).filter((f) => clients.some((c) => c.id === f.record_id));
+  const clientActions = [
+    { key: 'new', title: 'New clients to call', link: 'clients?stage=Call initiated', items: clients.filter((c) => c.stage === 'Call initiated').map((c) => it(c.company, co(c))) },
+    { key: 'proposal', title: 'Proposal to send', items: clients.filter((c) => ['Requirement understanding', 'Requirement received'].includes(c.stage)).map((c) => it(`${c.company} · ${c.stage}`, co(c))) },
+    { key: 'agreement', title: 'Agreement to chase', link: 'clients?stage=Agreement follow-up', items: clients.filter((c) => ['Agreement shared', 'Agreement follow-up'].includes(c.stage)).map((c) => it(`${c.company} · ${c.stage}`, co(c))) },
+    { key: 'jd', title: 'Job descriptions to write or get approved', items: myJobs.filter((j) => !j.jd_approved && j.jd_status !== 'Approved' && j.status !== 'Closed').map((j) => it(`${j.title} · ${j.client_name || ''}`, { type: 'job', id: j.id })) },
+    { key: 'onboard', title: 'Onboarding steps to finish', items: clients.filter((c) => c.activated_at && !facts.get(c.id).onboarded).map((c) => it(`${c.company} · ${L.ONBOARD_STEPS.filter((k) => !L.onboardDone(c, k)).length} steps left`, co(c))) },
+    { key: 'followups', title: 'Requirement follow-ups due', items: fu.map((f) => it(f.note || 'Follow up', { type: 'client', id: f.record_id }, f.at)) },
+    { key: 'noopen', title: 'No current opening: ask for new requirements', link: 'clients?stage=No current opening', items: clients.filter((c) => c.stage === 'No current opening').map((c) => it(c.company, co(c))) },
+  ].map((s) => ({ ...s, count: s.items.length, items: s.items.slice(0, 5) })).filter((s) => s.count);
+  const stages = D.settings().client_stages.map((s) => ({ stage: s, n: clients.filter((c) => c.stage === s).length, side: L.CLIENT_SIDE.includes(s) }));
+  const clientSnap = { owned: clients.length, active: clients.filter((c) => c.activated_at).length, activated_month: clients.filter((c) => c.activated_at && c.activated_at >= month).length,
+    onboarded: clients.filter((c) => facts.get(c.id).onboarded).length, openings: myJobs.filter((j) => ['Open', 'Sourcing', 'Interviewing', 'Offer stage'].includes(j.status)).length, openings_month: myJobs.filter((j) => j.created_at >= month).length };
+  // Candidate work: my job openings with each stage, and my numbers
+  const stageCounts = (list) => { const o = Object.fromEntries(L.STAGES.map((s) => [s, 0])); for (const a of list) { const s = L.stageOfApp(a); if (o[s] !== undefined) o[s]++; } return o; };
+  const jobsOut = myJobs.filter((j) => ['Open', 'Sourcing', 'Interviewing', 'Offer stage'].includes(j.status)).map((j) => { const ja = apps.filter((a) => a.job_id === j.id); return { id: j.id, title: j.title, client: j.client_name, city: j.city, seats: Math.max(0, (j.openings || 1) - (j.filled || 0)), counts: stageCounts(ja), total: ja.length }; }).sort((a, b) => b.total - a.total);
+  const perf = perfOf(u.id, since30);
+  const candSnap = { open_apps: apps.length, by_stage: stageCounts(apps), interviews_week: all("SELECT at, app_id FROM interviews WHERE status IN ('Scheduled','Rescheduled') AND at>=? AND at<=?", new Date().toISOString(), new Date(Date.now() + 7 * 86400000).toISOString()).filter((i) => apps.some((a) => a.id === i.app_id)).length,
+    calls7: get('SELECT COUNT(*) n FROM calls WHERE user_id=? AND at>=?', u.id, new Date(Date.now() - 7 * 86400000).toISOString()).n };
+  return { focus: pick, show, lead, stages: L.STAGES, client: { actions: clientActions, stages, snap: clientSnap }, candidate: { jobs: jobsOut.slice(0, 12), snap: candSnap, perf },
+    tasks: { open: tasks.length, overdue: tasks.filter((t) => t.due_date && t.due_date < today).length } };
+});
+
 // ---------- Team at work (admin dashboard): each person's numbers, and where the clients stand ----------
 route('GET', '/api/team-overview', T, (ctx) => {
   const u = ctx.user; if (u.level === 'sub') throw httpError(403, 'This view is for admins.');
@@ -2489,8 +2532,11 @@ route('POST', '/api/notes', T, (ctx) => {
   insert('notes', { record_id: ctx.body.record_id, text: ctx.body.text, author: ctx.actor.label, at: now() }); D.history(ctx.actor.label, 'note', ctx.body.record_id); return { ok: true };
 });
 route('POST', '/api/followups', T, (ctx) => {
-  const b = ctx.body; if (!b.at) throw httpError(400, 'Pick the date and time', 'at');
-  insert('followups', { record_id: b.record_id, at: new Date(b.at).toISOString(), note: b.note || '', for_user: b.for_user || ctx.user.id, done: 0, created_by: ctx.user.id }); return { ok: true };
+  const b = ctx.body; if (!b.at) throw httpError(400, 'Pick the date and time', 'at'); const at = new Date(b.at); if (Number.isNaN(at.getTime())) throw httpError(400, 'Pick the date and time', 'at');
+  const team = taskOwners(ctx.user); const want = [...new Set((Array.isArray(b.for_users) && b.for_users.length ? b.for_users : [b.for_user || ctx.user.id]).filter(Boolean))];
+  const bad = want.find((id) => id !== ctx.user.id && !team.some((x) => x.id === id)); if (bad) throw httpError(400, 'Pick people from your team', 'for_users');
+  for (const uid of want) insert('followups', { record_id: b.record_id, at: at.toISOString(), note: b.note || '', for_user: uid, done: 0, created_by: ctx.user.id });
+  return { ok: true, people: want.length };
 });
 route('POST', '/api/followups/:id/done', T, (ctx) => { D.run('UPDATE followups SET done=1 WHERE id=? AND for_user=?', ctx.params.id, ctx.user.id); return { ok: true }; });
 route('GET', '/api/history/:id', T, (ctx) => all('SELECT * FROM history WHERE record_id=? ORDER BY id DESC LIMIT 200', ctx.params.id));
