@@ -456,7 +456,7 @@
         ${card('Business type', '', donut(r.business, 'Business type'))}
         ${card('When they want to hire', 'From calls and forms', donut(r.need, 'When they want to hire'))}
         ${card('Job openings', 'Clients by their job openings', donut(r.jobs, 'Job openings'))}
-        ${rv ? card('Revenue opportunity by client', `<b>${inr(rv.total)}</b> across ${rv.clients} client${rv.clients === 1 ? '' : 's'}, highest first · our fee on every open seat, from the salary offered${rv.no_salary_jobs ? ` · <span class="v-due">${rv.no_salary_jobs} open job${rv.no_salary_jobs === 1 ? ' has' : 's have'} no salary, so not counted</span>` : ''}. Click a client to open it.`, hbars(rv.list, '', true), true) : ''}
+        ${rv ? card('Revenue opportunity by client', `<b>${inr(rv.total)}</b> · ${rv.clients} client${rv.clients === 1 ? '' : 's'}${rv.no_salary_jobs ? ` · <span class="v-due">${rv.no_salary_jobs} job${rv.no_salary_jobs === 1 ? '' : 's'} without salary</span>` : ''}`, hbars(rv.list, '', true), true) : ''}
         ${card('Client stage', 'Where each client is on the 16-step journey', hbars(r.stage), true)}
         ${card('Cities', 'Top 12 cities', hbars(r.city))}
         ${card('Sources', 'Where clients came from', hbars(r.source))}

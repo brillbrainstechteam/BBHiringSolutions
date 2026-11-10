@@ -2475,7 +2475,7 @@ a.pipe-step { text-decoration: none; cursor: pointer; } a.pipe-step:hover { bord
 .f-chip { border: 1px solid #B5E7DD; background: #F0FAF7; color: #0F172A; border-radius: 999px; padding: 3px 10px; font: inherit; font-size: 12.5px; cursor: pointer; }
 .f-chip span { color: #64748B; margin-left: 2px; }
 
-.rep-hbars.money .rep-hb-v { min-width: 92px; text-align: right; font-variant-numeric: tabular-nums; }
+.rep-hbars.money .rep-hb { grid-template-columns: minmax(90px, 30%) minmax(40px, 1fr) max-content; } .rep-hbars.money .rep-hb-v { min-width: 0; white-space: nowrap; }
 
 .xb-list { display: grid; gap: 6px; margin-top: 12px; max-height: 320px; overflow: auto; }
 .xb-row { display: flex; align-items: center; gap: 10px; padding: 6px 10px; border: 1px solid #EEF2F7; border-radius: 10px; }
