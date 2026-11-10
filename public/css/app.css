@@ -2495,3 +2495,12 @@ a.pipe-step { text-decoration: none; cursor: pointer; } a.pipe-step:hover { bord
 .pt-f-t { height: 10px; background: #F1F5F9; border-radius: 5px; overflow: hidden; } .pt-f-t i { display: block; height: 100%; background: #0F9E8A; border-radius: 5px; } .pt-f b { text-align: right; }
 .pt-kv { grid-template-columns: 130px 1fr; } .pt-list { display: grid; gap: 6px; margin-top: 8px; }
 .pt-row, .pt-sub { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid #EEF2F7; border-radius: 10px; } .pt-row.taken { border-color: #B5E7DD; background: #F6FBF9; }
+
+.info-tip { position: relative; display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; border: 1.5px solid #94A3B8; color: #64748B; font: 600 11px/1 Georgia, serif; font-style: italic; cursor: pointer; flex: none; }
+.info-tip:hover, .info-tip:focus-visible { border-color: #0F9E8A; color: #0F9E8A; outline: none; }
+.info-pop { display: none; position: absolute; top: 26px; left: -10px; z-index: 30; width: 250px; padding: 10px 12px; border-radius: 10px; background: #0F172A; color: #E2E8F0; font: 400 12.5px/1.6 inherit; font-family: inherit; font-style: normal; text-align: left; box-shadow: 0 6px 20px rgba(15,23,42,.25); }
+.info-pop b { color: #fff; } .info-more { color: #5EEAD4; font-size: 12px; }
+.info-tip:hover .info-pop, .info-tip:focus-visible .info-pop { display: block; }
+
+.info-pop { font-family: var(--font); font-weight: 400; font-style: normal; font-size: 12.5px; line-height: 1.6; letter-spacing: 0; }
+.info-pop b { font-weight: 600; }
