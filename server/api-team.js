@@ -1385,6 +1385,7 @@ route('POST', '/api/candidates', T, async (ctx) => {
   if (!b.job_wanted) throw httpError(400, 'Pick the job they want', 'job_wanted');
   if (b.job_wanted === 'Other' && !b.job_other) throw httpError(400, 'Type the job they want', 'job_other');
   if (!b.city) throw httpError(400, 'Enter the city they want to work in', 'city');
+  if (!String(b.source || '').trim()) throw httpError(400, 'Pick where this candidate came from', 'source');
   const business = L.cleanBusiness(b.exp_business);
   if (b.experience && b.experience !== 'Fresher' && !business.length) throw httpError(400, 'Tick where they have worked: wholesaler, manufacturer or retailer', 'exp_business');
   const month = (v) => (v === '' || v === undefined || v === null ? null : Number(v) * 12);
@@ -2492,7 +2493,7 @@ route('POST', '/api/roles/role', T, (ctx) => {
 // ---------- settings (super admin) ----------
 const EDITABLE = ['ticket', 'team_login', 'languages', 'aftercare', 'google_review_url', 'eval_criteria', 'call_topics', 'call_gate', 'accounts_email', 'resume_alert_pct', 'expense_tree', 'expense_accounts', 'revenue_kinds', 'call_script', 'email_templates', 'creative_template', 'hiring_channels', 'landing_roles', 'wa_pause', 'business', 'industries', 'default_industry', 'hidden_jobs', 'departments', 'cities', 'skills', 'client_stages', 'closing_reasons', 'job_close_reasons', 'reopen_reasons', 'lead_sources', 'src_tags', 'fee', 'agency_share_pct', 'gst', 'replacement_days', 'payment_days', 'targets', 'log_deadline', 'quiet', 'daily_limit', 'bulk_budget', 'match', 'languages', 'id_start', 'bill_prefix', 'retention_years', 'team_idle_hours', 'formats', 'auto_rules', 'crm', 'posting_channels', 'gap_targets', 'templates', 'jd_template', 'jd_templates', 'lead_auto_assign', 'jd_sections', 'backup_email'];
 // Everyone in the team can set up what goes out. Connection secrets and the checks on the team's own activity stay with the super admin.
-const SUPER_ONLY = ['backup_email', 'lead_auto_assign', 'ticket', 'crm', 'resume_alert_pct', 'call_gate', 'google_review_url', 'team_login'];
+const SUPER_ONLY = ['backup_drive', 'backup_email', 'lead_auto_assign', 'ticket', 'crm', 'resume_alert_pct', 'call_gate', 'google_review_url', 'team_login'];
 route('GET', '/api/settings', T, (ctx) => { const s = { ...D.settings() }; if (!isSuper(ctx.user)) { for (const k of SUPER_ONLY) delete s[k]; return s; } s.crm = { ...s.crm, token: s.crm.token ? '••••••••' : '', webhook_secret: s.crm.from_env && s.crm.from_env.webhook_secret ? '••••••••' : s.crm.webhook_secret }; return s; });
 route('POST', '/api/health/mail', SUPER, async () => require('./mailbox').check());
 route('POST', '/api/health/email', SUPER, (ctx) => {
@@ -2840,5 +2841,6 @@ require('./care'); // check-ins after joining, replacements, recruiter reviews
 require('./verify'); // candidate ID and reference checks
 require('./partners'); // institutes and colleges that train candidates
 require('./exports'); // daily data backup in Excel
+require('./portals'); // job portals: quotes, subscriptions, payments, results
 require('./flow'); // client onboarding, screening with AI, client CVs, invoices, books
 require('./adspend'); // ad spend reports from Meta and LinkedIn (Job openings -> Ad spend)

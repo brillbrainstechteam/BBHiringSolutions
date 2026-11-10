@@ -29,7 +29,42 @@ function build() {
   ];
   return { buf: F.toXLSXBook(sheets.map((s) => ({ name: s.name, rows: s.rows }))), counts: Object.fromEntries(sheets.map((s) => [s.name, s.count])) };
 }
-const recipients = () => { const v = D.settings().backup_email; const list = (Array.isArray(v) ? v : String(v ?? '').split(/[,;\s]+/)).map((x) => String(x).trim()).filter(Boolean); return v === undefined || v === null ? [D.ENV.smtp.from].filter(Boolean) : list; };
+const recipients = () => { const v = D.settings().backup_email; return (Array.isArray(v) ? v : String(v ?? '').split(/[,;\s]+/)).map((x) => String(x).trim()).filter(Boolean); };
+// Google Drive: a small Apps Script in the owner's Drive takes the file and saves it in their folder (no Google Cloud
+// setup). Settings › Health makes the script with the folder and a secret key; the owner deploys it and pastes its link.
+const driveCfg = () => D.settings().backup_drive || {};
+const folderIdOf = (v) => { const s = String(v || '').trim(); const m = s.match(/folders\/([\w-]{10,})/) || s.match(/[?&]id=([\w-]{10,})/) || s.match(/^([\w-]{10,})$/); return m ? m[1] : null; };
+function script(folderId, key) {
+  return `// BBHS daily backup → this Google Drive folder. Paste into script.google.com, then Deploy → New deployment → Web app
+// (Execute as: Me, Who has access: Anyone) and paste the Web app URL back into the portal.
+const FOLDER_ID = '${folderId}';
+const KEY = '${key}';
+const KEEP_DAYS = ${KEEP};
+function doPost(e) {
+  const d = JSON.parse(e.postData.contents);
+  if (d.key !== KEY) return out({ ok: false, error: 'Wrong key' });
+  const folder = DriveApp.getFolderById(FOLDER_ID);
+  const old = folder.getFilesByName(d.name); while (old.hasNext()) old.next().setTrashed(true);
+  const f = folder.createFile(Utilities.newBlob(Utilities.base64Decode(d.data), d.mime, d.name));
+  const cut = Date.now() - KEEP_DAYS * 86400000; const it = folder.getFiles();
+  while (it.hasNext()) { const x = it.next(); if (/^bbhs-data-/.test(x.getName()) && x.getDateCreated().getTime() < cut) x.setTrashed(true); }
+  return out({ ok: true, url: f.getUrl() });
+}
+function out(o) { return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON); }
+`;
+}
+async function toDrive(name, buf) {
+  const c = driveCfg(); if (!c.url || !c.key) return null;
+  try {
+    const res = await fetch(c.url, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify({ key: c.key, name, mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', data: buf.toString('base64') }), redirect: 'follow', signal: AbortSignal.timeout(180000) });
+    const txt = await res.text(); let j = {}; try { j = JSON.parse(txt); } catch { throw new Error(/<html/i.test(txt) ? 'The link did not answer as a web app: check Who has access is Anyone' : `Unexpected answer (${res.status})`); }
+    if (!j.ok) throw new Error(j.error || 'Drive did not save the file');
+    D.setSetting('backup_drive', { ...driveCfg(), last_ok: now(), last_name: name, last_url: j.url || '', last_error: null }); return j;
+  } catch (e) {
+    D.setSetting('backup_drive', { ...driveCfg(), last_error: `${now()} ${e.message}` }); require('./alerts').devAlert('Backup upload to Drive failed', e.message); throw e;
+  }
+}
+const now = () => D.now();
 function list() {
   if (!fs.existsSync(DIR)) return [];
   return fs.readdirSync(DIR).filter((f) => NAME_RE.test(f)).sort().reverse().map((f) => { const st = fs.statSync(path.join(DIR, f)); return { name: f, size_kb: Math.round(st.size / 1024), at: st.mtime.toISOString() }; });
@@ -44,6 +79,7 @@ function daily(force, by) {
   const old = fs.readdirSync(DIR).filter((f) => NAME_RE.test(f)).sort(); while (old.length > KEEP) fs.unlinkSync(path.join(DIR, old.shift()));
   const summary = Object.entries(counts).map(([k, n]) => `${k}: ${n}`).join(' · ');
   D.setHealth('last_data_backup', `${D.now()} · ${summary}`);
+  const drive = toDrive(name, buf).catch(() => null); // reported in Settings › Health
   const to = recipients(); let mailed = null;
   if (to.length) {
     const M = require('./mailer'); const big = buf.length > MAX_MAIL;
@@ -51,12 +87,26 @@ function daily(force, by) {
     mailed = M.queue({ to, subject: `BBHS data backup · ${day}`, text, html: M.layout(`Data backup · ${day}`, text.split('\n\n').map((p) => `<p style="font-size:14px;line-height:1.6;margin:0 0 12px">${p.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]))}</p>`).join('')), kind: 'backup', attachments: big ? [] : [{ backup: name }], force: true, dedupe: force ? null : `backup:${day}` });
   }
   D.history(by || 'System', 'data backup', null, null, null, `${name} · ${summary}${to.length ? ` · emailed to ${to.join(', ')}` : ''}`);
-  return { name, counts, emailed_to: to, mailed: !!mailed };
+  return { name, counts, emailed_to: to, mailed: !!mailed, drive };
 }
 const fileOf = (name) => (NAME_RE.test(String(name || '')) && fs.existsSync(path.join(DIR, name)) ? path.join(DIR, name) : null);
 
 const SUPER = { auth: 'team', levels: ['super'] };
-route('GET', '/api/backups/excel', SUPER, () => ({ files: list(), emailed_to: recipients(), keep: KEEP }));
+route('GET', '/api/backups/excel', SUPER, () => { const c = driveCfg(); return { files: list(), emailed_to: recipients(), keep: KEEP, drive: { folder_id: c.folder_id || '', url: c.url || '', last_ok: c.last_ok || null, last_url: c.last_url || '', last_error: c.last_error || null, script: c.folder_id && c.key ? script(c.folder_id, c.key) : '' } }; });
+// Step 1: the folder → the script to paste. Step 2: the web app link → saved and tried with today's file.
+route('POST', '/api/backups/drive/folder', SUPER, (ctx) => {
+  const id = folderIdOf((ctx.body || {}).folder); if (!id) throw D.httpError(400, 'Paste the folder link from Google Drive', 'folder');
+  const c = driveCfg(); const key = c.folder_id === id && c.key ? c.key : require('crypto').randomBytes(18).toString('hex');
+  D.setSetting('backup_drive', { folder_id: id, key, url: c.folder_id === id ? c.url : '' }); D.history(ctx.actor.label, 'backup drive folder', null, null, null, id);
+  return { script: script(id, key) };
+});
+route('POST', '/api/backups/drive/url', SUPER, async (ctx) => {
+  const url = String((ctx.body || {}).url || '').trim(); if (!/^https:\/\/script\.google\.com\/macros\/s\/[\w-]+\/exec$/.test(url)) throw D.httpError(400, 'Paste the Web app URL (it ends in /exec)', 'url');
+  if (!driveCfg().folder_id) throw D.httpError(400, 'Add the folder first');
+  D.setSetting('backup_drive', { ...driveCfg(), url }); D.history(ctx.actor.label, 'backup drive link', null, null, null, null);
+  let f = list()[0]; if (!f) { daily(true, ctx.actor.label); f = list()[0]; }
+  try { const r = await toDrive(f.name, fs.readFileSync(path.join(DIR, f.name))); return { ok: true, url: r.url }; } catch (e) { throw D.httpError(400, `Saved, but the test upload failed: ${e.message}`); }
+});
 route('GET', '/api/backups/excel/:name', SUPER, (ctx) => {
   const f = fileOf(ctx.params.name); if (!f) throw D.httpError(404, 'Backup not found');
   D.history(ctx.actor.label, 'download backup', null, ctx.params.name, null, null, null, ctx.ip);

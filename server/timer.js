@@ -118,6 +118,7 @@ function runTimer() {
   try { const shut = L.closePlacedApps(); if (shut) done.closed_hired = shut; } catch (e) { require('./alerts').devAlert('Hired sweep failed', e.message); }
   // Message templates waiting for Meta: their approval status, every 30 minutes.
   require('./api-team').autoSyncFormats().catch((e) => console.error('template status', e.message));
+  try { const p = require('./portals').sweep(); if (p) done.portal_renewals = p; } catch (e) { require('./alerts').devAlert('Portal renewals failed', e.message); }
   // Vendors: follow-up steps that are due (WhatsApp from the business number, or a task for the owner).
   try { const v = require('./partners').sweep(); if (v) done.vendor_followups = v; } catch (e) { require('./alerts').devAlert('Vendor follow-ups failed', e.message); }
   // Meta ad spend, once a day (when the token is in .env).

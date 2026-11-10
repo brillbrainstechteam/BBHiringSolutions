@@ -2480,3 +2480,18 @@ a.pipe-step { text-decoration: none; cursor: pointer; } a.pipe-step:hover { bord
 .xb-list { display: grid; gap: 6px; margin-top: 12px; max-height: 320px; overflow: auto; }
 .xb-row { display: flex; align-items: center; gap: 10px; padding: 6px 10px; border: 1px solid #EEF2F7; border-radius: 10px; }
 .xb-mail { align-items: flex-end; gap: 8px; }
+
+.xb-drive { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 10px; border: 1px solid #EEF2F7; border-radius: 10px; }
+.drv-steps { margin: 0; padding-left: 20px; display: grid; gap: 14px; } .drv-steps li.off { opacity: .45; pointer-events: none; }
+.drv-steps .row { gap: 8px; margin-top: 6px; } .drv-steps input { flex: 1; min-width: 0; border: 1px solid #DCE5F1; border-radius: 10px; padding: 8px 10px; font: inherit; }
+
+/* Job portals */
+.pt-compare { margin-bottom: 12px; } .pt-bars { display: grid; gap: 8px; margin-top: 8px; }
+.pt-bar { display: grid; grid-template-columns: 160px 1fr 56px; align-items: center; gap: 10px; border: 0; background: none; font: inherit; text-align: left; cursor: pointer; padding: 2px 0; }
+.pt-bar-l { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .pt-bar-v { font-size: 13px; font-weight: 600; text-align: right; }
+.pt-bar-t { display: grid; gap: 3px; } .pt-bar-t i { display: block; height: 8px; border-radius: 4px; min-width: 2px; } .pt-bar-t i.sp, .pt-key .sp { background: #94A3B8; } .pt-bar-t i.fe, .pt-key .fe { background: #0F9E8A; }
+.pt-key { display: flex; gap: 8px; align-items: center; margin-top: 8px; } .pt-key .sw { width: 10px; height: 10px; border-radius: 3px; display: inline-block; margin-left: 6px; }
+.pt-funnel { display: grid; gap: 6px; margin-bottom: 12px; } .pt-f { display: grid; grid-template-columns: 120px 1fr 44px; gap: 10px; align-items: center; font-size: 13px; }
+.pt-f-t { height: 10px; background: #F1F5F9; border-radius: 5px; overflow: hidden; } .pt-f-t i { display: block; height: 100%; background: #0F9E8A; border-radius: 5px; } .pt-f b { text-align: right; }
+.pt-kv { grid-template-columns: 130px 1fr; } .pt-list { display: grid; gap: 6px; margin-top: 8px; }
+.pt-row, .pt-sub { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid #EEF2F7; border-radius: 10px; } .pt-row.taken { border-color: #B5E7DD; background: #F6FBF9; }

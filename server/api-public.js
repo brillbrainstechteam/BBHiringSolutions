@@ -899,6 +899,7 @@ route('GET', '/api/files/:id', {}, (ctx) => {
     else if (rid.startsWith('AP-')) ok = R.seeApp(u, get('SELECT * FROM applications WHERE id=?', rid));
     else if (rid.startsWith('JB-')) { const j = get('SELECT * FROM jobs WHERE id=?', rid); ok = R.seeJob(u, j) || R.sameAgency(u, j); }
     else if (rid.startsWith('BL-')) ok = R.seeBill(u, get('SELECT * FROM bills WHERE id=?', rid));
+    else if (rid.startsWith('PT-')) ok = ['super', 'admin'].includes(u.level);
     else if (rid.startsWith('EX-')) { const x = get('SELECT agency_id FROM expenses WHERE id=?', rid.slice(3)); ok = !!x && (u.level === 'super' || (u.level === 'admin' && x.agency_id === u.agency_id)); }
     if (ok) D.history(u.name, 'open file', rid, f.type, null, f.name, null, ctx.ip);
   } else if (s.kind === 'client') {

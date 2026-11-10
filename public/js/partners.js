@@ -89,11 +89,15 @@
 
   // ---------- Vendors page: the database ----------
   BB.vendors = async ({ el, actions, q }) => {
+    const adm = ['super', 'admin'].includes(BB.me.user.level);
+    const vtabs = adm ? `<div class="tabs" style="margin-bottom:12px">${[['', 'Partners'], ['portals', 'Job portals']].map(([k, l]) => `<button data-vt="${k}" class="${(q.vt || '') === k ? 'on' : ''}">${l}</button>`).join('')}</div>` : '';
+    const wireVt = () => $$('[data-vt]', el).forEach((b) => (b.onclick = () => BB.setQ({ vt: b.dataset.vt })));
+    if (adm && q.vt === 'portals') { await BB.portals({ el, actions, q, tabs: vtabs }); wireVt(); return; }
     const d = await BB.api(`/api/partners?${BB.qs({ status: q.status, q: q.pq, city: q.city, type: q.type, due: q.due, seq: q.seq })}`);
     actions.innerHTML = `<a class="btn" href="/team/leads?tab=partners" data-tlink>${BB.icon ? BB.icon('search') : ''} Find more</a><button class="btn primary" data-padd>+ Add partner</button>`;
     $('[data-padd]', actions).onclick = () => addByHand(d.types, d.statuses);
     const st = q.status || '';
-    el.innerHTML = `<div class="v-chips">${['', ...d.statuses].map((x) => `<button class="chip ${st === x && !q.due ? 'on' : ''}" data-pst="${esc(x)}">${x || 'All'} <span class="faint">${x ? d.counts[x] : d.total}</span></button>`).join('')}<button class="chip ${q.due ? 'on' : ''} ${d.due ? 'v-duechip' : ''}" data-pdue>Follow-up due <span class="faint">${d.due}</span></button></div>
+    el.innerHTML = `${vtabs}<div class="v-chips">${['', ...d.statuses].map((x) => `<button class="chip ${st === x && !q.due ? 'on' : ''}" data-pst="${esc(x)}">${x || 'All'} <span class="faint">${x ? d.counts[x] : d.total}</span></button>`).join('')}<button class="chip ${q.due ? 'on' : ''} ${d.due ? 'v-duechip' : ''}" data-pdue>Follow-up due <span class="faint">${d.due}</span></button></div>
       <div class="filters"><input placeholder="Search name, course, city, contact…" value="${esc(q.pq || '')}" data-pq>
         <select data-f="city"><option value="">All cities</option>${d.cities.map((c) => `<option ${q.city === c ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select>
         <select data-f="type"><option value="">All types</option>${d.types_in.map((c) => `<option ${q.type === c ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select>
@@ -107,6 +111,7 @@
         { t: '', cls: 'v-actions', f: (p) => `<div class="row nowrap" style="gap:6px"><button class="btn sm" data-pwa="${p.id}" title="${p.last_contact_at ? 'Send the follow-up message' : 'Send the introduction message'}">${waIcon()} WhatsApp</button><button class="btn sm ghost" data-pedit="${p.id}">Edit</button><button class="btn sm ghost" data-pact="${p.id}">Activity</button></div>` }],
         d.rows, { select: true, scroll: true, empty: d.total ? 'No vendors match these filters.' : 'No vendors yet. Run a search in Leads → Partners, or add one by hand.' })}</div>`;
     const byId = (id) => d.rows.find((x) => String(x.id) === String(id));
+    wireVt();
     $$('[data-pst]', el).forEach((c) => (c.onclick = () => BB.setQ({ status: c.dataset.pst, due: '' })));
     $('[data-pdue]', el).onclick = () => BB.setQ({ due: q.due ? '' : '1', status: '' });
     let t; $('[data-pq]', el).oninput = (e) => { clearTimeout(t); t = setTimeout(() => BB.setQ({ pq: e.target.value }), 400); };
