@@ -665,8 +665,24 @@ route('GET', '/api/clients/report', T, (ctx) => {
   const weeks = []; const day0 = new Date(`${L.istDay()}T00:00:00Z`); const dow = (day0.getUTCDay() + 6) % 7; const mon = new Date(day0.getTime() - dow * 86400000);
   for (let i = 11; i >= 0; i--) { const st = new Date(mon.getTime() - i * 7 * 86400000); const from = st.toISOString().slice(0, 10); const to = new Date(st.getTime() + 6 * 86400000).toISOString().slice(0, 10); weeks.push({ label: from, n: rows.filter((c) => { const d = L.istDay(c.created_at); return d >= from && d <= to; }).length, f: null }); }
   const ags = all("SELECT id, name FROM agencies WHERE status='Active'");
+  // Revenue opportunity (admins): our fee on every open seat, from the salary offered and the client's fee terms;
+  // the same sum as the dashboard. Open jobs with no salary cannot be counted and are listed as such.
+  let revenue = null;
+  if (u.level !== 'sub') {
+    const ids = new Set(rows.filter((c) => !c.internal && !c.placeholder).map((c) => c.id)); const per = new Map(); let noSal = 0; // our own hiring earns no fee
+    for (const j of all('SELECT * FROM jobs WHERE archived=0').filter((x) => ids.has(x.client_id))) {
+      const st = V.jobView(j).status; if (!OPEN_JOB.includes(st)) continue;
+      const hired = get("SELECT COUNT(*) n FROM applications WHERE job_id=? AND result='Hired' AND left_date IS NULL", j.id).n;
+      const seats = Math.max(0, (j.openings || 1) - hired); if (!seats) continue;
+      const mid = ctcMid(j); if (!mid) { noSal++; continue; }
+      const c = rows.find((x) => x.id === j.client_id); const fee = L.feeFor(c, j.agency_id, mid).fee * seats;
+      const p = per.get(c.id) || { label: c.company || c.id, n: 0, seats: 0, jobs: 0, open: `client:${c.id}` }; p.n += fee; p.seats += seats; p.jobs++; per.set(c.id, p);
+    }
+    const list = [...per.values()].map((p) => ({ ...p, n: Math.round(p.n) })).sort((a, b) => b.n - a.n);
+    revenue = { total: list.reduce((t, x) => t + x.n, 0), clients: list.length, no_salary_jobs: noSal, list };
+  }
   return {
-    total: rows.length,
+    total: rows.length, revenue,
     tiles: [
       { label: 'Active clients', n: rows.filter((c) => c.activated_at).length, f: { lifecycle: 'Active' } },
       { label: 'With open job openings', n: rows.filter((c) => c.jobs_open > 0).length, f: { jobs: 'open' } },
