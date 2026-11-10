@@ -76,6 +76,7 @@ const PITCH_DECK = path.join(__dirname, '..', 'assets', 'BrillBrains Hiring Solu
 function mailFiles(list) {
   const out = [];
   for (const a of list || []) {
+    if (a.backup) { const f = require('./exports').fileOf(a.backup); if (f) out.push({ name: a.backup, mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', buf: fs.readFileSync(f) }); continue; }
     if (a.pitch) { if (fs.existsSync(PITCH_DECK)) out.push({ name: path.basename(PITCH_DECK), mime: 'application/vnd.openxmlformats-officedocument.presentationml.presentation', buf: fs.readFileSync(PITCH_DECK) }); } else if (a.jd_job) { const j = get('SELECT * FROM jobs WHERE id=?', a.jd_job); if (j) out.push({ name: `${j.title} Job Description.pdf`, mime: 'application/pdf', buf: TEAM.jdPdf(j) }); } else if (a.agreement) { const f = agreementFile(); if (f) out.push({ name: f.name, mime: f.mime, buf: f.buf }); } else if (a.file_id) { const f = get('SELECT * FROM files WHERE id=?', a.file_id); if (f) out.push({ name: f.name, mime: f.mime, buf: F.readStored(f) }); }
   }
   return out;

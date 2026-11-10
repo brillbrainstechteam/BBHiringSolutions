@@ -2490,9 +2490,9 @@ route('POST', '/api/roles/role', T, (ctx) => {
 });
 
 // ---------- settings (super admin) ----------
-const EDITABLE = ['ticket', 'team_login', 'languages', 'aftercare', 'google_review_url', 'eval_criteria', 'call_topics', 'call_gate', 'accounts_email', 'resume_alert_pct', 'expense_tree', 'expense_accounts', 'revenue_kinds', 'call_script', 'email_templates', 'creative_template', 'hiring_channels', 'landing_roles', 'wa_pause', 'business', 'industries', 'default_industry', 'hidden_jobs', 'departments', 'cities', 'skills', 'client_stages', 'closing_reasons', 'job_close_reasons', 'reopen_reasons', 'lead_sources', 'src_tags', 'fee', 'agency_share_pct', 'gst', 'replacement_days', 'payment_days', 'targets', 'log_deadline', 'quiet', 'daily_limit', 'bulk_budget', 'match', 'languages', 'id_start', 'bill_prefix', 'retention_years', 'team_idle_hours', 'formats', 'auto_rules', 'crm', 'posting_channels', 'gap_targets', 'templates', 'jd_template', 'jd_templates', 'lead_auto_assign', 'jd_sections'];
+const EDITABLE = ['ticket', 'team_login', 'languages', 'aftercare', 'google_review_url', 'eval_criteria', 'call_topics', 'call_gate', 'accounts_email', 'resume_alert_pct', 'expense_tree', 'expense_accounts', 'revenue_kinds', 'call_script', 'email_templates', 'creative_template', 'hiring_channels', 'landing_roles', 'wa_pause', 'business', 'industries', 'default_industry', 'hidden_jobs', 'departments', 'cities', 'skills', 'client_stages', 'closing_reasons', 'job_close_reasons', 'reopen_reasons', 'lead_sources', 'src_tags', 'fee', 'agency_share_pct', 'gst', 'replacement_days', 'payment_days', 'targets', 'log_deadline', 'quiet', 'daily_limit', 'bulk_budget', 'match', 'languages', 'id_start', 'bill_prefix', 'retention_years', 'team_idle_hours', 'formats', 'auto_rules', 'crm', 'posting_channels', 'gap_targets', 'templates', 'jd_template', 'jd_templates', 'lead_auto_assign', 'jd_sections', 'backup_email'];
 // Everyone in the team can set up what goes out. Connection secrets and the checks on the team's own activity stay with the super admin.
-const SUPER_ONLY = ['lead_auto_assign', 'ticket', 'crm', 'resume_alert_pct', 'call_gate', 'google_review_url', 'team_login'];
+const SUPER_ONLY = ['backup_email', 'lead_auto_assign', 'ticket', 'crm', 'resume_alert_pct', 'call_gate', 'google_review_url', 'team_login'];
 route('GET', '/api/settings', T, (ctx) => { const s = { ...D.settings() }; if (!isSuper(ctx.user)) { for (const k of SUPER_ONLY) delete s[k]; return s; } s.crm = { ...s.crm, token: s.crm.token ? '••••••••' : '', webhook_secret: s.crm.from_env && s.crm.from_env.webhook_secret ? '••••••••' : s.crm.webhook_secret }; return s; });
 route('POST', '/api/health/mail', SUPER, async () => require('./mailbox').check());
 route('POST', '/api/health/email', SUPER, (ctx) => {
@@ -2604,12 +2604,13 @@ route('POST', '/api/settings/remove-sample', SUPER, (ctx) => {
   });
   D.history(ctx.actor.label, 'remove sample data'); return { ok: true };
 });
-route('GET', '/api/health', SUPER, () => {
+// System health (Settings › Health). Its own address: /api/health is the business dashboard.
+route('GET', '/api/system-health', SUPER, () => {
   const h = Object.fromEntries(all('SELECT * FROM health').map((r) => [r.key, r.value]));
   const fs = require('fs'); const path = require('path');
   let bytes = 0; for (const f of fs.readdirSync(path.join(D.DATA_DIR, 'files'))) bytes += fs.statSync(path.join(D.DATA_DIR, 'files', f)).size;
   const dbBytes = fs.statSync(path.join(D.DATA_DIR, 'bbhs.db')).size;
-  return { ...h, failed: all("SELECT * FROM messages WHERE status='failed' ORDER BY at DESC LIMIT 50"), scheduled: get("SELECT COUNT(*) c FROM messages WHERE status='scheduled'").c, files_mb: (bytes / 1048576).toFixed(2), db_mb: (dbBytes / 1048576).toFixed(2), backups: fs.readdirSync(path.join(D.DATA_DIR, 'backups')).sort().reverse().slice(0, 30), crm_enabled: D.settings().crm.enabled,
+  return { ...h, failed: all("SELECT * FROM messages WHERE status='failed' ORDER BY at DESC LIMIT 50"), scheduled: get("SELECT COUNT(*) c FROM messages WHERE status='scheduled'").c, files_mb: (bytes / 1048576).toFixed(2), db_mb: (dbBytes / 1048576).toFixed(2), backups: fs.readdirSync(path.join(D.DATA_DIR, 'backups')).filter((f) => f.endsWith('.db')).sort().reverse().slice(0, 30), crm_enabled: D.settings().crm.enabled,
     setup: { copy: D.ENV.name, virus_scanner: D.ENV.clamd.host ? `ClamAV at ${D.ENV.clamd.host}:${D.ENV.clamd.port}` : 'Not set — only the EICAR test file is blocked (set CLAMD_HOST)', alerts: D.ENV.alertWebhook ? 'Alert webhook set' : 'Not set (ALERT_WEBHOOK_URL)', offsite_backup: D.ENV.backupDir || 'Not set (BACKUP_DIR)', email_inbox: D.ENV.imap.host ? `${D.ENV.imap.user} on ${D.ENV.imap.host}` : 'Not set (IMAP_HOST, IMAP_USER, IMAP_PASS)', outgoing_email: D.ENV.smtp.host ? `${D.ENV.smtp.from} via ${D.ENV.smtp.host}:${D.ENV.smtp.port}` : 'Not set (SMTP_HOST, SMTP_FROM, SMTP_USER, SMTP_PASS)', notify_emails: D.ENV.notifyEmails.join(', ') || 'Not set (NOTIFY_EMAILS)', whatsapp: D.settings().crm.enabled ? `Connected via ${D.settings().crm.send_url}` : 'Not connected (CRM_ENABLED, CRM_SEND_URL, CRM_TOKEN, CRM_WEBHOOK_SECRET)' } };
 });
 route('POST', '/api/health/backup', SUPER, (ctx) => { const f = D.backup(); D.history(ctx.actor.label, 'backup'); return { file: require('path').basename(f) }; });
@@ -2838,5 +2839,6 @@ require('./lang'); // translation, voice notes and recordings
 require('./care'); // check-ins after joining, replacements, recruiter reviews
 require('./verify'); // candidate ID and reference checks
 require('./partners'); // institutes and colleges that train candidates
+require('./exports'); // daily data backup in Excel
 require('./flow'); // client onboarding, screening with AI, client CVs, invoices, books
 require('./adspend'); // ad spend reports from Meta and LinkedIn (Job openings -> Ad spend)

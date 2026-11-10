@@ -173,6 +173,39 @@ function zipStore(files) {
   end.writeUInt32LE(0x06054b50, 0); end.writeUInt16LE(n, 8); end.writeUInt16LE(n, 10); end.writeUInt32LE(cd.length, 12); end.writeUInt32LE(offset, 16);
   return Buffer.concat([...locals, cd, end]);
 }
+// A zip with each file deflated (smaller: the daily backup is emailed). Same layout as zipStore, method 8.
+function zipDeflate(files) {
+  const zlib = require('zlib'); const locals = []; const centrals = []; let offset = 0;
+  for (const [name, content] of Object.entries(files)) {
+    const data = Buffer.isBuffer(content) ? content : Buffer.from(content, 'utf8'); const comp = zlib.deflateRawSync(data, { level: 6 }); const nameBuf = Buffer.from(name); const crc = crc32(data);
+    const lh = Buffer.alloc(30); lh.writeUInt32LE(0x04034b50, 0); lh.writeUInt16LE(20, 4); lh.writeUInt16LE(8, 8); lh.writeUInt32LE(crc, 14); lh.writeUInt32LE(comp.length, 18); lh.writeUInt32LE(data.length, 22); lh.writeUInt16LE(nameBuf.length, 26);
+    const ch = Buffer.alloc(46); ch.writeUInt32LE(0x02014b50, 0); ch.writeUInt16LE(20, 4); ch.writeUInt16LE(20, 6); ch.writeUInt16LE(8, 10); ch.writeUInt32LE(crc, 16); ch.writeUInt32LE(comp.length, 20); ch.writeUInt32LE(data.length, 24); ch.writeUInt16LE(nameBuf.length, 28); ch.writeUInt32LE(offset, 42);
+    locals.push(lh, nameBuf, comp); centrals.push(ch, nameBuf); offset += 30 + nameBuf.length + comp.length;
+  }
+  const cd = Buffer.concat(centrals); const end = Buffer.alloc(22); const n = Object.keys(files).length;
+  end.writeUInt32LE(0x06054b50, 0); end.writeUInt16LE(n, 8); end.writeUInt16LE(n, 10); end.writeUInt32LE(cd.length, 12); end.writeUInt32LE(offset, 16);
+  return Buffer.concat([...locals, cd, end]);
+}
+// A workbook with several sheets: [{ name, rows }], header row bold and frozen on each.
+function toXLSXBook(sheets) {
+  const one = sheets.map((s) => unzipParts(toXLSX(s.rows, s.name)));
+  const x = (v) => String(v).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const files = {
+    '[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>${sheets.map((_, i) => `<Override PartName="/xl/worksheets/sheet${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join('')}<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>`,
+    '_rels/.rels': one[0]['_rels/.rels'],
+    'xl/workbook.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>${sheets.map((s, i) => `<sheet name="${x(s.name).slice(0, 31)}" sheetId="${i + 1}" r:id="rId${i + 1}"/>`).join('')}</sheets></workbook>`,
+    'xl/_rels/workbook.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${sheets.map((_, i) => `<Relationship Id="rId${i + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${i + 1}.xml"/>`).join('')}<Relationship Id="rId${sheets.length + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`,
+    'xl/styles.xml': one[0]['xl/styles.xml'],
+  };
+  one.forEach((p, i) => { files[`xl/worksheets/sheet${i + 1}.xml`] = p['xl/worksheets/sheet1.xml']; });
+  return zipDeflate(files);
+}
+// The parts of a zip made by zipStore (stored, not compressed), by name.
+function unzipParts(buf) {
+  const out = {}; let p = 0;
+  while (buf.readUInt32LE(p) === 0x04034b50) { const size = buf.readUInt32LE(p + 18); const nl = buf.readUInt16LE(p + 26); const xl = buf.readUInt16LE(p + 28); const name = buf.slice(p + 30, p + 30 + nl).toString(); const s = p + 30 + nl + xl; out[name] = buf.slice(s, s + size).toString('utf8'); p = s + size; }
+  return out;
+}
 function toXLSX(rows, sheetName = 'Sheet1') {
   const x = (v) => String(v).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])).replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '');
   const col = (i) => { let s = ''; i += 1; while (i) { const m = (i - 1) % 26; s = String.fromCharCode(65 + m) + s; i = Math.floor((i - 1) / 26); } return s; };
@@ -246,4 +279,4 @@ function makePdf(title, lines, brand) {
   return Buffer.from(out, 'latin1');
 }
 
-module.exports = { zipStore, unzip, toXLSX, saveFile, storeBuffer, readStored, readSpreadsheet, parseCSV, toCSV, makePdf };
+module.exports = { zipStore, unzip, toXLSX, toXLSXBook, saveFile, storeBuffer, readStored, readSpreadsheet, parseCSV, toCSV, makePdf };

@@ -97,6 +97,8 @@ function runTimer() {
   if (old.length) for (const s of L.superAdmins()) if (!get('SELECT 1 FROM alerts WHERE user_id=? AND text LIKE ? AND at>?', s.id, 'Retention:%', new Date(t - 7 * 86400000).toISOString())) D.insert('alerts', { user_id: s.id, text: `Retention: ${old.length} candidate(s) inactive for ${yrs}+ years can be removed`, record_id: null, read: 0, at: now() });
   // Daily backup.
   try { D.backup(); D.setHealth('last_backup', now()); } catch (e) { require('./alerts').devAlert('Backup failed', e.message); }
+  // Daily data backup in Excel (candidates, clients, jobs, applications): kept 30 days and emailed.
+  try { const x = require('./exports').daily(); if (x) done.data_backup = x.name; } catch (e) { require('./alerts').devAlert('Data backup failed', e.message); }
   // Monthly summary to each client on the 1st.
   const monthly = require('./monthly').runMonthly(); if (monthly) done.monthly_summary = monthly;
   // Outgoing emails waiting to be sent (or retried).

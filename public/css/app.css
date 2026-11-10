@@ -2476,3 +2476,7 @@ a.pipe-step { text-decoration: none; cursor: pointer; } a.pipe-step:hover { bord
 .f-chip span { color: #64748B; margin-left: 2px; }
 
 .rep-hbars.money .rep-hb-v { min-width: 92px; text-align: right; font-variant-numeric: tabular-nums; }
+
+.xb-list { display: grid; gap: 6px; margin-top: 12px; max-height: 320px; overflow: auto; }
+.xb-row { display: flex; align-items: center; gap: 10px; padding: 6px 10px; border: 1px solid #EEF2F7; border-radius: 10px; }
+.xb-mail { align-items: flex-end; gap: 8px; }
