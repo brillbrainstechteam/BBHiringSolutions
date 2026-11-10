@@ -429,14 +429,58 @@
   };
 
   // ---------- Clients ----------
+  // ---------- Clients › Reports: the client base at a glance; every chart opens the list with that filter ----------
+  const CL_FILTERS = { city: 'City', business_type: 'Business', source: 'Source', agency: 'Agency', need: 'Need', jobs: 'Job openings', new: 'New', missing: 'Missing', stage: 'Stage', lifecycle: 'Type' };
+  const CL_VAL = { 'Showroom B2C': 'B2C (showroom)', 'Manufacturer B2B': 'B2B (manufacturer)', Both: 'B2B and B2C', none: 'Not set', open: 'Open now', closed: 'None open now', Active: 'Active clients', Lead: 'Leads', email: 'Email', online: 'Client info', size: 'Company size', 1: 'Yes' };
+  const clChips = (q) => { const on = Object.keys(CL_FILTERS).filter((k) => q[k] && !['stage', 'lifecycle'].includes(k)); return on.length ? `<div class="chips-row">${on.map((k) => `<button type="button" class="f-chip" data-clx="${k}">${esc(CL_FILTERS[k])}: <b>${esc(CL_VAL[q[k]] || q[k])}</b> <span aria-hidden="true">×</span></button>`).join('')}<button type="button" class="btn sm ghost" data-clxall>Clear</button></div>` : ''; };
+  const wireClChips = (el) => { $$('[data-clx]', el).forEach((b) => (b.onclick = () => BB.setQ({ [b.dataset.clx]: '', page: 1 }))); const a = $('[data-clxall]', el); if (a) a.onclick = () => BB.setQ({ ...Object.fromEntries(Object.keys(CL_FILTERS).map((k) => [k, ''])), page: 1 }); };
+  const clientReports = async (el, q) => {
+    const base = Object.fromEntries(Object.keys(CL_FILTERS).filter((k) => q[k]).map((k) => [k, q[k]]));
+    const box = $('[data-clbody]', el); box.innerHTML = '<div class="empty">Loading…</div>';
+    let r; try { r = await BB.api(`/api/clients/report?${BB.qs(base)}`); } catch (e) { box.innerHTML = `<div class="card empty">${esc(e.message)}</div>`; return; }
+    const fmt = (n) => Number(n).toLocaleString('en-IN'); const pct = (n) => (r.total ? `${Math.round((n / r.total) * 100)}%` : '0%'); const enc = (f) => (f ? esc(JSON.stringify(f)) : '');
+    const hbars = (list, unit = 'clients') => { const max = Math.max(1, ...list.map((x) => x.n)); return list.length ? `<div class="rep-hbars">${list.map((x) => `<button type="button" class="rep-hb ${x.f || x.open ? '' : 'flat'}" ${x.f ? `data-rgo="${enc(x.f)}"` : x.open ? `data-open="${esc(x.open)}"` : 'disabled'} data-tip="${esc(`${x.label}: ${fmt(x.n)} ${unit}`)}"><span class="rep-hb-l">${esc(x.label)}</span><span class="rep-hb-t"><i style="width:${Math.max(2, (x.n / max) * 100)}%"></i></span><span class="rep-hb-v">${fmt(x.n)}</span></button>`).join('')}</div>` : '<div class="rep-none">No clients here</div>'; };
+    const cols = (list, lab) => { const max = Math.max(1, ...list.map((x) => x.n)); return `<div class="rep-cols" style="--n:${list.length}">${list.map((x) => `<div class="rep-col flat" data-tip="${esc(`${lab(x)}: ${fmt(x.n)} clients`)}"><span class="rep-col-v">${x.n ? fmt(x.n) : ''}</span><span class="rep-col-b"><i style="height:${x.n ? Math.max(3, (x.n / max) * 100) : 0}%"></i></span><span class="rep-col-l">${esc(lab(x))}</span></div>`).join('')}</div>`; };
+    const donut = (list, title) => { const parts = list.filter((x) => x.n); const tot = parts.reduce((t, x) => t + x.n, 0) || 1; const R = 42; const C = 2 * Math.PI * R; let off = 0;
+      const segs = parts.map((x, i) => { const len = (x.n / tot) * C; const gap = parts.length > 1 ? Math.min(2, len / 2) : 0; const sg = `<circle class="rep-seg s${i + 1}" r="${R}" cx="60" cy="60" stroke-dasharray="${Math.max(0, len - gap)} ${C}" stroke-dashoffset="${-off}" ${x.f ? `data-rgo="${enc(x.f)}"` : ''} data-tip="${esc(`${x.label}: ${fmt(x.n)} (${Math.round((x.n / tot) * 100)}%)`)}"></circle>`; off += len; return sg; }).join('');
+      return parts.length ? `<div class="rep-donut"><svg viewBox="0 0 120 120" role="img" aria-label="${esc(title)}"><circle class="rep-seg-bg" r="${R}" cx="60" cy="60"></circle><g transform="rotate(-90 60 60)">${segs}</g><text x="60" y="58" class="rep-dn-v">${fmt(tot)}</text><text x="60" y="74" class="rep-dn-l">clients</text></svg>
+        <ul class="rep-legend">${parts.map((x, i) => `<li><button type="button" ${x.f ? `data-rgo="${enc(x.f)}"` : 'disabled'}><span class="rep-sw s${i + 1}"></span><span class="grow">${esc(x.label)}</span><b>${fmt(x.n)}</b><span class="rep-pc">${Math.round((x.n / tot) * 100)}%</span></button></li>`).join('')}</ul></div>` : '<div class="rep-none">No clients here</div>'; };
+    const card = (title, sub, inner, wide) => `<section class="card rep-card ${wide ? 'wide' : ''}"><h3 class="dsec-h">${title}</h3>${sub ? `<div class="rep-sub">${sub}</div>` : ''}${inner}</section>`;
+    const wk = (x) => new Date(`${x.label}T00:00:00Z`).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', timeZone: 'UTC' });
+    box.innerHTML = `<div class="rep stack">
+      <div class="card rep-head"><div class="rep-total"><b>${fmt(r.total)}</b> clients and leads${Object.keys(base).length ? ' with these filters' : ''}</div>${clChips(q)}<span class="grow"></span><button type="button" class="btn sm" data-rlist>Open in the list →</button></div>
+      <div class="rep-tiles">${r.tiles.map((t) => `<button type="button" class="card rep-tile" data-rgo="${enc(t.f)}"><span class="rep-tile-l">${esc(t.label)}</span><span class="rep-tile-v">${fmt(t.n)}</span><span class="rep-tile-s">${pct(t.n)} of these clients · open</span></button>`).join('')}</div>
+      <div class="rep-grid">
+        ${card('Leads and active clients', 'Click a slice or a line to see those clients', donut(r.lifecycle, 'Leads and active clients'))}
+        ${card('Business type', '', donut(r.business, 'Business type'))}
+        ${card('When they want to hire', 'From calls and forms', donut(r.need, 'When they want to hire'))}
+        ${card('Job openings', 'Clients by their job openings', donut(r.jobs, 'Job openings'))}
+        ${card('Client stage', 'Where each client is on the 16-step journey', hbars(r.stage), true)}
+        ${card('Cities', 'Top 12 cities', hbars(r.city))}
+        ${card('Sources', 'Where clients came from', hbars(r.source))}
+        ${r.agency.length ? card('Agencies', 'Clients each agency handles', hbars(r.agency)) : ''}
+        ${card('Most open job openings', 'Click a client to open it', hbars(r.open_jobs, 'open openings'))}
+        ${card('Added per week', 'New clients and leads, the last 12 weeks', cols(r.weeks, wk), true)}
+      </div><div class="rep-tip" role="tooltip" hidden></div></div>`;
+    $$('[data-rgo]', box).forEach((b) => (b.onclick = () => BB.go(`team/clients?${BB.qs({ ...base, ...JSON.parse(b.dataset.rgo), tab: '' })}`)));
+    $('[data-rlist]', box).onclick = () => BB.go(`team/clients?${BB.qs(base)}`); wireClChips(box);
+    const tip = $('.rep-tip', box);
+    box.onmousemove = (e) => { const t = e.target.closest('[data-tip]'); if (!t) { tip.hidden = true; return; } tip.textContent = t.dataset.tip; tip.hidden = false; tip.style.left = `${Math.min(e.clientX + 14, innerWidth - tip.offsetWidth - 8)}px`; tip.style.top = `${e.clientY + 16}px`; };
+  };
   P.clients = async ({ el, actions, q, me }) => {
+    const ctabs = `<div class="tabs cl-pagetabs">${[['', 'Clients'], ['reports', 'Reports']].map(([k, l]) => `<button data-cltab="${k}" class="${(q.tab || '') === k ? 'on' : ''}">${l}</button>`).join('')}</div>`;
+    if (q.tab === 'reports') {
+      actions.innerHTML = '';
+      el.innerHTML = `${ctabs}<div data-clbody></div>`; $$('[data-cltab]', el).forEach((b) => (b.onclick = () => BB.setQ({ tab: b.dataset.cltab })));
+      await clientReports(el, q); return;
+    }
     const r = await BB.api(`/api/clients?${BB.qs(q)}`);
     actions.innerHTML = `${dl(`/api/clients?${BB.qs(q, { format: 'xlsx' })}`)}<button class="btn" data-cbulk>${BB.icon('upload')} Upload clients (Excel)</button><button class="btn primary" data-new>+ Create client account</button>`;
     $('[data-cbulk]', actions).onclick = () => BB.importModal('clients', me, 'Upload clients from Excel');
-    el.innerHTML = `<div class="filters"><input placeholder="Search name, ID, phone, city…" value="${esc(q.q || '')}" data-q><select data-stage><option value="">All stages</option>${BB.boot.stages.map((s) => `<option ${q.stage === s ? 'selected' : ''}>${esc(s)}</option>`).join('')}</select><select data-life><option value="">Leads and active clients</option><option value="Lead" ${q.lifecycle === 'Lead' ? 'selected' : ''}>Leads</option><option value="Active" ${q.lifecycle === 'Active' ? 'selected' : ''}>Active clients</option></select><label class="row small"><input type="checkbox" data-arch ${q.archived ? 'checked' : ''}> Archived</label></div>
+    el.innerHTML = `${ctabs}${clChips(q)}<div class="filters"><input placeholder="Search name, ID, phone, city…" value="${esc(q.q || '')}" data-q><select data-stage><option value="">All stages</option>${BB.boot.stages.map((s) => `<option ${q.stage === s ? 'selected' : ''}>${esc(s)}</option>`).join('')}</select><select data-life><option value="">Leads and active clients</option><option value="Lead" ${q.lifecycle === 'Lead' ? 'selected' : ''}>Leads</option><option value="Active" ${q.lifecycle === 'Active' ? 'selected' : ''}>Active clients</option></select><label class="row small"><input type="checkbox" data-arch ${q.archived ? 'checked' : ''}> Archived</label></div>
       <div class="card bulkbar bulk-card" data-cbar>${BB.bulkHead('client', 'data-ccount')}<button class="btn sm" data-cm="general">Email</button><button class="btn sm" data-cm="contract">Send agreement</button><button class="btn sm" data-cm="kyc">Ask for KYC</button><select class="mini" data-cstage aria-label="Update status"><option value="">Update status…</option>${BB.boot.stages.map((x) => `<option>${esc(x)}</option>`).join('')}</select></div>
       <div class="card">${BB.table([{ t: 'Company', sort: 'company', cls: 'name-col', f: (c) => `<b>${esc(c.company)}</b>${c.is_new ? ' <span class="dot new" title="New"></span>' : ''}${c.contact && c.contact !== c.company ? `<div class="tiny muted">${esc(c.contact)}</div>` : ''}${c.whatsapp ? `<div class="cand-phone muted">${esc(c.whatsapp)}</div>` : ''}` }, { t: 'Point of contact', cls: 'poc-col', f: (c) => { const p = c.poc || {}; return p.name ? `<div class="poc-cell"><b>${esc(p.name)}</b>${p.role ? ` <span class="tiny muted">${esc(p.role)}</span>` : ''}${p.email ? `<div class="tiny">${esc(p.email)}</div>` : ''}${p.whatsapp ? `<div class="tiny mono">${esc(p.whatsapp)}</div>` : ''}</div>` : '<span class="faint">—</span>'; } }, { t: 'City', sort: 'city', f: (c) => esc(c.city) }, { t: 'Status', sort: 'lifecycle', f: (c) => `<span class="badge ${c.lifecycle === 'Lead' ? 'b-amber' : 'b-green'}">${esc(c.lifecycle)}</span>` }, { t: 'Stage', sort: 'stage', f: (c) => `<span class="badge b-outline">${esc(c.stage)}</span>` }, { t: 'Agency', sort: 'agency_name', f: (c) => esc(c.agency_name || '—'), hideSm: 1 }, { t: 'Jobs open / total', num: 1, f: (c) => `${c.jobs_open} / ${c.jobs_total}` }, { t: 'Login', f: (c) => `<span class="badge ${c.account_status === 'Opened' ? 'b-green' : 'b-outline'}">${esc(c.account_status)}</span>`, hideSm: 1 }], r.rows, { sorted: q, open: (c) => `client:${c.id}`, select: (c) => c.id })}${BB.pager(r)}</div>`;
-    wireDl(actions); BB.wirePager(el); BB.flow.clientsMount(el);
+    wireDl(actions); BB.wirePager(el); BB.flow.clientsMount(el); wireClChips(el); $$('[data-cltab]', el).forEach((b) => (b.onclick = () => BB.setQ({ tab: b.dataset.cltab })));
     $('[data-life]', el).onchange = (e) => BB.setQ({ lifecycle: e.target.value, page: 1 });
     let t; $('[data-q]', el).oninput = (e) => { clearTimeout(t); t = setTimeout(() => BB.setQ({ q: e.target.value, page: 1 }), 350); };
     $('[data-stage]', el).onchange = (e) => BB.setQ({ stage: e.target.value, page: 1 });

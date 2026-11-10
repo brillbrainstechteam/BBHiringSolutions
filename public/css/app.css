@@ -2464,3 +2464,13 @@ a.pipe-step { text-decoration: none; cursor: pointer; } a.pipe-step:hover { bord
 .jdb-new { background: #ECFDF5 !important; }
 @media (max-width: 860px) { .jdb-grid { grid-template-columns: 1fr; } .jdb-side { position: static; } }
 .jd-view { display: grid; gap: 8px; margin: 8px 0; } .jd-sec .small { white-space: pre-wrap; }
+
+.cl-pane-h { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 6px; }
+.cl-add { border: 1px dashed #B5E7DD; background: #F6FBF9; color: #0B6E60; border-radius: 8px; padding: 1px 8px; font: inherit; font-size: 12.5px; cursor: pointer; }
+.cl-add:hover { background: #E3F6F2; }
+.cl-person.cl-missing { border-style: dashed; background: #FCFDFE; }
+.cl-empty { padding: 6px 0; line-height: 2; }
+.cl-pagetabs { margin-bottom: 12px; }
+.chips-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 10px; }
+.f-chip { border: 1px solid #B5E7DD; background: #F0FAF7; color: #0F172A; border-radius: 999px; padding: 3px 10px; font: inherit; font-size: 12.5px; cursor: pointer; }
+.f-chip span { color: #64748B; margin-left: 2px; }

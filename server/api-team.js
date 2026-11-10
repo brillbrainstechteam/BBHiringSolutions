@@ -651,17 +651,54 @@ route('GET', '/api/merge/:type/:a/:b', T, (ctx) => {
 });
 
 // ---------- clients ----------
+// Filters the Clients list and its Reports share (each chart opens the list with its filter).
+const clientFilt = (q) => (c) => (!q.stage || c.stage === q.stage) && (!q.lifecycle || (q.lifecycle === 'Active' ? !!c.activated_at : !c.activated_at))
+  && (!q.city || (q.city === 'none' ? !c.city : String(c.city || '').toLowerCase() === String(q.city).toLowerCase())) && (!q.business_type || (q.business_type === 'none' ? !c.business_type : c.business_type === q.business_type))
+  && (!q.source || c.source === q.source) && (!q.agency || (q.agency === 'none' ? !c.agency_id : c.agency_id === q.agency)) && (!q.need || (q.need === 'none' ? !c.need : c.need === q.need)) && (!q.new || c.is_new)
+  && (!q.missing || (q.missing === 'email' ? !c.email : q.missing === 'size' ? !((c.extra || {}).team_size || ((c.extra || {}).online || {}).team_size) : q.missing === 'online' ? !(c.extra || {}).online : true));
+route('GET', '/api/clients/report', T, (ctx) => {
+  const q = ctx.query; const u = ctx.user; const s = D.settings();
+  const rows = all('SELECT * FROM clients WHERE merged_into IS NULL AND removed=0 AND junk=0 AND archived=0').filter((c) => seeClient(u, c) && clientFilt(q)(c)).map(V.clientView); // the same clients as the list, so every count opens to the same rows
+  const tally = (fn) => { const m = new Map(); for (const c of rows) { const v = fn(c); if (v !== null && v !== undefined && v !== '') m.set(v, (m.get(v) || 0) + 1); } return m; };
+  const top = (m, n, f) => [...m.entries()].sort((a, b) => b[1] - a[1]).slice(0, n).map(([k, v]) => ({ label: String(k), n: v, f: f(k) }));
+  const BT = { 'Showroom B2C': 'B2C (showroom)', 'Manufacturer B2B': 'B2B (manufacturer)', Both: 'B2B and B2C' };
+  const weeks = []; const day0 = new Date(`${L.istDay()}T00:00:00Z`); const dow = (day0.getUTCDay() + 6) % 7; const mon = new Date(day0.getTime() - dow * 86400000);
+  for (let i = 11; i >= 0; i--) { const st = new Date(mon.getTime() - i * 7 * 86400000); const from = st.toISOString().slice(0, 10); const to = new Date(st.getTime() + 6 * 86400000).toISOString().slice(0, 10); weeks.push({ label: from, n: rows.filter((c) => { const d = L.istDay(c.created_at); return d >= from && d <= to; }).length, f: null }); }
+  const ags = all("SELECT id, name FROM agencies WHERE status='Active'");
+  return {
+    total: rows.length,
+    tiles: [
+      { label: 'Active clients', n: rows.filter((c) => c.activated_at).length, f: { lifecycle: 'Active' } },
+      { label: 'With open job openings', n: rows.filter((c) => c.jobs_open > 0).length, f: { jobs: 'open' } },
+      { label: 'New, not yet seen', n: rows.filter((c) => c.is_new).length, f: { new: '1' } },
+      { label: 'No email on file', n: rows.filter((c) => !c.email).length, f: { missing: 'email' } },
+      { label: 'Client info not fetched', n: rows.filter((c) => !(c.extra || {}).online).length, f: { missing: 'online' } },
+      ...(ags.length > 1 && isSuper(u) ? [{ label: 'Not assigned to an agency', n: rows.filter((c) => !c.agency_id).length, f: { agency: 'none' } }] : []),
+    ],
+    lifecycle: [{ label: 'Leads', n: rows.filter((c) => !c.activated_at).length, f: { lifecycle: 'Lead' } }, { label: 'Active clients', n: rows.filter((c) => c.activated_at).length, f: { lifecycle: 'Active' } }],
+    business: ['Showroom B2C', 'Manufacturer B2B', 'Both', ''].map((k) => ({ label: k ? BT[k] : 'Not known', n: rows.filter((c) => (c.business_type || '') === k).length, f: { business_type: k || 'none' } })),
+    need: ['Hiring now', 'Hiring soon', 'Just exploring', ''].map((k) => ({ label: k || 'Not asked', n: rows.filter((c) => (c.need || '') === k).length, f: { need: k || 'none' } })),
+    jobs: [{ label: 'Open job openings', n: rows.filter((c) => c.jobs_open > 0).length, f: { jobs: 'open' } }, { label: 'Jobs, none open now', n: rows.filter((c) => c.jobs_total > 0 && c.jobs_open === 0).length, f: { jobs: 'closed' } }, { label: 'No job opening yet', n: rows.filter((c) => c.jobs_total === 0).length, f: { jobs: 'none' } }],
+    stage: (s.client_stages || []).map((st) => ({ label: st, n: rows.filter((c) => c.stage === st).length, f: { stage: st } })).filter((x) => x.n),
+    city: top(tally((c) => c.city || 'Not set'), 12, (k) => ({ city: k === 'Not set' ? 'none' : k })),
+    source: top(tally((c) => c.source || 'Not set'), 10, (k) => (k === 'Not set' ? null : { source: k })),
+    agency: ags.length > 1 ? [...ags.map((a) => ({ label: a.name, n: rows.filter((c) => c.agency_id === a.id).length, f: { agency: a.id } })), { label: 'Not assigned', n: rows.filter((c) => !c.agency_id).length, f: { agency: 'none' } }].filter((x) => x.n).sort((a, b) => b.n - a.n) : [],
+    open_jobs: rows.filter((c) => c.jobs_open > 0).sort((a, b) => b.jobs_open - a.jobs_open).slice(0, 10).map((c) => ({ label: c.company || c.id, n: c.jobs_open, open: `client:${c.id}` })),
+    weeks,
+  };
+});
 route('GET', '/api/clients', T, (ctx) => {
   const q = ctx.query; const u = ctx.user;
   const rows = all('SELECT * FROM clients WHERE merged_into IS NULL AND removed=0 AND junk=0 ORDER BY created_at DESC')
-    .filter((c) => seeClient(u, c) && (q.archived ? c.archived : !c.archived) && (!q.stage || c.stage === q.stage) && (!q.lifecycle || (q.lifecycle === 'Active' ? !!c.activated_at : !c.activated_at)) && like(q.q, c.id, c.company, c.contact, c.city, c.whatsapp, c.old_code))
-    .map(V.clientView);
+    .filter((c) => seeClient(u, c) && (q.archived ? c.archived : !c.archived) && clientFilt(q)(c) && like(q.q, c.id, c.company, c.contact, c.city, c.whatsapp, c.old_code))
+    .map(V.clientView).filter((c) => !q.jobs || (q.jobs === 'open' ? c.jobs_open > 0 : q.jobs === 'none' ? c.jobs_total === 0 : c.jobs_total > 0 && c.jobs_open === 0));
   return page(ctx, sortBy(rows, q, ['company', 'city', 'lifecycle', 'stage', 'agency_name', 'jobs_open', 'account_status']), 'clients', ['id', 'company', 'contact', 'whatsapp', 'city', 'business_type', 'stage', 'agency_name', 'owner_name', 'jobs_open', 'jobs_total', 'account_status', 'source']);
 });
 route('POST', '/api/clients/:id/pocs', T, (ctx) => {
   const c = get('SELECT * FROM clients WHERE id=?', ctx.params.id); mustSee(c && seeClient(ctx.user, c), 'client'); const b = ctx.body || {}; const ex = { ...(c.extra || {}) }; let list = Array.isArray(ex.pocs) ? [...ex.pocs] : [];
   if (b.remove !== undefined) list = list.filter((_, i) => i !== Number(b.remove));
   else if (b.main !== undefined) list = list.map((p, i) => ({ ...p, main: i === Number(b.main) }));
+  else if (b.edit !== undefined) { const i = Number(b.edit); if (!list[i]) throw httpError(404, 'Point of contact not found'); const p = L.cleanPoc(b); if (!p) throw httpError(400, 'Write the name', 'name'); if (!p.whatsapp && !p.email) throw httpError(400, 'Add a WhatsApp number or an email', 'whatsapp'); list[i] = { ...list[i], ...p }; }
   else { const p = L.cleanPoc(b); if (!p) throw httpError(400, 'Write the name', 'name'); if (!p.whatsapp && !p.email) throw httpError(400, 'Add a WhatsApp number or an email', 'whatsapp'); if (b.main || !list.length) list = list.map((x) => ({ ...x, main: false })); list.push({ ...p, main: !!b.main || !list.length, by: ctx.actor.label, at: now() }); }
   if (list.length && !list.some((p) => p.main)) list[0].main = true;
   D.edit('clients', c.id, { extra: { ...ex, pocs: list } }, ctx.actor.label, ctx.ip); return { pocs: list };
@@ -716,6 +753,9 @@ route('PATCH', '/api/clients/:id', T, (ctx) => {
   const patch = {}; for (const k of allowed) if (ctx.body[k] !== undefined) patch[k] = ctx.body[k];
   if (patch.whatsapp) { patch.whatsapp = L.digits10(patch.whatsapp); if (!L.validPhone(patch.whatsapp)) throw httpError(400, 'Enter a 10-digit WhatsApp number', 'whatsapp'); }
   if (patch.fee_value === '') patch.fee_value = null;
+  if (patch.email !== undefined) { patch.email = String(patch.email || '').trim(); if (!patch.email) throw httpError(400, 'Enter the email ID', 'email'); if (!L.EMAIL_RE.test(patch.email)) throw httpError(400, 'Enter a valid email ID', 'email'); }
+  if (patch.company !== undefined && !String(patch.company || '').trim()) throw httpError(400, 'Enter the company name', 'company');
+  if (patch.extra && patch.extra.hr_email && !L.EMAIL_RE.test(String(patch.extra.hr_email).trim())) throw httpError(400, 'Enter a valid HR email ID, or leave it empty', 'hr_email');
   if (patch.stage === 'Requirement later') { const at = new Date(ctx.body.follow_up_at || ''); if (Number.isNaN(at.getTime())) throw httpError(400, 'Pick the date to follow up for the requirement', 'follow_up_at'); setRequirementLater(c, at, ctx.body.follow_up_note, ctx); }
   if (patch.stage === 'Client activated' && !c.activated_at) { const st = L.activationState(c); if (!st.ready) throw httpError(400, 'Upload the signed contract to activate this client. All other work can carry on without it.'); }
   if (patch.agency_id && patch.agency_id !== c.agency_id) { const adm = L.agencyAdmin(patch.agency_id); patch.owner_id = adm ? adm.id : null; patch.is_new = 0; D.run('UPDATE jobs SET agency_id=? WHERE client_id=? AND agency_id IS NULL', patch.agency_id, c.id); }
