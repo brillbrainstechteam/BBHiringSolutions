@@ -90,7 +90,7 @@
   // ---------- Vendors page: the database ----------
   BB.vendors = async ({ el, actions, q }) => {
     const adm = ['super', 'admin'].includes(BB.me.user.level);
-    const vtabs = adm ? `<div class="tabs" style="margin-bottom:12px">${[['', 'Partners'], ['portals', 'Job portals']].map(([k, l]) => `<button data-vt="${k}" class="${(q.vt || '') === k ? 'on' : ''}">${l}</button>`).join('')}</div>` : '';
+    const vtabs = adm ? `<div class="tabs" style="margin-bottom:12px">${[['', 'Partners'], ['portals', 'Job Portals']].map(([k, l]) => `<button data-vt="${k}" class="${(q.vt || '') === k ? 'on' : ''}">${l}</button>`).join('')}</div>` : '';
     const wireVt = () => $$('[data-vt]', el).forEach((b) => (b.onclick = () => BB.setQ({ vt: b.dataset.vt })));
     if (adm && q.vt === 'portals') { await BB.portals({ el, actions, q, tabs: vtabs }); wireVt(); return; }
     const d = await BB.api(`/api/partners?${BB.qs({ status: q.status, q: q.pq, city: q.city, type: q.type, due: q.due, seq: q.seq })}`);
