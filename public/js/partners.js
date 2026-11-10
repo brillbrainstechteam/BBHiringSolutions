@@ -93,13 +93,11 @@
     actions.innerHTML = `<a class="btn" href="/team/leads?tab=partners" data-tlink>${BB.icon ? BB.icon('search') : ''} Find more</a><button class="btn primary" data-padd>+ Add partner</button>`;
     $('[data-padd]', actions).onclick = () => addByHand(d.types, d.statuses);
     const st = q.status || '';
-    const seqHow = d.sequence.map((s, i) => `<li><b>Day ${s.day}</b> · ${esc(s.label)}${s.kind === 'whatsapp' ? ` <span class="tiny ${d.wa_ready[s.format === 'bbhs_partner_followup' ? 'followup' : 'outreach'] ? 'v-ok' : 'muted'}">${d.wa_ready[s.format === 'bbhs_partner_followup' ? 'followup' : 'outreach'] ? 'goes from the business number' : 'a task for you to send (until Meta approves the message)'}</span>` : ' <span class="tiny muted">a task for the owner</span>'}${i === 0 ? '' : ''}</li>`).join('');
     el.innerHTML = `<div class="v-chips">${['', ...d.statuses].map((x) => `<button class="chip ${st === x && !q.due ? 'on' : ''}" data-pst="${esc(x)}">${x || 'All'} <span class="faint">${x ? d.counts[x] : d.total}</span></button>`).join('')}<button class="chip ${q.due ? 'on' : ''} ${d.due ? 'v-duechip' : ''}" data-pdue>Follow-up due <span class="faint">${d.due}</span></button></div>
       <div class="filters"><input placeholder="Search name, course, city, contact…" value="${esc(q.pq || '')}" data-pq>
         <select data-f="city"><option value="">All cities</option>${d.cities.map((c) => `<option ${q.city === c ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select>
         <select data-f="type"><option value="">All types</option>${d.types_in.map((c) => `<option ${q.type === c ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select>
         <select data-f="seq"><option value="">Follow-ups: any</option><option value="on" ${q.seq === 'on' ? 'selected' : ''}>Follow-ups running</option><option value="off" ${q.seq === 'off' ? 'selected' : ''}>Not running</option></select></div>
-      <details class="card pad v-seq"><summary><b>Follow-up sequence</b> <span class="small muted">· starts when you WhatsApp a vendor or press Start follow-ups; stops when the status is Interested, Meeting fixed, Partner, Not interested or Not relevant</span></summary><ol class="small">${seqHow}</ol></details>
       <div class="card bulkbar bulk-card" data-vbar>${BB.bulkHead('vendor', 'data-selcount')}
         <button class="btn sm" data-vb="sequence">${waIcon()} Start follow-ups</button><button class="btn sm" data-vb="stop">Stop follow-ups</button>
         <select class="mini" data-vb-status><option value="">Set status…</option>${d.statuses.map((x) => `<option>${esc(x)}</option>`).join('')}</select></div>
