@@ -2588,3 +2588,6 @@ a.pipe-step { text-decoration: none; cursor: pointer; } a.pipe-step:hover { bord
 @media (max-width: 760px) { .role-row { grid-template-columns: 1fr 1fr; } }
 
 .tpl-box[hidden] { display: none; }
+
+/* Verifications: spaced status buttons, package filter in the same row */
+.v-head { gap: 12px; flex-wrap: wrap; align-items: center; } .v-st { display: flex; flex-wrap: wrap; gap: 8px; } .v-pkg { width: auto; min-width: 200px; }

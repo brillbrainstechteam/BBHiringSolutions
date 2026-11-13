@@ -758,14 +758,15 @@
   // ---------- Candidates › Verifications: what clients ordered, how far each is, the reports ----------
   const verificationsTab = async (body, q) => {
     const st = q.vst || 'open'; let d; try { d = await BB.api('/api/verify-orders'); } catch (e) { body.innerHTML = `<div class="card empty">${esc(e.message)}</div>`; return; }
-    const rows = d.rows.filter((o) => (st === 'open' ? ['Requested', 'In progress'].includes(o.status) : st === 'all' ? true : o.status === st));
+    const rows = d.rows.filter((o) => (st === 'open' ? ['Requested', 'In progress'].includes(o.status) : st === 'all' ? true : o.status === st) && (!q.vpkg || o.package === q.vpkg));
     const cnt = (f) => d.rows.filter(f).length;
-    body.innerHTML = `<div class="stack"><div class="card pad row between" style="gap:10px;flex-wrap:wrap"><div class="chips">${[['open', 'Open', cnt((o) => ['Requested', 'In progress'].includes(o.status))], ['Completed', 'Completed', cnt((o) => o.status === 'Completed')], ['Cancelled', 'Cancelled', cnt((o) => o.status === 'Cancelled')], ['all', 'All', d.rows.length]].map(([k, l, n]) => `<button class="chip ${st === k ? 'on' : ''}" data-vst="${k}">${l} <span>${n}</span></button>`).join('')}</div>
-      <div class="small muted">Prices: ${d.packages.map((p) => `${esc(p.name)} ₹${p.price}`).join(' · ')}</div></div>
+    body.innerHTML = `<div class="stack"><div class="card pad row between v-head"><div class="chips v-st">${[['open', 'Open', cnt((o) => ['Requested', 'In progress'].includes(o.status))], ['Completed', 'Completed', cnt((o) => o.status === 'Completed')], ['Cancelled', 'Cancelled', cnt((o) => o.status === 'Cancelled')], ['all', 'All', d.rows.length]].map(([k, l, n]) => `<button class="chip ${st === k ? 'on' : ''}" data-vst="${k}">${l} <span>${n}</span></button>`).join('')}</div>
+      <select data-vpkg aria-label="Package" class="v-pkg"><option value="">All packages</option>${d.packages.map((p) => `<option value="${esc(p.key)}" ${q.vpkg === p.key ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select></div>
       <div class="card">${BB.table([{ t: 'Order', f: (o) => `<b>${esc(o.no)}</b><div class="tiny muted">${fmtD(o.at)} · ${esc(o.by)}</div>` }, { t: 'Candidate', f: (o) => `<a href="#" data-open="candidate:${esc(o.candidate_id)}">${esc(o.candidate_name)}</a>` }, { t: 'Client', f: (o) => esc(o.client_name) }, { t: 'Package', f: (o) => esc(o.name) }, { t: 'Price', num: 1, f: (o) => `₹${Number(o.price).toLocaleString('en-IN')}` }, { t: 'Checks done', num: 1, f: (o) => esc(o.progress) },
         { t: 'Status', f: (o) => `<span class="badge ${o.status === 'Completed' ? (o.problem ? 'b-red' : 'b-green') : o.status === 'Cancelled' ? 'b-outline' : 'b-amber'}">${esc(o.status === 'Completed' ? (o.problem ? 'Problem found' : 'All clear') : o.status)}</span>` },
         { t: '', f: (o) => (o.status === 'Completed' ? `<div class="row nowrap"><button class="btn sm" data-vrep="${o.id}">Report</button><button class="btn sm" data-vsend="${o.id}">Email to client</button></div>` : `<button class="btn sm" data-open="candidate:${esc(o.candidate_id)}">Do the checks</button>`) }], rows, { empty: st === 'open' ? 'No verification waiting.' : 'Nothing here.' })}</div></div>`;
     $$('[data-vst]', body).forEach((b) => (b.onclick = () => BB.setQ({ vst: b.dataset.vst === 'open' ? '' : b.dataset.vst })));
+    { const pk = $('[data-vpkg]', body); if (pk) pk.onchange = () => BB.setQ({ vpkg: pk.value }); }
     $$('[data-vrep]', body).forEach((b) => (b.onclick = () => BB.download(`/api/verify-orders/${b.dataset.vrep}/report`)));
     $$('[data-vsend]', body).forEach((b) => (b.onclick = () => BB.verify.sendReport(b.dataset.vsend)));
   };
