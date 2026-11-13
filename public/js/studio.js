@@ -132,4 +132,50 @@
         <div>${S.phone({ header: t.header, text: t.body, footer: t.footer, buttons: t.buttons })}</div></div>`,
       mount: (root) => { const u = $('[data-tuse]', root); if (u) u.onclick = () => S.start({ tplKey: t.key, what: 'template' }); const e = $('[data-tedit]', root); if (e) e.onclick = () => S.editTemplate(t); } };
   };
+  // ---------- a new WhatsApp template, sent to Meta for approval ----------
+  S.newTemplate = () => S.editTemplate(null);
+  S.editTemplate = async (from) => {
+    const opt = await BB.api('/api/studio/wa/options'); const dr = (from && from.draft) || {};
+    const st = { name: dr.name || '', category: dr.category || 'MARKETING', language: dr.language || 'en', header_type: dr.header_type || 'NONE', header_text: dr.header_text || '', header_example: dr.header_example || '', media: dr.media_key ? { key: dr.media_key, name: 'Sample file', url: `/api/public/studio-media/${dr.media_key}` } : null, body: dr.body || '', examples: dr.examples || [], footer: dr.footer || '', button_kind: dr.button_kind || 'none', buttons: dr.buttons || [] };
+    if (from && from.status === 'REJECTED') st.name = `${st.name}_v2`;
+    const blanks = () => [...new Set([...st.body.matchAll(/\{\{\s*(\d+)\s*\}\}/g)].map((x) => x[1]))];
+    const sel = (name, opts, cur) => `<select data-k="${name}">${opts.map(([v, l]) => `<option value="${esc(v)}" ${String(v) === String(cur) ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>`;
+    const inp = (k, v, ph, attrs = '') => `<input data-k="${k}" value="${esc(v)}" placeholder="${esc(ph || '')}" ${attrs}>`;
+    const btnRows = () => {
+      if (st.button_kind === 'quick') { while (st.buttons.length < 3) st.buttons.push({ type: 'QUICK_REPLY', text: '' }); return st.buttons.slice(0, 3).map((b, i) => `<input data-b="${i}" data-bk="text" value="${esc(b.text || '')}" placeholder="Quick reply ${i + 1}${i ? ' (optional)' : ''}" maxlength="25">`).join(''); }
+      if (st.button_kind === 'cta') { while (st.buttons.length < 2) st.buttons.push({ type: st.buttons.length ? 'PHONE_NUMBER' : 'URL', text: '', value: '' }); return st.buttons.slice(0, 2).map((b, i) => `<div class="st-cta"><select data-b="${i}" data-bk="type"><option value="URL" ${b.type === 'URL' ? 'selected' : ''}>Link</option><option value="PHONE_NUMBER" ${b.type === 'PHONE_NUMBER' ? 'selected' : ''}>Call</option></select><input data-b="${i}" data-bk="text" value="${esc(b.text || '')}" placeholder="Button words${i ? ' (optional)' : ''}" maxlength="25"><input data-b="${i}" data-bk="value" value="${esc(b.value || '')}" placeholder="${b.type === 'URL' ? 'https://… (end with {{1}} to change per person)' : '+91…'}">${b.type === 'URL' && /\{\{1\}\}$/.test(b.value || '') ? `<input data-b="${i}" data-bk="example" value="${esc(b.example || '')}" placeholder="Sample full link for Meta">` : ''}</div>`).join(''); }
+      return '';
+    };
+    const formHtml = () => `<div class="grid g3"><label class="field" data-f="name"><span class="lab">Name</span>${inp('name', st.name, 'e.g. jewellery_walkin_drive')}<div class="faint tiny">Small letters, numbers and _</div></label><label class="field" data-f="category"><span class="lab">Category</span>${sel('category', [['MARKETING', 'Marketing (job alerts, offers)'], ['UTILITY', 'Utility (updates about their application)']], st.category)}</label><label class="field" data-f="language"><span class="lab">Language</span>${sel('language', opt.languages, st.language)}</label></div>
+      <div class="field" data-f="header_text"><span class="lab">Header</span><div class="row">${sel('header_type', [['NONE', 'None'], ['TEXT', 'Text'], ['IMAGE', 'Image'], ['VIDEO', 'Video'], ['DOCUMENT', 'PDF']], st.header_type)}${st.header_type === 'TEXT' ? `${inp('header_text', st.header_text, 'Up to 60 letters; {{1}} for one blank', 'maxlength="60" style="flex:1"')}` : ''}${['IMAGE', 'VIDEO', 'DOCUMENT'].includes(st.header_type) ? `<button type="button" class="btn sm" data-tup>${st.media ? 'Change sample' : 'Upload sample'}</button><span class="small muted">${st.media ? esc(st.media.name) : 'Meta reviews with a sample; each campaign can use its own file'}</span>` : ''}</div>${st.header_type === 'TEXT' && /\{\{1\}\}/.test(st.header_text) ? `<div style="margin-top:6px">${inp('header_example', st.header_example, 'Sample for the header blank')}</div>` : ''}</div>
+      <label class="field" data-f="body"><span class="lab">Message</span><textarea data-k="body" rows="5" maxlength="1024" placeholder="Hello {{1}}, we have a {{2}} opening in {{3}}. Reply Interested to know more.">${esc(st.body)}</textarea><div class="row" style="margin-top:4px"><button type="button" class="btn sm ghost" data-blank>+ Add blank</button><span class="faint tiny">*bold*  _italic_ · ${st.body.length}/1024</span></div></label>
+      ${blanks().length ? `<div class="field" data-f="examples"><span class="lab">Samples for Meta's review</span><div class="grid g3">${blanks().map((n, i) => `<input data-ex="${i}" value="${esc(st.examples[i] || '')}" placeholder="{{${n}}} e.g. ${['Priya', 'Sales Executive', 'Mumbai'][i] || 'sample'}">`).join('')}</div></div>` : ''}
+      <label class="field" data-f="footer"><span class="lab">Footer <span class="opt">(optional)</span></span>${inp('footer', st.footer, 'e.g. Reply STOP to stop these messages', 'maxlength="60"')}</label>
+      <div class="field" data-f="buttons"><span class="lab">Buttons</span>${sel('button_kind', [['none', 'None'], ['quick', 'Quick replies (up to 3)'], ['cta', 'Link and call (up to 2)']], st.button_kind)}<div class="stack-sm" style="margin-top:6px">${btnRows()}</div></div>`;
+    const sample = (t) => t.replace(/\{\{(\d+)\}\}/g, (m, n) => st.examples[blanks().indexOf(n)] || m);
+    const prev = () => S.phone({ header: st.header_type === 'NONE' ? null : { format: st.header_type, text: st.header_type === 'TEXT' ? st.header_text.replace('{{1}}', st.header_example || '{{1}}') : '' }, text: sample(st.body), footer: st.footer, buttons: st.button_kind === 'none' ? [] : st.buttons.filter((b) => b.text), media: st.media });
+    const m = BB.modal({ title: from ? `Template · ${esc(from.name)}` : 'New WhatsApp template', wide: true,
+      body: `<div class="notice" style="margin-bottom:12px">Meta reviews every template, usually within minutes, sometimes a day. Approved ones show in Campaigns › New campaign.${from && from.error ? `<div class="small" style="margin-top:4px">Last try: ${esc(from.error)}</div>` : ''}</div><div class="st-grid"><form class="stack" data-tf onsubmit="return false"></form><div><div class="tiny muted" style="margin-bottom:6px">Preview (with the samples)</div><div data-tprev></div></div></div>`,
+      foot: `${from && ['DRAFT', 'NOT SENT'].includes(from.status) ? '<button class="btn ghost" data-tdel style="margin-right:auto">Remove draft</button>' : ''}<button class="btn" data-tsave>Save draft</button><button class="btn primary" data-tsub>Send to Meta</button>` }).el;
+    const draw = () => {
+      const f = $('[data-tf]', m); f.innerHTML = formHtml(); $('[data-tprev]', m).innerHTML = prev();
+      const redraw = ['header_type', 'button_kind', 'header_text', 'body'];
+      $$('[data-k]', f).forEach((i) => { i.oninput = i.onchange = (e) => { st[i.dataset.k] = i.value; if (i.dataset.k === 'button_kind') st.buttons = []; if (e.type === 'change' && redraw.includes(i.dataset.k)) draw(); else $('[data-tprev]', m).innerHTML = prev(); }; });
+      $$('[data-ex]', f).forEach((i) => (i.oninput = () => { st.examples[+i.dataset.ex] = i.value; $('[data-tprev]', m).innerHTML = prev(); }));
+      $$('[data-b]', f).forEach((i) => { i.oninput = i.onchange = (e) => { st.buttons[+i.dataset.b][i.dataset.bk] = i.value; if (e.type === 'change' && i.dataset.bk !== 'text') draw(); else $('[data-tprev]', m).innerHTML = prev(); }; });
+      $('[data-blank]', f).onclick = () => { const ta = $('[data-k=body]', f); const n = blanks().length + 1; const pos = ta.selectionStart ?? st.body.length; st.body = `${st.body.slice(0, pos)}{{${n}}}${st.body.slice(pos)}`; draw(); };
+      const up = $('[data-tup]', f); if (up) up.onclick = async () => { const r = await S.upload(st.header_type === 'IMAGE' ? '.jpg,.jpeg,.png' : st.header_type === 'VIDEO' ? '.mp4' : '.pdf'); if (r) { st.media = r; draw(); } };
+    };
+    draw();
+    const save = async (submit) => {
+      const btns = $$('.modal-f .btn', m); btns.forEach((b) => (b.disabled = true));
+      try {
+        const r = await BB.post('/api/studio/wa/templates', { ...st, media_key: st.media && st.media.key, examples: blanks().map((_, i) => st.examples[i] || ''), key: from ? from.key : undefined, submit });
+        m.closest('.modal-back').remove(); BB.toast(submit ? `Sent to Meta: ${r.status === 'APPROVED' ? 'approved' : 'waiting for review'}` : 'Draft saved'); BB.go('team/campaigns?tab=templates');
+      } catch (e) { BB.showErr(m, e); if (/^Not sent to Meta|Saved as a draft/.test(e.message) && BB.refreshPage) BB.refreshPage(); } finally { btns.forEach((b) => (b.disabled = false)); }
+    };
+    $('[data-tsave]', m).onclick = () => save(false); $('[data-tsub]', m).onclick = () => save(true);
+    const del = $('[data-tdel]', m); if (del) del.onclick = async () => { if (!(await BB.confirm('Remove this draft?', 'It was never sent to Meta.', 'Remove'))) return; try { await BB.post(`/api/studio/wa/templates/${encodeURIComponent(from.key)}/delete`); m.closest('.modal-back').remove(); BB.toast('Draft removed'); BB.refreshPage(); } catch (e) { BB.fail(e); } };
+  };
+
 })();

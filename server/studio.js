@@ -165,4 +165,92 @@ route('POST', '/api/studio/wa/preview', T, (ctx) => {
   try { const f = filled(t, b.map || {}, mergeVars(c, job), m ? { kind: m.kind, ref: { link: `/api/public/studio-media/${m.key}` }, name: m.name } : t.header && ['IMAGE', 'VIDEO', 'DOCUMENT'].includes(t.header.format) ? { kind: 'x', ref: {}, name: '(no file yet)' } : null); return { ok: true, who: c.name, text: f.text, buttons: f.buttons }; } catch (e) { return { ok: false, who: c.name, error: e.message }; }
 });
 
+// ---------- new templates made here, sent to Meta for approval ----------
+const LANGS = [['en', 'English'], ['en_US', 'English (US)'], ['en_GB', 'English (UK)'], ['hi', 'Hindi'], ['mr', 'Marathi'], ['gu', 'Gujarati'], ['bn', 'Bengali'], ['ta', 'Tamil'], ['te', 'Telugu'], ['kn', 'Kannada'], ['ml', 'Malayalam'], ['pa', 'Punjabi']];
+const HEADS = ['NONE', 'TEXT', 'IMAGE', 'VIDEO', 'DOCUMENT'];
+const nums = (text) => [...String(text || '').matchAll(/\{\{\s*([^}]*?)\s*\}\}/g)].map((m) => m[1]);
+function checkTemplate(b) {
+  const bad = (msg, field) => { throw httpError(400, msg, field); };
+  const name = String(b.name || '').trim().toLowerCase().replace(/\s+/g, '_');
+  if (!/^[a-z0-9_]{3,100}$/.test(name)) bad('Name: small letters, numbers and _ only (3 to 100)', 'name');
+  const category = String(b.category || '').toUpperCase(); if (!['MARKETING', 'UTILITY'].includes(category)) bad('Pick the category', 'category');
+  const language = String(b.language || ''); if (!LANGS.some(([k]) => k === language)) bad('Pick the language', 'language');
+  const header_type = HEADS.includes(String(b.header_type || 'NONE').toUpperCase()) ? String(b.header_type || 'NONE').toUpperCase() : 'NONE';
+  const header_text = String(b.header_text || '').trim(); const header_example = String(b.header_example || '').trim();
+  if (header_type === 'TEXT') {
+    if (!header_text) bad('Write the header', 'header_text'); if (header_text.length > 60) bad('The header takes up to 60 letters', 'header_text');
+    const hv = nums(header_text); if (hv.length > 1 || (hv.length && hv[0] !== '1')) bad('The header can have one blank, written {{1}}', 'header_text');
+    if (hv.length && !header_example) bad('Give a sample for the header blank', 'header_example');
+  }
+  const media_key = ['IMAGE', 'VIDEO', 'DOCUMENT'].includes(header_type) ? String(b.media_key || '') : '';
+  if (media_key) { const m = get('SELECT kind FROM studio_media WHERE key=?', media_key); if (!m || m.kind !== { IMAGE: 'image', VIDEO: 'video', DOCUMENT: 'document' }[header_type]) bad('Upload a sample file of the header type', 'media'); }
+  const body = String(b.body || '').trim(); if (!body) bad('Write the message', 'body'); if (body.length > 1024) bad('The message takes up to 1024 letters', 'body');
+  const want = [...new Set(nums(body))];
+  if (want.some((v, i) => v !== String(i + 1))) bad('Number the blanks {{1}}, {{2}}, {{3}} … in order', 'body');
+  if (/^\s*\{\{/.test(body) || /\}\}\s*[.!?]?\s*$/.test(body)) bad('Meta does not take a blank at the very start or end of the message: add a word before or after it', 'body');
+  const examples = want.map((_, i) => String((b.examples || [])[i] || '').trim()); if (examples.some((x) => !x)) bad('Give a sample for every blank', 'examples');
+  const footer = String(b.footer || '').trim(); if (footer.length > 60) bad('The footer takes up to 60 letters', 'footer'); if (/\{\{/.test(footer)) bad('The footer cannot have blanks', 'footer');
+  const kind = ['quick', 'cta'].includes(b.button_kind) ? b.button_kind : 'none';
+  let buttons = [];
+  if (kind === 'quick') { buttons = (b.buttons || []).map((x) => ({ type: 'QUICK_REPLY', text: String(x.text || '').trim() })).filter((x) => x.text); if (buttons.length > 3) bad('Up to 3 quick replies', 'buttons'); }
+  if (kind === 'cta') {
+    buttons = (b.buttons || []).map((x) => ({ type: x.type === 'PHONE_NUMBER' ? 'PHONE_NUMBER' : 'URL', text: String(x.text || '').trim(), value: String(x.value || '').trim(), example: String(x.example || '').trim() })).filter((x) => x.text || x.value);
+    if (buttons.length > 2) bad('Up to 2 link or call buttons', 'buttons'); if (buttons.filter((x) => x.type === 'PHONE_NUMBER').length > 1) bad('Only one call button', 'buttons');
+    for (const x of buttons) {
+      if (!x.text) bad('Give every button its words', 'buttons');
+      if (x.type === 'URL' && !/^https:\/\/\S+$/.test(x.value)) bad('A link button needs a full https:// link', 'buttons');
+      if (x.type === 'URL' && /\{\{/.test(x.value) && !/\{\{1\}\}$/.test(x.value)) bad('A changing link ends in {{1}}, e.g. https://site.com/jd/{{1}}', 'buttons');
+      if (x.type === 'URL' && /\{\{1\}\}$/.test(x.value) && !x.example) bad('Give a sample full link for the changing link', 'buttons');
+      if (x.type === 'PHONE_NUMBER' && !/^\+?\d{11,15}$/.test(x.value.replace(/[\s-]/g, ''))) bad('A call button needs the number with country code, e.g. +919876543210', 'buttons');
+      if (x.type === 'PHONE_NUMBER') x.value = `+${x.value.replace(/\D/g, '')}`;
+    }
+  }
+  if (buttons.some((x) => x.text.length > 25)) bad('Button words: up to 25 letters', 'buttons');
+  return { name, category, language, header_type, header_text, header_example, media_key, body, examples, footer, button_kind: kind, buttons };
+}
+// Meta's shape, so the list and the preview read a draft like any other template.
+const draftComponents = (t) => [
+  ...(t.header_type === 'NONE' ? [] : [{ type: 'HEADER', format: t.header_type, ...(t.header_type === 'TEXT' ? { text: t.header_text } : {}) }]),
+  { type: 'BODY', text: t.body }, ...(t.footer ? [{ type: 'FOOTER', text: t.footer }] : []),
+  ...(t.buttons.length ? [{ type: 'BUTTONS', buttons: t.buttons.map((x) => (x.type === 'QUICK_REPLY' ? x : x.type === 'URL' ? { type: 'URL', text: x.text, url: x.value } : { type: 'PHONE_NUMBER', text: x.text, phone_number: x.value })) }] : []),
+];
+const EDITABLE_ST = ['DRAFT', 'NOT SENT', 'REJECTED'];
+route('GET', '/api/studio/wa/options', T, () => ({ languages: LANGS }));
+route('POST', '/api/studio/wa/templates', T, async (ctx) => {
+  const b = ctx.body || {}; const t = checkTemplate(b); const key = `${t.name}|${t.language}`;
+  const was = templateRow(key); const old = b.key ? templateRow(String(b.key)) : null;
+  if (was && (!old || old.key !== key)) throw httpError(400, `${t.name} in ${t.language} already exists on the account. Give it a new name.`, 'name');
+  if (was && !EDITABLE_ST.includes(was.status)) throw httpError(400, 'This template is already with Meta and cannot be changed here.', 'name');
+  if (was && was.status === 'REJECTED') throw httpError(400, 'Meta keeps a rejected name: give the corrected template a new name.', 'name');
+  if (old && old.key !== key && old.source === 'portal' && ['DRAFT', 'NOT SENT'].includes(old.status)) D.run('DELETE FROM wa_templates WHERE key=?', old.key);
+  const row = { name: t.name, language: t.language, category: t.category, status: 'DRAFT', components: JSON.stringify(draftComponents(t)), source: 'portal', draft: JSON.stringify(t), error: null, by: ctx.actor.label, at: now() };
+  if (was) update('wa_templates', key, row, 'key'); else insert('wa_templates', { key, ...row });
+  if (!b.submit) { D.history(ctx.actor.label, 'WhatsApp template draft', key); return { key, status: 'DRAFT' }; }
+  return submitTemplate(key, ctx.actor.label);
+});
+async function submitTemplate(key, by) {
+  const r = templateRow(key); const t = JSON.parse(r.draft || '{}');
+  if (!crmReady()) { update('wa_templates', key, { status: 'NOT SENT', error: 'The WhatsApp CRM is not linked (Settings → WhatsApp). Saved as a draft.' }, 'key'); throw httpError(400, 'Saved as a draft. Link the WhatsApp CRM in Settings → WhatsApp to send it to Meta.'); }
+  let handle;
+  try {
+    if (t.media_key) {
+      const m = get('SELECT * FROM studio_media WHERE key=?', t.media_key); const f = m && get('SELECT * FROM files WHERE id=?', m.file_id); if (!f) throw new Error('Upload the sample header file again');
+      handle = (await crm()('/template-media', 'POST', { base64: F.readStored(f).toString('base64'), mime: m.mime, filename: m.name })).handle;
+      if (!handle) throw new Error('Meta did not take the sample header file');
+    } else if (['IMAGE', 'VIDEO', 'DOCUMENT'].includes(t.header_type)) throw new Error('Upload a sample header file: Meta reviews the template with it');
+    const out = await crm()('/templates', 'POST', { templates: [{ name: t.name, category: t.category, language: t.language, raw_language: true, body: t.body, examples: t.examples, header_type: t.header_type === 'NONE' ? undefined : t.header_type, header_handle: handle, header_text: t.header_text || undefined, header_example: t.header_example || undefined, footer: t.footer || undefined, buttons: t.buttons }] });
+    const res = (out.results || [])[0] || {};
+    if (res.ok === false) throw new Error(/invalid parameter/i.test(res.error || '') ? `${res.error}: often the name was used before (deleted in the last 4 weeks)` : res.error || 'Meta did not take it');
+    const st = String(res.status || 'PENDING').toUpperCase();
+    update('wa_templates', key, { status: st, error: null, at: now() }, 'key');
+    D.history(by, 'WhatsApp template sent to Meta', key);
+    return { key, status: st };
+  } catch (e) {
+    update('wa_templates', key, { status: 'NOT SENT', error: e.message }, 'key');
+    throw httpError(400, `Not sent to Meta: ${e.message}`);
+  }
+}
+route('POST', '/api/studio/wa/templates/:key/submit', T, async (ctx) => { const r = templateRow(ctx.params.key); if (!r || r.source !== 'portal' || !['DRAFT', 'NOT SENT'].includes(r.status)) throw httpError(404, 'Draft not found'); return submitTemplate(r.key, ctx.actor.label); });
+route('POST', '/api/studio/wa/templates/:key/delete', T, (ctx) => { const r = templateRow(ctx.params.key); if (!r || r.source !== 'portal' || !['DRAFT', 'NOT SENT'].includes(r.status)) throw httpError(400, 'Only drafts not sent to Meta can be removed here.'); D.run('DELETE FROM wa_templates WHERE key=?', r.key); D.history(ctx.actor.label, 'WhatsApp template draft removed', r.key); return { ok: true }; });
+
 module.exports = { FIELDS, mergeVars, fillText, tplView, templateRow, campaignTemplate, filled, headerMedia, syncTemplates, crmReady };
