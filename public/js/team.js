@@ -204,4 +204,9 @@
   BB.selected = (el) => $$('[data-sel]:checked', el).map((x) => x.dataset.sel);
   BB.wireSelect = (el, onChange) => { const all = $('[data-all]', el); if (all) all.onchange = () => { $$('[data-sel]', el).forEach((x) => (x.checked = all.checked)); onChange && onChange(); }; $$('[data-sel]', el).forEach((x) => (x.onchange = () => onChange && onChange())); };
   BB.qs = (q, extra = {}) => new URLSearchParams(Object.entries({ ...q, ...extra }).filter(([, v]) => v !== '' && v !== undefined && v !== null)).toString();
+  // Drop-down menus (More, Ask on WhatsApp …): close after a pick, and when clicking anywhere else.
+  document.addEventListener('click', (e) => {
+    const pick = e.target.closest('.step-menu [role=menuitem]'); if (pick) { const d = pick.closest('details'); if (d) d.removeAttribute('open'); return; }
+    for (const d of document.querySelectorAll('details.step-menu[open]')) if (!d.contains(e.target)) d.removeAttribute('open');
+  });
 })();

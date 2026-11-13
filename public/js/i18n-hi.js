@@ -14,7 +14,7 @@
     'Rate your recruiter': 'अपने रिक्रूटर को रेटिंग दें', 'Tell us more': 'और बताइए', 'Update': 'अपडेट करें', 'Thank you for your feedback': 'आपकी राय के लिए धन्यवाद', 'Tap the stars first': 'पहले स्टार दबाएँ', 'Post on Google': 'Google पर लिखें', 'No recruiter to rate yet.': 'अभी रेटिंग देने के लिए कोई रिक्रूटर नहीं है।',
     'Prepare for your interview': 'अपने इंटरव्यू की तैयारी करें', 'No password? Email me a login code': 'पासवर्ड नहीं है? ईमेल पर लॉगिन कोड भेजें', 'Log in with a code': 'कोड से लॉग इन करें', 'We email you a 6-digit code. No password needed.': 'हम आपको ईमेल पर 6 अंकों का कोड भेजेंगे। पासवर्ड की ज़रूरत नहीं।',
     // ---- top bar, menu, footer ----
-    'Menu': 'मेन्यू', 'For Employers': 'नियोक्ताओं के लिए', 'For Job Seekers': 'नौकरी ढूँढने वालों के लिए', 'Client login': 'क्लाइंट लॉगिन', 'Candidate login': 'उम्मीदवार लॉगिन',
+    'Menu': 'मेन्यू', 'For Employers': 'नियोक्ताओं के लिए', 'For Job Seekers': 'नौकरी ढूँढने वालों के लिए', 'Client login': 'क्लाइंट लॉगिन', 'Candidate login': 'उम्मीदवार लॉगिन', 'Job seeker login': 'नौकरी चाहने वाले का लॉगिन',
     'Home': 'होम', 'Back to home': 'होम पर वापस', 'Need help?': 'मदद चाहिए?', 'Log out': 'लॉग आउट', 'Already registered?': 'पहले से रजिस्टर्ड हैं?',
     'Client account': 'क्लाइंट अकाउंट', 'Candidate profile': 'उम्मीदवार प्रोफ़ाइल', 'My profile': 'मेरी प्रोफ़ाइल',
     '© 2026 BrillBrains Hiring Solutions': '© 2026 BrillBrains Hiring Solutions',
@@ -158,7 +158,7 @@
     'Your business': 'आपका बिज़नेस', 'B2C': 'B2C', 'B2B': 'B2B', 'Both': 'दोनों', 'Showroom B2C': 'शोरूम B2C', 'Manufacturer B2B': 'मैन्युफ़ैक्चरर B2B',
     'When do you want to hire?': 'आपको कब भर्ती करनी है?', 'Tell us when you want to hire': 'बताइए आपको कब भर्ती करनी है', 'Hiring now': 'अभी चाहिए', 'Hiring soon': 'जल्द चाहिए', 'Just exploring': 'बस देख रहे हैं',
     'Which roles?': 'कौन-से पद?', 'e.g. 2 sales executives, 1 cashier': 'जैसे 2 सेल्स एग्ज़ीक्यूटिव, 1 कैशियर',
-    'Experience': 'अनुभव', 'Where have you worked?': 'आपने कहाँ काम किया है?', 'Tick all that apply.': 'जो भी लागू हों, सब पर टिक करें।', 'Wholesaler': 'होलसेलर', 'Manufacturer': 'मैन्युफ़ैक्चरर', 'Retailer': 'रिटेलर', 'Worked in': 'काम किया',
+    'Experience': 'अनुभव', 'Total work experience': 'कुल काम का अनुभव', 'Where have you worked?': 'आपने कहाँ काम किया है?', 'Tick all that apply.': 'जो भी लागू हों, सब पर टिक करें।', 'Wholesaler': 'होलसेलर', 'Manufacturer': 'मैन्युफ़ैक्चरर', 'Retailer': 'रिटेलर', 'Worked in': 'काम किया',
     'Tick where you have worked: wholesaler, manufacturer or retailer': 'टिक करें आपने कहाँ काम किया है: होलसेलर, मैन्युफ़ैक्चरर या रिटेलर', 'Fresher': 'फ़्रेशर', '1–3 years': '1–3 साल', '3–5 years': '3–5 साल', '5–10 years': '5–10 साल', '10+ years': '10+ साल',
     'By sending, you agree to be contacted on WhatsApp, phone and email, and to your profile being shared with employers.': 'भेजकर आप WhatsApp, फ़ोन और ईमेल पर संपर्क किए जाने और अपनी प्रोफ़ाइल नियोक्ताओं से साझा किए जाने के लिए सहमत होते हैं।',
     'Send my details': 'मेरी जानकारी भेजें', 'Send request': 'रिक्वेस्ट भेजें', 'Sending…': 'भेज रहे हैं…', 'Leave this empty': 'इसे खाली छोड़ें',
@@ -384,7 +384,7 @@
     [/^Remove (.+)$/, '$1 हटाएँ'], [/^· Joined (.+)$/, '· जॉइन किया $1'], [/^Position (\d+)$/, 'पद $1'], [/^\(Signed online \(I agree\)\)$/, '(ऑनलाइन साइन किया (मैं सहमत हूँ))'],
     // Page titles in the browser tab
     [/^Jewellery jobs · BrillBrains Hiring Solutions$/, 'ज्वेलरी नौकरियाँ · BrillBrains Hiring Solutions'], [/^Hire jewellery staff · BrillBrains Hiring Solutions$/, 'ज्वेलरी स्टाफ़ रखें · BrillBrains Hiring Solutions'],
-    [/^Client login · BrillBrains Hiring Solutions$/, 'क्लाइंट लॉगिन · BrillBrains Hiring Solutions'], [/^Candidate login · BrillBrains Hiring Solutions$/, 'उम्मीदवार लॉगिन · BrillBrains Hiring Solutions'], [/^Hello, (.+)$/, 'नमस्ते, $1'],
+    [/^Client login · BrillBrains Hiring Solutions$/, 'क्लाइंट लॉगिन · BrillBrains Hiring Solutions'], [/^Job seeker login · BrillBrains Hiring Solutions$/, 'नौकरी चाहने वाले का लॉगिन · BrillBrains Hiring Solutions'], [/^Candidate login · BrillBrains Hiring Solutions$/, 'उम्मीदवार लॉगिन · BrillBrains Hiring Solutions'], [/^Hello, (.+)$/, 'नमस्ते, $1'],
     [/^Offer details needed — add the salary and joining date, and we share the offer with (.+)\.$/, 'ऑफ़र की जानकारी चाहिए — सैलरी और जॉइनिंग की तारीख जोड़ें, फिर हम $1 को ऑफ़र भेजेंगे।'],
   ];
   // Home page and partners page (landing.js).

@@ -32,7 +32,8 @@ function ask(candId, by, auto, o = {}) {
   if (!(o.stale ? needsUpdate(c, o.stale) : detailsMissing(c))) return { skipped: 'Resume and details already there' };
   if (auto && askedLately(c)) return { skipped: 'Asked in the last 30 days' };
   const rule = o.rule || 'resume_request';
-  return L.sendWA({ ptype: 'candidate', pid: c.id, format: 'bbhs_profile_update', vars: { link: linkOf(c.id) }, by, ap: o.ap, ...(auto ? { auto: true, rule, dedupe: `profile:${c.id}${rule === 'resume_request' ? '' : `:${rule}:${L.istDay()}`}` } : { bulk: true, dedupe: `profile:${c.id}:${L.istDay()}` }) });
+  const fmt = ((D.settings().formats || {}).bbhs_details_reply || {}).approved ? 'bbhs_details_reply' : 'bbhs_profile_update'; // the reply-here version once Meta approves it
+  return L.sendWA({ ptype: 'candidate', pid: c.id, format: fmt, vars: { link: linkOf(c.id) }, by, ap: o.ap, ...(auto ? { auto: true, rule, dedupe: `profile:${c.id}${rule === 'resume_request' ? '' : `:${rule}:${L.istDay()}`}` } : { bulk: true, dedupe: `profile:${c.id}:${L.istDay()}` }) });
 }
 const ruleOn = (key) => { const r = (D.settings().auto_rules || []).find((x) => x.key === key); return !r || r.on; };
 // Screened in: when the profile needs an update, the link goes instead of the best-time question (the page asks it too).
@@ -123,4 +124,34 @@ route('POST', '/api/pub/profile/:token', { rate: { key: 'profilelink', max: 20, 
   return { ok: true };
 });
 
-module.exports = { ask, sweep, refreshSweep, atScreening, beforeClient, needsUpdate, pageHtml };
+// Total experience on WhatsApp: tap buttons (Fresher, 1–3 years …); the tap saves it.
+function askExperience(candId, by, bulk) {
+  const c = get('SELECT * FROM candidates WHERE id=? AND removed=0 AND merged_into IS NULL', candId); if (!c) return { skipped: 'Not found' };
+  if (c.exp_total !== null && c.exp_total !== undefined && c.exp_total !== '') return { skipped: 'Experience already there' };
+  return L.sendWA({ ptype: 'candidate', pid: c.id, format: 'bbhs_experience_ask', vars: {}, by, ...(bulk ? { bulk: true } : {}), dedupe: `exp:${c.id}:${L.istDay()}` });
+}
+// A typed answer to the details request ("current 18000, expecting 22k, 1 month notice"): what it says is saved.
+const money = (v) => { const m = String(v || '').toLowerCase().replace(/,/g, '').match(/(\d+(?:\.\d+)?)\s*(k|thousand|lakh|lac|l|lpa)?/); if (!m) return null; let n = Number(m[1]); const u = m[2] || ''; if (/^(k|thousand)$/.test(u)) n *= 1000; else if (/^(lakh|lac|l|lpa)$/.test(u)) n = (n * 100000) / 12; else if (n < 100) return null; return Math.round(n); };
+function byRules(text) {
+  const t = String(text || '').toLowerCase(); const out = {};
+  const cur = t.match(/(current|present|now|ctc|salary)[^\d]{0,25}(\d[\d,.]*\s*(k|thousand|lakh|lac|lpa|l)?)/); if (cur) out.cur_salary = money(cur[2]);
+  const exp = t.match(/(expect\w*|want\w*)[^\d]{0,25}(\d[\d,.]*\s*(k|thousand|lakh|lac|lpa|l)?)/); if (exp) out.exp_salary = money(exp[2]);
+  if (/immediate/.test(t)) out.notice_days = 0; else { const n = t.match(/(\d+)\s*(day|week|month)s?\s*(notice)?/); if (n && /notice|day|month|week/.test(t)) out.notice_days = Number(n[1]) * (n[2] === 'month' ? 30 : n[2] === 'week' ? 7 : 1); }
+  return out;
+}
+async function readReply(candId, text) {
+  const LLM = require('./llm'); let got = null;
+  if (LLM.available()) {
+    const N = (d) => ({ type: ['number', 'null'], description: d });
+    try { got = await LLM.json({ name: 'details_reply', maxTokens: 300, system: 'A job seeker in India replied on WhatsApp to a request for their current salary, expected salary, notice period and total work experience. Read only what the reply says. Salaries per month in rupees (LPA or yearly / 12; 18k = 18000). Notice in days (immediate = 0, months x30). Use null for anything not stated. Never guess.', user: String(text).slice(0, 1500), schema: { type: 'object', additionalProperties: false, required: ['cur_salary', 'exp_salary', 'notice_days', 'exp_total'], properties: { cur_salary: N('Current monthly salary in rupees'), exp_salary: N('Expected monthly salary in rupees'), notice_days: N('Notice period in days'), exp_total: N('Total work experience in years') } } }); } catch (e) { console.error('Details reply', candId, e.message); }
+  }
+  if (!got) got = byRules(text);
+  const fill = {};
+  for (const k of ['cur_salary', 'exp_salary', 'notice_days', 'exp_total']) if (typeof got[k] === 'number' && Number.isFinite(got[k]) && got[k] >= 0 && !(k.endsWith('salary') && got[k] < 1000)) fill[k] = k === 'exp_total' ? got[k] : Math.round(got[k]);
+  if (!Object.keys(fill).length) return [];
+  update('candidates', candId, { ...fill, last_updated: now() });
+  D.history('Candidate on WhatsApp', 'details from reply', candId, null, null, Object.keys(fill).join(', '));
+  return Object.keys(fill);
+}
+
+module.exports = { askExperience, readReply, ask, sweep, refreshSweep, atScreening, beforeClient, needsUpdate, pageHtml };

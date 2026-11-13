@@ -568,7 +568,7 @@ BB.views.landing = (r) => {
       </section>
       <section class="card pub-card" data-leadcard></section>
     </main>
-    <div class="signin-row"><span class="muted">Already registered?</span><a href="/my-account">Client login</a><a href="/my-profile">Candidate login</a></div>
+    <div class="signin-row"><span class="muted">Already registered?</span><a href="/my-account">Client login</a><a href="/my-profile">Job seeker login</a></div>
     <div class="pub-foot">© ${new Date().getFullYear()} ${esc(BB.boot.business.name)}</div></div>`;
   BB.leadFormCard($('[data-leadcard]'), 'job', (r && r.q) || {});
 };

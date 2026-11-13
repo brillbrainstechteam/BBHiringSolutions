@@ -73,9 +73,22 @@ const OFFER_TEMPLATE = path.join(__dirname, '..', 'assets', 'Generic_Offer_Lette
 route('GET', '/api/offer-template/file', T, () => { if (!fs.existsSync(OFFER_TEMPLATE)) throw httpError(404, 'The offer letter template has not been added yet.'); return { __file: { name: 'Offer Letter Template.docx', mime: DOCX, buf: fs.readFileSync(OFFER_TEMPLATE) } }; });
 const PITCH_DECK = path.join(__dirname, '..', 'assets', 'BrillBrains Hiring Solutions Pitch Deck.pptx');
 // Files to attach to an email, read when it goes out.
+// One interview as a calendar event (opens in Google Calendar, Outlook, Apple Calendar).
+function icsFor(ivId) {
+  const iv = get('SELECT * FROM interviews WHERE id=?', ivId); if (!iv || !iv.at) return '';
+  const a = get('SELECT * FROM applications WHERE id=?', iv.app_id) || {}; const j = get('SELECT * FROM jobs WHERE id=?', a.job_id) || {};
+  const c = get('SELECT name FROM candidates WHERE id=?', a.candidate_id) || {}; const cl = get('SELECT company FROM clients WHERE id=?', j.client_id) || {};
+  const t = (d) => new Date(d).toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+  const esc = (x) => String(x || '').replace(/[\\;,]/g, (m) => `\\${m}`).replace(/\n/g, '\\n');
+  const start = new Date(iv.at); const end = new Date(start.getTime() + 45 * 60000);
+  return ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//BrillBrains Hiring//EN', 'METHOD:PUBLISH', 'BEGIN:VEVENT', `UID:${iv.id}-${t(iv.at)}@brillbrains`, `DTSTAMP:${t(Date.now())}`, `DTSTART:${t(start)}`, `DTEND:${t(end)}`,
+    `SUMMARY:${esc(`Interview: ${c.name || ''} for ${j.title || ''}${cl.company ? ` (${cl.company})` : ''}`)}`, `LOCATION:${esc(iv.place || (iv.mode === 'phone' ? 'Phone call' : iv.mode === 'video' ? 'Video call' : ''))}`,
+    `DESCRIPTION:${esc(`${iv.name || 'Interview'} · ${a.id || ''}`)}`, 'BEGIN:VALARM', 'TRIGGER:-PT30M', 'ACTION:DISPLAY', 'DESCRIPTION:Interview in 30 minutes', 'END:VALARM', 'END:VEVENT', 'END:VCALENDAR'].join('\r\n');
+}
 function mailFiles(list) {
   const out = [];
   for (const a of list || []) {
+    if (a.ics_iv) { const ics = icsFor(a.ics_iv); if (ics) out.push({ name: 'interview.ics', mime: 'text/calendar; method=PUBLISH; charset=UTF-8', buf: Buffer.from(ics, 'utf8') }); continue; }
     if (a.backup) { const f = require('./exports').fileOf(a.backup); if (f) out.push({ name: a.backup, mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', buf: fs.readFileSync(f) }); continue; }
     if (a.pitch) { if (fs.existsSync(PITCH_DECK)) out.push({ name: path.basename(PITCH_DECK), mime: 'application/vnd.openxmlformats-officedocument.presentationml.presentation', buf: fs.readFileSync(PITCH_DECK) }); } else if (a.jd_job) { const j = get('SELECT * FROM jobs WHERE id=?', a.jd_job); if (j) out.push({ name: `${j.title} Job Description.pdf`, mime: 'application/pdf', buf: TEAM.jdPdf(j) }); } else if (a.agreement) { const f = agreementFile(); if (f) out.push({ name: f.name, mime: f.mime, buf: f.buf }); } else if (a.file_id) { const f = get('SELECT * FROM files WHERE id=?', a.file_id); if (f) out.push({ name: f.name, mime: f.mime, buf: F.readStored(f) }); }
   }

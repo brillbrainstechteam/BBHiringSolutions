@@ -41,7 +41,7 @@
           ${field({ name: 'hr_email', label: 'HR email ID', type: 'email', opt: true, placeholder: 'If someone else handles hiring', attrs: 'autocomplete="off"' })}
         </div>
         <div data-only="job" class="stack">
-          <label class="field" data-f="experience"><span class="lab">Experience <span class="opt">(optional)</span></span><div class="choice">${EXPERIENCE.map((x) => `<label style="min-width:96px"><input type="radio" name="experience" value="${x}"> ${x}</label>`).join('')}</div></label>
+          <label class="field" data-f="experience"><span class="lab">Total work experience <span class="opt">(optional)</span></span><div class="choice">${EXPERIENCE.map((x) => `<label style="min-width:96px"><input type="radio" name="experience" value="${x}"> ${x}</label>`).join('')}</div></label>
           ${field({ name: 'exp_jewellery', label: 'Experience in the jewellery industry', type: 'select', opt: true, options: JEWEL_EXP, placeholder: 'Select years' })}
           ${field({ name: 'current_company', label: 'Current or last company', opt: true, placeholder: 'e.g. Tanishq, PC Jeweller · fills in from your CV' })}
           <div class="field" data-f="skills"><span class="lab">Your skills <span class="opt">(optional · tap all that fit)</span></span><div data-skillbox class="skill-groups"></div>

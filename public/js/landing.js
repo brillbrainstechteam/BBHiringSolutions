@@ -41,7 +41,7 @@
     const l = L(); const c = l.contact || {}; const g = l.legal || {};
     return `<footer class="lp-foot"><div class="lp-foot-in">
       <div class="lp-foot-brand">${BB.brand('')}<p>Hiring for the jewellery trade, since 2011.</p></div>
-      <div><b>Job seekers</b><a href="/apply">Apply</a><a href="/my-profile">Candidate login</a><a href="/#openings" data-jobs-link>Open jobs</a></div>
+      <div><b>Job seekers</b><a href="/apply">Apply</a><a href="/my-profile">Job seeker login</a><a href="/#openings" data-jobs-link>Open jobs</a></div>
       <div><b>Employers</b><a href="/hire">Hire with us</a><a href="/my-account">Client login</a><a href="/partners">Partners</a></div>
       <div><b>Talk to us</b>${(c.phones || []).map((p) => `<a href="tel:${esc(p.replace(/\s/g, ''))}" data-no-i18n>${esc(p)}</a>`).join('')}${c.email ? `<a href="mailto:${esc(c.email)}" data-no-i18n>${esc(c.email)}</a>` : ''}<a href="https://wa.me/91${esc(BB.boot.business.support_phone)}" target="_blank" rel="noopener">WhatsApp</a></div>
     </div><div class="lp-legal"><span>© ${new Date().getFullYear()} ${esc(BB.boot.business.name)}</span>${c.site ? `<a href="${esc(c.site)}" target="_blank" rel="noopener">brillbrainsconsultants.com</a>` : ''}${g.terms ? `<a href="${esc(g.terms)}" target="_blank" rel="noopener">Terms</a>` : ''}${g.privacy ? `<a href="${esc(g.privacy)}" target="_blank" rel="noopener">Privacy</a>` : ''}${g.refund ? `<a href="${esc(g.refund)}" target="_blank" rel="noopener">Refunds</a>` : ''}</div></footer>`;
@@ -56,7 +56,7 @@
     const c = L().contact || {}; const phone = (c.phones || [])[0];
     const acct = BB.token('client') ? 'client' : BB.token('candidate') ? 'candidate' : null;
     const item = (href, b, sub, attr = '') => `<a href="${href}"${attr}><b>${b}</b><span>${sub}</span></a>`;
-    const seekers = item('/apply', 'Apply for a job', 'One form, free for you') + item('/#openings', 'See open jobs', 'Roles we are hiring for now', ' data-jobs-link') + item('/my-profile', 'Candidate login', 'Your profile and applications');
+    const seekers = item('/apply', 'Apply for a job', 'One form, free for you') + item('/#openings', 'See open jobs', 'Roles we are hiring for now', ' data-jobs-link') + item('/my-profile', 'Job seeker login', 'Your profile and applications');
     const employers = item('/hire', 'Hire with us', 'Share your requirement in two minutes') + item('/my-account', 'Client login', 'Openings, shortlists and bills');
     const dd = (label, body, on) => `<details class="lp-dd lp-hov"><summary${on ? ' class="on"' : ''}>${label} <i aria-hidden="true">▾</i></summary><div class="lp-dd-menu">${body}</div></details>`;
     return `<div class="lp-util"><a href="${MAIN}" target="_blank" rel="noopener"><span>Part of</span> <b>BrillBrains Consultants</b> <span>· since 2011</span> ↗</a>

@@ -119,6 +119,40 @@ async function attachResume({ file, buf, source = 'Google Drive' }, by) {
   return { status: made ? 'created' : 'attached', id: c.id, name: c.name };
 }
 
+// A resume sent on WhatsApp (already saved on the candidate). AI reads it and fills only what is still empty (the
+// name too, while it is just their WhatsApp name or number); then a short thank-you.
+async function fromWhatsApp(candId, name, base64) {
+  const L = require('./logic'); const LLM = require('./llm'); const cvparse = require('./cvparse');
+  const buf = Buffer.from(String(base64 || '').replace(/^data:[^,]*,/, ''), 'base64');
+  if (LLM.available()) {
+    let text = ''; try { text = cvparse.cvText(name, buf) || ''; } catch { text = ''; }
+    let ai = null;
+    try { ai = await LLM.extractCandidate({ resume: text, files: text.replace(/\s/g, '').length < 100 && /\.(pdf|jpe?g|png)$/i.test(name) ? [{ name, buf }] : [] }); } catch (e) { console.error('WhatsApp resume AI', candId, e.message); }
+    const c = get('SELECT * FROM candidates WHERE id=?', candId);
+    if (ai && c) {
+      const empty = (v) => v === null || v === undefined || v === '' || (Array.isArray(v) && !v.length);
+      const num = (v) => typeof v === 'number' && Number.isFinite(v);
+      const fill = {};
+      if (ai.name && (!c.name || /^WhatsApp\b/i.test(c.name) || /^\+?\d[\d\s-]+$/.test(c.name))) fill.name = ai.name;
+      if (ai.email && empty(c.email)) fill.email = String(ai.email).toLowerCase();
+      if (ai.city && empty(c.city)) fill.city = ai.city;
+      if (ai.job_wanted && empty(c.job_wanted)) fill.job_wanted = ai.job_wanted;
+      if (ai.current_company && empty(c.current_company)) fill.current_company = ai.current_company;
+      if (num(ai.exp_total) && empty(c.exp_total)) fill.exp_total = ai.exp_total;
+      if (num(ai.exp_jewellery) && empty(c.exp_jewellery)) fill.exp_jewellery = ai.exp_jewellery;
+      if (num(ai.current_salary_month) && ai.current_salary_month > 0 && empty(c.cur_salary)) fill.cur_salary = Math.round(ai.current_salary_month);
+      if (num(ai.expected_salary_month) && ai.expected_salary_month > 0 && empty(c.exp_salary)) fill.exp_salary = Math.round(ai.expected_salary_month);
+      if (num(ai.notice_days) && empty(c.notice_days)) fill.notice_days = Math.round(ai.notice_days);
+      if (Object.keys(fill).length) { update('candidates', candId, fill); D.history('CV reader', 'filled from CV', candId, null, null, Object.keys(fill).join(', ')); }
+    }
+  }
+  const c = get('SELECT * FROM candidates WHERE id=?', candId); if (!c) return;
+  const first = c.name && !/^WhatsApp\b/i.test(c.name) && !/^\+?\d/.test(c.name) ? ` ${c.name.split(' ')[0]}` : '';
+  try {
+    L.sendWA({ ptype: 'candidate', pid: candId, text: `Thank you${first}, we have received your resume. Our recruitment team will contact you when there is a suitable opening.\n\nBrillBrains Hiring Solutions`, by: { label: 'Auto' }, rule: 'resume_ack', auto: true, dedupe: `resume_ack:${candId}:${L.istDay()}` });
+  } catch (e) { console.error('Resume thank-you', candId, e.message); }
+}
+
 // Many files (a zip, or one resume): the summary, and every file that found nobody.
 async function attachMany(list, by, source) {
   const out = { attached: 0, created: 0, skipped: 0, unmatched: [], rows: [] };
@@ -140,4 +174,4 @@ route('POST', '/api/candidates/resume-files', { auth: 'team', levels: ['super'] 
   return { ...res, rows: undefined, total: list.length };
 });
 
-module.exports = { attachResume, attachMany, nameFromFile, roleOf };
+module.exports = { fromWhatsApp, attachResume, attachMany, nameFromFile, roleOf };

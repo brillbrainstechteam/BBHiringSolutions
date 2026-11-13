@@ -956,6 +956,8 @@ route('POST', '/api/crm/inbound', {}, async (ctx) => {
         const c = get('SELECT * FROM candidates WHERE id=?', r.pid); const owner = c && c.recruiter_id;
         for (const uid of owner ? [owner] : L.superAdmins().map((x) => x.id)) L.alertUser(uid, `Resume on WhatsApp: ${c.name}`, r.pid, false);
       }
+      // AI fills the details still empty, then a short thank-you (once a day per person)
+      setImmediate(() => require('./resumes').fromWhatsApp(r.pid, name, b.media.base64).catch((e) => console.error('WhatsApp resume', r.pid, e.message)));
     } catch (e) { insert('notes', { record_id: r.pid, text: `File on WhatsApp not saved as CV: ${e.message}`, author: 'WhatsApp', at: now() }); }
   }
   // The number they wrote to: our messages to them go from it, so their chat stays in one place.

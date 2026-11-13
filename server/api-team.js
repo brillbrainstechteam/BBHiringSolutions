@@ -537,7 +537,7 @@ function candMatch(q) {
 }
 // Campaigns, ad sets and ad names seen so far, for the "Any ad" filter.
 const adOptions = (table) => [...new Set(all(`SELECT ad_campaign, ad_set, ad_name FROM ${table} WHERE ad_campaign IS NOT NULL OR ad_set IS NOT NULL OR ad_name IS NOT NULL`).flatMap((r) => [r.ad_campaign, r.ad_set, r.ad_name]).filter(Boolean))].sort();
-const CAND_EXPORT = ['id', 'name', 'whatsapp', 'email', 'domain', [(r) => (r.skills || []).join(', '), 'skills'], 'job_wanted', 'department', 'city', 'state', 'exp_total', 'exp_jewellery', [(r) => (r.exp_business || []).join(', '), 'worked_in'], [(r) => (r.cur_salary ? Math.round(r.cur_salary / 12) : ''), 'current_per_month'], [(r) => (r.exp_salary ? Math.round(r.exp_salary / 12) : ''), 'expected_per_month'], 'notice_days', 'current_company', 'looking', 'source', [(r) => L.istDay(r.created_at), 'applied_on']];
+const CAND_EXPORT = ['id', 'name', 'whatsapp', 'email', [(r) => (r.cv_file ? L.link('team/candidates', `?cv=${r.id}`) : r.cv_link || ''), 'resume_link'], 'domain', [(r) => (r.skills || []).join(', '), 'skills'], 'job_wanted', 'department', 'city', 'state', 'exp_total', 'exp_jewellery', [(r) => (r.exp_business || []).join(', '), 'worked_in'], [(r) => (r.cur_salary ? Math.round(r.cur_salary / 12) : ''), 'current_per_month'], [(r) => (r.exp_salary ? Math.round(r.exp_salary / 12) : ''), 'expected_per_month'], 'notice_days', 'current_company', 'looking', 'source', [(r) => L.istDay(r.created_at), 'applied_on']];
 // Client leads for everyone who can see them; candidates, hires and downloads stay with the super admin.
 route('GET', '/api/leads', T, (ctx) => {
   const u = ctx.user; const sup = isSuper(u);
@@ -1345,6 +1345,7 @@ route('GET', '/api/candidates/report', T, (ctx) => {
     jewellery: JEW.map(([k, l]) => ({ label: l, n: jewM.get(k) || 0, f: { jewellery: k } })),
     looking: L.JOB_STATUSES.map((k) => ({ label: k, n: lookM.get(k) || 0, f: { looking: k } })),
     worked: L.BUSINESS_TYPES.map((k) => ({ label: k, n: rows.filter((c) => (c.exp_business || []).includes(k)).length, f: { worked: k } })),
+    worked_people: rows.filter((c) => (c.exp_business || []).length).length, // each person once (someone can tick two or three)
     assigned: [{ label: 'Assigned', n: rows.filter((c) => c.agency_id).length, f: { agency: 'any' } }, { label: 'Not assigned', n: rows.filter((c) => !c.agency_id).length, f: { agency: 'none' } }],
     resume: [{ label: 'Resume on file', n: rows.filter((c) => c.cv_file).length, f: { cv: 'yes' } }, { label: 'No resume', n: rows.filter((c) => !c.cv_file).length, f: { cv: 'no' } }],
     weeks,
@@ -1527,6 +1528,12 @@ route('POST', '/api/candidates/:id/map-role', T, (ctx) => {
   const a = b.app ? get('SELECT * FROM applications WHERE id=? AND candidate_id=?', b.app, c.id) : null; if (a) L.appHist(a.id, a.step, ctx.actor, line, 'interview');
   const fresh = get('SELECT * FROM candidates WHERE id=?', c.id); return { ok: true, jobs: L.jobsForRole(role, {}).filter((j) => seeJob(u, j)).slice(0, 5).map((j) => ({ id: j.id, title: j.title, city: j.city })), also_roles: fresh.also_roles };
 });
+route('POST', '/api/candidates/:id/ask', T, (ctx) => {
+  const c = get('SELECT * FROM candidates WHERE id=?', L.resolveId(ctx.params.id)); if (!c) throw httpError(404, 'Candidate not found');
+  const what = ctx.body.what; const PL = require('./profilelink');
+  const r = what === 'experience' ? PL.askExperience(c.id, ctx.actor, false) : PL.ask(c.id, ctx.actor, false);
+  if (r && r.skipped) throw httpError(400, `Not sent: ${r.skipped}`); return { ok: true };
+});
 route('POST', '/api/candidates/bulk', T, (ctx) => {
   const { ids, action, job_id } = ctx.body; const out = { done: 0, errors: [] };
   if (action === 'add_to_job') {
@@ -1534,6 +1541,8 @@ route('POST', '/api/candidates/bulk', T, (ctx) => {
     for (const id of ids) { try { L.createApplication(id, job_id, ctx.actor, null, 'Added from resume bank'); out.done++; } catch (e) { out.errors.push(`${id}: ${e.message}`); } }
   } else if (action === 'ask_profile') { // resume & details request to the ticked candidates (those still missing something)
     for (const id of ids.slice(0, D.settings().bulk_budget)) { const r = require('./profilelink').ask(id, ctx.actor, false); if (r && r.skipped) out.errors.push(`${id}: ${r.skipped}`); else out.done++; }
+  } else if (action === 'ask_experience') { // total experience question on WhatsApp; the tap saves it
+    for (const id of ids.slice(0, D.settings().bulk_budget)) { const r = require('./profilelink').askExperience(L.resolveId ? L.resolveId(id) : id, ctx.actor, true); if (r && r.skipped) out.errors.push(`${id}: ${r.skipped}`); else out.done++; }
   } else if (action === 'ask_status') { // the job status question on WhatsApp; their tap sets the status
     const states = L.appStates();
     for (const id of ids.slice(0, D.settings().bulk_budget)) { const c = get('SELECT * FROM candidates WHERE id=?', L.resolveId(id)); if (!c) { out.errors.push(`${id}: not found`); continue; }
@@ -1918,6 +1927,51 @@ route('POST', '/api/applications/bulk', T, (ctx) => {
 
 // ---------- interviews ----------
 // Everyone screened in and not yet at the offer, with the round they are in now: telephonic, virtual, then the client.
+// Reminders for several booked interviews at once. ids: interview ids, or application ids (their next booked interview).
+route('POST', '/api/interviews/remind', T, (ctx) => {
+  const b = ctx.body || {}; const to = [].concat(b.to || []); const ch = [].concat(b.channels || []);
+  if (!to.length) throw httpError(400, 'Pick who gets the reminder', 'to'); if (!ch.length) throw httpError(400, 'Pick WhatsApp, email or both', 'channels');
+  if (b.when === 'at' && !b.at) throw httpError(400, 'Pick the date and time', 'at');
+  const mailer = require('./mailer'); const out = { done: 0, errors: [] }; const seen = new Set(); const nowMs = Date.now();
+  for (const id of [].concat(b.ids || []).slice(0, 200)) {
+    const iv = get('SELECT * FROM interviews WHERE id=?', id) || get("SELECT * FROM interviews WHERE app_id=? AND status IN ('Scheduled','Rescheduled') AND at>? ORDER BY at LIMIT 1", id, now()) || get("SELECT * FROM interviews WHERE app_id=? AND status IN ('Scheduled','Rescheduled') ORDER BY at DESC LIMIT 1", id);
+    if (!iv) { out.errors.push(`${id}: no interview booked`); continue; }
+    if (seen.has(iv.id)) continue; seen.add(iv.id);
+    if (!['Scheduled', 'Rescheduled'].includes(iv.status) || new Date(iv.at).getTime() < nowMs) { out.errors.push(`${id}: not an upcoming interview`); continue; }
+    const a = get('SELECT * FROM applications WHERE id=?', iv.app_id); if (!a || !seeApp(ctx.user, a)) { out.errors.push(`${id}: not yours to remind`); continue; }
+    const job = get('SELECT * FROM jobs WHERE id=?', a.job_id); const cand = get('SELECT * FROM candidates WHERE id=?', a.candidate_id) || {}; const client = get('SELECT * FROM clients WHERE id=?', job.client_id) || {};
+    const ivAt = new Date(iv.at).getTime();
+    const sendAt = b.when === '1d' ? ivAt - 86400000 : b.when === '2h' ? ivAt - 7200000 : b.when === 'at' ? new Date(b.at).getTime() : null;
+    const later = sendAt && sendAt > nowMs + 60000 ? new Date(sendAt).toISOString() : undefined;
+    const vars = L.ivVars(iv, job); const tag = `ivb:${iv.id}:${b.when || 'now'}:${later || ''}`;
+    const interviewer = iv.interviewer ? get('SELECT * FROM users WHERE lower(name)=lower(?)', iv.interviewer) : null;
+    const people = [];
+    if (to.includes('candidate')) people.push({ ptype: 'candidate', pid: cand.id, email: cand.email, name: cand.name, vars });
+    if (to.includes('client') && iv.round === 'client') people.push({ ptype: 'client', pid: client.id, email: client.email, name: client.contact || client.company, vars: { ...vars, round: `interview with ${cand.name}` } });
+    if (to.includes('interviewer') && interviewer) people.push({ ptype: 'user', pid: interviewer.id, email: interviewer.email, name: interviewer.name, task: `${vars.round} with ${cand.name} for ${job.title}, ${vars.date} ${vars.time}` });
+    if (!people.length) { out.errors.push(`${id}: nobody to remind (client only for client rounds; interviewer needs a login)`); continue; }
+    let sent = 0;
+    for (const p of people) {
+      if (ch.includes('whatsapp')) {
+        try {
+          const r = p.ptype === 'user'
+            ? L.sendWA({ ptype: 'user', pid: p.pid, format: 'bbhs_team_task_alert', vars: { task: `Interview reminder: ${p.task}`, record_id: a.id }, ap: a.id, iv: iv.id, by: ctx.actor, bulk: true, noEmailCopy: true, sendLater: later, dedupe: `${tag}:u:${p.pid}` })
+            : L.sendWA({ ptype: p.ptype, pid: p.pid, format: b.format || 'bbhs_interview_reminder', vars: p.vars, ap: a.id, iv: iv.id, by: ctx.actor, bulk: true, noEmailCopy: true, sendLater: later, dedupe: `${tag}:${p.ptype}:${p.pid}` });
+          if (r && r.skipped) out.errors.push(`${id} ${p.name}: WhatsApp ${r.skipped}`); else sent++;
+        } catch (e) { out.errors.push(`${id} ${p.name}: WhatsApp ${e.message}`); }
+      }
+      if (ch.includes('email')) {
+        if (!p.email) { out.errors.push(`${id} ${p.name}: no email`); continue; }
+        const v = p.vars || vars; const subject = `Reminder: ${v.round} for ${job.title} on ${v.date} at ${v.time}`;
+        const lines = [`Hello ${String(p.name || '').split(' ')[0]},`, '', `This is a reminder of the ${v.round} for the ${job.title} role.`, '', `Date: ${v.date}`, `Time: ${v.time}`, `Venue: ${v.place || '—'}`, ...(b.note ? ['', String(b.note)] : []), '', 'The calendar invite is attached.', '', 'BrillBrains Hiring Solutions'];
+        const html = mailer.layout(subject, `<p style="font-size:14px;line-height:1.7">${lines.map((x) => String(x).replace(/[&<>]/g, (m) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[m]))).join('<br>')}</p>`);
+        try { mailer.queue({ to: p.email, subject, text: lines.join('\n'), html, kind: 'interview_reminder', recordId: a.id, sendAfter: later, dedupe: `${tag}:mail:${p.ptype}:${p.pid}`, attachments: [{ ics_iv: iv.id }] }); sent++; } catch (e) { out.errors.push(`${id} ${p.name}: email ${e.message}`); }
+      }
+    }
+    if (sent) { out.done++; L.appHist ? L.appHist(a.id, a.step, ctx.actor, `Interview reminder ${later ? `set for ${L.istFmt(later)}` : 'sent'} (${ch.join(' + ')}) to ${people.map((x) => x.ptype === 'user' ? 'interviewer' : x.ptype).join(', ')}`) : null; }
+  }
+  return out;
+});
 route('GET', '/api/interviews/rounds', T, (ctx) => {
   const want = ctx.query.round || ''; const settled = ['Cleared', 'Not needed', 'Not cleared'];
   const rows = visibleApps(ctx.user).filter((a) => a.result === 'open' && (['Our interview', 'Sent to client', 'Client interview'].includes(a.step) || (['Applied', 'Screening'].includes(a.step) && a.screen === 'Accepted'))).map((a) => {

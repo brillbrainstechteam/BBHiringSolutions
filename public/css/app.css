@@ -2504,3 +2504,33 @@ a.pipe-step { text-decoration: none; cursor: pointer; } a.pipe-step:hover { bord
 
 .info-pop { font-family: var(--font); font-weight: 400; font-style: normal; font-size: 12.5px; line-height: 1.6; letter-spacing: 0; }
 .info-pop b { font-weight: 600; }
+
+/* bulk bar menus (Ask on WhatsApp, Update) */
+.bulk-menu { display: inline-block; }
+.bulk-menu .step-pop { width: 190px; }
+.bulk-menu .step-pop button:disabled { color: var(--faint, #999); cursor: default; }
+
+/* Candidates › Reports: no empty space under short charts, tighter cards, jump links, several picks */
+.rep-grid { align-items: start; gap: 14px; }
+.rep-card { padding: 14px 16px; } .rep-sub { margin-bottom: 8px; }
+.rep-cols { height: 160px; }
+.rep-nav { position: sticky; top: 0; z-index: 5; display: flex; gap: 6px; flex-wrap: wrap; padding: 8px 0; background: var(--bg, #F6F7FB); }
+.rep-nav a { padding: 5px 11px; border: 1px solid var(--border); border-radius: 999px; font-size: 12.5px; color: var(--ink); text-decoration: none; background: var(--surface); }
+.rep-nav a:hover { border-color: var(--mustard); }
+.rep-card { scroll-margin-top: 56px; }
+.rep-picked { display: flex; align-items: center; gap: 8px; padding: 8px 12px; position: sticky; top: 44px; z-index: 5; font-size: 13px; }
+.rep .picked { outline: 2px solid var(--mustard); outline-offset: 1px; border-radius: 6px; }
+
+/* Segments: More menu in the row (not clipped by the table) */
+.seg-table .tbl-wrap { overflow: visible; }
+.seg-acts { min-width: 0; flex-wrap: nowrap; align-items: center; } .seg-more { display: inline-block; } .seg-more .step-pop { right: 0; left: auto; width: 180px; }
+/* Vendors: status chips and filters share one row */
+.v-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-bottom: 12px; }
+.v-bar .v-chips { margin: 0; } .v-bar .v-filters { margin: 0; flex: 1 1 420px; }
+/* bulk bar menus: same size as the other bulk buttons */
+.bulkbar.bulk-card > .bulk-menu { flex: 0 1 calc(20% - 6.4px); min-width: 140px; }
+.bulkbar.bulk-card > .bulk-menu > summary.btn { width: 100%; height: 44px; border-radius: 10px; font-size: 13px; padding: 0 12px; justify-content: center; box-shadow: none; }
+.rep-picked[hidden] { display: none; }
+/* Segments list: let the More menu show, and wrap the buttons on narrow screens */
+.card.cand-table.seg-table, .card.cand-table.seg-table .tbl-wrap { overflow: visible; }
+.seg-table .seg-acts { flex-wrap: wrap; } .seg-table .seg-col { min-width: 180px; }

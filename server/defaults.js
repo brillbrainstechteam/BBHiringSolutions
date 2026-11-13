@@ -12,7 +12,9 @@ const JOB_GROUPS = {
   'Dispatch & Logistics': { dept: 'Dispatch', jobs: ['Dispatch Executive', 'Dispatch Manager', 'Packing Executive', 'Logistics Coordinator', 'Delivery Executive', 'Courier Coordinator', 'Security Guard', 'Vault Keeper'] },
   'Accounts & Finance': { dept: 'Accounts', jobs: ['Accountant', 'Senior Accountant', 'Accounts Manager', 'Accounts Assistant', 'GST Executive', 'Tally Operator', 'Audit Executive', 'Finance Manager', 'Chartered Accountant', 'Cash Manager'] },
   'Admin & HR': { dept: 'Admin', jobs: ['HR Executive', 'HR Manager', 'Recruiter', 'Admin Executive', 'Office Assistant', 'Receptionist', 'Front Office Executive', 'Personal Assistant', 'Data Entry Operator', 'MIS Executive'] },
-  'Support & Others': { dept: 'Support', jobs: ['Customer Support Executive', 'Telecaller', 'After-sales Executive', 'IT Executive', 'Software Developer', 'Driver', 'Housekeeping Staff', 'Office Boy'] },
+  'IT & Technology': { dept: 'IT', jobs: ['IT Executive', 'IT Support Executive', 'Software Developer', 'System Administrator', 'Network Engineer', 'ERP Executive'] },
+  'Customer Service': { dept: 'Customer Service', jobs: ['Customer Support Executive', 'Customer Care Executive', 'Telecaller', 'After-sales Executive'] },
+  'Facilities & Others': { dept: 'Facilities', jobs: ['Driver', 'Housekeeping Staff', 'Office Boy'] },
 };
 
 const CITIES = [
@@ -75,6 +77,12 @@ const FORMATS = {
   bbhs_profile_update: { type: 'Utility', approved: false, buttons: [],
     en: "Hello {name},\n\nTo match you with the right jobs, please share:\n\n• Your latest resume\n• Current salary\n• Expected salary\n• Notice period\n\nIt takes 2 minutes, no login needed: {link}\n\nThank you.",
     hi: "नमस्ते {name},\n\nआपके लिए सही नौकरी ढूँढने के लिए कृपया भेजें:\n\n• अपना नया रिज़्यूमे\n• अभी की सैलरी\n• अपेक्षित सैलरी\n• नोटिस पीरियड\n\n2 मिनट लगेंगे, लॉगिन की ज़रूरत नहीं: {link}\n\nधन्यवाद।" },
+  bbhs_details_reply: { type: 'Utility', approved: false, buttons: [],
+    en: "Hello {name},\n\nTo match you with the right jobs, please reply to this message with:\n\n1. Your latest resume (PDF, Word or a photo)\n2. Current salary\n3. Expected salary\n4. Notice period\n\nYou can also fill these in here, no login needed: {link}\n\nThank you.",
+    hi: "नमस्ते {name},\n\nआपके लिए सही नौकरी ढूँढने के लिए कृपया इसी मैसेज के जवाब में भेजें:\n\n1. अपना नया रिज़्यूमे (PDF, Word या फ़ोटो)\n2. अभी की सैलरी\n3. अपेक्षित सैलरी\n4. नोटिस पीरियड\n\nचाहें तो यहाँ भी भर सकते हैं, लॉगिन की ज़रूरत नहीं: {link}\n\nधन्यवाद।" },
+  bbhs_experience_ask: { type: 'Utility', approved: false, buttons: ['Fresher', '1–3 years', '3–5 years', '5–10 years', '10+ years'],
+    en: "Hello {name},\n\nHow many years of total work experience do you have? Please tap one option below.\n\nThank you.",
+    hi: "नमस्ते {name},\n\nआपके पास कुल कितने साल का काम का अनुभव है? कृपया नीचे से एक विकल्प चुनें।\n\nधन्यवाद।" },
   bbhs_job_interest: { type: 'Marketing', approved: false, buttons: ['Interested', 'Not interested'],
     en: "Hello {name},\n\nWe have a job opening that matches your profile:\n\nRole: *{job}*\nCity: {city}\nSalary: {salary}\n\nSee the full job details here: {link}\n\nAre you interested in applying? Please tap a button below.",
     hi: "नमस्ते {name},\n\nआपकी प्रोफ़ाइल से मिलती एक नौकरी खुली है:\n\nपद: *{job}*\nशहर: {city}\nसैलरी: {salary}\n\nपूरी जानकारी यहाँ देखें: {link}\n\nक्या आप आवेदन करना चाहेंगे? कृपया नीचे एक बटन दबाएँ।" },
@@ -131,6 +139,7 @@ const FORMATS = {
 // Automatic messages (section 8.5); each can be turned off in Settings.
 const AUTO_RULES = [
   { key: 'candidate_welcome', when: 'Fills the form / added by team', to: 'Candidate', format: 'bbhs_candidate_welcome', on: true },
+  { key: 'resume_ack', when: 'Resume received on WhatsApp: a short thank-you reply (free text, inside the 24-hour window)', to: 'Candidate', format: null, on: true },
   { key: 'resume_request', when: 'New candidate without a resume (not bulk imports): ask for the resume, salary and notice period, once', to: 'Candidate', format: 'bbhs_profile_update', on: true },
   { key: 'profile_screening', when: 'Screened in, and the resume is over 6 months old or salary / notice is missing: the update link (it also asks their best time to call)', to: 'Candidate', format: 'bbhs_profile_update', on: true },
   { key: 'profile_before_client', when: 'CV about to go to the client and the profile is over 90 days old: the update link', to: 'Candidate', format: 'bbhs_profile_update', on: true },
@@ -263,7 +272,7 @@ module.exports.defaultSettings = () => ({
   industry_list: ['Jewellery', 'Retail', 'FMCG', 'Manufacturing', 'IT & Software', 'Banking & Financial Services', 'Insurance', 'Healthcare & Pharma', 'Hospitality & Travel',
     'Real Estate & Construction', 'Education', 'Logistics & Supply Chain', 'Automobile', 'Textile & Apparel', 'E-commerce', 'Telecom', 'Media & Entertainment', 'Agriculture', 'Energy & Power', 'Other'],
   hidden_jobs: [],
-  departments: ['Sales', 'Design', 'Production', 'Marketing', 'Purchase', 'Dispatch', 'Accounts', 'Admin', 'Support'],
+  departments: ['Sales', 'Design', 'Production', 'Marketing', 'Purchase', 'Dispatch', 'Accounts', 'Admin', 'IT', 'Customer Service', 'Facilities'],
   cities: CITIES,
   skills: ['Gold knowledge', 'Diamond knowledge', 'Customer handling', 'Billing software', 'Tally', 'MS Excel', 'CAD (Matrix)', 'CAD (Rhino)', 'Hand sketching', 'Stone setting', 'Polishing', 'Hallmarking', 'GST filing', 'Social media', 'Photography', 'Visual merchandising', 'Inventory software', 'Hindi', 'English', 'Gujarati', 'Marathi', 'Team handling', 'Negotiation', 'Cold calling'],
   client_stages: ['Call initiated', 'Requirement understanding', 'Requirement received', 'Proposal & pitch deck shared', 'Agreement shared', 'Agreement follow-up', 'Agreement received', 'JD and R&R shared', 'JD and R&R approved', 'Client activated', 'Client onboarded', 'Job opening activated', 'No current opening', 'Requirement later', 'Decision on hold', 'Inactive'],
@@ -285,6 +294,7 @@ module.exports.defaultSettings = () => ({
   quiet: { from: 21, to: 9 },
   daily_limit: 3,
   bulk_budget: 200,
+  mail_extra_folders: ['One Stop'], // mailbox labels read besides IMAP_FOLDER (each email once)
   match: { weights: { role: 30, city: 20, experience: 15, salary: 15, skills: 10, notice: 5, rating: 5 }, strong: 70, show: 55 },
   languages: ['en', 'hi'],
   id_start: { CL: 1001, JB: 2001, CA: 3001, IV: 4001, AP: 5001, BL: 6001 },

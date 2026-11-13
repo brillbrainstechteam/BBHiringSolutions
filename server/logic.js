@@ -82,10 +82,13 @@ function jobList(industry) {
   for (const [group, g] of Object.entries(ind.groups)) for (const j of g.jobs) out.push({ group, dept: g.dept, title: j, hidden: s.hidden_jobs.includes(j) });
   return out;
 }
+// A job title not in the lists, placed by its words. IT comes first: "IT Support Executive" is IT, not support.
+const DEPT_WORDS = [['IT', /\b(it|software|developer|programmer|system admin|network|erp|sap|computer|hardware|technical support|web|data analyst)\b/i], ['Accounts', /account|finance|gst|tally|audit|cashier|billing/i], ['Customer Service', /customer (support|care|service)|telecall|call (centre|center)|after.?sales|helpdesk/i], ['Marketing', /marketing|social media|content|graphic|seo|brand|photograph|video/i], ['Design', /design|cad|render|sketch/i], ['Sales', /sales|showroom|store|business development|relationship|counter/i], ['Admin', /\bhr\b|human resource|recruit|admin|reception|front office|office assistant|data entry|mis/i], ['Purchase', /purchase|procure|inventory|stock|store keeper|vendor/i], ['Dispatch', /dispatch|logistic|delivery|courier|packing|warehouse/i], ['Production', /karigar|goldsmith|setter|polish|cast|production|factory|quality|gemolog|assay|hallmark/i], ['Facilities', /driver|housekeep|office boy|peon|security|guard/i]];
+function deptByWords(title) { const t = String(title || ''); const hit = DEPT_WORDS.find(([, re]) => re.test(t)); return hit ? hit[0] : null; }
 function deptOf(title) {
   const s = settings();
   for (const ind of Object.values(s.industries)) for (const g of Object.values(ind.groups)) if (g.jobs.includes(title)) return g.dept;
-  return 'Other';
+  return deptByWords(title) || 'Other';
 }
 function stateOf(city) {
   const name = String(city || '').trim().toLowerCase(); if (!name) return '';
@@ -324,6 +327,8 @@ function setLooking(candId, value, by, why) {
   if (c.looking !== value) history((by && by.label) || 'System', 'job status', candId, 'looking', c.looking, `${value}${why ? ` (${why})` : ''}`);
 }
 const EXP_YEARS = { Fresher: 0, '1–3 years': 2, '3–5 years': 4, '5–10 years': 7, '10+ years': 12 };
+// A tapped experience option (any dash) → years, or null.
+const expBand = (t) => { const k = String(t || '').trim().toLowerCase().replace(/\s*[-–—]\s*/g, '–'); const hit = Object.keys(EXP_YEARS).find((x) => x.toLowerCase() === k); return hit === undefined ? null : EXP_YEARS[hit]; };
 const JEW_YEARS = { 'No experience': 0, 'Less than 1 year': 0.5, '1–3 years': 2, '3–5 years': 4, '5–10 years': 7, '10+ years': 12 };
 const BUSINESS_OF = { 'Showroom B2C': ['Retailer'], 'Manufacturer B2B': ['Manufacturer', 'Wholesaler'], Both: ['Retailer', 'Manufacturer', 'Wholesaler'] };
 function matchScore(c, j, rating) {
@@ -1462,6 +1467,8 @@ function receiveReply(phone, text, button, opts = {}) {
   else if (t === 'need help' && ref && ref.ap) { update('applications', ref.ap, { at_risk: 1 }); const ap = get('SELECT * FROM applications WHERE id=?', ref.ap); alertUser(ap.owner_id, `${ap.id} at risk: candidate needs help`, ap.id, 'candidate'); effect = 'Marked at risk'; }
   else if (ref && ref.jb && t === 'not interested' && ptype === 'candidate') { markInterest(pid, false, by, `Not interested in ${ref.jb} (reply on WhatsApp)`); effect = `Marked not interested (${ref.jb})`; }
   else if (t === 'share details' && ptype === 'candidate') { const c = get('SELECT recruiter_id FROM candidates WHERE id=?', pid) || {}; const ap = ref && ref.ap ? get('SELECT owner_id FROM applications WHERE id=?', ref.ap) : null; const owner = (ap && ap.owner_id) || c.recruiter_id; if (owner) alertUser(owner, `${pid} wants to share their salary and notice details: call or message them`, pid, 'candidate'); sendSystemText('candidate', pid, 'Thank you. Please type your current salary, expected salary and notice period here, and we will update your profile.'); effect = 'Asked for details; recruiter alerted'; }
+  else if (ptype === 'candidate' && expBand(t) !== null && (button || (ref && ref.format === 'bbhs_experience_ask'))) { update('candidates', pid, { exp_total: expBand(t), last_updated: now() }); D.history(by.label, 'experience from reply', pid, 'exp_total', null, String(expBand(t))); effect = `Total experience: ${text || button}`; }
+  else if (ptype === 'candidate' && !button && t && ref && ['bbhs_details_reply', 'bbhs_profile_update'].includes(ref.format)) { setImmediate(() => require('./profilelink').readReply(pid, text).catch((e) => console.error('Details reply', pid, e.message))); effect = 'Reading their details from the reply'; }
   else if (['not looking', 'not interested now', 'not looking now', 'happy where i am'].includes(t) && ptype === 'candidate') { setLooking(pid, 'Not interested', by, 'reply on WhatsApp'); effect = 'Job status: Not interested'; }
   else if (['still looking', 'looking for a job', 'yes, looking', 'actively looking'].includes(t) && ptype === 'candidate') { setLooking(pid, 'Actively looking', by, 'reply on WhatsApp'); effect = 'Job status: Actively looking'; }
   // Unread alert to the owner of this person.
@@ -1478,7 +1485,7 @@ function sendSystemText(ptype, pid, text) {
 }
 
 module.exports = { stageStateOf, ownersOfJob, ownerMap, ownsApp, STAGES, stageOfApp, nextStageOf, reopenRefilled, adPlanFor, openAdApplications, placedOn, closePlacedApps, adLabel,
-  STEPS, stepIdx, digits10, validPhone, inr, istDay, istFmt, istTime, istHour, inQuiet, next9am, daysBetween, addDays, hashPassword, checkPassword, newPassword, sha,
+  STEPS, deptByWords, stepIdx, digits10, validPhone, inr, istDay, istFmt, istTime, istHour, inQuiet, next9am, daysBetween, addDays, hashPassword, checkPassword, newPassword, sha,
   activationState, checkActivation, waHeld, TEAMS, IV_MODES, clientSeesIv, addIvNote, CALL_OUTCOMES, logCall, jobList, deptOf, stateOf, person, fillFormat, windowOpenUntil, sendWA, setDispatcher, alertUser, link, agencyAdmin, superAdmins,
   quickClient, AUTO_WEIGHTS, agencyScores, autoAssignOn, autoAssignClient, EMAIL_RE, needEmail, okHrEmail, cleanPoc, saveClientExtras, pocOf, CLIENT_MAIN, CLIENT_SIDE, ONBOARD_STEPS, clientFacts, onboardDone, earnedStage, syncClientStage, computeJobStatus, jobStatusReason, recalcJob, filledCount, appsOfJob, matchScore, jobsFor, cleanBusiness, BUSINESS_TYPES, EXP_YEARS, JEW_YEARS, LOOKING, NOT_LOOKING, JOB_STATUSES, LOOK_FRESH, appStates, appStateOf, jobStatusOf, setLooking, ratingOf, bestMatches, isPlaced, salaryText, autoJobAlert,
   SAL_HIDDEN, feeFor, gstFor, fyOf, billView, refreshBill, createBillForApp, issueBill, upiLink,

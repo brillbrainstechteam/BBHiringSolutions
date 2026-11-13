@@ -10,7 +10,8 @@ function route(method, pattern, opts, handler) {
   routes.push({ method, re, keys, opts: opts || {}, handler });
 }
 
-const IDLE = { client: 30 * 24, candidate: 30 * 24 };
+// Job seekers and clients stay logged in until 180 days without a visit, so the WhatsApp code is asked rarely.
+const IDLE = { client: 180 * 24, candidate: 180 * 24 };
 function newSession(kind, subjectId, memberId, extra = {}) {
   const token = crypto.randomBytes(24).toString('hex');
   D.insert('sessions', { token, kind, subject_id: subjectId, member_id: memberId || null, created_at: D.now(), last_seen: D.now(), pending_2fa: extra.pending_2fa ? 1 : 0, device: extra.device || null });

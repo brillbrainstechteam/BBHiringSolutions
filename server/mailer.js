@@ -115,6 +115,7 @@ function queue({ to, subject, text, html, kind, recordId, sendAfter, dedupe, att
   }
   if (sendAfter && sendAfter > D.now()) {
     const r = D.run('INSERT INTO emails (to_addr,subject,kind,record_id,text,html,status,tries,at,send_after,dedupe) VALUES (?,?,?,?,?,?,?,?,?,?,?)', list.join(', '), subject, kind || null, recordId || null, text, html, 'scheduled', 0, D.now(), sendAfter, dedupe || null);
+    if (att) D.update('emails', Number(r.lastInsertRowid), { attachments: att }); // a scheduled email keeps its files (calendar invite, PDFs)
     return Number(r.lastInsertRowid);
   }
   const r = D.run('INSERT INTO emails (to_addr,subject,kind,record_id,text,html,status,tries,at,dedupe) VALUES (?,?,?,?,?,?,?,?,?,?)', list.join(', '), subject, kind || null, recordId || null, text, html, configured() ? 'queued' : 'not sent (email not set up)', 0, D.now(), dedupe || null);

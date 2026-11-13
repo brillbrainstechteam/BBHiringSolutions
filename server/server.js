@@ -28,7 +28,7 @@ const META = {
   '/hire': ['Hire jewellery staff · BrillBrains Hiring Solutions', 'Tell us who you need. We send screened, interviewed candidates for your jewellery business.'],
   '/partners': ['Partner with us · BrillBrains Hiring Solutions', 'Placement agencies, training institutes and industry bodies: grow with India\'s jewellery-only hiring platform.'],
   '/my-account': ['Client login · BrillBrains Hiring Solutions', 'Log in to see your job openings, shortlisted candidates, interviews and bills.'],
-  '/my-profile': ['Candidate login · BrillBrains Hiring Solutions', 'Log in to see matching jobs, your interviews and your offers.'],
+  '/my-profile': ['Job seeker login · BrillBrains Hiring Solutions', 'Log in to see matching jobs, your interviews and your offers.'],
   '/team': ['Team portal · BrillBrains Hiring Solutions', 'BrillBrains Hiring Solutions team portal.'],
 };
 const escAttr = (s) => String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');

@@ -148,7 +148,7 @@ const isCv = (n) => /\.(pdf|docx?)$/i.test(n || '') || (/\.(jpe?g|png)$/i.test(n
 // no PDF or Word CV and is not about joining papers: the biggest picture that is not an ID card, certificate or logo.
 const PAPERS = /aadha?ar|adhar|pan ?card|pancard|cheque|sslc|hsc|marksheet|mark sheet|certificate|passport|voter|licen[cs]e|payslip|salary slip|offer letter|relieving|experience letter|signature|logo/i;
 function cvFiles(atts, subject) {
-  const docs = atts.filter((a) => isCv(a.name));
+  const docs = atts.filter((a) => isCv(a.name) && !PAPERS.test(a.name || '')); // an Aadhaar or PAN PDF is not a resume
   if (docs.some((a) => /\.(pdf|docx?)$/i.test(a.name)) || docs.length) return docs;
   if (/document|joining|offer letter|academic|kyc|aadha?ar|pan card|usage report|business proposal/i.test(subject || '')) return [];
   const size = (a) => (a.buf || a.content || []).length;
@@ -188,7 +188,17 @@ function ownDomains() {
   for (const u of D.all("SELECT email FROM users WHERE email IS NOT NULL AND email != ''")) add(u.email);
   return [...ds];
 }
-async function intakeEmail({ fromName, fromEmail, subject, text, attachments }) {
+// A link to a resume on a site the portal cannot download from (it needs a login there): kept so the team can open it.
+const SKIP_LINK = /unsubscribe|groups\.google|support\.google|google\.com\/(maps|url)|facebook\.com|instagram\.com|twitter\.com|x\.com\/|wa\.me|mailto:|brillbrains/i;
+function cvLinkIn(text) {
+  for (const raw of String(text || '').replace(/=\r?\n/g, '').match(/https?:\/\/[^\s"'<>)\]]+/g) || []) {
+    const u = raw.replace(/&amp;/g, '&').replace(/[.,;]+$/, '');
+    if (!SKIP_LINK.test(u) && /cv|resume|bio.?data|portfolio|profile/i.test(u)) return u.split(/[?#]utm_|[?&]utm_/)[0];
+  }
+  return '';
+}
+const PAPER_SUBJ = /document|kyc|aadha?ar|pan card|bank details|joining|verification/i;
+async function intakeEmail({ fromName, fromEmail, subject, text, attachments, folder }) {
   const L = require('./logic');
   const cvs = cvFiles(attachments || [], subject);
   const texts = cvs.map((a) => cvText({ name: a.name, content: a.buf }));
@@ -224,8 +234,18 @@ async function intakeEmail({ fromName, fromEmail, subject, text, attachments }) 
   D.insert('notes', { record_id: id, text: `Email: ${subject || '(no subject)'}${text ? ' — ' + String(text).trim().slice(0, 300) : ''}`, author: 'Email inbox', at: D.now() });
   if (ai) D.insert('notes', { record_id: id, text: `Read by AI: ${[ai.education && `education ${ai.education}`, (ai.languages || []).length && `languages ${ai.languages.join(', ')}`, ai.role_applied_for && `applied for ${ai.role_applied_for}`].filter(Boolean).join(' · ') || 'details filled from the email and resume'}`, author: 'Email inbox', at: D.now() });
   else if (aiErr) D.insert('notes', { record_id: id, text: `AI could not read this email (${aiErr}); details found by rules only.`, author: 'Email inbox', at: D.now() });
+  if (folder && folder !== D.ENV.imap.folder) D.insert('notes', { record_id: id, text: `From the "${folder}" label in the mailbox.`, author: 'Email inbox', at: D.now() });
+  if (!cvs.length) { const link = cvLinkIn(text); if (link) { D.update('candidates', id, { cv_link: link }); D.insert('notes', { record_id: id, text: `Resume sent as a link (open it to see the resume): ${link}`, author: 'Email inbox', at: D.now() }); } }
+  // ID papers that came with the email are kept as documents, never as the resume
+  for (const a of (attachments || []).filter((x) => PAPERS.test(x.name || '') && /\.(pdf|docx?|jpe?g|png)$/i.test(x.name || ''))) {
+    try { await F.saveFile({ recordId: id, type: 'file', name: a.name, base64: a.buf.toString('base64'), by: 'Email inbox' }); } catch (e) { D.insert('notes', { record_id: id, text: `Attachment ${a.name} not saved: ${e.message}`, author: 'Email inbox', at: D.now() }); }
+  }
+  // Someone who has a resume already (a later email, often the documents we asked for): their resume stays unless
+  // the new file is clearly a resume; the rest are kept as documents.
+  const hadCv = known && D.get("SELECT 1 FROM candidates WHERE id=? AND cv_file IS NOT NULL AND cv_file != ''", id);
   let first = true;
   for (const a of cvs) {
+    if (first && hadCv && (PAPER_SUBJ.test(subject || '') || !/cv|resume|bio.?data|profile/i.test(a.name || ''))) first = false;
     try {
       const f = await F.saveFile({ recordId: id, type: first ? 'cv' : 'file', name: a.name, base64: a.buf.toString('base64'), by: 'Email inbox' });
       if (first) { D.update('candidates', id, { cv_file: String(f.id) }); require('./cvparse').fillCandidate(id, a.name, a.buf, 'Email inbox'); }
@@ -274,13 +294,14 @@ async function checkReplies(cfg) {
 // Reads every email in the label not handled before (50 a run) and makes candidates; read/unread is left alone.
 // One run at a time: a big backlog can outlast the 10-minute timer.
 let running = null;
+const folders = () => [...new Set([D.ENV.imap.folder, ...((D.settings().mail_extra_folders) || [])].filter(Boolean))];
 function check() {
   if (running) return Promise.resolve({ skipped: 'Already checking the mailbox' });
-  running = checkNow().finally(() => { running = null; });
+  running = (async () => { let first = null; for (const fo of folders()) { const r = await checkNow(fo).catch((e) => ({ errors: [`${fo}: ${e.message}`] })); first = first || r; } return first; })().finally(() => { running = null; });
   return running;
 }
-async function checkNow() {
-  const cfg = D.ENV.imap;
+async function checkNow(folderName) {
+  const cfg = { ...D.ENV.imap, folder: folderName || D.ENV.imap.folder }; const mainFolder = cfg.folder === D.ENV.imap.folder;
   if (!cfg.host || !cfg.user) return { skipped: 'Email inbox not set in .env' };
   const done = { read: 0, leads: 0, errors: [] };
   const open = async () => { const b = await imapConnect(cfg); await b.cmd(`LOGIN ${q(cfg.user)} ${q(cfg.pass)}`); await b.cmd(`SELECT ${q(cfg.folder)}`); return b; };
@@ -320,7 +341,7 @@ async function checkNow() {
             const phones = new Set(cvAtts.map((a) => findPhone(cvText({ name: a.name, content: a.buf }))).filter(Boolean));
             const batches = cvAtts.length > 1 && phones.size > 1
               ? cvAtts.map((a) => ({ fromName: '', fromEmail: '', subject: subj, text: '', attachments: [a] }))
-              : [{ fromName: own ? '' : (fm ? fm[1].replace(/"/g, '').trim() : ''), fromEmail: own ? '' : fromEmail, subject: subj, text, attachments }];
+              : [{ fromName: own ? '' : (fm ? fm[1].replace(/"/g, '').trim() : ''), fromEmail: own ? '' : fromEmail, subject: subj, text, attachments, folder: cfg.folder }];
             for (const b of batches) {
               const t0 = Date.now(); const r = await intakeEmail(b);
               dbg(`  ${r && r.skipped ? 'skipped' : 'candidate'} in ${Date.now() - t0} ms`, subj.slice(0, 60), batches.length > 1 ? `(${b.attachments[0].name})` : '');
@@ -334,8 +355,8 @@ async function checkNow() {
       } catch (e) { done.errors.push(`${uid}: ${e.message}`); }
     }
   } finally { box.end(); }
-  try { await checkReplies(cfg); } catch (e) { done.errors.push(`client replies: ${e.message}`); }
-  D.setHealth('last_mail_check', `${D.now()} · ${done.read} read · ${done.leads} candidates · ${done.skipped || 0} skipped`);
+  if (mainFolder) { try { await checkReplies(cfg); } catch (e) { done.errors.push(`client replies: ${e.message}`); } }
+  D.setHealth(mainFolder ? 'last_mail_check' : `last_mail_check:${cfg.folder}`, `${D.now()} · ${done.read} read · ${done.leads} candidates · ${done.skipped || 0} skipped`);
   if (done.errors.length) require('./alerts').devAlert('Email inbox: some emails could not be read', done.errors.join('; '));
   return done;
 }
@@ -345,14 +366,17 @@ async function checkNow() {
 let fixing = null;
 function refetchCvs(o = {}) { if (fixing) return fixing; if (running && !o.force) return Promise.resolve({ skipped: 'busy' }); fixing = refetchNow(o).finally(() => { fixing = null; }); return fixing; }
 async function refetchNow(o = {}) {
-  const cfg = D.ENV.imap; if (!cfg.host || !cfg.user) return { skipped: 'Email inbox not set in .env' };
+  let total = null; for (const fo of folders()) { const r = await refetchFolder(o, fo).catch((e) => ({ errors: [`${fo}: ${e.message}`] })); if (!total) total = r; else if (r && r.saved) total.saved = (total.saved || 0) + r.saved; } return total;
+}
+async function refetchFolder(o, folderName) {
+  const cfg = { ...D.ENV.imap, folder: folderName }; if (!cfg.host || !cfg.user) return { skipped: 'Email inbox not set in .env' };
   if (!D.get("SELECT 1 FROM candidates WHERE source='Email' AND (cv_file IS NULL OR cv_file='') AND merged_into IS NULL AND removed=0")) return { done: 'no email candidate without a resume' };
   const out = { read: 0, saved: 0, errors: [] };
   const box = await imapConnect(cfg); await box.cmd(`LOGIN ${q(cfg.user)} ${q(cfg.pass)}`); await box.cmd(`SELECT ${q(cfg.folder)}`);
   try {
     const sr = await box.cmd('UID SEARCH ALL');
     const uids = (sr.lines.find((l) => l.startsWith('* SEARCH')) || '').replace('* SEARCH', '').trim().split(/\s+/).filter(Boolean)
-      .filter((u) => !D.get('SELECT 1 FROM mail_seen WHERE uid=?', `cvfix4:${cfg.user}:${cfg.folder}:${u}`));
+      .filter((u) => !D.get('SELECT 1 FROM mail_seen WHERE uid=?', `cvfix5:${cfg.user}:${cfg.folder}:${u}`));
     // how far through the mailbox the re-read is, for the Missing resumes window
     const totalN = (sr.lines.find((l) => l.startsWith('* SEARCH')) || '').replace('* SEARCH', '').trim().split(/\s+/).filter(Boolean).length;
     D.setHealth('cv_refetch_progress', JSON.stringify({ total: totalN, left: Math.max(0, uids.length - (o.batch || 150)), at: D.now() }));
@@ -370,6 +394,8 @@ async function refetchNow(o = {}) {
           // The candidates this very email made (their "Email: <subject>" note), still without a resume.
           const subj = decodeWords(headers.subject || '');
           const fromThis = subj ? D.all("SELECT DISTINCT c.* FROM candidates c JOIN notes n ON n.record_id=c.id WHERE n.text LIKE ? ESCAPE '\\' AND n.author='Email inbox' AND c.merged_into IS NULL AND c.removed=0 AND (c.cv_file IS NULL OR c.cv_file='')", `Email: ${subj.replace(/[\\%_]/g, (x) => `\\${x}`)}%`) : [];
+          // a resume sent as a link: kept on the candidates this email made
+          if (!cvParts.length && fromThis.length) { const link = cvLinkIn(parts.filter((x) => !x.name && /^text\//.test(x.type)).map((x) => x.content.toString('utf8')).join('\n')); if (link) for (const c of fromThis) if (!c.cv_link) { D.update('candidates', c.id, { cv_link: link }); D.insert('notes', { record_id: c.id, text: `Resume sent as a link (open it to see the resume): ${link}`, author: 'Email inbox', at: D.now() }); out.linked = (out.linked || 0) + 1; } }
           for (const p of cvParts) {
             const t = cvText({ name: p.name, content: p.content }); const ph = findPhone(t); const em = findEmail(t).toLowerCase();
             // the name written in the file name or the CV ("Resume_Mamta Vichare.pdf"): every part of it, 3+ letters
@@ -388,7 +414,7 @@ async function refetchNow(o = {}) {
             } catch (e) { out.errors.push(`${uid} ${p.name}: ${e.message}`); }
           }
         }
-        D.run('INSERT OR IGNORE INTO mail_seen (uid,at) VALUES (?,?)', `cvfix4:${cfg.user}:${cfg.folder}:${uid}`, D.now());
+        D.run('INSERT OR IGNORE INTO mail_seen (uid,at) VALUES (?,?)', `cvfix5:${cfg.user}:${cfg.folder}:${uid}`, D.now());
       } catch (e) { out.errors.push(`${uid}: ${e.message}`); }
     }
   } finally { box.end(); }
@@ -410,7 +436,7 @@ async function findFor(candId) {
   const hay = (t) => String(t || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ');
   const theirs = (p, text) => { const h = ` ${hay(`${p.name} ${text}`)} `; return (phone && h.replace(/ /g, '').includes(phone)) || (c.email && h.includes(hay(c.email))) || (nameWs.length >= 2 && nameWs.every((w) => h.includes(` ${w.toLowerCase()} `))); };
   try {
-    for (const folder of [cfg.folder, /gmail/i.test(cfg.host) ? '[Gmail]/All Mail' : null].filter(Boolean)) {
+    for (const folder of [...folders(), /gmail/i.test(cfg.host) ? '[Gmail]/All Mail' : null].filter(Boolean)) {
       try { await box.cmd(`SELECT ${q(folder)}`); } catch { continue; }
       out.folders.push(folder); const uids = new Set();
       for (const t of terms) { try { const sr = await box.cmd(`UID SEARCH ${t}`); (sr.lines.find((l) => l.startsWith('* SEARCH')) || '').replace('* SEARCH', '').trim().split(/\s+/).filter(Boolean).forEach((u) => uids.add(u)); } catch { /* a term the server does not take */ } }
@@ -441,4 +467,22 @@ async function findFor(candId) {
   return out;
 }
 
-module.exports = { findFor, check, refetchCvs, intakeEmail, parseMessage, cvText, findPhone, findName };
+// One-time: where an ID paper (Aadhaar, PAN …) took the place of a resume, the resume comes back; a paper that is
+// someone's only "resume" becomes a document and they show as having no resume.
+function fixPaperCvs() {
+  let back = 0; let cleared = 0;
+  for (const c of D.all("SELECT c.id, c.cv_file, f.name FROM candidates c JOIN files f ON CAST(f.id AS TEXT)=c.cv_file WHERE c.cv_file IS NOT NULL AND c.cv_file != ''")) {
+    if (!PAPERS.test(c.name || '')) continue;
+    const prev = D.all("SELECT * FROM files WHERE record_id=? AND type='cv' AND id != ? ORDER BY id DESC", c.id, Number(c.cv_file)).find((x) => !PAPERS.test(x.name || ''));
+    D.run("UPDATE files SET type='file', replaced=0 WHERE id=?", Number(c.cv_file));
+    if (prev) { D.run('UPDATE files SET replaced=0 WHERE id=?', prev.id); D.update('candidates', c.id, { cv_file: String(prev.id) }); D.insert('notes', { record_id: c.id, text: `Resume ${prev.name} is the resume again (${c.name} is an ID paper, kept as a document).`, author: 'System', at: D.now() }); back++; }
+    else { D.update('candidates', c.id, { cv_file: null }); D.insert('notes', { record_id: c.id, text: `${c.name} is an ID paper, not a resume: kept as a document. No resume on file yet.`, author: 'System', at: D.now() }); cleared++; }
+  }
+  return { back, cleared };
+}
+try {
+  const once = D.settings().done_once || [];
+  if (!once.includes('cv_papers_fix')) { const r = fixPaperCvs(); D.setSetting('done_once', [...once, 'cv_papers_fix']); if (r.back || r.cleared) D.history('System', 'resumes put back', null, null, null, `${r.back} resumes back, ${r.cleared} papers were not resumes`); }
+} catch (e) { console.error('Resume repair', e.message); }
+
+module.exports = { fixPaperCvs, findFor, check, refetchCvs, intakeEmail, parseMessage, cvText, findPhone, findName };
