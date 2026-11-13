@@ -8,6 +8,14 @@ async function post(msg, text, vars) {
   // Meta templates take values by position ({{1}}, {{2}} …): the order the blanks
   // first appear in this format's text for the chosen language.
   let paramList;
+  // A template from the campaign studio carries its built components; Meta takes them as they are.
+  if (msg.tpl) {
+    const t = JSON.parse(msg.tpl);
+    const line0 = ['candidate', 'client'].includes(msg.person_type) ? (D.get(`SELECT wa_line FROM ${msg.person_type}s WHERE id=?`, msg.person_id) || {}).wa_line : null;
+    const res0 = await fetch(s.send_url, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${s.token}` }, body: JSON.stringify({ ref: msg.id, from_phone_id: line0 || undefined, phone: `91${msg.phone}`, template: t, preview: msg.text, tag: 'Hiring' }) });
+    if (!res0.ok) throw new Error(`CRM answered ${res0.status}: ${(await res0.text()).slice(0, 200)}`);
+    return res0.json().catch(() => ({}));
+  }
   if (msg.format) {
     const f = D.settings().formats[msg.format] || {};
     const order = [...new Set(((f[msg.lang] || f.en || '').match(/\{(\w+)\}/g) || []).map((x) => x.slice(1, -1)))];

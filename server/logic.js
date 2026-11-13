@@ -165,6 +165,9 @@ function sendWA(o) {
     if (fmt.off) { if (o.auto || o.bulk) return { skipped: 'Message switched off in Settings' }; throw httpError(400, 'This message is switched off in Settings → Message formats. Switch it on there to send it.'); }
     if (!fmt.approved && !(s.wa_pause || {}).everyone) { if (o.auto) waOnlyStop = 'Format waiting for Meta approval'; else throw httpError(400, 'This format is waiting for Meta approval and cannot be sent.'); }
   }
+  // o.template: any approved Meta template picked in the campaign studio, already filled for this person
+  // ({ name, language, category, components, text, buttons }). Same rules as a format.
+  const tpl = o.template || null;
   if (o.toPhone) p.phone = o.toPhone; // a one-off number, e.g. the code that proves a new number is theirs
   if (!p.phone) waOnlyStop = 'No WhatsApp number';
   if (o.rule) {
@@ -172,7 +175,7 @@ function sendWA(o) {
     if (r && !r.on) return { skipped: 'Automatic message turned off in Settings' };
   }
   if ((o.auto || o.bulk) && p.opted_out) return { skipped: 'Opted out (STOP)' };
-  if (fmt && fmt.type === 'Marketing' && p.type === 'candidate' && !p.consent) return { skipped: 'No consent for job alerts yet' };
+  if (((fmt && fmt.type === 'Marketing') || (tpl && tpl.category === 'MARKETING')) && p.type === 'candidate' && !p.consent) return { skipped: 'No consent for job alerts yet' };
   if (o.dedupe && get('SELECT 1 FROM messages WHERE dedupe=?', o.dedupe)) return { skipped: 'Already sent before' };
   // Email copy of the same message, under the same rules (on in Settings, not after STOP, never twice) and the
   // same timing (held to 9 am in quiet hours). Codes and passwords never go by email.
@@ -193,19 +196,20 @@ function sendWA(o) {
     const sentToday = all("SELECT at FROM messages WHERE person_type=? AND person_id=? AND direction='out' AND auto=1", p.type, p.id).filter((m) => istDay(m.at) === today).length;
     if (sentToday >= s.daily_limit) return { skipped: `Daily limit of ${s.daily_limit} reached` };
   }
-  if (!o.format && !windowOpenUntil(p.type, p.id)) throw httpError(400, 'Only an approved format can be sent: the 24-hour window is closed.');
+  if (!o.format && !tpl && !windowOpenUntil(p.type, p.id)) throw httpError(400, 'Only an approved format can be sent: the 24-hour window is closed.');
   // A format goes in the person's language once it has that text (and Meta has approved it, where we know); else in English.
   const want = o.lang || p.lang || 'en'; const ms = (fmt && fmt.meta_status) || {};
   const lang = !fmt || want === 'en' || (fmt[want] && (!Object.keys(ms).length || ms[want] === 'APPROVED')) ? want : 'en';
   const vars = { name: p.name, ...(o.vars || {}) };
-  const text = o.format ? fillFormat(o.format, lang, vars) : o.text;
+  const text = tpl ? tpl.text : o.format ? fillFormat(o.format, lang, vars) : o.text;
   let scheduled = null;
   if ((o.auto || o.sendLater) && inQuiet() && p.type !== 'user') scheduled = next9am();
   if (o.sendLater && o.sendLater !== true) scheduled = o.sendLater;
   const id = nextId('WA');
   const msg = {
-    id, person_type: p.type, person_id: p.id, phone: p.phone, direction: 'out', format: o.format || null, lang, text,
-    buttons: fmt ? fmt.buttons : (o.buttons || []), ap: o.ap || null, jb: o.jb || null, iv: o.iv || null, bl: o.bl || null,
+    id, person_type: p.type, person_id: p.id, phone: p.phone, direction: 'out', format: tpl ? tpl.name : o.format || null, lang: tpl ? tpl.language : lang, text,
+    tpl: tpl ? JSON.stringify({ name: tpl.name, language: tpl.language, components: tpl.components || [] }) : null,
+    buttons: tpl ? (tpl.buttons || []) : fmt ? fmt.buttons : (o.buttons || []), ap: o.ap || null, jb: o.jb || null, iv: o.iv || null, bl: o.bl || null,
     sent_by: o.auto ? 'Auto' : actorName(o.by), status: scheduled ? 'scheduled' : (s.crm.enabled ? 'sending' : 'would send'),
     read_by_us: 1, auto: o.auto ? 1 : 0, rule: o.rule || null, dedupe: o.dedupe || null, scheduled_at: scheduled, at: now(),
   };

@@ -1,0 +1,135 @@
+/* Campaign studio: WhatsApp templates with header media and buttons, email designs, Meta ads.
+   Campaigns › tabs. The classic quick campaign (job alert, message, contact preferences) still opens from here. */
+(() => {
+  const { $, $$, esc, fmtD, fmtDT } = BB;
+  const P = BB.pages; const F = BB.flow; const S = BB.studio = {};
+  const classicPage = P.campaigns; const classicCampaign = F.campaign;
+
+  // ---------- page tabs ----------
+  const TABS = () => [['', 'Campaigns'], ['templates', 'WhatsApp templates'], ...(S.designs ? [['designs', 'Email designs']] : []), ...(S.ads ? [['ads', 'Meta ads']] : [])];
+  P.campaigns = async (o) => {
+    const { el, actions, q } = o; const tab = q.tab || '';
+    el.innerHTML = `<div class="tabs">${TABS().map(([k, l]) => `<button data-stab="${k}" class="${tab === k ? 'on' : ''}">${l}</button>`).join('')}</div><div data-stbody><div class="empty">Loading…</div></div>`;
+    $$('[data-stab]', el).forEach((b) => (b.onclick = () => BB.go(`team/campaigns${b.dataset.stab ? `?tab=${b.dataset.stab}` : ''}`)));
+    const body = $('[data-stbody]', el); actions.innerHTML = '';
+    if (tab === 'templates') return S.templates(body, actions);
+    if (tab === 'designs' && S.designs) return S.designs(body, actions);
+    if (tab === 'ads' && S.ads) return S.ads(body, actions);
+    await classicPage({ ...o, el: body });
+    const nb = $('[data-cnew]', actions); if (nb) nb.onclick = () => S.start({});
+  };
+
+  // ---------- who gets it, and what ----------
+  // aud: { ids, label } for ticked candidates, or { segment | segments, label } for saved segments.
+  const WHAT = [['template', 'WhatsApp template', 'Any Meta-approved template: header image, video or PDF, buttons, blanks filled per person'], ['design', 'Email design', 'A designed HTML email with merge fields'], ['job', 'Job alert', 'The approved job alert, WhatsApp or plain email'], ['message', 'Message', 'A short message, WhatsApp or plain email'], ['prefs', 'Ask contact preferences', 'Best channel and time, on WhatsApp']];
+  S.start = async (aud) => {
+    const segs = (await BB.api('/api/campaigns?from=2999-01-01')).segments; const pre = new Set([...(aud.segments || []), ...(aud.segment ? [aud.segment] : [])].map(String));
+    if (!aud.ids && !segs.length) return BB.toast('Save a segment first in Candidates, or tick candidates there and press Send campaign', true);
+    const what = WHAT.filter(([k]) => k !== 'design' || S.designs);
+    const v = await BB.ask({ title: 'New campaign', wide: true, ok: 'Next', fields: [
+      aud.ids ? `<div class="notice">${esc(aud.label || `${aud.ids.length} ticked`)} candidates</div>` : `<div class="field" data-f="segments"><span class="lab">Send to (one or more segments; people in several get it once)</span><div class="st-segs">${segs.map(([id, n]) => `<label class="row small"><input type="checkbox" data-seg="${esc(id)}" ${pre.has(String(id)) ? 'checked' : ''}> ${esc(n)}</label>`).join('')}</div><div class="small muted" data-segn></div></div>`,
+      `<div class="field" data-f="what"><span class="lab">What to send</span><div class="st-what">${what.map(([k, l, h], i) => `<label class="st-what-o"><input type="radio" name="what" value="${k}" ${(aud.what || 'template') === k || (!aud.what && i === 0) ? 'checked' : ''}><span><b>${l}</b><span class="tiny muted">${h}</span></span></label>`).join('')}</div></div>`],
+    mount: (m) => { const count = async () => { const ids = $$('[data-seg]:checked', m).map((x) => x.dataset.seg); const n = $('[data-segn]', m); if (!n) return; if (!ids.length) { n.textContent = ''; return; } try { const r = await BB.api(`/api/campaigns/audience?segments=${encodeURIComponent(ids.join(','))}`); n.textContent = `${r.total} people`; } catch (e) { n.textContent = e.message; } }; $$('[data-seg]', m).forEach((x) => (x.onchange = count)); count(); },
+    submit: (x) => { const m = $('.modal'); const ids = $$('[data-seg]:checked', m).map((y) => y.dataset.seg); if (!aud.ids && !ids.length) throw Object.assign(new Error('Tick at least one segment'), { field: 'segments' }); return { ...x, segments: ids }; } });
+    if (!v) return;
+    const names = segs.filter(([id]) => v.segments.includes(String(id))).map(([, n]) => n);
+    const a = aud.ids ? { ids: aud.ids, label: aud.label } : { segments: v.segments, segment: v.segments[0], label: names.join(', ') };
+    if (v.what === 'template') return S.waBuilder(a, aud.tplKey);
+    if (v.what === 'design' && S.sendDesign) return S.sendDesign(a);
+    return classicCampaign({ ...a, kind: v.what });
+  };
+  // Ticked candidates, or a segment's Send campaign button, start here too.
+  F.campaign = (aud) => S.start(aud || {});
+
+  // ---------- WhatsApp: the message as the person sees it ----------
+  const wa = (t) => esc(t).replace(/\*([^*\n]+)\*/g, '<b>$1</b>').replace(/_([^_\n]+)_/g, '<i>$1</i>').replace(/~([^~\n]+)~/g, '<s>$1</s>').replace(/\n/g, '<br>');
+  const mediaBox = (fmt, m) => (!fmt || fmt === 'TEXT' ? '' : `<div class="st-media">${m && fmt === 'IMAGE' ? `<img src="${esc(m.url)}" alt="">` : `<span class="small">${fmt === 'VIDEO' ? 'Video' : fmt === 'DOCUMENT' ? 'PDF' : 'Image'}${m ? `: ${esc(m.name)}` : ' (upload a file)'}</span>`}</div>`);
+  S.phone = ({ header, text, footer, buttons, media, who }) => `<div class="st-phone">${who ? `<div class="st-who tiny">To ${esc(who)}</div>` : ''}<div class="st-bubble">${mediaBox(header && header.format, media)}${header && header.format === 'TEXT' && header.text ? `<div class="st-h">${wa(header.text)}</div>` : ''}<div>${wa(text || '')}</div>${footer ? `<div class="st-foot">${esc(footer)}</div>` : ''}</div>${(buttons || []).map((b) => `<div class="st-btn">${esc(typeof b === 'string' ? b : b.text)}</div>`).join('')}</div>`;
+  const statusBadge = (s) => `<span class="badge tiny ${s === 'APPROVED' ? 'b-green' : s === 'REJECTED' ? 'b-red' : s === 'DRAFT' || s === 'NOT SENT' ? 'b-outline' : 'b-amber'}">${esc(s === 'APPROVED' ? 'Approved' : s === 'REJECTED' ? 'Rejected' : s === 'DRAFT' ? 'Draft' : s === 'PAUSED' ? 'Paused' : s === 'DISABLED' ? 'Disabled' : s === 'NOT SENT' ? 'Not sent' : 'Waiting for Meta')}</span>`;
+  S.statusBadge = statusBadge;
+  const btnLine = (t) => t.buttons.map((b) => `${b.text}${b.type === 'URL' ? ' (link)' : b.type === 'PHONE_NUMBER' ? ' (call)' : ''}`).join(', ');
+
+  S.upload = async (accept) => {
+    const f = await BB.pickFile(accept); if (!f) return null;
+    try { return await BB.post('/api/studio/media', { name: f.name, base64: f.base64 }); } catch (e) { BB.fail(e); return null; }
+  };
+
+  // ---------- WhatsApp template campaign ----------
+  S.waBuilder = async (aud, preKey) => {
+    const [d, jobsR] = await Promise.all([BB.api('/api/studio/wa/templates'), BB.api('/api/jobs?size=200')]);
+    const ok = d.templates.filter((t) => t.status === 'APPROVED');
+    if (!ok.length) return BB.modal({ title: 'No approved templates', body: `<p>None of the WhatsApp templates on Meta is approved yet.${d.note ? ` ${esc(d.note)}` : ''}</p><p class="small muted">Make one in Campaigns › WhatsApp templates and send it to Meta. Approval usually takes minutes to a day.</p>`, foot: false });
+    const jobs = jobsR.rows.filter((j) => ['Open', 'Sourcing', 'Interviewing'].includes(j.status));
+    const qs = aud.ids ? `ids=${encodeURIComponent(aud.ids.join(','))}` : `segments=${encodeURIComponent((aud.segments || [aud.segment]).join(','))}`;
+    const who = await BB.api(`/api/campaigns/audience?${qs}`).catch(() => ({ total: 0 }));
+    const st = { key: (ok.find((t) => t.key === preKey) || ok[0]).key, map: {}, media: null };
+    const tpl = () => ok.find((t) => t.key === st.key);
+    const fieldOpts = (cur) => `<option value="">Choose…</option>${d.fields.map(([k, l]) => `<option value="${k}" ${cur === k ? 'selected' : ''}>${esc(l)}</option>`).join('')}<option value="text" ${cur === 'text' ? 'selected' : ''}>Same text for everyone</option>`;
+    const guess = (i, tok) => (/name/i.test(tok) || (i === 0 && /^\d+$/.test(tok)) ? { src: 'first_name', fallback: 'there' } : /city/i.test(tok) ? { src: 'job_city' } : /job|role|title/i.test(tok) ? { src: 'job_title' } : /link|url/i.test(tok) ? { src: 'job_apply' } : { src: '' });
+    const reset = () => { const t = tpl(); st.map = { header: t.header && t.header.vars.length ? guess(1, t.header.vars[0]) : undefined, body: t.body_vars.map((tok, i) => guess(i, tok)), buttons: Object.fromEntries(t.buttons.filter((b) => b.dynamic).map((b) => [b.index, { src: '' }])) }; st.media = null; };
+    reset();
+    const row = (path, label, m) => `<div class="st-map"><span class="small"><b>${esc(label)}</b></span><select data-src="${path}">${fieldOpts(m.src)}</select><input data-txt="${path}" value="${esc(m.src === 'text' ? m.text || '' : m.fallback || '')}" placeholder="${m.src === 'text' ? 'The text' : 'If it is empty, use… (optional)'}"></div>`;
+    const formHtml = () => {
+      const t = tpl(); const media = t.header && ['IMAGE', 'VIDEO', 'DOCUMENT'].includes(t.header.format);
+      return `<label class="field"><span class="lab">Template</span><select data-tkey>${ok.map((x) => `<option value="${esc(x.key)}" ${x.key === st.key ? 'selected' : ''}>${esc(x.name)} · ${esc(x.language)} · ${esc(String(x.category || '').toLowerCase())}</option>`).join('')}</select></label>
+        ${media ? `<div class="field" data-f="media"><span class="lab">Header ${t.header.format === 'DOCUMENT' ? 'PDF' : t.header.format.toLowerCase()}</span><div class="row"><button type="button" class="btn sm" data-up>${st.media ? 'Change file' : 'Upload file'}</button><span class="small muted">${st.media ? esc(st.media.name) : t.header.format === 'IMAGE' ? 'JPG or PNG, up to 5 MB' : t.header.format === 'VIDEO' ? 'MP4, up to 16 MB' : 'PDF, up to 16 MB'}</span></div></div>` : ''}
+        ${t.header && t.header.vars.length ? row('header', 'Header {{1}}', st.map.header) : ''}
+        ${t.body_vars.map((tok, i) => row(`body.${i}`, `{{${tok}}}`, st.map.body[i])).join('')}
+        ${t.buttons.filter((b) => b.dynamic).map((b) => row(`buttons.${b.index}`, `${b.text} link`, st.map.buttons[b.index])).join('')}
+        ${!(t.header && t.header.vars.length) && !t.body_vars.length && !t.buttons.some((b) => b.dynamic) ? '<div class="small muted">This template has no blanks.</div>' : ''}
+        <label class="field"><span class="lab">Job opening for the job blanks <span class="opt">(optional)</span></span><select data-job><option value="">None</option>${jobs.map((j) => `<option value="${esc(j.id)}" ${st.job === j.id ? 'selected' : ''}>${esc(j.title)}, ${esc(j.city || '')} · ${esc(j.id)}</option>`).join('')}</select></label>
+        <div class="field"><span class="lab">When</span><div class="choice"><label><input type="radio" name="st_when" value="now" ${(st.when || 'now') === 'now' ? 'checked' : ''}> Now</label><label><input type="radio" name="st_when" value="preferred" ${st.when === 'preferred' ? 'checked' : ''}> Each person's preferred time</label><label><input type="radio" name="st_when" value="at" ${st.when === 'at' ? 'checked' : ''}> At a set time</label></div><input type="datetime-local" data-at value="${esc(st.at || '')}" class="${st.when === 'at' ? '' : 'hidden'}" style="margin-top:6px;max-width:240px"></div>
+        <label class="field"><span class="lab">Campaign name <span class="opt">(optional)</span></span><input data-cname value="${esc(st.name || '')}" placeholder="${esc(`WhatsApp: ${t.name}`)}"></label>`;
+    };
+    const m = BB.modal({ title: `WhatsApp campaign · ${esc(aud.label || '')}`, wide: true,
+      body: `<div class="notice" style="margin-bottom:12px">${who.total} ${who.total === 1 ? 'person' : 'people'}. People who said STOP, gave no consent or have no WhatsApp number are left out.${d.live ? '' : ' WhatsApp is not connected here, so messages are saved as would send.'}</div><div class="st-grid"><form class="stack" data-stf onsubmit="return false"></form><div><div class="tiny muted" style="margin-bottom:6px">Preview</div><div data-prev></div><div class="tiny err-msg hidden" data-perr></div></div></div>`,
+      foot: '<button class="btn" data-cancel>Cancel</button><button class="btn primary" data-send>Send</button>' }).el;
+    let tp;
+    const preview = () => { clearTimeout(tp); tp = setTimeout(async () => { const t = tpl(); try { const r = await BB.post('/api/studio/wa/preview', { key: st.key, map: st.map, job_id: st.job, media_key: st.media && st.media.key, candidate_id: who.first }); $('[data-prev]', m).innerHTML = S.phone({ header: t.header, text: r.ok ? r.text.split('\n\n').filter((p) => !/^\[(image|video|document)/.test(p) && !(t.header && t.header.format === 'TEXT' && p.startsWith('*'))).join('\n\n').replace(/\n\n_[^\n]*_$/, '') : t.body, footer: t.footer, buttons: t.buttons, media: st.media, who: r.who }); const e = $('[data-perr]', m); e.classList.toggle('hidden', r.ok); e.textContent = r.ok ? '' : /^Choose/.test(r.error) ? r.error : `For ${r.who}: ${r.error}. People like this are left out unless you give an "If it is empty" text.`; } catch (e) { BB.fail(e); } }, 250); };
+    const setPath = (path, patch) => { const [a, b] = path.split('.'); if (a === 'header') st.map.header = { ...st.map.header, ...patch }; else if (a === 'body') st.map.body[b] = { ...st.map.body[b], ...patch }; else st.map.buttons[b] = { ...st.map.buttons[b], ...patch }; };
+    const getPath = (path) => { const [a, b] = path.split('.'); return a === 'header' ? st.map.header : a === 'body' ? st.map.body[b] : st.map.buttons[b]; };
+    const draw = () => {
+      const f = $('[data-stf]', m); f.innerHTML = formHtml();
+      $('[data-tkey]', f).onchange = (e) => { st.key = e.target.value; reset(); draw(); };
+      const up = $('[data-up]', f); if (up) up.onclick = async () => { const fmt = tpl().header.format; const r = await S.upload(fmt === 'IMAGE' ? '.jpg,.jpeg,.png' : fmt === 'VIDEO' ? '.mp4' : '.pdf'); if (r) { st.media = r; draw(); } };
+      $$('[data-src]', f).forEach((s) => (s.onchange = () => { setPath(s.dataset.src, { src: s.value }); draw(); }));
+      $$('[data-txt]', f).forEach((i) => (i.oninput = () => { const cur = getPath(i.dataset.txt); setPath(i.dataset.txt, cur.src === 'text' ? { text: i.value } : { fallback: i.value }); preview(); }));
+      $('[data-job]', f).onchange = (e) => { st.job = e.target.value; preview(); };
+      $$('[name=st_when]', f).forEach((r) => (r.onchange = () => { st.when = r.value; $('[data-at]', f).classList.toggle('hidden', r.value !== 'at'); }));
+      $('[data-at]', f).oninput = (e) => { st.at = e.target.value; };
+      $('[data-cname]', f).oninput = (e) => { st.name = e.target.value; };
+      preview();
+    };
+    draw();
+    $('[data-cancel]', m).onclick = () => m.closest('.modal-back').remove();
+    $('[data-send]', m).onclick = async () => {
+      const btn = $('[data-send]', m); const at = st.when === 'at' && st.at ? new Date(st.at) : null;
+      if (st.when === 'at' && !at) return BB.toast('Pick the date and time', true);
+      if (!(await BB.confirm('Send this campaign?', `${tpl().name} to ${who.total} ${who.total === 1 ? 'person' : 'people'}${at ? ` on ${fmtDT(at.toISOString())}` : st.when === 'preferred' ? ' in each person\'s preferred time' : ' now'}.`, 'Send'))) return;
+      btn.disabled = true;
+      try {
+        const v = await BB.post('/api/campaigns', { kind: 'template', tpl: { key: st.key, map: st.map, media_key: st.media && st.media.key }, job_id: st.job || undefined, ids: aud.ids, segments: aud.segments || (aud.segment ? [aud.segment] : undefined), timing: st.when === 'preferred' ? 'preferred' : 'now', send_at: at ? at.toISOString() : undefined, name: st.name });
+        m.closest('.modal-back').remove(); S.done(v);
+      } catch (e) { BB.showErr(m, e); } finally { btn.disabled = false; }
+    };
+  };
+  S.done = (v) => { BB.go('team/campaigns'); setTimeout(() => BB.open('campaign', v.id), 400); const sk = Object.entries(v.skipped || {}); BB.modal({ title: v.send_at ? 'Campaign scheduled' : 'Campaign sent', foot: false, body: `<p>${v.wa} on WhatsApp, ${v.email} by email, of ${v.total}${v.send_at ? `, going out ${fmtDT(v.send_at)}` : ''}.</p>${sk.length ? `<div class="small">${sk.map(([k, n]) => `<div>${esc(k)}: ${n}</div>`).join('')}</div>` : ''}` }); };
+
+  // ---------- WhatsApp templates tab ----------
+  S.templates = async (el, actions) => {
+    const d = await BB.api('/api/studio/wa/templates');
+    actions.innerHTML = `<button class="btn" data-tsync>Refresh from Meta</button>${S.newTemplate ? '<button class="btn primary" data-tnew>+ New template</button>' : ''}`;
+    $('[data-tsync]', actions).onclick = async () => { try { const r = await BB.post('/api/studio/wa/sync'); BB.toast(`${r.count} templates read from Meta`); BB.refreshPage(); } catch (e) { BB.fail(e); } };
+    if ($('[data-tnew]', actions)) $('[data-tnew]', actions).onclick = () => S.newTemplate();
+    el.innerHTML = `${d.note ? `<div class="notice" style="margin-bottom:12px">${esc(d.note)}</div>` : ''}<div class="small muted" style="margin-bottom:8px">Every template on the WhatsApp account. Approved ones can be sent in a campaign. ${d.synced_at ? `Read from Meta ${fmtDT(d.synced_at)}.` : ''}</div>
+      <div class="card">${BB.table([{ t: 'Template', f: (t) => `<b>${esc(t.name)}</b><div class="tiny muted">${esc(t.language)}${t.source === 'portal' ? ' · made here' : ''}</div>` }, { t: 'Category', f: (t) => esc(String(t.category || '').toLowerCase()) }, { t: 'Status', f: (t) => `${statusBadge(t.status)}${t.error ? `<div class="tiny muted">${esc(t.error)}</div>` : ''}` }, { t: 'Header', f: (t) => (t.header ? esc(t.header.format === 'DOCUMENT' ? 'PDF' : t.header.format.toLowerCase()) : '—') }, { t: 'Text', f: (t) => `<div class="small st-clip">${esc(t.body)}</div>` }, { t: 'Buttons', f: (t) => `<span class="small">${esc(btnLine(t)) || '—'}</span>` }], d.templates.map((t) => ({ ...t, id: t.key })), { open: (t) => `watpl:${encodeURIComponent(t.key)}`, empty: 'No templates read yet. Press Refresh from Meta.' })}</div>`;
+  };
+  BB.panels.watpl = async (k) => {
+    const key = decodeURIComponent(k); const d = await BB.api('/api/studio/wa/templates'); const t = d.templates.find((x) => x.key === key); if (!t) throw new Error('Template not found');
+    return { head: `<div class="row"><h2>${esc(t.name)}</h2>${statusBadge(t.status)}</div><div class="small muted">${esc(t.language)} · ${esc(String(t.category || '').toLowerCase())}${t.source === 'portal' ? ` · made here by ${esc(t.by)}` : ''}</div>`,
+      body: `<div class="st-grid"><div class="stack">${t.error ? `<div class="notice">${esc(t.error)}</div>` : ''}<div class="kn-row"><span>Blanks</span><div>${t.body_vars.length ? t.body_vars.map((x) => `{{${esc(x)}}}`).join(' ') : 'None'}</div></div><div class="kn-row"><span>Buttons</span><div>${t.buttons.map((b) => `<div class="small">${esc(b.text)}${b.url ? ` · ${esc(b.url)}` : ''}${b.phone ? ` · ${esc(b.phone)}` : ''}</div>`).join('') || '—'}</div></div>
+        <div class="row">${t.status === 'APPROVED' ? '<button class="btn primary" data-tuse>Use in a campaign</button>' : ''}${S.editTemplate && t.source === 'portal' && ['DRAFT', 'NOT SENT', 'REJECTED'].includes(t.status) ? '<button class="btn" data-tedit>Edit and send to Meta</button>' : ''}</div></div>
+        <div>${S.phone({ header: t.header, text: t.body, footer: t.footer, buttons: t.buttons })}</div></div>`,
+      mount: (root) => { const u = $('[data-tuse]', root); if (u) u.onclick = () => S.start({ tplKey: t.key, what: 'template' }); const e = $('[data-tedit]', root); if (e) e.onclick = () => S.editTemplate(t); } };
+  };
+})();
