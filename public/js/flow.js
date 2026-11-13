@@ -471,16 +471,24 @@
     try { const rows = await BB.api(`/api/bills/${b.id}/followups`); const box = $('[data-fus]', el); if (box) box.innerHTML = rows.map((r) => `<div class="small">${fmtDT(r.at)} · ${esc(r.by)}: ${esc(r.note)}${r.next_at ? ` <span class="faint">· next ${fmtDT(r.next_at)}</span>` : ''}</div>`).join(''); } catch { /* the bill still opens */ }
   };
 
-  // ---------- jobs page: paste notes, mass hiring ----------
+  // ---------- jobs page: paste notes, bulk hiring ----------
   F.jobsActions = (actions) => {
     const b = $('[data-fmass]', actions); if (b) b.onclick = F.mass;
   };
+  // A role row for bulk hiring and for "+ Add another role": role, city, people, salary from / to.
+  F.roleRow = (pre = {}) => `<div class="role-row" data-rolerow><label class="field"><span class="lab">Role</span><select data-r="title">${BB.jobOptions(pre.title || '')}</select></label>${field({ name: '_city', label: 'City', list: 'cities', value: pre.city || '', attrs: 'data-r="city"' })}${field({ name: '_n', label: 'People', type: 'number', value: pre.openings || 1, attrs: 'data-r="openings" min="1"' })}${field({ name: '_sf', label: 'Salary from / month', type: 'number', value: pre.sal_from || '', attrs: 'data-r="sal_from"' })}${field({ name: '_st', label: 'Salary to', type: 'number', opt: true, value: pre.sal_to || '', attrs: 'data-r="sal_to"' })}<button type="button" class="btn sm ghost role-x" data-rolex title="Remove this role" aria-label="Remove this role">✕</button></div>`;
+  F.readRoles = (m) => $$('[data-rolerow]', m).map((row) => Object.fromEntries($$('[data-r]', row).map((x) => [x.dataset.r, x.value.trim()]))).filter((x) => x.title || x.city);
+  F.wireRoles = (m, addBtn, box, pre) => { const wire = () => $$('[data-rolex]', box).forEach((x) => (x.onclick = () => { x.closest('[data-rolerow]').remove(); })); addBtn.onclick = () => { const last = F.readRoles(box).pop() || {}; box.insertAdjacentHTML('beforeend', F.roleRow({ city: last.city || (pre && pre.city) || '' })); wire(); }; wire(); };
   F.mass = async () => {
+    let rolesBox = null; // this form's own role rows
     const r = await BB.api('/api/clients?all=1'); const list = r.rows.filter((c) => !c.placeholder);
-    const v = await BB.ask({ title: 'Mass hiring', note: 'One role in many cities: one job opening per city, all marked as one drive.', wide: true, fields: [`<div class="grid g2"><label class="field"><span class="lab">Client</span><select name="client_id"><option value="">Choose…</option>${list.map((c) => `<option value="${c.id}">${esc(c.company)}</option>`).join('')}</select></label><label class="field"><span class="lab">Job</span><select name="title">${BB.jobOptions('')}</select></label></div>`,
-      { name: 'lines', label: 'City and number of people, one per line', type: 'textarea', placeholder: 'Mumbai: 20\nSurat: 15', voice: false },
-      `<div class="grid g4">${field({ name: 'sal_from', label: 'Salary from / month', type: 'number' })}${field({ name: 'sal_to', label: 'Salary to / month', type: 'number', opt: true })}${field({ name: 'exp_from', label: 'Exp from (yrs)', type: 'number', opt: true })}${field({ name: 'exp_to', label: 'Exp to (yrs)', type: 'number', opt: true })}</div>`,
-      { name: 'notes', label: 'Notes', type: 'textarea', opt: true }], ok: 'Create openings', submit: (x) => BB.post('/api/jobs/mass', { ...x, salary_per: 'month' }) });
+    const v = await BB.ask({ title: 'Bulk hiring', note: 'Many roles at once (a new showroom, a hiring drive): one job opening per row, all marked as one bulk hiring drive.', wide: true, fields: [
+      `<div class="grid g2"><label class="field"><span class="lab">Client</span><select name="client_id" data-mclient><option value="">Choose…</option>${list.map((c) => `<option value="${c.id}">${esc(c.company)}</option>`).join('')}</select></label>${field({ name: 'mass_name', label: 'Drive name', opt: true, placeholder: 'e.g. New showroom, Lucknow' })}</div>`,
+      `<div class="role-rows" data-roles>${F.roleRow()}</div><button type="button" class="btn sm" data-roleadd>+ Add another role</button>`,
+      `<div class="grid g3">${field({ name: 'exp_from', label: 'Exp from (yrs)', type: 'number', opt: true })}${field({ name: 'exp_to', label: 'Exp to (yrs)', type: 'number', opt: true })}${field({ name: 'priority', label: 'Priority', type: 'select', options: ['High', 'Medium', 'Low'], value: 'High', placeholder: false })}</div>`,
+      { name: 'notes', label: 'Notes', type: 'textarea', opt: true }], ok: 'Create openings',
+      mount: (m) => { rolesBox = $('[data-roles]', m); F.wireRoles(m, $('[data-roleadd]', m), rolesBox); const cs = $('[data-mclient]', m); cs.onchange = () => { const c = list.find((x) => x.id === cs.value); if (c) $$('[data-r=city]', m).forEach((x) => { if (!x.value) x.value = c.city || ''; }); }; },
+      submit: (x) => BB.post('/api/jobs/mass', { ...x, roles: F.readRoles(rolesBox), salary_per: 'month' }) });
     if (v) done(`${v.jobs.length} openings made for ${v.total} people`);
   };
 

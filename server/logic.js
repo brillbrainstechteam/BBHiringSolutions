@@ -420,6 +420,22 @@ function bestMatches(job, limit = 10, forAlert = false) {
     .map((c) => ({ c, ...matchScore(c, job, ratingOf(c.id)) }))
     .sort((a, b) => b.score - a.score).slice(0, limit);
 }
+// How many candidates in the resume bank fit each live job (score at least settings.match.show), kept on the job so
+// the list can show "No relevant candidates". One pass over the candidates; each candidate's rating read once.
+function refreshMatchCounts(onlyId) {
+  const show = settings().match.show || 55;
+  const jobs = onlyId ? all('SELECT * FROM jobs WHERE id=?', onlyId) : all('SELECT * FROM jobs WHERE archived=0');
+  const live = jobs.filter((j) => !['Closed', 'Filled'].includes(computeJobStatus(j, appsOfJob(j.id))));
+  if (!live.length) return 0;
+  const cands = all('SELECT * FROM candidates WHERE archived=0 AND junk=0 AND merged_into IS NULL AND removed=0').filter((c) => !NOT_LOOKING.includes(c.looking) && !c.not_interested_at && !isPlaced(c.id));
+  const rating = new Map(); const rate = (id) => { if (!rating.has(id)) rating.set(id, ratingOf(id)); return rating.get(id); };
+  for (const j of live) {
+    const onJob = new Set(all("SELECT candidate_id FROM applications WHERE job_id=? AND result='open'", j.id).map((r) => r.candidate_id));
+    let n = 0; for (const c of cands) if (!onJob.has(c.id) && matchScore(c, j, rate(c.id)).score >= show) n++;
+    update('jobs', j.id, { match_n: n, match_at: now() });
+  }
+  return live.length;
+}
 // Automatic job alert to strong matches when a job goes live (8.5).
 function autoJobAlert(jobId) {
   const job = get('SELECT * FROM jobs WHERE id=?', jobId); if (!job) return;
@@ -1489,7 +1505,7 @@ function sendSystemText(ptype, pid, text) {
 }
 
 module.exports = { stageStateOf, ownersOfJob, ownerMap, ownsApp, STAGES, stageOfApp, nextStageOf, reopenRefilled, adPlanFor, openAdApplications, placedOn, closePlacedApps, adLabel,
-  STEPS, deptByWords, stepIdx, digits10, validPhone, inr, istDay, istFmt, istTime, istHour, inQuiet, next9am, daysBetween, addDays, hashPassword, checkPassword, newPassword, sha,
+  STEPS, deptByWords, refreshMatchCounts, stepIdx, digits10, validPhone, inr, istDay, istFmt, istTime, istHour, inQuiet, next9am, daysBetween, addDays, hashPassword, checkPassword, newPassword, sha,
   activationState, checkActivation, waHeld, TEAMS, IV_MODES, clientSeesIv, addIvNote, CALL_OUTCOMES, logCall, jobList, deptOf, stateOf, person, fillFormat, windowOpenUntil, sendWA, setDispatcher, alertUser, link, agencyAdmin, superAdmins,
   quickClient, AUTO_WEIGHTS, agencyScores, autoAssignOn, autoAssignClient, EMAIL_RE, needEmail, okHrEmail, cleanPoc, saveClientExtras, pocOf, CLIENT_MAIN, CLIENT_SIDE, ONBOARD_STEPS, clientFacts, onboardDone, earnedStage, syncClientStage, computeJobStatus, jobStatusReason, recalcJob, filledCount, appsOfJob, matchScore, jobsFor, cleanBusiness, BUSINESS_TYPES, EXP_YEARS, JEW_YEARS, LOOKING, NOT_LOOKING, JOB_STATUSES, LOOK_FRESH, appStates, appStateOf, jobStatusOf, setLooking, ratingOf, bestMatches, isPlaced, salaryText, autoJobAlert,
   SAL_HIDDEN, feeFor, gstFor, fyOf, billView, refreshBill, createBillForApp, issueBill, upiLink,

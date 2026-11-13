@@ -399,16 +399,21 @@ function ruleNotes(text) {
 }
 route('POST', '/api/jobs/mass', T, (ctx) => {
   const b = ctx.body || {}; const c = get('SELECT * FROM clients WHERE id=?', b.client_id); mustSee(seeClient(ctx.user, c), 'client');
-  if (!b.title) throw httpError(400, 'Pick the role', 'title');
-  TEAM.needSalary(b);
-  const rows = String(b.lines || '').split(/\n+/).map((l) => /^\s*(.+?)\s*[:\-,=]\s*(\d+)\s*$/.exec(l)).filter(Boolean).map((m) => ({ city: m[1], openings: Number(m[2]) }));
-  if (!rows.length) throw httpError(400, 'Write one city per line, like Mumbai: 20', 'lines');
+  // roles: [{ title, city, openings, sal_from, sal_to }] (one job opening each); or the older one role + "City: n" lines
+  let rows = Array.isArray(b.roles) ? b.roles.filter((x) => x && (x.title || x.city)).map((x) => ({ title: x.title, city: String(x.city || c.city || '').trim(), openings: Math.max(1, Number(x.openings) || 1), sal_from: x.sal_from, sal_to: x.sal_to })) : null;
+  if (!rows) {
+    if (!b.title) throw httpError(400, 'Pick the role', 'title');
+    rows = String(b.lines || '').split(/\n+/).map((l) => /^\s*(.+?)\s*[:\-,=]\s*(\d+)\s*$/.exec(l)).filter(Boolean).map((m) => ({ title: b.title, city: m[1], openings: Number(m[2]), sal_from: b.sal_from, sal_to: b.sal_to }));
+    if (!rows.length) throw httpError(400, 'Write one city per line, like Mumbai: 20', 'lines');
+  }
+  if (!rows.length) throw httpError(400, 'Add at least one role', 'roles');
+  rows.forEach((x, i) => { if (!x.title) throw httpError(400, `Pick the role in row ${i + 1}`, 'roles'); if (!x.city) throw httpError(400, `Give the city in row ${i + 1}`, 'roles'); try { TEAM.needSalary(x); } catch (e) { throw httpError(400, `Row ${i + 1}: ${e.message}`, 'roles'); } });
   const batch = `MH-${Date.now().toString(36).toUpperCase()}`; const jobs = [];
   for (const x of rows) {
-    const r = TEAM.createJob(c, { ...b, city: x.city, openings: x.openings, recruiter_id: ctx.user.level === 'sub' ? ctx.user.id : b.recruiter_id || undefined, priority: b.priority || 'High', notes: b.notes || '', mass: 1 }, ctx.actor, false);
-    update('jobs', r.id, { mass_batch: batch }); jobs.push(r.id);
+    const r = TEAM.createJob(c, { ...b, title: x.title, city: x.city, openings: x.openings, sal_from: x.sal_from, sal_to: x.sal_to, department: x.department || undefined, recruiter_id: ctx.user.level === 'sub' ? ctx.user.id : b.recruiter_id || undefined, priority: b.priority || 'High', notes: b.notes || '', mass: 1 }, ctx.actor, false);
+    update('jobs', r.id, { mass_batch: batch, mass_name: String(b.mass_name || '').trim().slice(0, 80) || null }); jobs.push(r.id);
   }
-  D.history(ctx.actor.label, 'mass hiring', c.id, null, null, `${rows.reduce((t, x) => t + x.openings, 0)} ${b.title} in ${rows.length} cities`);
+  D.history(ctx.actor.label, 'bulk hiring', c.id, null, null, `${rows.reduce((t, x) => t + x.openings, 0)} people in ${rows.length} openings${b.mass_name ? ` (${b.mass_name})` : ''}`);
   return { batch, jobs, total: rows.reduce((t, x) => t + x.openings, 0) };
 });
 

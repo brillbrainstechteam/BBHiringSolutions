@@ -820,6 +820,17 @@ route('GET', '/api/jobs', T, (ctx) => {
   const rankOf = (list) => { const v = list.filter((x) => x > 0).sort((a, b) => a - b); return (x) => (x > 0 && v.length ? v.filter((y) => y <= x).length / v.length : 0); };
   const ctcRank = rankOf(rows.map((j) => j.ctc || 0)); const volRank = rankOf(rows.map((j) => j.client_openings));
   for (const j of rows) j.pscore = Math.round(50 * ctcRank(j.ctc || 0) + 50 * volRank(j.client_openings));
+  // The stage the team filters by. Open = live with candidates to send; No relevant candidates = live, nobody in
+  // process and nobody in the resume bank who fits (counted every 10 minutes).
+  const stageOf = (j) => (['Closed', 'Filled'].includes(j.status) ? 'Closed' : j.status === 'On hold' ? 'On hold' : ['Sourcing', 'Interviewing', 'Offer stage'].includes(j.status) ? 'Hiring in progress' : j.match_n === 0 ? 'No relevant candidates' : 'Open');
+  for (const j of rows) j.stage = stageOf(j);
+  const ACTIVE = ['Open', 'Hiring in progress', 'No relevant candidates'];
+  const stages = { 'All active': rows.filter((j) => ACTIVE.includes(j.stage)).length, All: rows.length };
+  for (const st of ['Open', 'Hiring in progress', 'No relevant candidates', 'On hold', 'Closed']) stages[st] = rows.filter((j) => j.stage === st).length;
+  const bulkN = rows.filter((j) => j.mass).length;
+  const stg = q.stage || (q.status ? 'All' : 'All active');
+  if (stg !== 'All') rows = rows.filter((j) => (stg === 'All active' ? ACTIVE.includes(j.stage) : j.stage === stg));
+  if (q.mass) rows = rows.filter((j) => j.mass);
   const counts = { All: rows.length, Active: rows.filter((j) => ['Open', 'Sourcing', 'Interviewing', 'Offer stage'].includes(j.status)).length };
   for (const s of ['Draft', 'Open', 'Sourcing', 'Interviewing', 'Offer stage', 'Filled', 'On hold', 'Closed']) counts[s] = rows.filter((j) => j.status === s).length;
   rows = rows.filter((j) => (!q.status || q.status === 'All' || (q.status === 'Active' ? ['Open', 'Sourcing', 'Interviewing', 'Offer stage'].includes(j.status) : j.status === q.status)) && (!q.client || j.client_id === q.client) && (!q.city || j.city === q.city) && (!q.recruiter || j.recruiter_id === q.recruiter) && (!Number(q.opened) || L.daysBetween(j.reopened_at || j.created_at) <= Number(q.opened)) && (!Number(q.ctc_min) || (j.ctc || 0) >= Number(q.ctc_min)) && like(q.q, j.id, j.title, j.client_name, j.city, j.old_code, j.recruiter_name, j.reopen_tag, j.reopen_tag ? 'replacement' : ''));
@@ -827,7 +838,7 @@ route('GET', '/api/jobs', T, (ctx) => {
   // Choices for the filters, from the jobs this person can see
   const all0 = visibleJobs(u).map((j) => V.jobView(j)); const uniq = (f) => [...new Map(all0.map(f).filter((x) => x && x[0]).map((x) => [x[0], x])).values()].sort((a, b) => String(a[1]).localeCompare(String(b[1])));
   const options = { clients: uniq((j) => [j.client_id, j.client_name]), cities: uniq((j) => [j.city, j.city]), recruiters: uniq((j) => [j.recruiter_id, j.recruiter_name]) };
-  return p.__file ? p : { ...p, counts, options };
+  return p.__file ? p : { ...p, counts, stages, bulk_count: bulkN, options };
 });
 // One "Client to be confirmed" per agency (the super admin's has no agency), made the first time it is needed. No
 // messages go to it; the job's client is changed to the real one later.
@@ -863,6 +874,9 @@ route('POST', '/api/jobs', T, (ctx) => {
   return made;
 });
 function createJob(c, b, actor, byClient) {
+  const made = createJob0(c, b, actor, byClient); if (made && made.id) setImmediate(() => { try { L.refreshMatchCounts(made.id); } catch { /* counted on the next timer run */ } }); return made;
+}
+function createJob0(c, b, actor, byClient) {
   if (!b.title) throw httpError(400, 'Pick the job', 'title');
   if (c.quiet) update('clients', c.id, { quiet: 0 }); // a new opening: this client can hear from us again
   const id = D.nextId('JB');

@@ -168,6 +168,18 @@ function completeOrder(o, by) {
 const seeOrder = (u, o) => { const cl = get('SELECT * FROM clients WHERE id=?', o.client_id); return !!cl && R.seeClient(u, cl); };
 
 route('GET', '/api/verify/packages', T, () => packages());
+// The finished report to the client by email (PDF attached); it is also in their account.
+route('POST', '/api/verify-orders/:id/send', T, (ctx) => {
+  const o = get('SELECT * FROM verify_orders WHERE id=?', Number(ctx.params.id)); if (!o || !seeOrder(ctx.user, o)) throw httpError(404, 'Order not found');
+  if (o.status !== 'Completed' || !o.report_file) throw httpError(400, 'Make the report first');
+  const cl = get('SELECT * FROM clients WHERE id=?', o.client_id) || {}; const to = String((ctx.body || {}).to || cl.email || '').trim();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(to)) throw httpError(400, 'The client has no email: add it on the client, or type one', 'to');
+  const v = orderView(o); const M = require('./mailer'); const subject = `Verification report ${v.no}: ${v.candidate_name}`;
+  const text = `Hello ${cl.contact || ''},\n\nThe ${v.name} verification of ${v.candidate_name} is complete: ${v.problem ? 'a problem was found, details in the report' : 'all checks are clear'}.\n\nThe report is attached. You can also download it from your account.\n\nBrillBrains Hiring Solutions`;
+  M.queue({ to, subject, text, html: M.layout(subject, `<p style="font-size:14px;line-height:1.7">${text.replace(/[&<>]/g, (m) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[m])).replace(/\n/g, '<br>')}</p>`), kind: 'verify_report', recordId: o.candidate_id, attachments: [{ file_id: o.report_file }], force: true, person: true });
+  D.history(ctx.actor.label, 'verification report sent', o.candidate_id, null, null, `${v.no} to ${to}`);
+  return { ok: true, to };
+});
 route('GET', '/api/verify-orders', T, (ctx) => { const q = ctx.query; const rows = all('SELECT * FROM verify_orders ORDER BY id DESC LIMIT 500').filter((o) => seeOrder(ctx.user, o) && (!q.candidate || o.candidate_id === q.candidate) && (!q.status || o.status === q.status)).map(orderView);
   return { rows, packages: packages(), counts: { open: rows.filter((o) => ['Requested', 'In progress'].includes(o.status)).length } }; });
 route('POST', '/api/verify-orders', T, (ctx) => { const b = ctx.body; const c = get('SELECT * FROM candidates WHERE id=?', L.resolveId(b.candidate_id)); if (!c) throw httpError(404, 'Candidate not found');
