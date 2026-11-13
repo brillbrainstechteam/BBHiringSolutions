@@ -2567,3 +2567,7 @@ a.pipe-step { text-decoration: none; cursor: pointer; } a.pipe-step:hover { bord
 .st-chips { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
 .st-chips button { cursor: pointer; }
 .st-add { flex-wrap: wrap; gap: 6px; }
+.st-ad { border: 1px solid var(--border); border-radius: 12px; overflow: hidden; background: var(--surface); }
+.st-ad-h { display: flex; flex-direction: column; padding: 10px 12px 4px; }
+.st-ad-t { padding: 4px 12px 10px; font-size: 13px; overflow-wrap: anywhere; }
+.st-ad-f { display: flex; gap: 8px; align-items: center; padding: 10px 12px; background: var(--surface-2); }

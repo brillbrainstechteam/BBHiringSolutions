@@ -2938,4 +2938,5 @@ require('./exports'); // daily data backup in Excel
 require('./portals'); // job portals: quotes, subscriptions, payments, results
 require('./flow'); // client onboarding, screening with AI, client CVs, invoices, books
 require('./studio'); // campaign studio: WhatsApp templates, header media, email designs
+require('./metaads'); // Meta ads made from the portal (paused until turned on)
 require('./adspend'); // ad spend reports from Meta and LinkedIn (Job openings -> Ad spend)

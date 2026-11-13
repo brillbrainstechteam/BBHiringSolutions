@@ -254,4 +254,77 @@
     if (v) S.done(v);
   };
 
+  // ---------- Meta ads (Facebook, Instagram, click to WhatsApp) ----------
+  const inr = (n) => BB.inr(Math.round(n || 0));
+  const AD_ST = { ACTIVE: 'b-green', PAUSED: 'b-outline', FAILED: 'b-red', MAKING: 'b-amber' };
+  S.ads = async (el, actions) => {
+    if (BB.me.user.level !== 'super') { el.innerHTML = '<div class="card empty">Meta ads spend money, so they are for the super admin.</div>'; return; }
+    el.innerHTML = '<div class="empty">Checking the Meta connection…</div>';
+    const [st, d] = await Promise.all([BB.api('/api/ads/meta/status'), BB.api('/api/ads/meta')]);
+    actions.innerHTML = `<button class="btn primary" data-anew ${st.ready ? '' : 'disabled title="Finish the Meta setup first"'}>+ New ad</button>`;
+    const setup = !st.connected ? `<div class="notice">${esc(st.note)}</div>`
+      : st.ready ? `<div class="small muted">Ad account <b>${esc((st.account || {}).name || st.account_id)}</b> · ${esc((st.account || {}).currency || '')} · Pages: ${st.pages.map((p) => esc(p.name)).join(', ')}${st.instagram.length ? ` · Instagram: ${st.instagram.map((x) => esc(x.name)).join(', ')}` : ''}</div>`
+      : `<div class="card pad stack-sm"><h3 style="margin:0">Meta setup needed before ads can be made here</h3>
+        ${st.account ? `<div class="small">Ad account: <b>${esc(st.account.name)}</b>${st.account.active ? '' : ' <span class="badge b-red tiny">not active</span>'}</div>` : `<div class="small">Ad account not readable${st.account_error ? `: ${esc(st.account_error)}` : ''}</div>`}
+        <div class="small">The token has: ${(st.scopes || []).map((x) => `<span class="badge b-outline tiny">${esc(x)}</span>`).join(' ') || 'nothing readable'}</div>
+        ${st.missing.length ? `<div class="small"><b>Give the system user these permissions</b> (Business settings › Users › System users › the user › Generate new token, tick them, then put the new token in the server .env as META_ADS_TOKEN):<ul style="margin:4px 0 0 18px">${st.missing.map((x) => `<li><b>${esc(x.scope)}</b>: ${esc(x.why)}</li>`).join('')}</ul></div>` : ''}
+        ${!st.pages.length ? '<div class="small"><b>Assign the Facebook Page</b> to the same system user (Business settings › Users › System users › Assign assets › Pages, with "Create ads").</div>' : ''}
+        ${st.optional_missing.length ? `<div class="tiny muted">Also useful: ${st.optional_missing.map((x) => `${esc(x.scope)} (${esc(x.why)})`).join('; ')}.</div>` : ''}
+        <div class="tiny muted">Click-to-WhatsApp ads also need the WhatsApp number linked to the Page (Page settings › Linked accounts › WhatsApp).</div></div>`;
+    el.innerHTML = `${setup}<div class="card" style="margin-top:12px">${BB.table([
+      { t: 'Ad', f: (a) => `<b>${esc(a.name)}</b><div class="tiny muted">${a.goal === 'whatsapp' ? 'Chat on WhatsApp' : 'Apply on the website'} · ${a.platforms.map((p) => (p === 'facebook' ? 'Facebook' : 'Instagram')).join(', ')}</div>${a.error ? `<div class="tiny" style="color:var(--red,#B42318)">${esc(a.error)}</div>` : ''}` },
+      { t: 'Status', f: (a) => `<span class="badge tiny ${AD_ST[a.status] || 'b-outline'}">${esc(a.status === 'ACTIVE' ? 'On' : a.status === 'PAUSED' ? 'Paused' : a.status === 'FAILED' ? 'Not made' : 'Making')}</span>${a.effective && a.effective !== a.status ? `<div class="tiny muted">${esc(a.effective.toLowerCase().replace(/_/g, ' '))}</div>` : ''}` },
+      { t: 'Budget', num: 1, f: (a) => `${inr(a.daily_budget)}/day<div class="tiny muted">${fmtD(a.start_at)}${a.end_at ? ` – ${fmtD(a.end_at)}` : ''}</div>` },
+      { t: 'Spent', num: 1, f: (a) => (a.spend !== undefined ? inr(a.spend) : '—') },
+      { t: 'Reach', num: 1, f: (a) => (a.impressions !== undefined ? `${a.impressions} seen<div class="tiny muted">${a.clicks} clicks${a.goal === 'whatsapp' ? ` · ${a.chats} chats` : ''}</div>` : '—') },
+      { t: 'Applied', num: 1, f: (a) => (a.applied === null ? '—' : a.applied) },
+      { t: '', f: (a) => (a.status === 'PAUSED' ? `<button class="btn sm primary" data-aon="${a.id}">Turn on</button>` : a.status === 'ACTIVE' ? `<button class="btn sm" data-aoff="${a.id}">Pause</button>` : '') }], d.rows, { empty: 'No ads made here yet.' })}</div>
+      <div class="tiny muted" style="margin-top:8px">Ads are made paused. Spend also shows in Job openings › Ad spend once fetched from Meta.</div>`;
+    const flip = (id, status) => async () => { if (status === 'ACTIVE' && !(await BB.confirm('Turn this ad on?', 'Meta starts spending the daily budget once it approves the ad.', 'Turn on'))) return; try { await BB.post(`/api/ads/meta/${id}/status`, { status }); BB.toast(status === 'ACTIVE' ? 'Ad turned on' : 'Ad paused'); BB.refreshPage(); } catch (e) { BB.fail(e); } };
+    $$('[data-aon]', el).forEach((b) => (b.onclick = flip(b.dataset.aon, 'ACTIVE'))); $$('[data-aoff]', el).forEach((b) => (b.onclick = flip(b.dataset.aoff, 'PAUSED')));
+    const nb = $('[data-anew]', actions); if (nb && st.ready) nb.onclick = () => S.newAd(st, d);
+  };
+  S.newAd = async (st, d) => {
+    const s = { goal: 'apply', job: '', platforms: ['facebook', 'instagram'], page: st.pages[0].id, ig: (st.instagram[0] || {}).id || '', cities: [], radius: 25, employment: true, age_min: 18, age_max: 65, budget: 500, start: '', end: '', text: '', headline: '', desc: '', cta: 'apply', image: null, video: null, name: '' };
+    const m = BB.modal({ title: 'New Meta ad', wide: true, body: '<div class="notice" style="margin-bottom:12px">The ad is made paused. Nothing is spent until you press Turn on.</div><div class="st-grid"><form class="stack" data-af onsubmit="return false"></form><div><div class="tiny muted" style="margin-bottom:6px">Preview</div><div data-aprev></div></div></div>', foot: '<button class="btn" data-acancel>Cancel</button><button class="btn primary" data-amake>Make the ad (paused)</button>' }).el;
+    const jobOf = () => d.jobs.find(([id]) => id === s.job);
+    const prev = () => { $('[data-aprev]', m).innerHTML = `<div class="st-ad"><div class="st-ad-h"><b>${esc((st.pages.find((p) => p.id === s.page) || {}).name || 'Page')}</b><span class="tiny muted">Sponsored</span></div><div class="st-ad-t">${esc(s.text || 'Your ad text').replace(/\n/g, '<br>')}</div><div class="st-media" style="height:180px;border-radius:0;margin:0">${s.image ? `<img src="${esc(s.image.url)}" alt="">` : '<span class="small">Ad picture</span>'}</div><div class="st-ad-f"><div class="grow"><div class="tiny muted">${s.goal === 'whatsapp' ? 'WHATSAPP' : esc(location.host.toUpperCase())}</div><b class="small">${esc(s.headline || (jobOf() ? jobOf()[1].split(' · ')[0] : 'Headline'))}</b></div><span class="btn sm">${s.goal === 'whatsapp' ? 'Send message' : { apply: 'Apply now', learn: 'Learn more', signup: 'Sign up' }[s.cta]}</span></div></div>`; };
+    const chk = (k, v, l) => `<label class="row small"><input type="checkbox" data-plat="${v}" ${s.platforms.includes(v) ? 'checked' : ''}> ${l}</label>`;
+    const draw = () => {
+      const f = $('[data-af]', m);
+      f.innerHTML = `${BB.field({ name: 'goal', label: 'What should people do', type: 'choice', options: [['apply', 'Apply on the website'], ['whatsapp', 'Chat on WhatsApp']], value: s.goal })}
+        ${BB.field({ name: 'job', label: s.goal === 'apply' ? 'Job opening' : 'Job opening (optional, for the name and to count applicants)', type: 'select', options: d.jobs, value: s.job, opt: s.goal !== 'apply' })}
+        <div class="grid g2"><div class="field" data-f="platforms"><span class="lab">Where</span><div class="row">${chk('p', 'facebook', 'Facebook')}${chk('p', 'instagram', 'Instagram')}</div></div>${BB.field({ name: 'page', label: 'Facebook Page', type: 'select', options: st.pages.map((p) => [p.id, p.name]), value: s.page, placeholder: false })}</div>
+        ${s.platforms.includes('instagram') && st.instagram.length ? BB.field({ name: 'ig', label: 'Instagram account', type: 'select', options: st.instagram.map((x) => [x.id, x.name]), value: s.ig, placeholder: 'Use the Page' }) : ''}
+        <div class="field" data-f="cities"><span class="lab">Cities <span class="opt">(empty: all of India)</span></span><div class="row"><input data-cityq placeholder="Type a city" style="flex:1"><button type="button" class="btn sm" data-cityfind>Find</button></div><div class="row" data-cityhits style="margin-top:4px"></div><div class="row" style="margin-top:4px">${s.cities.map((x, i) => `<span class="badge b-outline">${esc(x.name)}${x.region ? `, ${esc(x.region)}` : ''} <button type="button" class="link-sm" data-cityx="${i}" aria-label="Remove">×</button></span>`).join(' ')}</div></div>
+        <div class="grid g3">${BB.field({ name: 'radius', label: 'Around each city (km)', type: 'number', value: s.radius, voice: false })}${BB.field({ name: 'age_min', label: 'Age from', type: 'number', value: s.age_min, voice: false, attrs: s.employment ? 'disabled' : '' })}${BB.field({ name: 'age_max', label: 'Age to', type: 'number', value: s.age_max, voice: false, attrs: s.employment ? 'disabled' : '' })}</div>
+        ${BB.field({ name: 'employment', label: 'Job ad (Meta\'s Employment category: everyone 18 to 65, no gender choice, at least 25 km). Keep this on for job ads.', type: 'check', value: s.employment })}
+        <div class="grid g3">${BB.field({ name: 'budget', label: 'Daily budget (₹)', type: 'number', value: s.budget, voice: false })}${BB.field({ name: 'start', label: 'Start', type: 'date', value: s.start, opt: true, voice: false })}${BB.field({ name: 'end', label: 'End', type: 'date', value: s.end, opt: true, voice: false })}</div>
+        <div class="field" data-f="image"><span class="lab">Picture</span><div class="row"><button type="button" class="btn sm" data-aimg>${s.image ? 'Change picture' : 'Upload picture'}</button><span class="small muted">${s.image ? esc(s.image.name) : 'JPG or PNG, 1080 × 1080 works everywhere'}</span></div></div>
+        <div class="field" data-f="video"><span class="lab">Video <span class="opt">(optional; the picture becomes its cover)</span></span><div class="row"><button type="button" class="btn sm" data-avid>${s.video ? 'Change video' : 'Upload video'}</button><span class="small muted">${s.video ? esc(s.video.name) : 'MP4 up to 16 MB'}</span>${s.video ? '<button type="button" class="btn sm ghost" data-avidx>Remove</button>' : ''}</div></div>
+        ${BB.field({ name: 'text', label: 'Ad text', type: 'textarea', value: s.text, placeholder: 'e.g. Jewellery showroom in Mumbai hiring Sales Executives. 2+ years in jewellery sales. Apply in one minute.' })}
+        <div class="grid g2">${BB.field({ name: 'headline', label: 'Headline', opt: true, value: s.headline })}${BB.field({ name: 'desc', label: 'Description', opt: true, value: s.desc })}</div>
+        ${s.goal === 'apply' ? BB.field({ name: 'cta', label: 'Button', type: 'select', options: [['apply', 'Apply now'], ['learn', 'Learn more'], ['signup', 'Sign up']], value: s.cta, placeholder: false }) : ''}
+        ${BB.field({ name: 'name', label: 'Ad name', opt: true, value: s.name, voice: false, hint: 'Empty: the job ID and title with today\'s date. The job ID in the name ties applicants to the job.' })}`;
+      $$('input[name],select[name],textarea[name]', f).forEach((i) => { i.oninput = i.onchange = (e) => { s[i.name] = i.type === 'checkbox' ? i.checked : i.type === 'radio' ? (i.checked ? i.value : s[i.name]) : i.value; if (e.type === 'change' && ['goal', 'employment'].includes(i.name)) draw(); else prev(); }; });
+      $$('[data-plat]', f).forEach((i) => (i.onchange = () => { s.platforms = $$('[data-plat]:checked', f).map((x) => x.dataset.plat); draw(); }));
+      const find = async () => { const q = $('[data-cityq]', f).value.trim(); if (q.length < 2) return; try { const r = await BB.api(`/api/ads/meta/geo?q=${encodeURIComponent(q)}`); $('[data-cityhits]', f).innerHTML = r.rows.map((x, i) => `<button type="button" class="btn sm ghost" data-cityadd="${i}">${esc(x.name)}${x.region ? `, ${esc(x.region)}` : ''}</button>`).join('') || '<span class="small muted">No city found</span>'; $$('[data-cityadd]', f).forEach((b) => (b.onclick = () => { const x = r.rows[+b.dataset.cityadd]; if (!s.cities.some((y) => y.key === x.key)) s.cities.push(x); draw(); })); } catch (e) { BB.fail(e); } };
+      $('[data-cityfind]', f).onclick = find; $('[data-cityq]', f).onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); find(); } };
+      $$('[data-cityx]', f).forEach((b) => (b.onclick = () => { s.cities.splice(+b.dataset.cityx, 1); draw(); }));
+      $('[data-aimg]', f).onclick = async () => { const r = await S.upload('.jpg,.jpeg,.png'); if (r) { s.image = r; draw(); } };
+      $('[data-avid]', f).onclick = async () => { const r = await S.upload('.mp4'); if (r) { s.video = r; draw(); } };
+      const vx = $('[data-avidx]', f); if (vx) vx.onclick = () => { s.video = null; draw(); };
+      prev();
+    };
+    draw();
+    $('[data-acancel]', m).onclick = () => m.closest('.modal-back').remove();
+    $('[data-amake]', m).onclick = async () => {
+      const btn = $('[data-amake]', m); btn.disabled = true;
+      try {
+        await BB.post('/api/ads/meta', { goal: s.goal, job_id: s.job || undefined, platforms: s.platforms, page_id: s.page, ig_id: s.ig || undefined, cities: s.cities, radius_km: s.radius, employment: s.employment, age_min: s.age_min, age_max: s.age_max, daily_budget: s.budget, start: s.start || undefined, end: s.end || undefined, primary_text: s.text, headline: s.headline, description: s.desc, cta: s.cta, image_key: s.image && s.image.key, video_key: s.video && s.video.key, name: s.name });
+        m.closest('.modal-back').remove(); BB.toast('Ad made, paused. Press Turn on to start.'); BB.refreshPage();
+      } catch (e) { BB.showErr(m, e); if (BB.refreshPage) BB.refreshPage(); } finally { btn.disabled = false; }
+    };
+  };
+
 })();
