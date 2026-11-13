@@ -128,7 +128,7 @@ function filled(t, map, vars, media) {
     const x = m || {}; if (!x.src) throw httpError(400, `Choose what goes in ${slot}`, 'tpl');
     const v = String(x.src === 'text' ? x.text || '' : vars[x.src] ?? '').trim() || String(x.fallback || '').trim();
     if (!v) throw Object.assign(new Error(`No ${label}`), { skip: true });
-    return v.slice(0, 1000);
+    return v.replace(/[\r\n\t]+/g, ' ').replace(/ {4,}/g, '   ').slice(0, 1000); // Meta refuses line breaks, tabs and 4+ spaces in a value
   };
   const named = (tok) => !/^\d+$/.test(tok);
   const label = (m) => (m && m.src && m.src !== 'text' ? (FIELDS.find(([k]) => k === m.src) || [])[1] || m.src : 'value').toLowerCase();

@@ -3,6 +3,14 @@
 const D = require('./db');
 const L = require('./logic');
 
+// Meta refuses a blank value (#131008 "Required parameter is missing") and a value with a line break, tab or 4+
+// spaces (#132018). Blanks get a plain stand-in; line breaks become spaces.
+const STAND_IN = { name: 'there', place: 'will be shared with you', venue: 'will be shared with you', salary: 'as per the role', city: 'your city', company: 'the company', role: 'the role', job: 'the role', time: 'to be confirmed', date: 'to be confirmed' };
+function metaValue(key, v) {
+  let t = String(v ?? '').replace(/[\r\n\t]+/g, ' ').replace(/ {4,}/g, '   ').trim();
+  if (!t) t = STAND_IN[key] || '-';
+  return t.slice(0, 1000);
+}
 async function post(msg, text, vars) {
   const s = D.settings().crm;
   // Meta templates take values by position ({{1}}, {{2}} …): the order the blanks
@@ -19,7 +27,7 @@ async function post(msg, text, vars) {
   if (msg.format) {
     const f = D.settings().formats[msg.format] || {};
     const order = [...new Set(((f[msg.lang] || f.en || '').match(/\{(\w+)\}/g) || []).map((x) => x.slice(1, -1)))];
-    paramList = order.map((k) => String((vars || {})[k] ?? ''));
+    paramList = order.map((k) => metaValue(k, (vars || {})[k]));
   }
   // preview is the saved text, so a password or login code stays hidden in the CRM inbox too.
   // Sent from the number this person last wrote to (when they wrote to one of our other numbers).
@@ -63,4 +71,4 @@ function dispatchStored(id) {
 }
 L.setDispatcher((msg, text, vars) => { dispatch(msg, text, vars); });
 
-module.exports = { dispatchStored, retryLater };
+module.exports = { dispatchStored, retryLater, metaValue };
