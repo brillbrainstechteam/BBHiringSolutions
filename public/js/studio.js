@@ -35,7 +35,7 @@
     const names = segs.filter(([id]) => v.segments.includes(String(id))).map(([, n]) => n);
     const a = aud.ids ? { ids: aud.ids, label: aud.label } : { segments: v.segments, segment: v.segments[0], label: names.join(', ') };
     if (v.what === 'template') return S.waBuilder(a, aud.tplKey);
-    if (v.what === 'design' && S.sendDesign) return S.sendDesign(a);
+    if (v.what === 'design' && S.sendDesign) return S.sendDesign(a, aud.designId);
     return classicCampaign({ ...a, kind: v.what });
   };
   // Ticked candidates, or a segment's Send campaign button, start here too.
@@ -176,6 +176,82 @@
     };
     $('[data-tsave]', m).onclick = () => save(false); $('[data-tsub]', m).onclick = () => save(true);
     const del = $('[data-tdel]', m); if (del) del.onclick = async () => { if (!(await BB.confirm('Remove this draft?', 'It was never sent to Meta.', 'Remove'))) return; try { await BB.post(`/api/studio/wa/templates/${encodeURIComponent(from.key)}/delete`); m.closest('.modal-back').remove(); BB.toast('Draft removed'); BB.refreshPage(); } catch (e) { BB.fail(e); } };
+  };
+
+  // ---------- email designs ----------
+  const BLOCK_NAMES = [['heading', 'Heading'], ['text', 'Text'], ['image', 'Image'], ['button', 'Button'], ['job', 'Job card'], ['divider', 'Divider'], ['spacer', 'Space']];
+  const newBlock = (type) => ({ heading: { type, text: 'Hello {first_name}', size: 'l', align: 'left' }, text: { type, text: 'Write your message. **Bold** with two stars; links work as they are.', align: 'left' }, image: { type, media_key: '', url: '', alt: '', width: 100, align: 'center' }, button: { type, label: 'See the jobs', url: '{apply_link}', color: 'gold', align: 'left' }, job: { type, job_id: '' }, divider: { type }, spacer: { type } }[type]);
+  S.designs = async (el, actions) => {
+    const d = await BB.api('/api/studio/designs');
+    actions.innerHTML = '<button class="btn primary" data-dnew>+ New design</button>';
+    $('[data-dnew]', actions).onclick = () => S.designer(null);
+    el.innerHTML = `<div class="small muted" style="margin-bottom:8px">Designed emails for campaigns. {first_name}, {city}, {job_title} and the other merge fields fill in for each person.</div><div class="card">${BB.table([{ t: 'Design', f: (x) => `<b>${esc(x.name)}</b><div class="tiny muted">${esc(x.subject || 'No subject yet')}</div>` }, { t: 'Blocks', num: 1, f: (x) => x.blocks.length }, { t: 'Updated', f: (x) => `${fmtD(x.updated_at || x.at)}<div class="tiny muted">${esc(x.updated_by || x.by)}</div>` }, { t: '', f: (x) => `<span class="nowrap"><button class="btn sm" data-dedit="${x.id}">Edit</button> <button class="btn sm primary" data-dsend="${x.id}">Send</button></span>` }], d.rows, { empty: 'No designs yet. Press + New design.' })}</div>`;
+    $$('[data-dedit]', el).forEach((b) => (b.onclick = () => S.designer(d.rows.find((x) => String(x.id) === b.dataset.dedit))));
+    $$('[data-dsend]', el).forEach((b) => (b.onclick = () => S.start({ what: 'design', designId: b.dataset.dsend })));
+  };
+  S.designer = async (from) => {
+    const d = await BB.api('/api/studio/designs');
+    const st = { id: from ? from.id : null, name: from ? from.name : '', subject: from ? from.subject : '', preheader: from ? from.preheader : '', blocks: from ? JSON.parse(JSON.stringify(from.blocks)) : [newBlock('heading'), newBlock('text'), newBlock('button')], job: '' };
+    let lastFocus = null;
+    const sel = (i, k, opts, cur) => `<select data-bi="${i}" data-bk="${k}">${opts.map(([v, l]) => `<option value="${esc(v)}" ${String(v) === String(cur) ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>`;
+    const inp = (i, k, v, ph) => `<input data-bi="${i}" data-bk="${k}" value="${esc(v ?? '')}" placeholder="${esc(ph || '')}">`;
+    const align = (i, b) => sel(i, 'align', [['left', 'Left'], ['center', 'Centre'], ['right', 'Right']], b.align);
+    const blockForm = (b, i) => {
+      const body = {
+        heading: () => `<div class="st-brow">${inp(i, 'text', b.text, 'Heading')}${sel(i, 'size', [['l', 'Large'], ['m', 'Medium']], b.size)}${align(i, b)}</div>`,
+        text: () => `<textarea data-bi="${i}" data-bk="text" rows="4">${esc(b.text)}</textarea><div class="st-brow">${align(i, b)}</div>`,
+        image: () => `<div class="st-brow"><button type="button" class="btn sm" data-bimg="${i}">${b.media_key ? 'Change image' : 'Upload image'}</button>${b.media_key ? '' : inp(i, 'url', b.url, 'or an https:// image link')}${sel(i, 'width', [[100, 'Full width'], [75, '3/4'], [50, 'Half'], [30, 'Small']], b.width)}${align(i, b)}</div><div class="st-brow">${inp(i, 'alt', b.alt, 'Words if the image does not load')}${b.media_key ? inp(i, 'url', b.url, 'Link when tapped (optional)') : ''}</div>`,
+        button: () => `<div class="st-brow">${inp(i, 'label', b.label, 'Button words')}${inp(i, 'url', b.url, 'https://… or {apply_link}')}</div><div class="st-brow">${sel(i, 'color', [['gold', 'Gold'], ['navy', 'Navy'], ['green', 'Green']], b.color)}${align(i, b)}</div>`,
+        job: () => `${sel(i, 'job_id', [['', 'Pick a job opening'], ...d.jobs], b.job_id)}<div class="tiny muted">Title, city, experience, with Apply and See the job links</div>`,
+        divider: () => '<div class="tiny muted">A thin line</div>', spacer: () => '<div class="tiny muted">Empty space</div>',
+      }[b.type]();
+      return `<div class="st-block"><div class="row between"><b class="small">${esc((BLOCK_NAMES.find(([k]) => k === b.type) || [])[1])}</b><span class="nowrap"><button type="button" class="btn sm ghost" data-bmv="${i}:-1" ${i ? '' : 'disabled'} aria-label="Move up" title="Move up">↑</button><button type="button" class="btn sm ghost" data-bmv="${i}:1" ${i < st.blocks.length - 1 ? '' : 'disabled'} aria-label="Move down" title="Move down">↓</button><button type="button" class="btn sm ghost" data-bdel="${i}" aria-label="Remove" title="Remove">✕</button></span></div>${body}</div>`;
+    };
+    const m = BB.modal({ title: from ? `Email design · ${esc(from.name)}` : 'New email design', wide: true,
+      body: `<div class="st-grid st-grid-mail"><form class="stack" data-df onsubmit="return false"></form><div><div class="row between" style="margin-bottom:6px"><span class="tiny muted" data-dwho>Preview</span><select data-djob class="sm" style="max-width:200px"><option value="">Sample job: none</option>${d.jobs.map(([v, l]) => `<option value="${esc(v)}">${esc(l)}</option>`).join('')}</select></div><div class="tiny" data-dsub style="margin-bottom:4px"></div><iframe class="st-mail" data-dprev title="Email preview" sandbox="allow-same-origin"></iframe></div></div>`,
+      foot: `${from ? '<button class="btn ghost" data-ddel style="margin-right:auto">Remove</button>' : ''}<button class="btn" data-dtest>Send a test</button><button class="btn" data-dsave>Save</button><button class="btn primary" data-dsend>Save and send</button>` }).el;
+    let tp;
+    const preview = () => { clearTimeout(tp); tp = setTimeout(async () => { try { const r = await BB.post('/api/studio/designs/preview', { subject: st.subject, preheader: st.preheader, blocks: st.blocks, job_id: st.job }); $('[data-dprev]', m).srcdoc = r.html.split('src="/api/').join(`src="${location.origin}/api/`); $('[data-dsub]', m).innerHTML = `<b>Subject:</b> ${esc(r.subject || '(none)')}`; $('[data-dwho]', m).textContent = `Preview for ${r.who}`; } catch (e) { BB.fail(e); } }, 300); };
+    const draw = () => {
+      const f = $('[data-df]', m);
+      f.innerHTML = `<div class="grid g2">${BB.field({ name: 'name', label: 'Design name', value: st.name, voice: false })}${BB.field({ name: 'subject', label: 'Email subject', value: st.subject, voice: false, placeholder: 'e.g. {first_name}, jobs in {city} this week' })}</div>${BB.field({ name: 'preheader', label: 'Preview line in the inbox', opt: true, value: st.preheader, voice: false })}
+        <div class="st-chips"><span class="tiny muted">Merge fields (click to add where you are typing):</span>${d.fields.map(([k, l]) => `<button type="button" class="badge b-outline tiny" data-mf="${k}" title="${esc(l)}">{${k}}</button>`).join('')}</div>
+        <div class="stack-sm">${st.blocks.map(blockForm).join('') || '<div class="empty small">No blocks yet.</div>'}</div>
+        <div class="row st-add"><span class="small muted">Add:</span>${BLOCK_NAMES.map(([k, l]) => `<button type="button" class="btn sm" data-badd="${k}">${l}</button>`).join('')}</div>`;
+      $$('[name=name],[name=subject],[name=preheader]', f).forEach((i) => { i.onfocus = () => (lastFocus = i); i.oninput = () => { st[i.name] = i.value; preview(); }; });
+      $$('[data-bi]', f).forEach((i) => { const blk = st.blocks[+i.dataset.bi]; i.onfocus = () => (lastFocus = i); i.oninput = i.onchange = (e) => { blk[i.dataset.bk] = i.dataset.bk === 'width' ? Number(i.value) : i.value; if (e.type === 'change' && i.tagName === 'SELECT' && i.dataset.bk === 'job_id') draw(); preview(); }; });
+      $$('[data-badd]', f).forEach((b) => (b.onclick = () => { st.blocks.push(newBlock(b.dataset.badd)); draw(); }));
+      $$('[data-bdel]', f).forEach((b) => (b.onclick = () => { st.blocks.splice(+b.dataset.bdel, 1); draw(); }));
+      $$('[data-bmv]', f).forEach((b) => (b.onclick = () => { const [i, dir] = b.dataset.bmv.split(':').map(Number); const [x] = st.blocks.splice(i, 1); st.blocks.splice(i + dir, 0, x); draw(); }));
+      $$('[data-bimg]', f).forEach((b) => (b.onclick = async () => { const r = await S.upload('.jpg,.jpeg,.png'); if (r) { st.blocks[+b.dataset.bimg].media_key = r.key; draw(); } }));
+      $$('[data-mf]', f).forEach((b) => { b.onmousedown = (e) => e.preventDefault(); b.onclick = () => { const i = lastFocus && document.contains(lastFocus) ? lastFocus : null; if (!i) return BB.toast('Click in a text box first', true); const pos = i.selectionStart ?? i.value.length; i.value = `${i.value.slice(0, pos)}{${b.dataset.mf}}${i.value.slice(i.selectionEnd ?? pos)}`; i.dispatchEvent(new Event('input')); i.focus(); }; });
+      preview();
+    };
+    draw();
+    $('[data-djob]', m).onchange = (e) => { st.job = e.target.value; preview(); };
+    const save = async () => { const r = await BB.post('/api/studio/designs', { id: st.id, name: st.name, subject: st.subject, preheader: st.preheader, blocks: st.blocks }); st.id = r.id; return r; };
+    const guard = (fn) => async () => { const btns = $$('.modal-f .btn', m); btns.forEach((b) => (b.disabled = true)); try { await fn(); } catch (e) { BB.showErr(m, e); } finally { btns.forEach((b) => (b.disabled = false)); } };
+    $('[data-dsave]', m).onclick = guard(async () => { await save(); BB.toast('Design saved'); if (BB.refreshPage) BB.refreshPage(); });
+    $('[data-dtest]', m).onclick = guard(async () => { await save(); const v = await BB.ask({ title: 'Send a test', note: 'The test uses sample details (Priya Sharma, Mumbai). It goes even while emails are off.', fields: [{ name: 'to', label: 'Send to', type: 'email', value: BB.me.user.email || '', voice: false }], ok: 'Send test', submit: (x) => BB.post(`/api/studio/designs/${st.id}/test`, { ...x, job_id: st.job }) }); if (v) BB.toast(v.configured ? `Test sent to ${v.to}` : `Test saved for ${v.to}. Email sending is not set up on this copy.`, !v.configured); });
+    $('[data-dsend]', m).onclick = guard(async () => { await save(); m.closest('.modal-back').remove(); S.start({ what: 'design', designId: st.id }); });
+    const del = $('[data-ddel]', m); if (del) del.onclick = async () => { if (!(await BB.confirm('Remove this design?', 'Campaigns already sent keep what went.', 'Remove'))) return; try { await BB.post(`/api/studio/designs/${st.id}/delete`); m.closest('.modal-back').remove(); BB.toast('Design removed'); BB.refreshPage(); } catch (e) { BB.fail(e); } };
+  };
+  // Send a design to the people picked in New campaign.
+  S.sendDesign = async (aud, designId) => {
+    const d = await BB.api('/api/studio/designs'); if (!d.rows.length) { BB.toast('Make an email design first', true); return BB.go('team/campaigns?tab=designs'); }
+    const qs = aud.ids ? `ids=${encodeURIComponent(aud.ids.join(','))}` : `segments=${encodeURIComponent((aud.segments || [aud.segment]).join(','))}`;
+    const who = await BB.api(`/api/campaigns/audience?${qs}`).catch(() => ({ total: 0 }));
+    const pick = d.rows.find((x) => String(x.id) === String(designId)) || d.rows[0];
+    setTimeout(() => { const m = $('.modal'); if (!m) return; const at = $('[name=send_at]', m).closest('.field'); const show = () => at.classList.toggle('hidden', ($('[name=when]:checked', m) || {}).value !== 'at'); $$('[name=when]', m).forEach((r) => (r.onchange = show)); show(); const ds = $('[name=design_id]', m); ds.onchange = () => { const x = d.rows.find((y) => String(y.id) === ds.value); $('[name=subject]', m).placeholder = x ? x.subject : ''; }; }, 0);
+    const v = await BB.ask({ title: `Email campaign · ${esc(aud.label || '')}`, wide: true, note: `${who.total} ${who.total === 1 ? 'person' : 'people'}. People who said STOP, gave no consent or have no email are left out. While emails are off, campaigns wait on hold.`, fields: [
+      { name: 'design_id', label: 'Design', type: 'select', options: d.rows.map((x) => [x.id, x.name]), value: pick.id, placeholder: false },
+      { name: 'subject', label: 'Subject', opt: true, voice: false, placeholder: pick.subject, hint: 'Empty uses the design\'s subject' },
+      { name: 'job_id', label: 'Job opening for {job_title}, {job_city} and the job links', type: 'select', options: d.jobs, opt: true, placeholder: 'None' },
+      { name: 'when', label: 'When', type: 'choice', options: [['now', 'Now'], ['preferred', 'Each person\'s preferred time'], ['at', 'At a set time']], value: 'now' },
+      { name: 'send_at', label: 'Date and time', type: 'datetime-local', voice: false },
+      { name: 'name', label: 'Campaign name', opt: true, voice: false }], ok: 'Send',
+    submit: (x) => { if (x.when === 'at' && !x.send_at) throw Object.assign(new Error('Pick the date and time'), { field: 'send_at' }); return BB.post('/api/campaigns', { kind: 'design', design_id: x.design_id, subject: x.subject, job_id: x.job_id || undefined, ids: aud.ids, segments: aud.segments || (aud.segment ? [aud.segment] : undefined), timing: x.when === 'preferred' ? 'preferred' : 'now', send_at: x.when === 'at' ? new Date(x.send_at).toISOString() : undefined, name: x.name }); } });
+    if (v) S.done(v);
   };
 
 })();

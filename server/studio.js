@@ -253,4 +253,72 @@ async function submitTemplate(key, by) {
 route('POST', '/api/studio/wa/templates/:key/submit', T, async (ctx) => { const r = templateRow(ctx.params.key); if (!r || r.source !== 'portal' || !['DRAFT', 'NOT SENT'].includes(r.status)) throw httpError(404, 'Draft not found'); return submitTemplate(r.key, ctx.actor.label); });
 route('POST', '/api/studio/wa/templates/:key/delete', T, (ctx) => { const r = templateRow(ctx.params.key); if (!r || r.source !== 'portal' || !['DRAFT', 'NOT SENT'].includes(r.status)) throw httpError(400, 'Only drafts not sent to Meta can be removed here.'); D.run('DELETE FROM wa_templates WHERE key=?', r.key); D.history(ctx.actor.label, 'WhatsApp template draft removed', r.key); return { ok: true }; });
 
-module.exports = { FIELDS, mergeVars, fillText, tplView, templateRow, campaignTemplate, filled, headerMedia, syncTemplates, crmReady };
+// ---------- email designs: blocks put together here, sent through the mailer ----------
+D.db.exec('CREATE TABLE IF NOT EXISTS email_designs (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, subject TEXT, preheader TEXT, blocks TEXT, by TEXT, at TEXT, updated_by TEXT, updated_at TEXT, removed INTEGER DEFAULT 0)');
+const BLOCKS = ['heading', 'text', 'image', 'button', 'divider', 'spacer', 'job'];
+const escH = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const safeUrl = (u) => (/^(https?:\/\/|mailto:|tel:)/i.test(String(u || '').trim()) ? String(u).trim() : '');
+const ALIGN = (a) => (['center', 'right'].includes(a) ? a : 'left');
+const COLORS = { gold: ['#D19B12', '#1A1404'], navy: ['#101A3A', '#FFFFFF'], green: ['#1E7F4F', '#FFFFFF'] };
+// **bold**, links and line breaks in a text block (after escaping, so no HTML gets in).
+const richText = (t) => escH(t).replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>').replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" style="color:#1E3A8A">$1</a>').replace(/\n/g, '<br>');
+const mediaUrl = (key) => `${String(D.settings().business.base_url || '').replace(/\/$/, '')}/api/public/studio-media/${key}`;
+function cleanBlocks(list) {
+  return (Array.isArray(list) ? list : []).slice(0, 40).filter((b) => b && BLOCKS.includes(b.type)).map((b) => ({
+    type: b.type, text: String(b.text || '').slice(0, 5000), label: String(b.label || '').slice(0, 60), url: String(b.url || '').slice(0, 1000), align: ALIGN(b.align),
+    size: b.size === 'm' ? 'm' : 'l', color: COLORS[b.color] ? b.color : 'gold', media_key: String(b.media_key || '').replace(/[^a-f0-9]/g, ''), alt: String(b.alt || '').slice(0, 200), job_id: String(b.job_id || '').slice(0, 20), width: Math.min(100, Math.max(20, Number(b.width) || 100)),
+  }));
+}
+function renderDesign(design, vars, subject, preview) {
+  const blocks = cleanBlocks(typeof design.blocks === 'string' ? JSON.parse(design.blocks || '[]') : design.blocks);
+  const f = (t) => fillText(t, vars); const html = []; const text = [];
+  for (const b of blocks) {
+    const al = `text-align:${b.align}`;
+    if (b.type === 'heading') { const t = f(b.text); html.push(`<h${b.size === 'm' ? 2 : 1} style="margin:0 0 12px;font-size:${b.size === 'm' ? 17 : 22}px;line-height:1.3;color:#101A3A;${al}">${escH(t)}</h${b.size === 'm' ? 2 : 1}>`); text.push(t.toUpperCase()); }
+    if (b.type === 'text') { const t = f(b.text); html.push(`<p style="font-size:14px;line-height:1.65;margin:0 0 14px;${al}">${richText(t)}</p>`); text.push(t.replace(/\*\*/g, '')); }
+    if (b.type === 'image') {
+      const src = b.media_key ? (preview ? `/api/public/studio-media/${b.media_key}` : mediaUrl(b.media_key)) : safeUrl(b.url); if (!src) continue; const link = safeUrl(f(b.url && b.media_key ? b.url : ''));
+      const img = `<img src="${escH(src)}" alt="${escH(b.alt)}" width="${Math.round(512 * b.width / 100)}" style="width:${b.width}%;max-width:100%;height:auto;border:0;border-radius:8px;display:inline-block">`;
+      html.push(`<div style="margin:0 0 14px;${al}">${link ? `<a href="${escH(link)}">${img}</a>` : img}</div>`); if (b.alt) text.push(`[${b.alt}]`);
+    }
+    if (b.type === 'button') { const u = safeUrl(f(b.url)); if (!u || !b.label) continue; const [bg, fg] = COLORS[b.color]; html.push(`<p style="margin:6px 0 18px;${al}"><a href="${escH(u)}" style="background:${bg};color:${fg};text-decoration:none;font-weight:bold;padding:11px 22px;border-radius:999px;display:inline-block">${escH(f(b.label))}</a></p>`); text.push(`${f(b.label)}: ${u}`); }
+    if (b.type === 'divider') { html.push('<hr style="border:0;border-top:1px solid #E5E8F1;margin:18px 0">'); text.push('—'); }
+    if (b.type === 'spacer') html.push('<div style="height:18px;line-height:18px">&nbsp;</div>');
+    if (b.type === 'job') {
+      const j = b.job_id ? get('SELECT * FROM jobs WHERE id=?', b.job_id) : null; if (!j) continue;
+      const jd = L.link(`jd/${j.id}`); const ap = L.link('apply', `?job=${j.id}&src=email`);
+      const facts = [j.city, j.exp_from != null || j.exp_to != null ? `${j.exp_from ?? 0}${j.exp_to ? `–${j.exp_to}` : '+'} yrs` : '', j.openings ? `${j.openings} opening${j.openings === 1 ? '' : 's'}` : ''].filter(Boolean).join(' · ');
+      html.push(`<table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #E5E8F1;border-left:4px solid #D19B12;border-radius:10px;margin:0 0 16px"><tr><td style="padding:14px 16px"><div style="font-size:16px;font-weight:bold;color:#101A3A">${escH(j.title)}</div><div style="font-size:13px;color:#5A6482;margin:3px 0 10px">${escH(facts)}</div><a href="${escH(ap)}" style="background:#101A3A;color:#fff;text-decoration:none;font-weight:bold;font-size:13px;padding:8px 16px;border-radius:999px;display:inline-block">Apply</a> <a href="${escH(jd)}" style="color:#1E3A8A;font-size:13px;margin-left:10px">See the job</a></td></tr></table>`);
+      text.push(`${j.title}${facts ? ` (${facts})` : ''}\nApply: ${ap}\nDetails: ${jd}`);
+    }
+  }
+  const pre = f(design.preheader || '');
+  const body = `${pre ? `<div style="display:none;max-height:0;overflow:hidden;opacity:0">${escH(pre)}</div>` : ''}${html.join('\n')}<p style="font-size:11px;color:#959DB5;margin:18px 0 0">You get these emails because you shared your details with us for jobs. Reply STOP to stop them.</p>`;
+  return { html: require('./mailer').layout('', body), text: `${text.join('\n\n')}\n\nReply STOP to stop these emails.\n${vars.company || ''}`, subject: subject || f(design.subject || '') };
+}
+const designRow = (id) => get('SELECT * FROM email_designs WHERE id=? AND removed=0', Number(id) || 0);
+const designOut = (r) => ({ ...r, blocks: cleanBlocks(JSON.parse(r.blocks || '[]')) });
+const sampleCand = (id) => (id && get('SELECT * FROM candidates WHERE id=?', String(id))) || { name: 'Priya Sharma', city: 'Mumbai', job_wanted: 'Sales Executive' };
+route('GET', '/api/studio/designs', T, () => ({ rows: all('SELECT * FROM email_designs WHERE removed=0 ORDER BY COALESCE(updated_at, at) DESC').map(designOut), fields: FIELDS, jobs: all("SELECT id, title, city FROM jobs WHERE status IN ('Open','Sourcing','Interviewing') ORDER BY id DESC").map((j) => [j.id, `${j.title}, ${j.city || ''} · ${j.id}`]) }));
+route('GET', '/api/studio/designs/:id', T, (ctx) => { const r = designRow(ctx.params.id); if (!r) throw httpError(404, 'Design not found'); return designOut(r); });
+route('POST', '/api/studio/designs', T, (ctx) => {
+  const b = ctx.body || {}; const name = String(b.name || '').trim().slice(0, 80); if (!name) throw httpError(400, 'Name the design', 'name');
+  const row = { name, subject: String(b.subject || '').trim().slice(0, 200), preheader: String(b.preheader || '').trim().slice(0, 200), blocks: JSON.stringify(cleanBlocks(b.blocks)) };
+  if (b.id) { const r = designRow(b.id); if (!r) throw httpError(404, 'Design not found'); update('email_designs', r.id, { ...row, updated_by: ctx.actor.label, updated_at: now() }); D.history(ctx.actor.label, 'email design saved', `ED-${r.id}`); return designOut(designRow(r.id)); }
+  const r = D.run('INSERT INTO email_designs (name,subject,preheader,blocks,by,at) VALUES (?,?,?,?,?,?)', row.name, row.subject, row.preheader, row.blocks, ctx.actor.label, now());
+  D.history(ctx.actor.label, 'email design made', `ED-${r.lastInsertRowid}`); return designOut(designRow(Number(r.lastInsertRowid)));
+});
+route('POST', '/api/studio/designs/:id/delete', T, (ctx) => { const r = designRow(ctx.params.id); if (!r) throw httpError(404, 'Design not found'); update('email_designs', r.id, { removed: 1 }); D.history(ctx.actor.label, 'email design removed', `ED-${r.id}`); return { ok: true }; });
+route('POST', '/api/studio/designs/preview', T, (ctx) => { const b = ctx.body || {}; const c = sampleCand(b.candidate_id); const job = b.job_id ? get('SELECT * FROM jobs WHERE id=?', String(b.job_id)) : null; const vars = mergeVars(c, job); const out = renderDesign(b, vars, fillText(b.subject || '', vars), true); return { html: out.html, subject: out.subject, who: c.name }; });
+// A test to the person working on it (or an address they type), with sample details. Goes even while emails are off.
+route('POST', '/api/studio/designs/:id/test', T, (ctx) => {
+  const r = designRow(ctx.params.id); if (!r) throw httpError(404, 'Design not found'); const M = require('./mailer');
+  const to = String((ctx.body || {}).to || ctx.user.email || '').trim(); if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(to)) throw httpError(400, 'Type the email address for the test', 'to');
+  const job = (ctx.body || {}).job_id ? get('SELECT * FROM jobs WHERE id=?', String(ctx.body.job_id)) : null; const vars = mergeVars(sampleCand(null), job); const out = renderDesign(r, vars, `[Test] ${fillText(r.subject || r.name, vars)}`);
+  const id = M.queue({ to, subject: out.subject, text: out.text, html: out.html, kind: 'design test', recordId: `ED-${r.id}`, force: true });
+  if (!id) throw httpError(400, 'Email not valid', 'to');
+  D.history(ctx.actor.label, 'email design test', `ED-${r.id}`, null, null, to);
+  return { to, configured: M.configured() };
+});
+
+module.exports = { renderDesign, designRow, FIELDS, mergeVars, fillText, tplView, templateRow, campaignTemplate, filled, headerMedia, syncTemplates, crmReady };
