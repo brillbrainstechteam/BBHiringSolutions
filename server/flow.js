@@ -344,7 +344,7 @@ async function clientMail(c, subject, text, attachments, from) {
   }
   run('INSERT INTO emails (to_addr,subject,kind,record_id,text,html,status,tries,at) VALUES (?,?,?,?,?,?,?,?,?)', from || c.email || '', subject || '(no subject)', 'client_reply', c.id, String(text || '').slice(0, 2000), '', 'received', 0, now());
   insert('notes', { record_id: c.id, text: `Email from the client: ${subject || '(no subject)'}${text ? ` — ${String(text).trim().slice(0, 300)}` : ''}${saved.length ? `\nSaved: ${saved.join(', ')}` : ''}`, author: 'Email inbox', at: now() });
-  if (signed) update('clients', c.id, { contract: JSON.stringify({ file: signed.id, by: 'Email inbox', at: now(), method: 'Signed copy received by email' }) });
+  if (signed) { update('clients', c.id, { contract: JSON.stringify({ file: signed.id, by: 'Email inbox', at: now(), method: 'Signed copy received by email' }) }); L.recalcClientJobs(c.id, 'Email inbox'); }
   const fresh = get('SELECT * FROM clients WHERE id=?', c.id); const left = Object.keys(KYC_NAMES).filter((k) => !(fresh.kyc || {})[k]);
   if (kyc.length && !left.length) update('clients', c.id, { onboarding: { ...(fresh.onboarding || {}), kyc: { done: true, date: now(), by: 'Email inbox' } } });
   if (signed || kyc.length) L.checkActivation(c.id, { label: 'Email inbox' });

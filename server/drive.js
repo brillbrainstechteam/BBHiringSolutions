@@ -103,4 +103,48 @@ route('POST', '/api/hooks/drive/file', { rate: { key: 'drivefile', max: 400, min
   return { status: r.status, why: r.why || '' };
 });
 
+// ---------- JDs from a Drive folder into the JD pool ----------
+const hasKey = () => !!(process.env.GDRIVE_SA_FILE || process.env.GDRIVE_SA_JSON);
+const saEmail = () => { try { return key().client_email; } catch { return null; } };
+const folderIdOf = (v) => { const t = String(v || '').trim(); const m = /folders\/([A-Za-z0-9_-]{10,})/.exec(t) || /[?&]id=([A-Za-z0-9_-]{10,})/.exec(t); return m ? m[1] : /^[A-Za-z0-9_-]{10,}$/.test(t) ? t : null; };
+let jdRun = null;
+async function importJds(folder, by) {
+  const files = (await listAll(folder)).filter((x) => /\.(pdf|docx)$/i.test(x.name) || x.mimeType === 'application/vnd.google-apps.document');
+  const st = { total: files.length, done: 0, added: 0, skipped: 0, failed: [], at: now(), by };
+  D.setHealth('jd_import', JSON.stringify(st));
+  const TEAM = require('./api-team');
+  for (const x of files) {
+    const seenKey = `jd:${x.id}:${x.md5Checksum || x.modifiedTime || ''}`;
+    try {
+      if (get('SELECT 1 FROM drive_seen WHERE file_id=?', seenKey)) { st.skipped++; continue; }
+      const isDoc = x.mimeType === 'application/vnd.google-apps.document';
+      const buf = await api(isDoc ? `${API}/files/${x.id}/export?mimeType=application/pdf` : `${API}/files/${x.id}?alt=media&supportsAllDrives=true`, true);
+      const name = isDoc ? `${x.name}.pdf` : x.name;
+      const jd = await TEAM.readJdFile(name, buf);
+      const fromName = x.name.replace(/\.[^.]+$/, '').replace(/\b(jd|job description|profile|final|new|copy)\b|[_\-()\d]+/gi, ' ').replace(/\s+/g, ' ').trim();
+      const title = String(jd.title || fromName || x.name).trim().slice(0, 80);
+      const pool = D.settings().jd_templates || {};
+      // a JD already in the pool under that title stays (the team may have edited it); the file is kept as a second copy
+      const key2 = pool[title] ? `${title} (${x.name.replace(/\.[^.]+$/, '').slice(0, 40)})` : title;
+      D.setSetting('jd_templates', { ...pool, [key2]: TEAM.cleanJd(jd) });
+      D.run('INSERT OR REPLACE INTO drive_seen (file_id,md5,path,status,at) VALUES (?,?,?,?,?)', seenKey, x.md5Checksum || null, x.path, `jd: ${key2}`, now());
+      st.added++;
+    } catch (e) { st.failed.push(`${x.path}: ${e.message}`.slice(0, 200)); }
+    st.done++; D.setHealth('jd_import', JSON.stringify(st));
+  }
+  st.finished = now(); D.setHealth('jd_import', JSON.stringify(st));
+  D.history(by, 'JDs imported from Drive', null, 'jd_pool', null, `${st.added} added, ${st.skipped} already there, ${st.failed.length} not read`);
+  return st;
+}
+const ADMINS = { auth: 'team', levels: ['super', 'admin'] };
+route('GET', '/api/jd-pool/drive', ADMINS, () => { const h = get("SELECT value FROM health WHERE key='jd_import'"); return { ready: hasKey(), email: saEmail(), running: !!jdRun, last: h ? JSON.parse(h.value) : null }; });
+route('POST', '/api/jd-pool/drive', ADMINS, async (ctx) => {
+  if (!hasKey()) throw httpError(400, 'Google Drive is not set up on the server (GDRIVE_SA_FILE in .env).');
+  const id = folderIdOf((ctx.body || {}).folder); if (!id) throw httpError(400, 'Paste the Drive folder link', 'folder');
+  if (jdRun) throw httpError(400, 'An import is running already');
+  try { await api(`${API}/files/${id}?fields=id,name&supportsAllDrives=true`); } catch (e) { throw httpError(400, `The folder cannot be opened. Share it with ${saEmail()} as Viewer, then try again. (${e.message})`, 'folder'); }
+  jdRun = importJds(id, ctx.actor.label).catch((e) => console.error('JD import', e.message)).finally(() => { jdRun = null; });
+  return { started: true };
+});
+
 module.exports = { check, configured };

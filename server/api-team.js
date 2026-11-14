@@ -1133,6 +1133,21 @@ route('POST', '/api/jd-pool', T, (ctx) => {
   return { ok: true };
 });
 // JDs already written, as Word or PDF files: the text is sorted into the pool's sections, one role per file name.
+// A JD file (PDF or Word) read into the standard sections, keeping its words. Nothing is saved here.
+async function readJdFile(name, buf) {
+  let text = ''; try { text = require('./cvparse').cvText(name, buf) || ''; } catch { /* a scan: the AI reads the file */ }
+  const LLM = require('./llm');
+  if (!LLM.available()) { if (!text.trim()) throw httpError(424, 'This file has no readable text.'); return { summary: text.trim().slice(0, 4000) }; }
+  const keys = ['summary', 'duties', 'must', 'good', 'education', 'languages', 'timings', 'benefits', 'incentives', 'location'];
+  const r = await LLM.json({ system: 'You sort a job description into sections for a recruitment firm. Keep the words of the document. Leave a section empty if the document does not cover it. Lists go one item per line.', user: text.trim().length > 80 ? text.slice(0, 12000) : `File: ${name}`, files: text.trim().length > 80 ? [] : [{ name, buf }], name: 'jd_sections', maxTokens: 2500, schema: { type: 'object', additionalProperties: false, required: [...keys, 'title'], properties: { title: { type: 'string', description: 'The job title the JD is for' }, ...Object.fromEntries(keys.map((k) => [k, { type: 'string' }])) } } });
+  return r.answer || r;
+}
+module.exports.readJdFile = readJdFile;
+route('POST', '/api/jd/read', { ...T, rate: { key: 'jdwrite', max: 60, minutes: 60 } }, async (ctx) => {
+  const b = ctx.body || {}; const name = String(b.name || ''); if (!/\.(pdf|docx)$/i.test(name)) throw httpError(400, 'Choose a PDF or Word (.docx) file');
+  const buf = Buffer.from(String(b.base64 || '').replace(/^data:[^,]*,/, ''), 'base64'); if (!buf.length) throw httpError(400, 'The file is empty.');
+  const jd = await readJdFile(name, buf); return { jd: cleanJd(jd), title: jd.title || '' };
+});
 route('POST', '/api/jd-pool/upload', { ...T, rate: { key: 'jdwrite', max: 60, minutes: 60 } }, async (ctx) => {
   const b = ctx.body || {}; const name = String(b.name || ''); if (!/\.(pdf|docx)$/i.test(name)) throw httpError(400, 'Upload a PDF or Word file');
   const buf = Buffer.from(String(b.base64 || '').replace(/^data:[^,]*,/, ''), 'base64'); if (!buf.length) throw httpError(400, 'The file is empty.');
@@ -2768,7 +2783,7 @@ route('POST', '/api/files', T, async (ctx) => {
   if (b.type === 'cv') { update('candidates', b.record_id, { cv_file: String(f.id), last_updated: now() }); f.filled = require('./cvparse').fillCandidate(b.record_id, b.name, b.base64, ctx.actor.label); }
   if (b.type === 'short_cv') update('candidates', b.record_id, { short_cv_file: String(f.id), short_cv_for: forClient.cv_file || 'profile' });
   if (['gst', 'pan', 'owner_id'].includes(b.type)) { const c = get('SELECT * FROM clients WHERE id=?', b.record_id); update('clients', c.id, { kyc: { ...(c.kyc || {}), [b.type]: f.id } }); L.checkActivation(c.id, ctx.actor); }
-  if (b.type === 'contract_signed') update('clients', b.record_id, { contract: JSON.stringify({ file: f.id, by: ctx.actor.label, at: now(), method: 'Signed copy uploaded' }) });
+  if (b.type === 'contract_signed') { update('clients', b.record_id, { contract: JSON.stringify({ file: f.id, by: ctx.actor.label, at: now(), method: 'Signed copy uploaded' }) }); L.recalcClientJobs(b.record_id, ctx.actor.label); }
   if (b.type === 'contract_signed') L.checkActivation(b.record_id, ctx.actor);
   if (b.type === 'offer_letter') update('applications', b.record_id, { offer_letter: String(f.id) });
   if (b.type === 'jd') D.edit('jobs', b.record_id, { jd: { ...(get('SELECT jd FROM jobs WHERE id=?', b.record_id) || {}).jd, file: f.id } }, ctx.actor.label);

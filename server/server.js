@@ -9,6 +9,7 @@ require('./api-team');
 require('./api-public');
 require('./crm');
 require('./agents');
+require('./drive');
 const { seed } = require('./seed');
 const timer = require('./timer');
 

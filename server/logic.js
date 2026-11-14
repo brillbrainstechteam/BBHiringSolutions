@@ -246,7 +246,8 @@ function computeJobStatus(job, apps) {
   if (job.manual === 'Closed') return 'Closed';
   if (job.manual === 'On hold') return 'On hold';
   if (filledCount(apps) >= job.openings) return 'Filled';
-  if (!job.jd_approved && apps.length === 0) return 'Draft';
+  // Live once the client's signed agreement is in (or the JD is approved, or it is our own hiring); the JD can follow.
+  if (!job.jd_approved && apps.length === 0) { const cl = get('SELECT contract, internal FROM clients WHERE id=?', job.client_id) || {}; if (!cl.contract && !cl.internal) return 'Draft'; }
   const open = apps.filter((a) => a.result === 'open');
   if (open.some((a) => a.step === 'Offer made')) return 'Offer stage';
   if (open.some((a) => INTERVIEW_STEPS.includes(a.step))) return 'Interviewing';
@@ -260,13 +261,15 @@ function jobStatusReason(job, apps) {
     case 'Closed': return `Closed: ${job.manual_reason || 'no reason given'}`;
     case 'On hold': return `Paused: ${job.manual_reason || 'hiring paused'}`;
     case 'Filled': return `${filledCount(apps)} of ${job.openings} seats filled`;
-    case 'Draft': return 'Job description not approved yet';
+    case 'Draft': return 'Waiting for the signed agreement (or an approved JD)';
     case 'Offer stage': return `${n('Offer made')} offer(s) made, waiting for the candidate`;
     case 'Interviewing': return `${n('Our interview') + n('Sent to client') + n('Client interview')} candidate(s) in interviews`;
     case 'Sourcing': return `${open.length} candidate(s) being screened`;
     default: return 'Live, nobody in process right now';
   }
 }
+// The client's signed agreement came in: their draft jobs open.
+function recalcClientJobs(clientId, by) { for (const j of all('SELECT id FROM jobs WHERE client_id=? AND archived=0', clientId)) recalcJob(j.id, by || 'Software', 'Signed agreement received'); }
 function recalcJob(jobId, by, note) {
   const job = get('SELECT * FROM jobs WHERE id=?', jobId); if (!job) return null;
   const st = computeJobStatus(job, appsOfJob(jobId));
@@ -1512,7 +1515,7 @@ function sendSystemText(ptype, pid, text) {
 }
 
 module.exports = { stageStateOf, ownersOfJob, ownerMap, ownsApp, STAGES, stageOfApp, nextStageOf, reopenRefilled, adPlanFor, openAdApplications, placedOn, closePlacedApps, adLabel,
-  STEPS, deptByWords, refreshMatchCounts, stepIdx, digits10, validPhone, inr, istDay, istFmt, istTime, istHour, inQuiet, next9am, daysBetween, addDays, hashPassword, checkPassword, newPassword, sha,
+  STEPS, deptByWords, refreshMatchCounts, recalcClientJobs, stepIdx, digits10, validPhone, inr, istDay, istFmt, istTime, istHour, inQuiet, next9am, daysBetween, addDays, hashPassword, checkPassword, newPassword, sha,
   activationState, checkActivation, waHeld, TEAMS, IV_MODES, clientSeesIv, addIvNote, CALL_OUTCOMES, logCall, jobList, deptOf, stateOf, person, fillFormat, windowOpenUntil, sendWA, setDispatcher, alertUser, link, agencyAdmin, superAdmins,
   quickClient, AUTO_WEIGHTS, agencyScores, autoAssignOn, autoAssignClient, EMAIL_RE, needEmail, okHrEmail, cleanPoc, saveClientExtras, pocOf, CLIENT_MAIN, CLIENT_SIDE, ONBOARD_STEPS, clientFacts, onboardDone, earnedStage, syncClientStage, computeJobStatus, jobStatusReason, recalcJob, filledCount, appsOfJob, matchScore, jobsFor, cleanBusiness, BUSINESS_TYPES, EXP_YEARS, JEW_YEARS, LOOKING, NOT_LOOKING, JOB_STATUSES, LOOK_FRESH, appStates, appStateOf, jobStatusOf, setLooking, ratingOf, bestMatches, isPlaced, salaryText, autoJobAlert,
   SAL_HIDDEN, feeFor, gstFor, fyOf, billView, refreshBill, createBillForApp, issueBill, upiLink,
