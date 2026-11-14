@@ -1491,6 +1491,9 @@ function receiveReply(phone, text, button, opts = {}) {
   else if (ptype === 'candidate' && !button && t && ref && ['bbhs_details_reply', 'bbhs_profile_update'].includes(ref.format)) { setImmediate(() => require('./profilelink').readReply(pid, text).catch((e) => console.error('Details reply', pid, e.message))); effect = 'Reading their details from the reply'; }
   else if (['not looking', 'not interested now', 'not looking now', 'happy where i am'].includes(t) && ptype === 'candidate') { setLooking(pid, 'Not interested', by, 'reply on WhatsApp'); effect = 'Job status: Not interested'; }
   else if (['still looking', 'looking for a job', 'yes, looking', 'actively looking'].includes(t) && ptype === 'candidate') { setLooking(pid, 'Actively looking', by, 'reply on WhatsApp'); effect = 'Job status: Actively looking'; }
+  // A typed answer to the job status question ("yes", "haan", "no", "nahi"…) counts like the buttons.
+  else if (ptype === 'candidate' && !button && ref && ref.format === 'bbhs_still_looking' && /^(yes|y|yeah|yup|ha+n?|haa?n ?ji|ji|looking|i am looking|need (a )?job|job chahiye|interested)\b/.test(t)) { setLooking(pid, 'Actively looking', by, 'typed reply on WhatsApp'); effect = 'Job status: Actively looking'; }
+  else if (ptype === 'candidate' && !button && ref && ref.format === 'bbhs_still_looking' && /^(no|n|nope|nahi|nahin|na|not now|not looking|not interested|working|already (working|placed|employed))\b/.test(t)) { setLooking(pid, 'Not interested', by, 'typed reply on WhatsApp'); effect = 'Job status: Not interested'; }
   // Unread alert to the owner of this person.
   if (table) {
     const rec = get(`SELECT * FROM ${table} WHERE id=?`, pid);
