@@ -24,10 +24,12 @@
   const roleRow = (l = {}) => `<div class="role-card" data-frole><div class="role-head"><b data-rtitle>Role</b><button type="button" class="role-x" data-frm aria-label="Remove this role" title="Remove this role">×</button></div>
     <div class="role-grid"><label class="field role-name"><span class="lab">Role</span><div class="cbx"><input data-r="role" role="combobox" aria-autocomplete="list" aria-expanded="false" autocomplete="off" placeholder="Start typing a role" value="${esc(l.role || '')}"><div class="cbx-pop" role="listbox" hidden></div></div></label>
     <label class="field"><span class="lab">Openings</span><input data-r="openings" type="number" min="1" inputmode="numeric" value="${esc(l.openings || '')}"></label>
-    <label class="field"><span class="lab">Location</span><input data-r="location" value="${esc(l.location || '')}"></label>
+    <label class="field"><span class="lab">City</span><input data-r="location" list="cities" value="${esc(l.location || '')}"></label>
     <label class="field"><span class="lab">Department <span class="opt">(optional)</span></span><select data-r="department"><option value="">Choose…</option>${deptList().map((d) => `<option ${d === l.department ? 'selected' : ''}>${esc(d)}</option>`).join('')}</select></label></div>
     <div class="grid g2">${field({ name: 'r_sal_from', label: 'Salary from (₹ a month)', type: 'number', opt: true, voice: false, attrs: 'data-r="sal_from" min="0" inputmode="numeric"', value: l.sal_from || '' })}${field({ name: 'r_sal_to', label: 'Salary to (₹ a month)', type: 'number', opt: true, voice: false, attrs: 'data-r="sal_to" min="0" inputmode="numeric"', value: l.sal_to || '' })}</div>
-    ${field({ name: 'r_skills', label: 'Skills required', opt: true, attrs: 'data-r="skills"', value: l.skills || '' })}
+    <div class="grid g4">${field({ name: 'r_exp_from', label: 'Exp from (yrs)', type: 'number', opt: true, voice: false, attrs: 'data-r="exp_from" min="0"', value: l.exp_from ?? '' })}${field({ name: 'r_exp_to', label: 'Exp to (yrs)', type: 'number', opt: true, voice: false, attrs: 'data-r="exp_to" min="0"', value: l.exp_to ?? '' })}${field({ name: 'r_notice', label: 'Join within (days)', type: 'number', opt: true, voice: false, attrs: 'data-r="notice_days" min="0"', value: l.notice_days ?? '' })}${field({ name: 'r_priority', label: 'Priority', type: 'select', options: ['High', 'Medium', 'Low'], value: l.priority || 'Medium', placeholder: false, attrs: 'data-r="priority"' })}</div>
+    <div class="grid g2">${field({ name: 'r_market', label: 'B2B or B2C', type: 'select', options: ['B2B', 'B2C', 'Both'], value: l.market || '', opt: true, attrs: 'data-r="market"' })}${field({ name: 'r_jewel', label: 'Jewellery experience', type: 'select', options: ['Required', 'Preferred', 'Not required'], value: l.jewel_need || 'Preferred', placeholder: false, attrs: 'data-r="jewel_need"' })}</div>
+    ${field({ name: 'r_skills', label: 'Skills required (comma separated)', opt: true, attrs: 'data-r="skills"', value: Array.isArray(l.skills) ? l.skills.join(', ') : l.skills || '' })}
     ${field({ name: 'r_duties', label: 'Roles and responsibilities expected', type: 'textarea', opt: true, attrs: 'data-r="duties"', value: l.duties || '' })}
     ${field({ name: 'r_notes', label: 'Other notes', type: 'textarea', opt: true, attrs: 'data-r="notes"', value: l.notes || '' })}</div>`;
   // The role box: suggestions as you type, best matches first, and a typed role can be added to the list.
@@ -51,10 +53,11 @@
     box.oninput = sum;
     box.onclick = (e) => {
       if (e.target.closest('[data-frm]')) { e.target.closest('[data-frole]').remove(); sum(); }
-      if (e.target.closest('[data-fadd]')) { const all = readRoles(box); const last = all[all.length - 1] || {}; $('[data-frows]', box).insertAdjacentHTML('afterbegin', roleRow({ location: last.location })); const n = $$('[data-frole]', box)[0]; wireCombo(n); BB.attachMics(n); sum(); $('[data-r=role]', n).focus(); n.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }
+      if (e.target.closest('[data-fadd]')) { const all = readRoles(box); const last = all[all.length - 1] || {}; $('[data-frows]', box).insertAdjacentHTML('beforeend', roleRow({ location: last.location, market: last.market })); const n = $$('[data-frole]', box).pop(); wireCombo(n); BB.attachMics(n); sum(); $('[data-r=role]', n).focus(); n.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }
     };
     $$('[data-frole]', box).forEach(wireCombo); sum();
   };
+  F.roleCard = (l) => roleRow(l); F.readRoleCards = (box) => readRoles(box); F.wireRoleCards = (box) => wireRoles(box); F.wireCombo = (card) => wireCombo(card);
   // What the web says about a client, laid out to read during a call.
   const webLink = (u) => (/^https?:\/\//i.test(u) ? `<a href="${esc(u)}" target="_blank" rel="noopener">${esc(u.replace(/^https?:\/\/(www\.)?/i, '').replace(/\/$/, ''))}</a>` : esc(u));
   F.clientInfo = (o) => clientInfo(o);
@@ -246,7 +249,7 @@
     on('[data-fgroup]', () => groupDialog(c));
     $$('[data-fopen]', el).forEach((b) => (b.onclick = () => BB.open('job', b.dataset.fopen)));
     $$('[data-fjobs]', el).forEach((b) => (b.onclick = () => act(() => BB.post(`/api/clients/${c.id}/calls/${b.dataset.fjobs}/jobs`), (r) => `${r.jobs.length} draft ${r.jobs.length === 1 ? 'job' : 'jobs'} opened: add the salary on each`)));
-    $$('[data-fline]', el).forEach((b) => (b.onclick = () => { const [id, i] = b.dataset.fline.split(':'); const x = c.calls.find((k) => String(k.id) === id); const l = x.call_roles[i]; BB.newJob(c.id, { title: l.role, city: l.location, openings: l.openings, skills: String(l.skills || x.skills || '').split(',').map((s) => s.trim()).filter(Boolean), duties: l.duties || x.duties, department: l.department, notes: [l.notes, x.notes].filter(Boolean).join(' · '), call_id: x.id, call_line: Number(i) }); }));
+    $$('[data-fline]', el).forEach((b) => (b.onclick = () => { const [id, i] = b.dataset.fline.split(':'); const x = c.calls.find((k) => String(k.id) === id); const l = x.call_roles[i]; BB.newJob(c.id, { title: l.role, city: l.location, openings: l.openings, skills: String(l.skills || x.skills || '').split(',').map((s) => s.trim()).filter(Boolean), duties: l.duties || x.duties, department: l.department, notes: [l.notes, x.notes].filter(Boolean).join(' · '), sal_from: l.sal_from, sal_to: l.sal_to, exp_from: l.exp_from, exp_to: l.exp_to, priority: l.priority, market: l.market, notice_days: l.notice_days, jewel_need: l.jewel_need, call_id: x.id, call_line: Number(i) }); }));
     $$('[data-fjob]', el).forEach((b) => (b.onclick = () => { const x = c.calls.find((k) => String(k.id) === b.dataset.fjob); BB.newJob(c.id, { title: String(x.roles || '').split(/[,\n]/)[0].trim(), city: x.location, openings: parseInt(x.openings, 10) || 1, skills: String(x.skills || '').split(',').map((s) => s.trim()).filter(Boolean), duties: x.duties, notes: x.notes }); }));
   };
   // The group's picture: the client's logo in a ring, 640 × 640, ready to set on WhatsApp.
@@ -479,18 +482,7 @@
   F.roleRow = (pre = {}) => `<div class="role-row" data-rolerow><label class="field"><span class="lab">Role</span><select data-r="title">${BB.jobOptions(pre.title || '')}</select></label>${field({ name: '_city', label: 'City', list: 'cities', value: pre.city || '', attrs: 'data-r="city"' })}${field({ name: '_n', label: 'People', type: 'number', value: pre.openings || 1, attrs: 'data-r="openings" min="1"' })}${field({ name: '_sf', label: 'Salary from / month', type: 'number', value: pre.sal_from || '', attrs: 'data-r="sal_from"' })}${field({ name: '_st', label: 'Salary to', type: 'number', opt: true, value: pre.sal_to || '', attrs: 'data-r="sal_to"' })}<button type="button" class="btn sm ghost role-x" data-rolex title="Remove this role" aria-label="Remove this role">✕</button></div>`;
   F.readRoles = (m) => $$('[data-rolerow]', m).map((row) => Object.fromEntries($$('[data-r]', row).map((x) => [x.dataset.r, x.value.trim()]))).filter((x) => x.title || x.city);
   F.wireRoles = (m, addBtn, box, pre) => { const wire = () => $$('[data-rolex]', box).forEach((x) => (x.onclick = () => { x.closest('[data-rolerow]').remove(); })); addBtn.onclick = () => { const last = F.readRoles(box).pop() || {}; box.insertAdjacentHTML('beforeend', F.roleRow({ city: last.city || (pre && pre.city) || '' })); wire(); }; wire(); };
-  F.mass = async () => {
-    let rolesBox = null; // this form's own role rows
-    const r = await BB.api('/api/clients?all=1'); const list = r.rows.filter((c) => !c.placeholder);
-    const v = await BB.ask({ title: 'Bulk hiring', note: 'Many roles at once (a new showroom, a hiring drive): one job opening per row, all marked as one bulk hiring drive.', wide: true, fields: [
-      `<div class="grid g2"><label class="field"><span class="lab">Client</span><select name="client_id" data-mclient><option value="">Choose…</option>${list.map((c) => `<option value="${c.id}">${esc(c.company)}</option>`).join('')}</select></label>${field({ name: 'mass_name', label: 'Drive name', opt: true, placeholder: 'e.g. New showroom, Lucknow' })}</div>`,
-      `<div class="role-rows" data-roles>${F.roleRow()}</div><button type="button" class="btn sm" data-roleadd>+ Add another role</button>`,
-      `<div class="grid g3">${field({ name: 'exp_from', label: 'Exp from (yrs)', type: 'number', opt: true })}${field({ name: 'exp_to', label: 'Exp to (yrs)', type: 'number', opt: true })}${field({ name: 'priority', label: 'Priority', type: 'select', options: ['High', 'Medium', 'Low'], value: 'High', placeholder: false })}</div>`,
-      { name: 'notes', label: 'Notes', type: 'textarea', opt: true }], ok: 'Create openings',
-      mount: (m) => { rolesBox = $('[data-roles]', m); F.wireRoles(m, $('[data-roleadd]', m), rolesBox); const cs = $('[data-mclient]', m); cs.onchange = () => { const c = list.find((x) => x.id === cs.value); if (c) $$('[data-r=city]', m).forEach((x) => { if (!x.value) x.value = c.city || ''; }); }; },
-      submit: (x) => BB.post('/api/jobs/mass', { ...x, roles: F.readRoles(rolesBox), salary_per: 'month' }) });
-    if (v) done(`${v.jobs.length} openings made for ${v.total} people`);
-  };
+  F.mass = () => BB.newJob(null, { bulk: true });
 
   // ---------- JD builder (client view): call → JD with AI → client approves → the job opens ----------
   const JD_STATE = { 'Not written': ['No JD yet', 'b-outline'], Draft: ['Draft', 'b-outline'], 'Waiting for client': ['With client', 'b-amber'], 'Changes asked': ['Changes asked', 'b-red'], Approved: ['Approved · job open', 'b-green'] };
@@ -501,7 +493,7 @@
     let cur = null;
     const callText = (r) => [r.skills && `Skills: ${r.skills}`, r.duties && `Duties: ${r.duties}`, r.notes && `Notes on this role: ${r.notes}`, r.call && r.call.notes && `Call notes: ${r.call.notes}`].filter(Boolean).join('\n');
     const start = (r) => work[r.key] || (work[r.key] = {
-      role: { key: r.key, job_id: r.job ? r.job.id : null, title: r.role || '', openings: r.openings || 1, location: r.location || c.city || '', department: r.department || '', sal_from: (r.job && r.job.sal_from) || r.sal_from || '', sal_to: (r.job && r.job.sal_to) || r.sal_to || '', exp_from: r.job && r.job.exp_from != null ? r.job.exp_from : '', exp_to: r.job && r.job.exp_to != null ? r.job.exp_to : '', skills: r.skills || '' },
+      role: { key: r.key, job_id: r.job ? r.job.id : null, title: r.role || '', openings: r.openings || 1, location: r.location || c.city || '', department: r.department || '', priority: r.priority || 'Medium', market: r.market || '', notice_days: r.notice_days ?? '', sal_from: (r.job && r.job.sal_from) || r.sal_from || '', sal_to: (r.job && r.job.sal_to) || r.sal_to || '', exp_from: r.job && r.job.exp_from != null ? r.job.exp_from : '', exp_to: r.job && r.job.exp_to != null ? r.job.exp_to : '', skills: r.skills || '' },
       jd: { ...((r.job && r.job.jd) || {}) }, call_notes: callText(r),
     });
     const ex = c.extra || {}; const on2 = ex.online || {};
@@ -522,6 +514,8 @@
         <div class="grid g2"><label class="field"><span class="lab">Salary from (₹ / month)</span><input type="number" data-rf="sal_from" value="${esc(w.role.sal_from)}"></label><label class="field"><span class="lab">Salary to (₹ / month)</span><input type="number" data-rf="sal_to" value="${esc(w.role.sal_to)}"></label></div>
         <div class="grid g2"><label class="field"><span class="lab">Experience from (years)</span><input type="number" data-rf="exp_from" value="${esc(w.role.exp_from)}"></label><label class="field"><span class="lab">Experience to (years)</span><input type="number" data-rf="exp_to" value="${esc(w.role.exp_to)}"></label></div>
         <label class="field"><span class="lab">Skills <span class="opt">(comma separated)</span></span><input data-rf="skills" value="${esc(w.role.skills)}"></label>
+        <div class="grid g2"><label class="field"><span class="lab">Department</span><select data-rf="department"><option value="">Choose…</option>${deptList().map((x) => `<option ${x === w.role.department ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select></label><label class="field"><span class="lab">Priority</span><select data-rf="priority">${['High', 'Medium', 'Low'].map((x) => `<option ${(w.role.priority || 'Medium') === x ? 'selected' : ''}>${x}</option>`).join('')}</select></label></div>
+        <div class="grid g2"><label class="field"><span class="lab">B2B or B2C</span><select data-rf="market"><option value="">Choose…</option>${['B2B', 'B2C', 'Both'].map((x) => `<option ${w.role.market === x ? 'selected' : ''}>${x}</option>`).join('')}</select></label><label class="field"><span class="lab">Join within (days)</span><input type="number" min="0" data-rf="notice_days" value="${esc(w.role.notice_days ?? '')}"></label></div>
         <div class="grid g3"><label class="field"><span class="lab">Jewellery experience</span><select data-jw="jewel_need">${['Required', 'Preferred', 'Not required'].map((x) => `<option ${((w.jd.jewel_need || 'Preferred') === x) ? 'selected' : ''}>${x}</option>`).join('')}</select></label><label class="field"><span class="lab">Years</span><input type="number" data-jw="jewel_years" value="${esc(w.jd.jewel_years || '')}"></label><label class="field"><span class="lab">Kind</span><input data-jw="jewel_note" placeholder="e.g. diamond retail" value="${esc(w.jd.jewel_note || '')}"></label></div>
         <h4 class="form-sec">What the client said</h4>
         <textarea data-callnotes rows="7" placeholder="Paste or type what the client said about this role: duties, targets, products, software, timings, benefits…">${esc(w.call_notes)}</textarea>

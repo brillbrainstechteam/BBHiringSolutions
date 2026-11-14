@@ -17,6 +17,10 @@ function jobView(j, apps) {
     owner_ids: [j.recruiter_id, ...(Array.isArray(j.owners) ? j.owners : [])].filter((x, k, l) => x && l.indexOf(x) === k), owner_names: [j.recruiter_id, ...(Array.isArray(j.owners) ? j.owners : [])].filter((x, k, l) => x && l.indexOf(x) === k).map(userName).filter(Boolean).join(', '),
     ...j, status, reason: L.jobStatusReason(j, apps), filled: L.filledCount(apps), client_name: client.company, client_tbc: !!client.placeholder, internal: !!client.internal, recruiter_name: userName(j.recruiter_id), agency_name: agencyName(j.agency_id),
     apps_total: apps.length, apps_open: open.length, days_open: L.daysBetween(j.created_at),
+    ...(() => { const hired = apps.filter((a) => a.result === 'Hired' && !a.left_date).length; const seats = Math.max(0, (j.openings || 1) - hired); const lo = j.sal_from || j.sal_to; const hi = j.sal_to || j.sal_from;
+      if (!lo || client.internal || client.placeholder) return { seats_open: seats, fee_each: null, opportunity: null };
+      const fee = Math.round(L.feeFor(get('SELECT * FROM clients WHERE id=?', j.client_id), j.agency_id, (lo + hi) / 2).fee || 0);
+      return { seats_open: seats, fee_each: fee, opportunity: ['Closed', 'Filled'].includes(status) ? 0 : fee * seats }; })(),
     reopened: j.reopened_at && L.daysBetween(j.reopened_at) <= 30 && !(j.replacement_for && !D.get('SELECT 1 FROM applications WHERE id=?', j.replacement_for)) ? (j.reopen_tag || 'Reopened') : null,
     counts: { screening: cnt(['Applied', 'Screening', 'Our interview']), waiting: cnt(['Sent to client']), interviews: cnt(['Client interview']), offers: cnt(['Offer made', 'Offer accepted']) },
     // One line per seat: who holds it (offer accepted or joined), in the order they took it; the rest are open.

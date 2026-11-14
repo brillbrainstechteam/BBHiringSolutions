@@ -2600,3 +2600,10 @@ a.pipe-step { text-decoration: none; cursor: pointer; } a.pipe-step:hover { bord
 /* Share openings with an agent */
 .ag-jobs { display: grid; gap: 6px; max-height: 40vh; overflow: auto; padding: 8px 10px; border: 1px solid var(--border); border-radius: 10px; }
 .vsvc > label:first-child { display: flex; flex-wrap: nowrap; align-items: flex-start; } .vsvc > label:first-child input { margin-top: 3px; flex: none; }
+
+/* Bulk hiring form: one row per role */
+.bh-rows { display: grid; gap: 10px; } .bh-row { display: grid; grid-template-columns: minmax(150px, 1.6fr) 90px minmax(110px, 1fr) minmax(110px, 1fr) minmax(110px, 1fr) 32px; gap: 8px; align-items: end; padding: 10px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); }
+.bh-row .field { margin: 0; } .bh-x { height: 40px; border: 0; background: none; font-size: 20px; color: var(--muted); cursor: pointer; }
+@media (max-width: 760px) { .bh-row { grid-template-columns: 1fr 1fr; } .bh-row > label:first-child { grid-column: 1 / -1; } }
+/* New job opening: Normal / Bulk hiring */
+.hire-kind { display: inline-flex; gap: 4px; padding: 3px; border: 1px solid var(--border); border-radius: 10px; } .hire-kind label { display: inline-flex; align-items: center; gap: 6px; padding: 7px 12px; border-radius: 8px; cursor: pointer; font-size: 13.5px; } .hire-kind label:has(input:checked) { background: var(--navy, #101A3A); color: #fff; } .hire-kind input { accent-color: var(--mustard); }

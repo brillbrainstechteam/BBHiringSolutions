@@ -450,6 +450,31 @@ route('POST', '/api/public/hire', { rate: { key: 'form', max: 60, minutes: 60 } 
   if (require('./lang').active().includes(b.lang)) update('clients', r.client.id, { language: b.lang });
   return formDone('client', r.isNew, r.client.id, r.client.whatsapp);
 });
+// Bulk hiring (public form): the company and several roles, each with a count and a salary range.
+route('POST', '/api/public/bulk-hire', { rate: { key: 'form', max: 60, minutes: 60 } }, (ctx) => {
+  const b = ctx.body || {};
+  if (b.website) throw httpError(400, 'Please try again.'); // hidden field only bots fill in
+  if (!String(b.contact || '').trim()) throw httpError(400, 'Please enter your name', 'contact');
+  if (!String(b.company || '').trim()) throw httpError(400, 'Please enter your company name', 'company');
+  if (!String(b.city || '').trim()) throw httpError(400, 'Please enter your city', 'city');
+  if (!L.validPhone(L.digits10(b.whatsapp))) throw httpError(400, 'Enter your 10-digit WhatsApp number', 'whatsapp');
+  L.needEmail(b);
+  const n = (v) => (Number(v) > 0 ? Math.round(Number(v)) : null);
+  const roles = (Array.isArray(b.roles) ? b.roles : []).map((x) => ({ role: String(x.role || '').trim().slice(0, 80), openings: n(x.openings), sal_from: n(x.sal_from), sal_to: n(x.sal_to), location: String(x.city || b.city || '').trim().slice(0, 60) })).filter((x) => x.role || x.openings);
+  if (!roles.length) throw httpError(400, 'Add at least one role', 'roles');
+  roles.forEach((x, i) => { if (!x.role) throw httpError(400, `Write the role in row ${i + 1}`, 'roles'); if (!x.openings) throw httpError(400, `How many people for ${x.role}?`, 'roles'); if (x.sal_from && x.sal_to && x.sal_to < x.sal_from) throw httpError(400, `Salary to is less than salary from for ${x.role}`, 'roles'); });
+  const total = roles.reduce((t, x) => t + x.openings, 0);
+  const summary = roles.map((x) => `${x.role} x ${x.openings}`).join(', ');
+  const r = L.intakeClient({ ...b, roles: summary, need: b.need || 'Hiring now', business_type: b.business_type || '', language: b.lang }, { source: b.src ? srcFrom(b) : 'Bulk hiring form' });
+  L.saveClientExtras(r.client.id, b, null);
+  const lines = roles.map((x) => ({ role: x.role, openings: x.openings, location: x.location, department: L.deptOf(x.role) === 'Other' ? '' : L.deptOf(x.role), sal_from: x.sal_from, sal_to: x.sal_to, skills: '', duties: '', notes: '', job_id: null }));
+  insert('client_calls', { client_id: r.client.id, openings: String(total), location: [...new Set(lines.map((x) => x.location).filter(Boolean))].join(', '), department: '', roles: summary, call_roles: lines, skills: '', duties: '', notes: `Bulk hiring form${b.notes ? `: ${String(b.notes).slice(0, 1000)}` : ''}`, by: 'Bulk hiring form', at: now() });
+  const c = get('SELECT * FROM clients WHERE id=?', r.client.id); update('clients', c.id, { extra: { ...(c.extra || {}), bulk_request: now() } });
+  for (const uid of [...new Set([c.owner_id, ...L.superAdmins().map((x) => x.id)].filter(Boolean))]) L.alertUser(uid, `Bulk hiring request: ${c.company}, ${total} people (${summary.slice(0, 80)})`, c.id, 'client');
+  D.history('Bulk hiring form', 'bulk hiring request', c.id, null, null, `${total} people: ${summary}`);
+  const mailer = require('./mailer'); if (r.isNew) mailer.newLead('client', r.client); mailer.confirmToPerson('client', r.client);
+  return { ...formDone('client', r.isNew, r.client.id, r.client.whatsapp), total, roles: roles.length };
+});
 // The job form's first step: read the chosen CV and hand back the details to fill in. Nothing is saved here.
 route('POST', '/api/public/cv-read', { rate: { key: 'cvread', max: 80, minutes: 60 } }, (ctx) => {
   const b = ctx.body || {};

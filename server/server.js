@@ -19,13 +19,14 @@ const PUBLIC = path.join(__dirname, '..', 'public');
 const APP_VER = (() => { const h = require('crypto').createHash('sha1'); for (const d of ['js', 'css']) for (const f of fs.readdirSync(path.join(PUBLIC, d)).sort()) h.update(fs.readFileSync(path.join(PUBLIC, d, f))); return h.digest('hex').slice(0, 12); })();
 const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.json': 'application/json' };
 // The five web addresses each open the one page; the page shows only that part.
-const PAGES = ['/', '/hire', '/apply', '/partners', '/my-account', '/my-profile', '/team'];
+const PAGES = ['/', '/hire', '/bulk-hiring', '/apply', '/partners', '/my-account', '/my-profile', '/team'];
 
 // The page with its title and link-preview tags (WhatsApp, Facebook, Google read these, not the app's script).
 // The preview always says the business name; the line under it says what this link is for.
 const META = {
   '/': ['BrillBrains Hiring Solutions', 'Hiring for the jewellery business: hire screened staff, or find your next jewellery job.'],
   '/apply': ['Jewellery jobs · BrillBrains Hiring Solutions', 'Apply for jewellery jobs in a minute: sales, purchase, cashier, karigar, CAD and more. Free for job seekers.'],
+  '/bulk-hiring': ['Bulk hiring · BrillBrains Hiring Solutions', 'Hiring for many roles at once, or staffing a new showroom? Tell us the roles, how many people and the salary range.'],
   '/hire': ['Hire jewellery staff · BrillBrains Hiring Solutions', 'Tell us who you need. We send screened, interviewed candidates for your jewellery business.'],
   '/partners': ['Partner with us · BrillBrains Hiring Solutions', 'Placement agencies, training institutes and industry bodies: grow with India\'s jewellery-only hiring platform.'],
   '/my-account': ['Client login · BrillBrains Hiring Solutions', 'Log in to see your job openings, shortlisted candidates, interviews and bills.'],

@@ -293,6 +293,35 @@
   }
   BB.views.hire = (r) => page('hire', r);
   BB.views.apply = (r) => page('job', r);
+  // Bulk hiring: several roles at once (a new showroom, a hiring drive), each with a count and a salary range.
+  BB.views.bulk = () => {
+    const roles = [...new Set((BB.boot.jobs || []).filter((j) => !j.hidden).map((j) => j.title))].sort();
+    const row = () => `<div class="bh-row" data-bhrow><label class="field"><span class="lab">Role</span><input data-b="role" list="bh-roles" placeholder="e.g. Sales Executive"></label><label class="field"><span class="lab">People</span><input data-b="openings" type="number" min="1" inputmode="numeric" placeholder="10"></label><label class="field"><span class="lab">Salary from ₹ / month</span><input data-b="sal_from" type="number" min="0" inputmode="numeric" placeholder="15000"></label><label class="field"><span class="lab">Salary to ₹ / month</span><input data-b="sal_to" type="number" min="0" inputmode="numeric" placeholder="22000"></label><label class="field"><span class="lab">City <span class="opt">(if different)</span></span><input data-b="city" list="cities"></label><button type="button" class="bh-x" data-bhx aria-label="Remove this role" title="Remove this role">×</button></div>`;
+    const card = `<form class="stack" data-bhform novalidate><datalist id="bh-roles">${roles.map((x) => `<option value="${esc(x)}">`).join('')}</datalist>
+      <div class="grid g2">${field({ name: 'company', label: 'Company name' })}${field({ name: 'contact', label: 'Your name' })}</div>
+      <div class="grid g2">${field({ name: 'whatsapp', label: 'WhatsApp number', type: 'tel', phone: true, placeholder: '10 digits' })}${field({ name: 'email', label: 'Email ID', type: 'email', voice: false })}</div>
+      <div class="grid g2">${field({ name: 'city', label: 'City', list: 'cities' })}${field({ name: 'business_type', label: 'Your business', type: 'select', options: [['Showroom B2C', 'Showroom (B2C)'], ['Manufacturer B2B', 'Manufacturer / wholesale (B2B)'], ['Both', 'Both']], opt: true })}</div>
+      <div class="field"><span class="lab">Roles you are hiring for</span><div class="bh-rows" data-bhrows>${row()}</div><div class="row between" style="margin-top:8px"><button type="button" class="btn sm" data-bhadd>+ Add another role</button><span class="small muted" data-bhtotal></span></div></div>
+      ${field({ name: 'notes', label: 'Anything else', type: 'textarea', opt: true, placeholder: 'e.g. New showroom opens on 1 January; staff needed by 15 December' })}
+      <input type="text" name="website" tabindex="-1" autocomplete="off" style="position:absolute;left:-9999px" aria-hidden="true">
+      <div class="err-box hidden" data-bherr></div><button type="submit" class="btn gold lg block">Send bulk hiring request</button></form>`;
+    $('#app').innerHTML = BB.split({ top: BB.publicTop('For Employers'), eyebrow: 'For Employers', title: 'Bulk hiring, <em>one form</em>', centered: true, card });
+    const form = $('[data-bhform]'); const rows = $('[data-bhrows]', form);
+    const read = () => $$('[data-bhrow]', rows).map((r) => Object.fromEntries($$('[data-b]', r).map((i) => [i.dataset.b, i.value.trim()])));
+    const total = () => { const n = read().reduce((t, x) => t + (Number(x.openings) || 0), 0); $('[data-bhtotal]', form).textContent = n ? `${n} people in all` : ''; $$('[data-bhx]', rows).forEach((x) => { x.hidden = $$('[data-bhrow]', rows).length === 1; }); };
+    rows.oninput = total; total();
+    $('[data-bhadd]', form).onclick = () => { rows.insertAdjacentHTML('beforeend', row()); total(); $$('[data-b=role]', rows).pop().focus(); };
+    rows.onclick = (e) => { const x = e.target.closest('[data-bhx]'); if (x) { x.closest('[data-bhrow]').remove(); total(); } };
+    form.onsubmit = async (e) => {
+      e.preventDefault(); const err = $('[data-bherr]', form); err.classList.add('hidden');
+      const v = BB.formValues(form); const btn = $('[type=submit]', form); btn.disabled = true;
+      try {
+        const r = await BB.post('/api/public/bulk-hire', { ...v, roles: read(), src: BB.adSource ? BB.adSource() : '', lang: BB.lang });
+        $('#app').innerHTML = BB.split({ top: BB.publicTop('For Employers'), eyebrow: 'For Employers', title: 'Request received', centered: true, card: `<div class="stack"><p style="margin:0">Thank you. We received your request for <b>${r.total} people</b> across <b>${r.roles} role${r.roles === 1 ? '' : 's'}</b>.</p><p class="muted" style="margin:0">Our team will call you within one working day to plan the hiring.</p><div class="ty-id"><span>Your client ID</span><b class="mono">${esc(r.id)}</b></div><a class="btn" href="/">Back to home</a></div>` });
+        if (BB.track) BB.track('Lead');
+      } catch (er) { err.textContent = er.message; err.classList.remove('hidden'); const fe = er.field && $(`[name="${er.field}"]`, form); if (fe) fe.focus(); btn.disabled = false; }
+    };
+  };
   // Used by the landing page.
   BB.leadFormCard = (el, mode = 'job', q = {}) => { el.innerHTML = formHtml(mode, q); mountForm(el, mode, q); };
 })();

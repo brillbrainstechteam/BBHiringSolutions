@@ -830,7 +830,7 @@ route('GET', '/api/jobs', T, (ctx) => {
   const bulkN = rows.filter((j) => j.mass).length;
   const stg = q.stage || (q.status ? 'All' : 'All active');
   if (stg !== 'All') rows = rows.filter((j) => (stg === 'All active' ? ACTIVE.includes(j.stage) : j.stage === stg));
-  if (q.mass) rows = rows.filter((j) => j.mass);
+  if (q.mass === '1') rows = rows.filter((j) => j.mass); else if (q.mass === '0') rows = rows.filter((j) => !j.mass);
   const counts = { All: rows.length, Active: rows.filter((j) => ['Open', 'Sourcing', 'Interviewing', 'Offer stage'].includes(j.status)).length };
   for (const s of ['Draft', 'Open', 'Sourcing', 'Interviewing', 'Offer stage', 'Filled', 'On hold', 'Closed']) counts[s] = rows.filter((j) => j.status === s).length;
   rows = rows.filter((j) => (!q.status || q.status === 'All' || (q.status === 'Active' ? ['Open', 'Sourcing', 'Interviewing', 'Offer stage'].includes(j.status) : j.status === q.status)) && (!q.client || j.client_id === q.client) && (!q.city || j.city === q.city) && (!q.recruiter || j.recruiter_id === q.recruiter) && (!Number(q.opened) || L.daysBetween(j.reopened_at || j.created_at) <= Number(q.opened)) && (!Number(q.ctc_min) || (j.ctc || 0) >= Number(q.ctc_min)) && like(q.q, j.id, j.title, j.client_name, j.city, j.old_code, j.recruiter_name, j.reopen_tag, j.reopen_tag ? 'replacement' : ''));
@@ -896,7 +896,7 @@ function createJob0(c, b, actor, byClient) {
   L.syncClientStage(c.id, actor);
   return get('SELECT * FROM jobs WHERE id=?', id);
 }
-module.exports.createJob = createJob; module.exports.needSalary = needSalary;
+module.exports.createJob = createJob; module.exports.needSalary = needSalary; module.exports.placeholderClient = (a) => placeholderClient(a); module.exports.internalClient = (a) => internalClient(a);
 // ---------- hiring channels: a checklist row per channel on every job, and the tracker across jobs ----------
 const channels = () => (D.settings().hiring_channels || []).map((c) => { const o = c.owner_id && get('SELECT name FROM users WHERE id=?', c.owner_id); return o ? { ...c, owner: o.name } : c; });
 const POST_STATUS = ['', 'Pending', 'Done', 'Not needed'];

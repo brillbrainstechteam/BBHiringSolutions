@@ -101,7 +101,8 @@ route('GET', '/api/call-script', T, () => ({ script: D.settings().call_script })
 // One call can carry many roles, each with its own count, location and department.
 function callRoles(lines) {
   const txt = (v) => String(v ?? '').trim();
-  const rows = (Array.isArray(lines) ? lines : []).map((x) => ({ role: txt(x.role), openings: txt(x.openings), location: txt(x.location), department: txt(x.department), skills: txt(x.skills), duties: txt(x.duties), notes: txt(x.notes), sal_from: Number(x.sal_from) > 0 ? Math.round(Number(x.sal_from)) : null, sal_to: Number(x.sal_to) > 0 ? Math.round(Number(x.sal_to)) : null }));
+  const num = (v) => (v === '' || v === null || v === undefined || Number.isNaN(Number(v)) ? null : Number(v));
+  const rows = (Array.isArray(lines) ? lines : []).map((x) => ({ role: txt(x.role), openings: txt(x.openings), location: txt(x.location), department: txt(x.department), skills: txt(x.skills), duties: txt(x.duties), notes: txt(x.notes), sal_from: Number(x.sal_from) > 0 ? Math.round(Number(x.sal_from)) : null, sal_to: Number(x.sal_to) > 0 ? Math.round(Number(x.sal_to)) : null, exp_from: num(x.exp_from), exp_to: num(x.exp_to), priority: txt(x.priority), market: txt(x.market), notice_days: num(x.notice_days), jewel_need: txt(x.jewel_need) }));
   const named = rows.filter((x) => x.role || x.openings);
   if (named.some((x) => !x.role)) throw httpError(400, 'Write the role for every count', 'call_roles');
   const noCount = named.find((x) => !/^[1-9]\d*$/.test(x.openings)); if (noCount) throw httpError(400, `Write how many openings for ${noCount.role}`, 'call_roles');
@@ -224,14 +225,14 @@ route('POST', '/api/clients/:id/jd', T, (ctx) => {
   const num = (v) => (v === '' || v == null ? null : Number(v));
   let j = r.job_id ? get('SELECT * FROM jobs WHERE id=? AND client_id=?', r.job_id, c.id) : null;
   if (r.job_id && !j) throw httpError(404, 'Job not found');
-  const facts = { title, city: String(r.location || c.city || '').trim(), openings: Math.max(1, Number(r.openings) || 1), sal_from: num(r.sal_from), sal_to: num(r.sal_to), exp_from: num(r.exp_from), exp_to: num(r.exp_to), department: r.department || undefined };
+  const facts = { title, city: String(r.location || c.city || '').trim(), openings: Math.max(1, Number(r.openings) || 1), sal_from: num(r.sal_from), sal_to: num(r.sal_to), exp_from: num(r.exp_from), exp_to: num(r.exp_to), department: r.department || undefined, priority: ['High', 'Medium', 'Low'].includes(r.priority) ? r.priority : undefined, market: ['B2B', 'B2C', 'Both'].includes(r.market) ? r.market : undefined, notice_days: num(r.notice_days) ?? undefined };
   if (b.send && !facts.sal_from && !facts.sal_to) throw httpError(400, 'Add the salary before sending the JD to the client', 'sal_from');
   if (!j) {
     j = TEAM.createJob(c, { ...facts, salary_per: 'month', skills: String(r.skills || '').split(',').map((s) => s.trim()).filter(Boolean), notes: String(b.call_notes || '').slice(0, 2000), recruiter_id: ctx.user.level === 'sub' ? ctx.user.id : undefined }, ctx.actor, false);
     const m = /^call:(\d+):(\d+)$/.exec(String(r.key || ''));
     if (m) { const k = get('SELECT * FROM client_calls WHERE id=? AND client_id=?', m[1], c.id); if (k && (k.call_roles || [])[m[2]]) { const lines = k.call_roles; lines[m[2]].job_id = j.id; update('client_calls', k.id, { call_roles: lines }); } }
   } else {
-    const patch = { title, city: facts.city, openings: facts.openings, exp_from: facts.exp_from, exp_to: facts.exp_to };
+    const patch = { title, city: facts.city, openings: facts.openings, exp_from: facts.exp_from, exp_to: facts.exp_to, ...(facts.department ? { department: facts.department } : {}), ...(facts.priority ? { priority: facts.priority } : {}), ...(facts.market ? { market: facts.market } : {}), ...(facts.notice_days != null ? { notice_days: facts.notice_days } : {}) };
     if (facts.sal_from || facts.sal_to) { patch.sal_from = facts.sal_from ? facts.sal_from * 12 : null; patch.sal_to = facts.sal_to ? facts.sal_to * 12 : null; }
     D.edit('jobs', j.id, patch, ctx.actor.label, ctx.ip);
   }
@@ -398,9 +399,10 @@ function ruleNotes(text) {
   return { title: (pick(/(?:role|position|designation|hiring for)s?\s*[:\-]\s*(.+)/i) || '').trim(), city: (pick(/(?:location|city)\s*[:\-]\s*(.+)/i) || '').trim(), openings: n(pick(/(?:openings?|vacanc(?:y|ies)|positions?)\s*[:\-]?\s*(\d+)/i)) || 1, skills: (pick(/skills?(?: required)?\s*[:\-]\s*(.+)/i) || '').split(/[,;]/).map((x) => x.trim()).filter(Boolean), duties: (pick(/responsibilit(?:y|ies)[^:\n]*[:\-]\s*(.+)/i) || '').trim(), sal_from: null, sal_to: null, exp_from: n(pick(/(\d+)\s*(?:\+|to|-)?\s*\d*\s*(?:years?|yrs?)/i)), exp_to: null, notice_days: null, jewellery: /jewell?ery/i.test(t) ? 'Required' : 'Preferred', priority: /urgent|immediate/i.test(t) ? 'High' : 'Medium', notes: t.slice(0, 1500) };
 }
 route('POST', '/api/jobs/mass', T, (ctx) => {
-  const b = ctx.body || {}; const c = get('SELECT * FROM clients WHERE id=?', b.client_id); mustSee(seeClient(ctx.user, c), 'client');
+  const b = ctx.body || {}; const c = b.client_id === 'TBC' ? TEAM.placeholderClient(ctx.user.agency_id) : b.client_id === 'INTERNAL' ? TEAM.internalClient(ctx.user.agency_id) : get('SELECT * FROM clients WHERE id=?', b.client_id); mustSee(c && seeClient(ctx.user, c), 'client');
+  const bulk = !(b.mass === 0 || b.mass === '0' || b.mass === false);
   // roles: [{ title, city, openings, sal_from, sal_to }] (one job opening each); or the older one role + "City: n" lines
-  let rows = Array.isArray(b.roles) ? b.roles.filter((x) => x && (x.title || x.city)).map((x) => ({ title: x.title, city: String(x.city || c.city || '').trim(), openings: Math.max(1, Number(x.openings) || 1), sal_from: x.sal_from, sal_to: x.sal_to })) : null;
+  let rows = Array.isArray(b.roles) ? b.roles.filter((x) => x && (x.title || x.city)).map((x) => ({ ...x, title: x.title, city: String(x.city || c.city || '').trim(), openings: Math.max(1, Number(x.openings) || 1), skills: Array.isArray(x.skills) ? x.skills : String(x.skills || '').split(',').map((y) => y.trim()).filter(Boolean) })) : null;
   if (!rows) {
     if (!b.title) throw httpError(400, 'Pick the role', 'title');
     rows = String(b.lines || '').split(/\n+/).map((l) => /^\s*(.+?)\s*[:\-,=]\s*(\d+)\s*$/.exec(l)).filter(Boolean).map((m) => ({ title: b.title, city: m[1], openings: Number(m[2]), sal_from: b.sal_from, sal_to: b.sal_to }));
@@ -408,10 +410,12 @@ route('POST', '/api/jobs/mass', T, (ctx) => {
   }
   if (!rows.length) throw httpError(400, 'Add at least one role', 'roles');
   rows.forEach((x, i) => { if (!x.title) throw httpError(400, `Pick the role in row ${i + 1}`, 'roles'); if (!x.city) throw httpError(400, `Give the city in row ${i + 1}`, 'roles'); try { TEAM.needSalary(x); } catch (e) { throw httpError(400, `Row ${i + 1}: ${e.message}`, 'roles'); } });
-  const batch = `MH-${Date.now().toString(36).toUpperCase()}`; const jobs = [];
+  const batch = bulk ? `MH-${Date.now().toString(36).toUpperCase()}` : null; const jobs = [];
   for (const x of rows) {
-    const r = TEAM.createJob(c, { ...b, title: x.title, city: x.city, openings: x.openings, sal_from: x.sal_from, sal_to: x.sal_to, department: x.department || undefined, recruiter_id: ctx.user.level === 'sub' ? ctx.user.id : b.recruiter_id || undefined, priority: b.priority || 'High', notes: b.notes || '', mass: 1 }, ctx.actor, false);
-    update('jobs', r.id, { mass_batch: batch, mass_name: String(b.mass_name || '').trim().slice(0, 80) || null }); jobs.push(r.id);
+    const { roles: _r, ...shared } = b;
+    const r = TEAM.createJob(c, { ...shared, ...x, department: x.department || undefined, recruiter_id: ctx.user.level === 'sub' ? ctx.user.id : b.recruiter_id || undefined, priority: x.priority || b.priority || (bulk ? 'High' : 'Medium'), notes: x.notes || b.notes || '', mass: bulk ? 1 : 0 }, ctx.actor, false);
+    if (x.jewel_need || x.duties) { const jj = get('SELECT jd FROM jobs WHERE id=?', r.id); update('jobs', r.id, { jd: { ...(jj.jd || {}), ...(x.jewel_need ? { jewel_need: x.jewel_need } : {}), ...(x.duties ? { duties: x.duties } : {}) } }); }
+    if (bulk) update('jobs', r.id, { mass_batch: batch, mass_name: String(b.mass_name || '').trim().slice(0, 80) || null }); jobs.push(r.id);
   }
   D.history(ctx.actor.label, 'bulk hiring', c.id, null, null, `${rows.reduce((t, x) => t + x.openings, 0)} people in ${rows.length} openings${b.mass_name ? ` (${b.mass_name})` : ''}`);
   return { batch, jobs, total: rows.reduce((t, x) => t + x.openings, 0) };

@@ -449,7 +449,7 @@ BB.setUrl = (to) => history.replaceState(null, '', '/' + String(to || '').replac
 const fromHash = () => { const h = location.hash.replace(/^#/, ''); if (h) { BB.setUrl(h); return true; } return false; };
 // Where a WhatsApp chat started: the first message names the page and button (and the ad or link source, ?src=),
 // and the click is counted for the WhatsApp clicks report. Links that already carry a message (sharing) are left alone.
-const WA_PAGE = { landing: 'Home page', hire: 'Employer form', apply: 'Job seeker form', partners: 'Partners page', client: 'Client account', candidate: 'Candidate account' };
+const WA_PAGE = { landing: 'Home page', hire: 'Employer form', bulk: 'Bulk hiring form', apply: 'Job seeker form', partners: 'Partners page', client: 'Client account', candidate: 'Candidate account' };
 // No ?src= on the link (a LinkedIn job's apply link, a post): the site the visitor came from still names the platform.
 const refSource = () => { const h = (() => { try { return new URL(document.referrer).hostname; } catch { return ''; } })(); return /(^|\.)linkedin\.com$|(^|\.)lnkd\.in$/.test(h) ? 'linkedin' : /(^|\.)instagram\.com$/.test(h) ? 'ig' : /(^|\.)facebook\.com$|(^|\.)fb\.com$|(^|\.)fb\.me$/.test(h) ? 'fb' : ''; };
 BB.adSource = () => { let s = ''; try { const p = new URLSearchParams(location.search); s = p.get('src') || p.get('utm_source') || sessionStorage.getItem('bb_src') || refSource() || ''; if (s) sessionStorage.setItem('bb_src', s); } catch { /* private mode */ } return s.slice(0, 40); };
@@ -515,7 +515,7 @@ BB.track = (event, params) => { try { if (window.fbq && document.body.dataset.vi
 let lastTracked = location.pathname;
 BB.route = () => {
   const r = BB.parseHash(); BB.adSource(); BB.adParams(); // remember ?src= and the ad for the rest of the visit
-  const map = { hire: 'hire', apply: 'apply', partners: 'partners', 'my-account': 'client', 'my-profile': 'candidate', team: 'team' };
+  const map = { hire: 'hire', 'bulk-hiring': 'bulk', apply: 'apply', partners: 'partners', 'my-account': 'client', 'my-profile': 'candidate', team: 'team' };
   const view = map[r.name] || 'landing';
   BB.portal = { client: 'client', candidate: 'candidate', team: 'team' }[view] || null;
   if (view !== 'team') { BB.closePanels(); if (BB.unguard) BB.unguard(); }
