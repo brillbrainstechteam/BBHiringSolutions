@@ -833,7 +833,7 @@ route('GET', '/api/jobs', T, (ctx) => {
   if (q.mass === '1') rows = rows.filter((j) => j.mass); else if (q.mass === '0') rows = rows.filter((j) => !j.mass);
   const counts = { All: rows.length, Active: rows.filter((j) => ['Open', 'Sourcing', 'Interviewing', 'Offer stage'].includes(j.status)).length };
   for (const s of ['Draft', 'Open', 'Sourcing', 'Interviewing', 'Offer stage', 'Filled', 'On hold', 'Closed']) counts[s] = rows.filter((j) => j.status === s).length;
-  rows = rows.filter((j) => (!q.status || q.status === 'All' || (q.status === 'Active' ? ['Open', 'Sourcing', 'Interviewing', 'Offer stage'].includes(j.status) : j.status === q.status)) && (!q.client || j.client_id === q.client) && (!q.city || j.city === q.city) && (!q.recruiter || j.recruiter_id === q.recruiter) && (!Number(q.opened) || L.daysBetween(j.reopened_at || j.created_at) <= Number(q.opened)) && (!Number(q.ctc_min) || (j.ctc || 0) >= Number(q.ctc_min)) && like(q.q, j.id, j.title, j.client_name, j.city, j.old_code, j.recruiter_name, j.reopen_tag, j.reopen_tag ? 'replacement' : ''));
+  rows = rows.filter((j) => (!q.status || q.status === 'All' || (q.status === 'Active' ? ['Open', 'Sourcing', 'Interviewing', 'Offer stage'].includes(j.status) : j.status === q.status)) && (!q.client || j.client_id === q.client) && (!q.city || j.city === q.city) && (!q.recruiter || j.recruiter_id === q.recruiter) && (!Number(q.opened) || L.daysBetween(j.reopened_at || j.created_at) <= Number(q.opened)) && (!Number(q.ctc_min) || (j.ctc || 0) >= Number(q.ctc_min)) && (!Number(q.ctc_max) || ((j.ctc || 0) > 0 && (j.ctc || 0) < Number(q.ctc_max))) && like(q.q, j.id, j.title, j.client_name, j.city, j.old_code, j.recruiter_name, j.reopen_tag, j.reopen_tag ? 'replacement' : ''));
   const p = page(ctx, sortBy(rows, q, ['title', 'client_name', 'ctc', 'pscore', 'client_openings', 'filled', 'apps_total', 'reach_done', 'status', 'recruiter_name', 'days_open']), 'job-openings', ['id', 'title', 'client_name', 'city', 'ctc', 'client_openings', 'pscore', 'openings', 'filled', 'apps_total', 'status', 'recruiter_name', 'days_open', 'old_code']);
   // Choices for the filters, from the jobs this person can see
   const all0 = visibleJobs(u).map((j) => V.jobView(j)); const uniq = (f) => [...new Map(all0.map(f).filter((x) => x && x[0]).map((x) => [x[0], x])).values()].sort((a, b) => String(a[1]).localeCompare(String(b[1])));
@@ -1092,6 +1092,11 @@ route('POST', '/api/jobs/bulk', T, (ctx) => {
       else if (b.action === 'recruiter') {
         D.edit('jobs', id, { recruiter_id: b.recruiter_id || null }, ctx.actor.label, ctx.ip);
         if (b.recruiter_id && b.recruiter_id !== j.recruiter_id) L.alertUser(b.recruiter_id, `You are now the recruiter on ${j.id}`, j.id, 'jobs');
+      } else if (b.action === 'agency') {
+        if (!isSuper(ctx.user)) throw httpError(403, 'Only the super admin assigns jobs to an agency.');
+        const ag = get("SELECT * FROM agencies WHERE id=? AND status='Active'", b.agency_id); if (!ag) throw httpError(400, 'Pick the agency');
+        D.edit('jobs', id, { agency_id: ag.id }, ctx.actor.label, ctx.ip);
+        const adm = L.agencyAdmin(ag.id); if (adm) L.alertUser(adm.id || adm, `${j.id} ${j.title} is assigned to your agency`, j.id, 'jobs');
       } else if (b.action === 'client') {
         const nc = get('SELECT * FROM clients WHERE id=? AND removed=0 AND merged_into IS NULL', b.client_id); mustSee(seeClient(ctx.user, nc), 'client');
         if (!isSuper(ctx.user) && nc.agency_id !== j.agency_id) throw httpError(403, 'Pick a client of your own agency.');

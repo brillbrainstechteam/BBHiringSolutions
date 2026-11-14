@@ -131,7 +131,7 @@
     jd_approved: '<button class="btn sm" data-fjd>See JD</button>',
     group_dp: '<button class="btn sm" data-fgroup>Set up group</button>',
     thanks: '<button class="btn sm" data-fthanks>Send thank-you</button>',
-    first_job: '<button class="btn sm" data-newjob>New job opening</button>',
+    first_job: '',
   };
   const OB_AUTO = ['kyc', 'contract', 'jd_shared', 'jd_approved', 'account', 'first_job'];
   F.client = (c) => {
@@ -234,7 +234,8 @@
     $$('[data-flook]', el).forEach((lk) => (lk.onclick = async () => {
       // each search is charged (about ₹1): say so, and when it was last searched, before searching again
       const prev = (c.extra || {}).online;
-      const v = await BB.ask({ title: 'Client info', note: prev ? `Already searched on ${fmtD(prev.at)}${prev.cost_inr ? ` (₹${prev.cost_inr})` : ''}; the result is on the client page. Searching again costs about ₹1.` : 'One online search, about ₹1.', fields: [{ name: 'name', label: 'Business name', value: c.company }, { name: 'city', label: 'City', value: c.city || '', opt: true }, { name: 'address', label: 'Address', opt: true }], ok: 'Search', submit: (x) => BB.post(`/api/clients/${c.id}/lookup`, x) });
+      if (prev) setTimeout(() => { const a = $('.modal [data-prevres]'); if (a) a.onclick = (e) => { e.preventDefault(); $$('.modal-back').forEach((m) => m.remove()); const t = $('[data-citab="online"]') || $('[data-ci="online"]'); if (t) t.click(); else BB.open('client', c.id); }; }, 60);
+      const v = await BB.ask({ title: 'Client info', note: prev ? `<a href="#" data-prevres>Search results - ${fmtD(prev.at)}</a>` : '', fields: [{ name: 'name', label: 'Business name', value: c.company }, { name: 'city', label: 'City', value: c.city || '', opt: true }, { name: 'address', label: 'Address', opt: true }], ok: 'Search', submit: (x) => BB.post(`/api/clients/${c.id}/lookup`, x) });
       if (!v) return;
       // Company size and year of establishment matter for the pitch: ask when the web did not say.
       const ex0 = c.extra || {}; const needSize = !v.team_size && !ex0.team_size; const needYear = !v.est_year && !ex0.est_year;

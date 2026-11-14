@@ -2607,3 +2607,5 @@ a.pipe-step { text-decoration: none; cursor: pointer; } a.pipe-step:hover { bord
 @media (max-width: 760px) { .bh-row { grid-template-columns: 1fr 1fr; } .bh-row > label:first-child { grid-column: 1 / -1; } }
 /* New job opening: Normal / Bulk hiring */
 .hire-kind { display: inline-flex; gap: 4px; padding: 3px; border: 1px solid var(--border); border-radius: 10px; } .hire-kind label { display: inline-flex; align-items: center; gap: 6px; padding: 7px 12px; border-radius: 8px; cursor: pointer; font-size: 13.5px; } .hire-kind label:has(input:checked) { background: var(--navy, #101A3A); color: #fff; } .hire-kind input { accent-color: var(--mustard); }
+
+.job-sub .chip-grp { display: inline-flex; gap: 6px; flex-wrap: wrap; margin-right: 14px; }

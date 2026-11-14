@@ -617,6 +617,7 @@ function moveStep(appId, step, by, note) {
 // All seats taken: everyone else still in process on that job closes (they stay in the resume bank for other jobs).
 function closeRestOfFilledJob(jobId, by) {
   const job = get('SELECT * FROM jobs WHERE id=?', jobId);
+  tellApplicants(jobId, 'filled', all("SELECT * FROM applications WHERE job_id=? AND result='open' AND step NOT IN ('Offer accepted','Joined')", jobId));
   for (const a of all("SELECT * FROM applications WHERE job_id=? AND result='open' AND step NOT IN ('Offer accepted','Joined')", jobId)) closeApplication(a.id, 'Position filled', by, `All ${job.openings} seat${job.openings === 1 ? '' : 's'} on ${jobId} are taken`);
 }
 function closeApplication(appId, reason, by, note) {
@@ -1092,19 +1093,34 @@ function passRounds(appId, step, reason, by) {
 }
 
 // ---------- job actions ----------
+// Tell everyone with an open application on a job what happened to it (once per application and kind).
+const JOB_UPDATE = { hold: 'hiring for it is paused for now. Your application stays with us and we will tell you when it restarts', close: 'the position is now closed', filled: 'the position has been filled' };
+function tellApplicants(jobId, kind, apps) {
+  const job = get('SELECT * FROM jobs WHERE id=?', jobId); if (!job) return 0; let n = 0;
+  for (const a of apps) { try { const r = sendWA({ ptype: 'candidate', pid: a.candidate_id, format: 'bbhs_job_status_update', vars: { job: job.title, update: JOB_UPDATE[kind] }, ap: a.id, jb: jobId, by: { label: 'Auto' }, auto: true, rule: 'job_status_update', dedupe: `jobst:${a.id}:${kind}:${job.reopened_at || job.created_at}` }); if (r && !r.skipped) n++; } catch { /* the job changes either way */ } }
+  return n;
+}
 function jobAction(jobId, action, o, by) {
   const job = get('SELECT * FROM jobs WHERE id=?', jobId); if (!job) throw httpError(404, 'Job opening not found');
   const who = actorName(by); let closedApps = 0; let restored = 0;
-  if (action === 'hold') { update('jobs', jobId, { manual: 'On hold', manual_reason: o.reason || 'Hiring paused' }); }
+  if (action === 'hold') { update('jobs', jobId, { manual: 'On hold', manual_reason: o.reason || 'Hiring paused' }); tellApplicants(jobId, 'hold', appsOfJob(jobId).filter((x) => x.result === 'open')); }
   else if (action === 'resume') { update('jobs', jobId, { manual: null, manual_reason: null }); }
   else if (action === 'close') {
     if (!o.reason) throw httpError(400, 'Pick a reason', 'reason');
     update('jobs', jobId, { manual: 'Closed', manual_reason: o.reason });
+    tellApplicants(jobId, 'close', appsOfJob(jobId).filter((x) => x.result === 'open'));
     // Nothing stays in progress on a closed job. Interviews ahead come off the calendar.
     for (const a of appsOfJob(jobId).filter((x) => x.result === 'open')) {
       closeApplication(a.id, 'Job closed', by, o.reason); closedApps++;
       D.run("UPDATE interviews SET status='Cancelled' WHERE app_id=? AND status IN ('Scheduled','Rescheduled') AND at>?", a.id, now());
     }
+  } else if (action === 'set_seats') {
+    // The number of openings, up or down; never below the seats already taken.
+    const want = Math.round(Number(o.openings)); const taken = filledCount(appsOfJob(jobId));
+    if (!(want >= 1) || want > 500) throw httpError(400, 'Enter the number of openings', 'openings');
+    if (want < taken) throw httpError(400, `${taken} seat${taken === 1 ? ' is' : 's are'} already taken: openings cannot go below ${taken}`, 'openings');
+    if (want !== job.openings) { update('jobs', jobId, { openings: want }); insert('job_history', { job_id: jobId, at: now(), status: `Openings ${job.openings} → ${want}`, by: who, note: o.reason || '' }); history(who, 'edit', jobId, 'openings', job.openings, want); }
+    if (recalcJob(jobId, who, `openings ${want}`) === 'Filled') closeRestOfFilledJob(jobId, by);
   } else if (action === 'add_seat') {
     // More people for the same position while it is still hiring: same job ID, one more seat each.
     const add = Math.max(1, Math.min(50, Number(o.add) || 1));
