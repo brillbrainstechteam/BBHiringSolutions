@@ -2,6 +2,7 @@
    The team panel shows each check with how to do it for free; the candidate uploads their papers in their profile. */
 (() => {
   const { $, $$, esc, fmtD } = BB;
+  const field = (d) => BB.field(d);
   const V = (BB.verify = {});
   const SUM_CLS = { 'Fully checked': 'b-green', 'ID verified': 'b-green', 'Problem found': 'b-red', 'In progress': 'b-amber', 'Not started': 'b-outline' };
   V.badge = (s) => (s && s !== 'Not started' ? `<span class="badge ${SUM_CLS[s] || 'b-outline'}" title="Verification">${s === 'Fully checked' || s === 'ID verified' ? '✓ ' : ''}${esc(s)}</span>` : '');
@@ -15,18 +16,28 @@
 
   // ---------- team: the Verification section on the candidate ----------
   // Order a verification for a candidate (from the Verifications tab or an application). appId fixes the client.
+  // Order a verification. The candidate list holds people hired or offered a job (that sets the client). Tick the
+  // services; each has our price to the client and, when known, the vendor's cost.
   V.place = async (candId, appId, after) => {
-    let c; let pk; try { [c, pk] = await Promise.all([BB.api(`/api/candidates/${encodeURIComponent(candId)}`), BB.api('/api/verify/packages')]); } catch (e) { return BB.fail(e); }
-    const clients = [...new Map((c.apps || []).filter((a) => a.client_id && (!appId || a.id === appId)).map((a) => [a.client_id, [a.client_id, `${a.client_name || a.client_id} · ${a.job_title || ''}`, a.id]])).values()];
-    if (!clients.length) return BB.toast(`${c.name} is on no client's job yet: add them to a job opening first (a verification is ordered for a client).`, true);
-    const r = await BB.ask({ title: `Order verification · ${esc(c.name)}`, note: 'The candidate is asked on WhatsApp for the documents this package needs. Record each check; then make the report and email it to the client (it is also in their account).', fields: [
-      { name: 'client', label: 'For client', type: 'select', options: clients.map(([id, l]) => [id, l]), value: clients[0][0], placeholder: false },
-      { name: 'package', label: 'Package', type: 'select', options: pk.map((p) => [p.key, `${p.name} · ₹${p.price} — ${p.about}`]), placeholder: false, value: 'standard' },
-      { name: 'price', label: 'Price (₹, before GST)', type: 'number', opt: true, placeholder: 'The package price', voice: false }], ok: 'Order',
-      submit: (v) => BB.post('/api/verify-orders', { candidate_id: c.id, client_id: v.client, app_id: (clients.find((x) => x[0] === v.client) || [])[2], package: v.package, price: v.price === '' ? undefined : Number(v.price) }) });
-    if (r) { BB.toast(`${r.no} ordered: documents asked from the candidate`); if (after) after(r); }
+    let pk; let list; try { [pk, list] = await Promise.all([BB.api('/api/verify/packages'), BB.api('/api/verify/candidates')]); } catch (e) { return BB.fail(e); }
+    let rows = list.rows; if (appId) rows = rows.filter((x) => x.app_id === appId); else if (candId) rows = rows.filter((x) => x.candidate_id === candId);
+    if (!rows.length) return BB.toast(candId || appId ? 'A verification is ordered once the candidate is offered the job or hired.' : 'Nobody has been offered a job or hired yet.', true);
+    const svc = pk.map((p) => `<div class="vsvc"><label class="row" style="gap:8px"><input type="checkbox" data-vsvc="${esc(p.key)}" ${pk.length === 1 ? 'checked' : ''}><span><b>${esc(p.name)}</b><div class="tiny muted">${esc(p.about)}</div></span></label><label class="field"><span class="lab">Our price ₹</span><input type="number" min="0" data-vprice="${esc(p.key)}" value="${p.price}"></label><label class="field"><span class="lab">Vendor cost ₹ <span class="opt">(optional)</span></span><input type="number" min="0" data-vcost="${esc(p.key)}" placeholder="Their quote"></label></div>`).join('');
+    const r = await BB.ask({ title: 'Order verification', wide: true, note: 'The candidate is asked on WhatsApp for the documents these checks need. Press Initiate to start the checks; record the results, then share the report with the client.', fields: [
+      `<div class="grid g2"><label class="field"><span class="lab">Candidate (hired or offered)</span><select name="pick" data-vpick>${rows.map((x, i) => `<option value="${i}">${esc(x.name)} · ${esc(x.job_title)} · ${esc(x.client_name)} (${esc(x.stage)})</option>`).join('')}</select></label>${field({ name: 'day', label: 'Date', type: 'date', value: BB.istDay ? BB.istDay() : new Date().toISOString().slice(0, 10) })}</div>`,
+      `<div class="tiny muted" data-vclient></div>`,
+      `<div class="field"><span class="lab">Services</span><div class="vsvc-list">${svc}</div></div>`,
+      { name: 'note', label: 'Note', opt: true, placeholder: 'e.g. Client wants it within 5 days' }], ok: 'Create the order',
+      mount: (m) => { const pick = $('[data-vpick]', m); const show = () => { const x = rows[Number(pick.value)]; $('[data-vclient]', m).textContent = x ? `For client: ${x.client_name}` : ''; }; pick.onchange = show; show(); V.form = m; },
+      submit: (v) => { const m = V.form; const x = rows[Number(v.pick)]; const keys = $$('[data-vsvc]:checked', m).map((c) => c.dataset.vsvc); if (!keys.length) throw new Error('Tick at least one service');
+        const prices = Object.fromEntries(keys.map((k) => [k, $(`[data-vprice="${k}"]`, m).value])); const costs = Object.fromEntries(keys.map((k) => [k, $(`[data-vcost="${k}"]`, m).value]));
+        return BB.post('/api/verify-orders', { candidate_id: x.candidate_id, client_id: x.client_id, app_id: x.app_id, services: keys, prices, costs, day: v.day, note: v.note }); } });
+    if (r) { BB.toast(`${r.no} created: documents asked from the candidate`); if (after) after(r); }
     return r;
   };
+  V.initiate = async (id, after) => { try { const r = await BB.post(`/api/verify-orders/${id}/initiate`); BB.toast(r.mode === 'provider' ? `Started with ${r.provider}` : 'Started. No provider connected yet: record each result by hand on the candidate.'); if (after) after(); } catch (e) { BB.fail(e); } };
+  V.invoice = async (o, after) => { const r = await BB.ask({ title: `Invoice for ${esc(o.no)}`, note: `${esc(o.name)} for ${esc(o.candidate_name)} · ${esc(o.client_name)}`, fields: [`<div class="grid g3">${field({ name: 'amount', label: 'Amount ₹ (before GST)', type: 'number', value: o.price })}${field({ name: 'gst', label: 'GST ₹', type: 'number', value: Math.round((o.price || 0) * 0.18) })}${field({ name: 'bill_no', label: 'Invoice number', opt: true })}</div>`], ok: 'Create invoice', submit: (v) => BB.post(`/api/verify-orders/${o.id}/invoice`, v) }); if (r) { BB.toast(`Invoice ${r.id} made: see Profit & Loss › Client bills`); if (after) after(); } };
+  V.cost = async (o, after) => { const r = await BB.ask({ title: `Vendor cost · ${esc(o.no)}`, fields: o.services.map((l) => ({ name: l.key, label: `${l.name} ₹`, type: 'number', value: l.cost ?? '' })), ok: 'Save', submit: (v) => BB.post(`/api/verify-orders/${o.id}/cost`, { costs: v }) }); if (r) { BB.toast('Vendor cost saved'); if (after) after(); } };
   V.sendReport = async (orderId, after) => { const r = await BB.ask({ title: 'Email the report to the client', fields: [{ name: 'to', label: 'To (leave empty for the client\'s email)', type: 'email', opt: true }], ok: 'Send', submit: (v) => BB.post(`/api/verify-orders/${orderId}/send`, v) }); if (r) { BB.toast(`Report sent to ${r.to}`); if (after) after(); } };
   V.block = (c) => `<div class="sec" data-verify="${esc(c.id)}"><h3><span>Verification</span></h3><div class="card pad small muted">Loading…</div></div>`;
   V.mount = async (el, c) => {
@@ -39,7 +50,7 @@
         <div class="verify-row small ${d.declaration ? '' : 'muted'}">${d.declaration ? `✓ Candidate declared no criminal cases on ${fmtD(d.declaration.at)}` : 'No declaration from the candidate yet'}</div></div>`;
       $$('[data-vrec]', box).forEach((b) => (b.onclick = () => record(d.items.find((i) => i.kind === b.dataset.vrec))));
       $('[data-vask]', box).onclick = () => askDocs();
-      $('[data-vorder]', box).onclick = () => order();
+      $('[data-vorder]', box).onclick = () => V.place(c.id, null, () => reload());
       $$('[data-vrep]', box).forEach((b) => { b.onclick = () => BB.download(`/api/verify-orders/${b.dataset.vrep}/report`); if (!b.nextElementSibling || !b.nextElementSibling.dataset.vsend) b.insertAdjacentHTML('afterend', `<button class="btn sm" data-vsend="${b.dataset.vrep}">Email to client</button>`); });
       $$('[data-vsend]', box).forEach((b) => (b.onclick = () => V.sendReport(b.dataset.vsend)));
       $$('[data-vdone]', box).forEach((b) => (b.onclick = async () => { b.disabled = true; try { await BB.post(`/api/verify-orders/${b.dataset.vdone}/complete`); BB.toast('Report made: the client can download it from their account'); reload(); } catch (e) { b.disabled = false; BB.fail(e); } }));

@@ -537,7 +537,7 @@ function candMatch(q) {
 }
 // Campaigns, ad sets and ad names seen so far, for the "Any ad" filter.
 const adOptions = (table) => [...new Set(all(`SELECT ad_campaign, ad_set, ad_name FROM ${table} WHERE ad_campaign IS NOT NULL OR ad_set IS NOT NULL OR ad_name IS NOT NULL`).flatMap((r) => [r.ad_campaign, r.ad_set, r.ad_name]).filter(Boolean))].sort();
-const CAND_EXPORT = ['id', 'name', 'whatsapp', 'email', [(r) => (r.cv_file ? L.link('team/candidates', `?cv=${r.id}`) : r.cv_link || ''), 'resume_link'], 'domain', [(r) => (r.skills || []).join(', '), 'skills'], 'job_wanted', 'department', 'city', 'state', 'exp_total', 'exp_jewellery', [(r) => (r.exp_business || []).join(', '), 'worked_in'], [(r) => (r.cur_salary ? Math.round(r.cur_salary / 12) : ''), 'current_per_month'], [(r) => (r.exp_salary ? Math.round(r.exp_salary / 12) : ''), 'expected_per_month'], 'notice_days', 'current_company', 'looking', 'source', [(r) => L.istDay(r.created_at), 'applied_on']];
+const CAND_EXPORT = ['id', 'name', 'whatsapp', 'email', [(r) => (r.cv_file ? L.link('team/candidates', `?cv=${r.id}`) : r.cv_link || ''), 'resume_link'], 'domain', [(r) => (r.skills || []).join(', '), 'skills'], 'job_wanted', 'department', 'city', 'state', 'exp_total', 'exp_jewellery', [(r) => (r.exp_business || []).join(', '), 'worked_in'], [(r) => (r.cur_salary ? Math.round(r.cur_salary / 12) : ''), 'current_per_month'], [(r) => (r.exp_salary ? Math.round(r.exp_salary / 12) : ''), 'expected_per_month'], 'notice_days', 'current_company', 'looking', 'source', 'source_code', [(r) => L.istDay(r.created_at), 'applied_on']];
 // Client leads for everyone who can see them; candidates, hires and downloads stay with the super admin.
 route('GET', '/api/leads', T, (ctx) => {
   const u = ctx.user; const sup = isSuper(u);
@@ -1181,12 +1181,12 @@ function jdPdf(j) {
 }
 module.exports.jdPdf = jdPdf;
 // The job description as a web page for candidates: the link the team copies and shares. The client is not named.
-function jdHtml(id) {
+function jdHtml(id, src) {
   const j = get('SELECT * FROM jobs WHERE id=? AND archived=0 AND is_sample=0', String(id).toUpperCase()); if (!j) return null;
   const v = V.jobView(j); const open = ['Open', 'Sourcing', 'Interviewing', 'Offer stage'].includes(v.status);
   const e = (x) => String(x == null ? '' : x).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   const jd = jdOf(j); if (jewelLine(jd)) jd.jewel_text = jewelLine(jd);
-  const b = D.settings().business; const apply = L.link('apply', `?job=${j.id}`);
+  const b = D.settings().business; const apply = L.link('apply', `?job=${j.id}${src && /^[\w-]{2,20}$/.test(src) ? `&src=${encodeURIComponent(src)}` : ''}`);
   const list = (t) => { const lines = String(t).split('\n').map((x) => x.replace(/^[-•*]\s*/, '').trim()).filter(Boolean); return lines.length > 1 ? `<ul>${lines.map((x) => `<li>${e(x)}</li>`).join('')}</ul>` : `<p>${e(lines[0] || '')}</p>`; };
   // No JD typed in: the uploaded JD document is read, without the client's name, contact, emails or numbers.
   const docText = () => {
@@ -1620,15 +1620,16 @@ route('GET', '/api/tieups', T, () => all('SELECT t.*, (SELECT COUNT(*) FROM cand
 for (const col of ['email TEXT', 'designation TEXT', 'tieup_date TEXT', 'roles TEXT', 'shared_count INTEGER', 'note TEXT']) { try { D.db.exec(`ALTER TABLE tieups ADD COLUMN ${col}`); } catch { /* already there */ } }
 route('POST', '/api/tieups', T, (ctx) => {
   const b = ctx.body; const t = (k) => String(b[k] ?? '').trim();
-  if (!t('name')) throw httpError(400, 'Enter the name of the college or institute', 'name');
+  if (!t('name')) throw httpError(400, t('type') === 'Individual agent' ? 'Enter the agent\'s name' : 'Enter the name of the college or institute', 'name');
+  if (t('type') === 'Individual agent' && !t('phone')) throw httpError(400, 'An agent needs a WhatsApp number: their resumes come from it', 'phone');
   if (!t('city')) throw httpError(400, 'Enter the city', 'city');
   if (t('email') && !L.EMAIL_RE.test(t('email'))) throw httpError(400, 'Enter a valid email ID, or leave it empty', 'email');
   if (t('phone') && !L.validPhone(L.digits10(t('phone')))) throw httpError(400, 'Enter a 10-digit mobile number, or leave it empty', 'phone');
   if (t('shared_count') && !(Number(t('shared_count')) >= 0)) throw httpError(400, 'Enter how many candidates as a number', 'shared_count');
-  const rec = { name: t('name'), type: t('type') || 'College', city: t('city'), contact: t('contact'), designation: t('designation'), phone: L.digits10(t('phone')) || '', email: t('email'), tieup_date: t('tieup_date') || null, roles: t('roles'), shared_count: t('shared_count') ? Math.round(Number(t('shared_count'))) : null, last_list: t('last_list') || null, note: t('note') };
+  const rec = { name: t('name'), type: t('type') || 'College', city: t('city'), contact: t('contact'), designation: t('designation'), phone: L.digits10(t('phone')) || '', email: t('email'), tieup_date: t('tieup_date') || null, roles: t('roles'), shared_count: t('shared_count') ? Math.round(Number(t('shared_count'))) : null, last_list: t('last_list') || null, note: t('note'), region: t('region'), rate: t('rate') ? Math.max(0, Math.round(Number(t('rate')) || 0)) : null };
   if (b.id) { D.edit('tieups', b.id, rec, ctx.actor.label); return { id: b.id }; }
   if (get('SELECT 1 FROM tieups WHERE lower(name)=lower(?) AND lower(city)=lower(?)', rec.name, rec.city)) throw httpError(409, `${rec.name}, ${rec.city} is already a tie-up.`, 'name');
-  const r = D.run('INSERT INTO tieups (name,type,city,contact,phone,owner_id,last_list,email,designation,tieup_date,roles,shared_count,note) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)', rec.name, rec.type, rec.city, rec.contact, rec.phone, b.owner_id || ctx.user.id, rec.last_list, rec.email, rec.designation, rec.tieup_date, rec.roles, rec.shared_count, rec.note);
+  const r = D.run('INSERT INTO tieups (name,type,city,contact,phone,owner_id,last_list,email,designation,tieup_date,roles,shared_count,note,region,rate) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)', rec.name, rec.type, rec.city, rec.contact, rec.phone, b.owner_id || ctx.user.id, rec.last_list, rec.email, rec.designation, rec.tieup_date, rec.roles, rec.shared_count, rec.note, rec.region, rec.rate);
   D.history(ctx.actor.label, 'create', `TU-${r.lastInsertRowid}`, null, null, b.name); return { id: Number(r.lastInsertRowid) };
 });
 // ---------- segments (saved candidate searches) ----------
@@ -2932,9 +2933,9 @@ require('./profilelink'); // resume and details from candidates, on a link with 
 require('./resumes'); // resumes from a zip of the Drive folder (Candidates -> Attach resumes)
 const healthOf = (k) => { const v = (get('SELECT value FROM health WHERE key=?', k) || {}).value; if (v && typeof v === 'object') return v; try { return v ? JSON.parse(v) : null; } catch { return v || null; } };
 route('GET', '/api/resumes/missing', { auth: 'team', levels: ['super', 'admin'] }, (ctx) => {
-  const rows = all("SELECT id, name, source, email, whatsapp, created_at FROM candidates WHERE merged_into IS NULL AND removed=0 AND IFNULL(junk,0)=0 AND (cv_file IS NULL OR cv_file='') AND (source='Email' OR source LIKE 'Google Drive%') ORDER BY created_at DESC");
+  const rows = all("SELECT id, name, source, email, whatsapp, created_at FROM candidates WHERE merged_into IS NULL AND removed=0 AND IFNULL(junk,0)=0 AND (cv_file IS NULL OR cv_file='') AND (source LIKE 'Email%' OR source LIKE 'Google Drive%') ORDER BY created_at DESC");
   const count = (f) => rows.filter(f).length;
-  return { counts: { email: count((c) => c.source === 'Email'), drive: count((c) => c.source === 'Google Drive'), naukri: count((c) => c.source === 'Google Drive - Naukri') }, rows: rows.slice(0, 300).map((c) => ({ ...c, whatsapp: c.whatsapp ? `${String(c.whatsapp).slice(0, 2)}••••${String(c.whatsapp).slice(-2)}` : '' })),
+  return { counts: { email: count((c) => /^Email/.test(c.source || '')), drive: count((c) => c.source === 'Google Drive'), naukri: count((c) => c.source === 'Google Drive - Naukri') }, rows: rows.slice(0, 300).map((c) => ({ ...c, whatsapp: c.whatsapp ? `${String(c.whatsapp).slice(0, 2)}••••${String(c.whatsapp).slice(-2)}` : '' })),
     email: { on: !!D.ENV.imap.host, last: healthOf('last_cv_refetch'), progress: healthOf('cv_refetch_progress'), errors: healthOf('cv_refetch_errors') || [] }, drive: { last: healthOf('last_drive_check') } };
 });
 route('POST', '/api/candidates/:id/find-resume', { auth: 'team', levels: ['super', 'admin', 'sub'], rate: { key: 'findcv', max: 60, minutes: 60 } }, async (ctx) => require('./mailbox').findFor(L.resolveId(String(ctx.params.id))));

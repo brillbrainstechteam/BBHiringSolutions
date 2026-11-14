@@ -74,7 +74,7 @@ function deleteOne(u, actor, kind, id, dry) {
 // Deleted items; email candidates stay candidates only. Restorable from Settings -> Deleted items.
 if (!(D.settings().done_once || []).includes('email_apps_binned')) {
   const sys = { level: 'super' }; const actor = { label: 'System: email applications removed' }; let n = 0;
-  for (const a of all("SELECT a.id FROM applications a JOIN candidates c ON c.id=a.candidate_id WHERE c.source='Email' AND EXISTS (SELECT 1 FROM app_history h WHERE h.app_id=a.id AND (h.note LIKE 'From the email%' OR h.note LIKE 'Matched automatically%'))")) {
+  for (const a of all("SELECT a.id FROM applications a JOIN candidates c ON c.id=a.candidate_id WHERE c.source LIKE 'Email%' AND EXISTS (SELECT 1 FROM app_history h WHERE h.app_id=a.id AND (h.note LIKE 'From the email%' OR h.note LIKE 'Matched automatically%'))")) {
     try { deleteOne(sys, actor, 'application', a.id); n++; } catch (e) { console.error('email app', a.id, e.message); }
   }
   D.setSetting('done_once', [...(D.settings().done_once || []), 'email_apps_binned']);

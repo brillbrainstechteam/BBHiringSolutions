@@ -121,6 +121,7 @@ function runTimer() {
   try { const p = require('./portals').sweep(); if (p) done.portal_renewals = p; } catch (e) { require('./alerts').devAlert('Portal renewals failed', e.message); }
   // Vendors: follow-up steps that are due (WhatsApp from the business number, or a task for the owner).
   try { const v = require('./partners').sweep(); if (v) done.vendor_followups = v; } catch (e) { require('./alerts').devAlert('Vendor follow-ups failed', e.message); }
+  try { require('./sources').tagAll(); } catch (e) { console.error('source codes', e.message); }
   // Matching candidates per live job (for "No relevant candidates").
   try { L.refreshMatchCounts(); } catch (e) { console.error('match counts', e.message); }
   // Meta ad spend, once a day (when the token is in .env).

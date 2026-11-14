@@ -197,6 +197,16 @@ function cvLinkIn(text) {
   }
   return '';
 }
+const PORTALS = [[/naukri/i, 'Naukri'], [/indeed/i, 'Indeed'], [/apna\./i, 'Apna'], [/workindia/i, 'WorkIndia'], [/linkedin/i, 'LinkedIn'], [/shine\.com/i, 'Shine'], [/foundit|monsterindia/i, 'Foundit'], [/timesjobs/i, 'TimesJobs'], [/internshala/i, 'Internshala'], [/iimjobs/i, 'IIMJobs'], [/hirist/i, 'Hirist'], [/glassdoor/i, 'Glassdoor']];
+const PERSONAL = /@(gmail|googlemail|yahoo|ymail|rediffmail|rediff|outlook|hotmail|live|icloud|me|aol|protonmail|proton|zoho)\./i;
+// "Email - One Stop", plus " - Naukri" (a job portal), " - <agency>" (a business address that is not the candidate's)
+function emailSource(folder, fromEmail, fromName, candEmail) {
+  const label = String(folder || D.ENV.imap.folder || 'Inbox').replace(/^\[Gmail\]\//, '');
+  const fe = String(fromEmail || '').toLowerCase(); const portal = PORTALS.find(([re]) => re.test(fe) || re.test(fromName || ''));
+  let who = portal ? portal[1] : '';
+  if (!who && fe && !PERSONAL.test(fe) && fe !== String(candEmail || '').toLowerCase() && !ownDomains().includes(fe.split('@')[1] || '')) who = String(fromName || '').replace(/["<>]/g, '').trim() || fe.split('@')[1];
+  return `Email - ${label}${who ? ` - ${who.slice(0, 40)}` : ''}`;
+}
 const PAPER_SUBJ = /document|kyc|aadha?ar|pan card|bank details|joining|verification/i;
 async function intakeEmail({ fromName, fromEmail, subject, text, attachments, folder }) {
   const L = require('./logic');
@@ -229,7 +239,7 @@ async function intakeEmail({ fromName, fromEmail, subject, text, attachments, fo
   const num = (v) => (v === null || v === undefined || v === '' || Number.isNaN(Number(v)) ? null : Number(v));
   const r = L.intakeCandidate({ name: name || (email ? email.split('@')[0] : 'Email candidate'), whatsapp: phoneUse, email, city, state: (ai && ai.state) || '', work_cities: city ? [city] : [], job_wanted: job,
     ...(ai ? { exp_total: num(ai.exp_total), exp_jewellery: num(ai.exp_jewellery), current_company: ai.current_company || '', cur_salary: num(ai.current_salary_month) !== null ? num(ai.current_salary_month) * 12 : null, exp_salary: num(ai.expected_salary_month) !== null ? num(ai.expected_salary_month) * 12 : null, notice_days: num(ai.notice_days), skills: (ai.skills || []).slice(0, 12) } : {}) },
-    { source: 'Email', allowNoPhone: true, consent: false, existingId: known ? known.id : null, needsCheck: missing.length ? `Not found in email or CV: ${missing.join(', ')}` : null });
+    { source: emailSource(folder, fromEmail, fromName, email), allowNoPhone: true, consent: false, existingId: known ? known.id : null, needsCheck: missing.length ? `Not found in email or CV: ${missing.join(', ')}` : null });
   const id = r.candidate.id;
   D.insert('notes', { record_id: id, text: `Email: ${subject || '(no subject)'}${text ? ' — ' + String(text).trim().slice(0, 300) : ''}`, author: 'Email inbox', at: D.now() });
   if (ai) D.insert('notes', { record_id: id, text: `Read by AI: ${[ai.education && `education ${ai.education}`, (ai.languages || []).length && `languages ${ai.languages.join(', ')}`, ai.role_applied_for && `applied for ${ai.role_applied_for}`].filter(Boolean).join(' · ') || 'details filled from the email and resume'}`, author: 'Email inbox', at: D.now() });
@@ -370,7 +380,7 @@ async function refetchNow(o = {}) {
 }
 async function refetchFolder(o, folderName) {
   const cfg = { ...D.ENV.imap, folder: folderName }; if (!cfg.host || !cfg.user) return { skipped: 'Email inbox not set in .env' };
-  if (!D.get("SELECT 1 FROM candidates WHERE source='Email' AND (cv_file IS NULL OR cv_file='') AND merged_into IS NULL AND removed=0")) return { done: 'no email candidate without a resume' };
+  if (!D.get("SELECT 1 FROM candidates WHERE source LIKE 'Email%' AND (cv_file IS NULL OR cv_file='') AND merged_into IS NULL AND removed=0")) return { done: 'no email candidate without a resume' };
   const out = { read: 0, saved: 0, errors: [] };
   const box = await imapConnect(cfg); await box.cmd(`LOGIN ${q(cfg.user)} ${q(cfg.pass)}`); await box.cmd(`SELECT ${q(cfg.folder)}`);
   try {
@@ -405,7 +415,7 @@ async function refetchFolder(o, folderName) {
               || (ph ? D.get("SELECT * FROM candidates WHERE whatsapp=? AND merged_into IS NULL AND removed=0 AND (cv_file IS NULL OR cv_file='')", ph) : null)
               || (em ? D.get("SELECT * FROM candidates WHERE lower(email)=? AND merged_into IS NULL AND removed=0 AND (cv_file IS NULL OR cv_file='')", em) : null)
               || (cvParts.length === 1 && fromThis.length === 1 ? fromThis[0] : fromThis.find(named))
-              || D.all("SELECT * FROM candidates WHERE source='Email' AND merged_into IS NULL AND removed=0 AND (cv_file IS NULL OR cv_file='')").find(named);
+              || D.all("SELECT * FROM candidates WHERE source LIKE 'Email%' AND merged_into IS NULL AND removed=0 AND (cv_file IS NULL OR cv_file='')").find(named);
             if (!c || D.get("SELECT 1 FROM candidates WHERE id=? AND cv_file IS NOT NULL AND cv_file!=''", c.id)) continue; // none, or given one a moment ago
             try {
               const f = await F.saveFile({ recordId: c.id, type: 'cv', name: p.name, base64: p.content.toString('base64'), by: 'Email inbox' });
@@ -484,5 +494,17 @@ try {
   const once = D.settings().done_once || [];
   if (!once.includes('cv_papers_fix')) { const r = fixPaperCvs(); D.setSetting('done_once', [...once, 'cv_papers_fix']); if (r.back || r.cleared) D.history('System', 'resumes put back', null, null, null, `${r.back} resumes back, ${r.cleared} papers were not resumes`); }
 } catch (e) { console.error('Resume repair', e.message); }
+
+try {
+  const once = D.settings().done_once || [];
+  if (!once.includes('email_source_label')) {
+    const main = String(D.ENV.imap.folder || 'Hiring Resume').replace(/^\[Gmail\]\//, '');
+    for (const c of D.all("SELECT id FROM candidates WHERE source='Email'")) {
+      const os = D.get("SELECT 1 FROM notes WHERE record_id=? AND text LIKE 'From the \"One Stop\" label%'", c.id);
+      D.run('UPDATE candidates SET source=? WHERE id=?', `Email - ${os ? 'One Stop' : main}`, c.id);
+    }
+    D.setSetting('done_once', [...once, 'email_source_label']);
+  }
+} catch (e) { console.error('Email source labels', e.message); }
 
 module.exports = { fixPaperCvs, findFor, check, refetchCvs, intakeEmail, parseMessage, cvText, findPhone, findName };

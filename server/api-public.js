@@ -430,6 +430,7 @@ function srcFrom(b) {
   if (b.ref) return 'Referral';
   // ?src= or, from an ad's tracking, ?utm_source= (Meta's {{site_source_name}} gives fb, ig, an or msg).
   const raw = String(b.src || b.utm_source || '').trim().slice(0, 40);
+  { const sc = require('./sources').byCode(raw); if (sc) return sc.source; } // a source code (an agent's link, a tie-up)
   if (raw) { const k = { facebook: 'fb', an: 'fb', msg: 'fb', instagram: 'ig' }[raw.toLowerCase()] || raw; return tags[k] || tags[k.toLowerCase()] || D.settings().lead_sources.find((x) => x.toLowerCase() === raw.toLowerCase()) || raw; }
   return 'Website';
 }
@@ -482,7 +483,7 @@ route('POST', '/api/public/apply', { rate: { key: 'form', max: 60, minutes: 60 }
   if (fromAd && !b.job && !jobInAd(b) && !picked.length && !adJobs.length) adJobs = L.jobsForPerson({ ad_set: b.ad_set, ad_name: b.ad_name, ad_campaign: b.ad_campaign, job_wanted: b.job_wanted === 'Other' ? b.job_other : b.job_wanted }).jobs.map((j) => j.id);
   const jobId = picked[0] || (b.job ? String(b.job).toUpperCase() : jobInAd(b) || adJobs[0] || null);
   const jobOk = jobId ? get('SELECT * FROM jobs WHERE id=?', jobId) : null;
-  const r = L.intakeCandidate({ ...L.cleanPrefs(b), exp_business: business, exp_jewellery: b.exp_jewellery in jewMap ? jewMap[b.exp_jewellery] : null, language: b.lang, name: b.name, whatsapp: b.whatsapp, email: b.email || '', city: b.city, state: b.state, work_cities: [b.city], job_wanted: b.job_wanted === 'Other' ? b.job_other : b.job_wanted, exp_total: b.experience ? expMap[b.experience] : null, ref_by: refBy, apply_job: jobOk && ['Open', 'Sourcing', 'Interviewing', 'Offer stage'].includes(V.jobView(jobOk).status) ? jobOk.id : null }, { source: srcFrom(b), ad: adFrom(b) });
+  const r = L.intakeCandidate({ ...L.cleanPrefs(b), tieup_id: ((require('./sources').byCode(b.src) || {}).tieup_id) || undefined, exp_business: business, exp_jewellery: b.exp_jewellery in jewMap ? jewMap[b.exp_jewellery] : null, language: b.lang, name: b.name, whatsapp: b.whatsapp, email: b.email || '', city: b.city, state: b.state, work_cities: [b.city], job_wanted: b.job_wanted === 'Other' ? b.job_other : b.job_wanted, exp_total: b.experience ? expMap[b.experience] : null, ref_by: refBy, apply_job: jobOk && ['Open', 'Sourcing', 'Interviewing', 'Offer stage'].includes(V.jobView(jobOk).status) ? jobOk.id : null }, { source: srcFrom(b), ad: adFrom(b) });
   L.markInterest(r.candidate.id, true, { label: 'Candidate' }); // applying again: back in matching
   // The same ad on several jobs: an application on each of the others too.
   for (const extra of adJobs.slice(1)) { try { L.createApplication(r.candidate.id, extra, { label: 'Candidate' }, srcFrom(b), 'Applied from an ad', adFrom(b)); } catch { /* already on it */ } }
@@ -938,6 +939,8 @@ route('POST', '/api/crm/inbound', {}, async (ctx) => {
   if (b.kind === 'email') {
     return require('./mailbox').intakeEmail({ fromName: b.name, fromEmail: b.email, subject: b.subject || '', text: [b.text, b.phone, b.city, b.job].filter(Boolean).join('\n'), attachments: b.cv && b.cv.base64 ? [{ name: b.cv.name, buf: Buffer.from(String(b.cv.base64).replace(/^data:[^,]*,/, ''), 'base64') }] : [] });
   }
+  // From an agent or tie-up's number: their resumes become candidates tagged to them (not a candidate themselves).
+  { const tu = require('./agents').byPhone(b.phone); if (tu && !get('SELECT 1 FROM candidates WHERE whatsapp=? AND merged_into IS NULL AND removed=0', L.digits10(b.phone))) return require('./agents').inbound(tu, b); }
   const r = L.receiveReply(b.phone, b.text, b.button, { resume_line: !!b.resume_line && !!(b.media && b.media.base64), reply_to: b.reply_to, bot: b.bot, name: b.name, company: b.company, city: b.city, job: b.job, roles: b.roles, hasMedia: !!(b.media && b.media.base64) });
   // A voice note is saved and written out (in English too); a CV sent as a file is saved on the candidate (PDF, Word, JPG or PNG).
   const LG = require('./lang');

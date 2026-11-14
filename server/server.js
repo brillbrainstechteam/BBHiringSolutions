@@ -8,6 +8,7 @@ const R = require('./router');
 require('./api-team');
 require('./api-public');
 require('./crm');
+require('./agents');
 const { seed } = require('./seed');
 const timer = require('./timer');
 
@@ -94,7 +95,9 @@ const server = http.createServer(async (req, res) => {
     if (p === '/team' || p.startsWith('/team/')) return send(res, 200, pageHtml('/team'), { 'Content-Type': TYPES['.html'], 'Cache-Control': 'no-cache', 'X-Robots-Tag': 'noindex, nofollow' });
     // A job description page for candidates: /jd/JB-2001.
     const jdm = /^\/jd\/(JB-\d+)\/?$/i.exec(p);
-    if (jdm) { const h = require('./api-team').jdHtml(jdm[1]); return send(res, h ? 200 : 404, h || 'This job was not found.', { 'Content-Type': h ? TYPES['.html'] : 'text/plain', 'Cache-Control': 'no-cache' }); }
+    const agm = /^\/agent\/([\w-]{8,40})\/?$/.exec(p);
+    if (agm) return send(res, 200, require('./agents').pageHtml(agm[1]), { 'Content-Type': TYPES['.html'], 'Cache-Control': 'no-store', 'X-Robots-Tag': 'noindex' });
+    if (jdm) { const h = require('./api-team').jdHtml(jdm[1], url.searchParams.get('src')); return send(res, h ? 200 : 404, h || 'This job was not found.', { 'Content-Type': h ? TYPES['.html'] : 'text/plain', 'Cache-Control': 'no-cache' }); }
     // A candidate sharing their resume and details, from the WhatsApp link: /u/<code>.
     const pfm = /^\/u\/([\w-]{8,40})\/?$/.exec(p);
     if (pfm) return send(res, 200, require('./profilelink').pageHtml(pfm[1]), { 'Content-Type': TYPES['.html'], 'Cache-Control': 'no-store', 'X-Robots-Tag': 'noindex' });

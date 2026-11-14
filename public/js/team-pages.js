@@ -756,19 +756,25 @@
   };
 
   // ---------- Candidates › Verifications: what clients ordered, how far each is, the reports ----------
-  const verificationsTab = async (body, q) => {
+  const verificationsTab = async (body, q, me = {}) => {
+    const vmoney = (n) => (n === null || n === undefined ? '<span class="faint">—</span>' : `₹${Number(n).toLocaleString('en-IN')}`);
     const st = q.vst || 'open'; let d; try { d = await BB.api('/api/verify-orders'); } catch (e) { body.innerHTML = `<div class="card empty">${esc(e.message)}</div>`; return; }
-    const rows = d.rows.filter((o) => (st === 'open' ? ['Requested', 'In progress'].includes(o.status) : st === 'all' ? true : o.status === st) && (!q.vpkg || o.package === q.vpkg));
+    const rows = d.rows.filter((o) => (st === 'open' ? ['Requested', 'In progress'].includes(o.status) : st === 'all' ? true : o.status === st) && (!q.vpkg || o.services.some((l) => l.key === q.vpkg)));
     const cnt = (f) => d.rows.filter(f).length;
     body.innerHTML = `<div class="stack"><div class="card pad row between v-head"><div class="chips v-st">${[['open', 'Open', cnt((o) => ['Requested', 'In progress'].includes(o.status))], ['Completed', 'Completed', cnt((o) => o.status === 'Completed')], ['Cancelled', 'Cancelled', cnt((o) => o.status === 'Cancelled')], ['all', 'All', d.rows.length]].map(([k, l, n]) => `<button class="chip ${st === k ? 'on' : ''}" data-vst="${k}">${l} <span>${n}</span></button>`).join('')}</div>
-      <select data-vpkg aria-label="Package" class="v-pkg"><option value="">All packages</option>${d.packages.map((p) => `<option value="${esc(p.key)}" ${q.vpkg === p.key ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select></div>
-      <div class="card">${BB.table([{ t: 'Order', f: (o) => `<b>${esc(o.no)}</b><div class="tiny muted">${fmtD(o.at)} · ${esc(o.by)}</div>` }, { t: 'Candidate', f: (o) => `<a href="#" data-open="candidate:${esc(o.candidate_id)}">${esc(o.candidate_name)}</a>` }, { t: 'Client', f: (o) => esc(o.client_name) }, { t: 'Package', f: (o) => esc(o.name) }, { t: 'Price', num: 1, f: (o) => `₹${Number(o.price).toLocaleString('en-IN')}` }, { t: 'Checks done', num: 1, f: (o) => esc(o.progress) },
-        { t: 'Status', f: (o) => `<span class="badge ${o.status === 'Completed' ? (o.problem ? 'b-red' : 'b-green') : o.status === 'Cancelled' ? 'b-outline' : 'b-amber'}">${esc(o.status === 'Completed' ? (o.problem ? 'Problem found' : 'All clear') : o.status)}</span>` },
-        { t: '', f: (o) => (o.status === 'Completed' ? `<div class="row nowrap"><button class="btn sm" data-vrep="${o.id}">Report</button><button class="btn sm" data-vsend="${o.id}">Email to client</button></div>` : `<button class="btn sm" data-open="candidate:${esc(o.candidate_id)}">Do the checks</button>`) }], rows, { empty: st === 'open' ? 'No verification waiting.' : 'Nothing here.' })}</div></div>`;
+      <select data-vpkg aria-label="Service" class="v-pkg"><option value="">All services</option>${d.packages.map((p) => `<option value="${esc(p.key)}" ${q.vpkg === p.key ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select></div>
+      <div class="card">${BB.table([{ t: 'Date', f: (o) => `<span class="nw">${fmtD(o.day || o.at)}</span><div class="tiny mono muted">${esc(o.no)}</div>` }, { t: 'Candidate', f: (o) => `<a href="#" data-open="candidate:${esc(o.candidate_id)}">${esc(o.candidate_name)}</a>` }, { t: 'Client', f: (o) => esc(o.client_name) }, { t: 'Services', cls: 'wrap', f: (o) => o.services.map((l) => `<span class="badge b-outline tiny">${esc(l.name)}</span>`).join(' ') },
+        { t: 'Vendor cost', num: 1, f: (o) => `${vmoney(o.vendor_cost)}<div><button class="btn-link tiny" data-vcost="${o.id}">${o.vendor_cost === null || o.vendor_cost === undefined ? 'Add' : 'Edit'}</button></div>` }, { t: 'Our price', num: 1, f: (o) => vmoney(o.price) }, { t: 'Margin', num: 1, f: (o) => (o.margin === null ? '<span class="faint">—</span>' : `<b style="color:${o.margin < 0 ? 'var(--red)' : 'inherit'}">₹${Number(o.margin).toLocaleString('en-IN')}</b>`) }, { t: 'Checks', num: 1, f: (o) => esc(o.progress) },
+        { t: 'Status', f: (o) => `<span class="badge ${o.status === 'Completed' ? (o.problem ? 'b-red' : 'b-green') : o.status === 'Cancelled' ? 'b-outline' : 'b-amber'}">${esc(o.status === 'Completed' ? (o.problem ? 'Problem found' : 'All clear') : o.status === 'Requested' ? 'Not started' : o.status)}</span>${o.bill_no ? `<div class="tiny muted">Invoiced ${esc(o.bill_no)}</div>` : ''}` },
+        { t: '', f: (o) => `<div class="row nowrap v-acts">${o.status === 'Requested' ? `<button class="btn sm primary" data-vinit="${o.id}">Initiate</button>` : ''}${o.status === 'In progress' ? `<button class="btn sm" data-open="candidate:${esc(o.candidate_id)}">Record results</button>` : ''}${o.status === 'Completed' ? `<button class="btn sm" data-vrep="${o.id}">Report</button><button class="btn sm" data-vsend="${o.id}">Share with client</button>` : ''}${!o.bill_id && o.status !== 'Cancelled' && (isSuper(me) || me.accounts_only || me.level === 'admin') ? `<button class="btn sm" data-vinv="${o.id}">Create invoice</button>` : ''}</div>` }], rows, { empty: st === 'open' ? 'No verification waiting.' : 'Nothing here.' })}</div></div>`;
     $$('[data-vst]', body).forEach((b) => (b.onclick = () => BB.setQ({ vst: b.dataset.vst === 'open' ? '' : b.dataset.vst })));
     { const pk = $('[data-vpkg]', body); if (pk) pk.onchange = () => BB.setQ({ vpkg: pk.value }); }
     $$('[data-vrep]', body).forEach((b) => (b.onclick = () => BB.download(`/api/verify-orders/${b.dataset.vrep}/report`)));
     $$('[data-vsend]', body).forEach((b) => (b.onclick = () => BB.verify.sendReport(b.dataset.vsend)));
+    const byId = (id) => d.rows.find((o) => String(o.id) === String(id));
+    $$('[data-vinit]', body).forEach((b) => (b.onclick = () => BB.verify.initiate(b.dataset.vinit, () => BB.refreshPage())));
+    $$('[data-vinv]', body).forEach((b) => (b.onclick = () => BB.verify.invoice(byId(b.dataset.vinv), () => BB.refreshPage())));
+    $$('[data-vcost]', body).forEach((b) => (b.onclick = (e) => { e.stopPropagation(); BB.verify.cost(byId(b.dataset.vcost), () => BB.refreshPage()); }));
   };
 
   // ---------- Candidates: resume bank, gap view, tie-ups, Excel import ----------
@@ -782,11 +788,11 @@
     const body = $('[data-tabbody]', el); actions.innerHTML = '';
     if (tab === 'segments') return segmentsTab(body, actions, q, ctx.me);
     if (tab === 'reports') return reportsTab(body, q);
-    if (tab === 'verifications') { actions.innerHTML = '<button class="btn primary" data-vnew>+ Order verification</button>'; $('[data-vnew]', actions).onclick = () => BB.pickCandidate((cid) => BB.verify.place(cid, null, () => BB.refreshPage())); return verificationsTab(body, q); }
+    if (tab === 'verifications') { actions.innerHTML = '<button class="btn primary" data-vnew>+ Order verification</button>'; $('[data-vnew]', actions).onclick = () => BB.verify.place(null, null, () => BB.refreshPage()); return verificationsTab(body, q, ctx.me); }
     if (tab === 'campaigns') return BB.go('team/campaigns');
     if (tab === 'gap') return gapView(body);
     if (tab === 'check') { const d = await BB.api('/api/leads'); body.innerHTML = `<div class="card">${checkTable(d.check.filter((r) => r.type === 'candidate'))}</div>`; $$('[data-merge]', body).forEach((b) => (b.onclick = () => { const [type, a, c] = b.dataset.merge.split(':'); BB.mergeScreen(type, a, c); })); return; }
-    if (tab === 'tieups') return tieups(body);
+    if (tab === 'tieups') return tieups(body, q);
     if (tab === 'import') return importView(body, ctx.me);
     return bank(body, actions, q, ctx.me);
   };
@@ -846,7 +852,7 @@
     <div class="card cand-table">${BB.table([
       { t: 'Candidate', sort: 'name', cls: 'name-col', f: (c) => `<b>${esc(c.name)}</b>${c.is_new ? ' <span class="dot new" title="New"></span>' : ''}${c.opted_out ? ' <span class="badge b-red tiny">STOP</span>' : ''}<div class="cand-phone ${c.phone_hidden ? 'faint' : 'muted'}">${esc(c.whatsapp)}</div>` },
       { t: 'Role and domain', sort: 'job_wanted', cls: 'wrap', f: (c) => `${esc(c.job_wanted) || '<span class="faint">—</span>'}<div class="tiny muted">${[(c.exp_business || []).length ? ((c.exp_business || []).includes('Retailer') ? 'B2C' : 'B2B') : '', c.domain && c.domain !== 'Not clear' ? c.domain : ''].filter(Boolean).map(esc).join(' · ')}</div>` },
-      { t: 'Source', sort: 'source', cls: 'src-col', f: (c) => `<span class="src-cut" title="${esc(c.ad_name || c.ad_set || c.ad_campaign || c.source || '')}">${esc(c.source || '—')}</span>` },
+      { t: 'Source', sort: 'source', cls: 'src-col', f: (c) => `<span class="src-cut" title="${esc(c.ad_name || c.ad_set || c.ad_campaign || c.source || '')}">${esc(c.source || '—')}</span>${c.source_code ? `<div class="tiny mono muted">${esc(c.source_code)}</div>` : ''}` },
       { t: 'Skills', cls: 'skills-col', f: (c) => { const sk = c.skills || []; return sk.length ? `<div class="sk-wrap">${sk.slice(0, 5).map((x) => `<span class="sk">${esc(x)}</span>`).join('')}${sk.length > 5 ? `<span class="sk more" title="${esc(sk.slice(5).join(', '))}">+${sk.length - 5}</span>` : ''}</div>` : '<span class="faint">—</span>'; } },
       { t: 'Experience', sort: 'exp_total', desc: 1, f: (c) => `${c.exp_total === null || c.exp_total === undefined ? '—' : `${c.exp_total} yrs`}<div class="tiny muted">Jewellery: ${jewYrs(c.exp_jewellery)}</div>${c.exp_salary ? `<div class="tiny muted">Expects ${inr(c.exp_salary / 12)}/mo</div>` : ''}` },
       { t: 'City', sort: 'city', cls: 'city-col', f: (c) => esc(c.city) },
@@ -949,29 +955,61 @@
   }
   // The Excel importer in a pop-up, for Clients and Leads.
   BB.importModal = (kind, me, title) => { const m = BB.modal({ title, wide: true, body: '<div data-imp></div>', onClose: () => BB.refreshPage() }); importView($('[data-imp]', m.el), me, kind); };
-  async function tieups(el) {
-    const list = await BB.api('/api/tieups');
-    el.innerHTML = `<div class="row" style="margin-bottom:10px;justify-content:flex-end"><button class="btn primary sm" data-add>+ Add tie-up</button></div>
-      <div class="card">${BB.table([{ t: 'College / institute', f: (t) => `<b>${esc(t.name)}</b><div class="tiny muted">${esc([t.type, t.city].filter(Boolean).join(' · '))}</div>` },
+  // Tie-ups: colleges, institutes, local agencies and individual agents. Agents get our openings on WhatsApp (with
+  // what they earn per joining and a page holding the message to forward); their resumes come back on WhatsApp and
+  // are counted as theirs. Each row shows its source code and what came of it: resumes, offers, joined, revenue, paid.
+  async function tieups(el, q = {}) {
+    const [list, res] = await Promise.all([BB.api('/api/tieups'), BB.api('/api/tieups/results').catch(() => ({}))]);
+    const ty = q.ttype || ''; const types = [...new Set(list.map((t) => t.type).filter(Boolean))];
+    const rows = list.filter((t) => !ty || (ty === 'agents' ? t.type === 'Individual agent' : t.type === ty));
+    const inr = (n) => `₹${Math.round(n || 0).toLocaleString('en-IN')}`; const isAgent = (t) => t.type === 'Individual agent';
+    el.innerHTML = `<div class="row between" style="margin-bottom:10px;gap:10px;flex-wrap:wrap"><div class="chips v-st"><button class="chip ${!ty ? 'on' : ''}" data-tty="">All <span>${list.length}</span></button><button class="chip ${ty === 'agents' ? 'on' : ''}" data-tty="agents">Agents <span>${list.filter(isAgent).length}</span></button>${types.filter((x) => x !== 'Individual agent').map((x) => `<button class="chip ${ty === x ? 'on' : ''}" data-tty="${esc(x)}">${esc(x)} <span>${list.filter((t) => t.type === x).length}</span></button>`).join('')}</div><div class="row" style="gap:8px"><button class="btn sm" data-srccodes>Source codes</button><button class="btn primary sm" data-add>+ Add tie-up</button></div></div>
+      <div class="card">${BB.table([{ t: 'Name', f: (t) => `<b>${esc(t.name)}</b><div class="tiny muted">${esc([t.type, t.city, t.region].filter(Boolean).join(' · '))}</div>${(res[t.id] || {}).code ? `<div class="tiny mono">${esc(res[t.id].code)}</div>` : ''}` },
         { t: 'Contact', f: (t) => `${t.contact ? `<div class="small"><b>${esc(t.contact)}</b>${t.designation ? ` <span class="tiny muted">${esc(t.designation)}</span>` : ''}</div>` : ''}${t.phone ? `<div class="tiny mono">${esc(t.phone)}</div>` : ''}${t.email ? `<div class="tiny muted">${esc(t.email)}</div>` : ''}${!t.contact && !t.phone && !t.email ? '<span class="faint">—</span>' : ''}` },
-        { t: 'Roles they shared for', f: (t) => (t.roles ? `<div class="small" style="max-width:260px">${esc(t.roles)}</div>` : '<span class="faint">—</span>') },
-        { t: 'Tie-up date', f: (t) => `<span class="nw small">${t.tieup_date ? fmtD(t.tieup_date) : '—'}</span>` }, { t: 'Last list', f: (t) => `<span class="nw small">${t.last_list ? fmtD(t.last_list) : '—'}</span>` },
-        { t: 'Candidates given', num: 1, f: (t) => `${t.shared_count ? `<b>${t.shared_count}</b> <span class="tiny muted">said</span><br>` : ''}<a href="/team/candidates?tieup=${t.id}">${t.candidates} in our bank</a>` },
-        { t: 'Owner', f: (t) => esc(t.owner_name || '') }, { t: '', f: (t) => `<button class="btn sm" data-edit="${t.id}">Edit</button>` }], list, { scroll: true, empty: 'No tie-ups yet.' })}</div>`;
+        { t: 'Resumes', num: 1, f: (t) => { const r = res[t.id] || {}; return `<a href="/team/candidates?tieup=${t.id}"><b>${r.resumes ?? t.candidates}</b></a><div class="tiny muted">${r.applications || 0} on jobs</div>`; } },
+        { t: 'Offers · joined', num: 1, f: (t) => { const r = res[t.id] || {}; return `${r.offers || 0} · <b>${r.joined || 0}</b>`; } },
+        { t: 'Revenue', num: 1, f: (t) => inr((res[t.id] || {}).revenue) },
+        { t: 'Paid', num: 1, f: (t) => `${inr((res[t.id] || {}).paid)}${t.rate ? `<div class="tiny muted">${inr(t.rate)} / joining</div>` : ''}` },
+        { t: 'Profit', num: 1, f: (t) => { const p = (res[t.id] || {}).profit || 0; return `<b style="color:${p < 0 ? 'var(--red)' : 'inherit'}">${inr(p)}</b>`; } },
+        { t: 'Last list', f: (t) => `<span class="nw small">${t.last_list ? fmtD(t.last_list) : '—'}</span>`, hideSm: 1 },
+        { t: '', f: (t) => `<div class="row nowrap" style="gap:6px">${isAgent(t) ? `<button class="btn sm primary" data-tshare="${t.id}">Share openings</button><button class="btn sm" data-tpay="${t.id}">Record payment</button>` : ''}<button class="btn sm" data-edit="${t.id}">Edit</button></div>` }], rows, { scroll: true, empty: 'No tie-ups yet.' })}</div>`;
     const form = (t = {}) => BB.ask({ title: t.id ? `Edit tie-up · ${t.name}` : 'Add tie-up', wide: true, ok: t.id ? 'Save' : 'Add tie-up', fields: [
-      '<h4 class="form-sec">College or institute</h4>',
       `<div class="grid g2">${field({ name: 'name', label: 'Name of the college / institute / agency / agent', value: t.name || '' })}${field({ name: 'type', label: 'Type', type: 'select', options: ['College', 'Institute', 'Training centre', 'Local agency', 'Individual agent'], value: t.type || 'College', placeholder: false })}</div>`,
-      `<div class="grid g2">${field({ name: 'city', label: 'City', value: t.city || '', list: 'cities' })}${field({ name: 'tieup_date', label: 'Tie-up date', type: 'date', value: t.tieup_date ? String(t.tieup_date).slice(0, 10) : BB.istDay ? BB.istDay() : '', opt: true })}</div>`,
-      '<h4 class="form-sec">Contact person</h4>',
+      `<div class="grid g3">${field({ name: 'city', label: 'City', value: t.city || '', list: 'cities' })}${field({ name: 'region', label: 'Region / area they cover', value: t.region || '', opt: true, placeholder: 'e.g. Western UP, Kolkata and Howrah' })}${field({ name: 'tieup_date', label: 'Tie-up date', type: 'date', value: t.tieup_date ? String(t.tieup_date).slice(0, 10) : BB.istDay ? BB.istDay() : '', opt: true })}</div>`,
+      '<h4 class="form-sec">Contact</h4>',
       `<div class="grid g2">${field({ name: 'contact', label: 'Name', value: t.contact || '', opt: true })}${field({ name: 'designation', label: 'Designation', value: t.designation || '', opt: true, placeholder: 'e.g. Placement officer, HOD' })}</div>`,
-      `<div class="grid g2">${field({ name: 'phone', label: 'Phone / WhatsApp', type: 'tel', phone: true, value: t.phone || '', opt: true })}${field({ name: 'email', label: 'Email ID', type: 'email', value: t.email || '', opt: true, voice: false })}</div>`,
-      '<h4 class="form-sec">Candidate list</h4>',
-      field({ name: 'roles', label: 'Designations / roles they shared candidates for', value: t.roles || '', opt: true, placeholder: 'e.g. CAD designer, Sales executive, Jewellery designer' }),
-      `<div class="grid g2">${field({ name: 'shared_count', label: 'How many candidates they have given', type: 'number', value: t.shared_count ?? '', opt: true, voice: false })}${field({ name: 'last_list', label: 'Date of the last list', type: 'date', value: t.last_list ? String(t.last_list).slice(0, 10) : '', opt: true })}</div>`,
-      field({ name: 'note', label: 'Note', value: t.note || '', opt: true, placeholder: 'Terms agreed, batch passing out, anything to remember' })],
+      `<div class="grid g2">${field({ name: 'phone', label: 'Phone / WhatsApp (agents send resumes from it)', type: 'tel', phone: true, value: t.phone || '', opt: true })}${field({ name: 'email', label: 'Email ID', type: 'email', value: t.email || '', opt: true, voice: false })}</div>`,
+      '<h4 class="form-sec">Candidates and payout</h4>',
+      `<div class="grid g2">${field({ name: 'rate', label: 'Payout per candidate who joins ₹ (agents)', type: 'number', value: t.rate ?? '', opt: true, voice: false })}${field({ name: 'roles', label: 'Roles they send candidates for', value: t.roles || '', opt: true, placeholder: 'e.g. Sales executive, Karigar' })}</div>`,
+      `<div class="grid g2">${field({ name: 'shared_count', label: 'Candidates they have given (if known)', type: 'number', value: t.shared_count ?? '', opt: true, voice: false })}${field({ name: 'last_list', label: 'Date of the last list', type: 'date', value: t.last_list ? String(t.last_list).slice(0, 10) : '', opt: true })}</div>`,
+      field({ name: 'note', label: 'Note', value: t.note || '', opt: true, placeholder: 'Terms agreed, anything to remember' })],
       submit: (v) => BB.post('/api/tieups', { ...v, id: t.id }) }).then((x) => x && (BB.toast(t.id ? 'Tie-up saved' : 'Tie-up added'), BB.refreshPage()));
+    // Share openings: pick the jobs and what they earn; WhatsApp brief + their page with the message to forward
+    const shareTo = async (t) => {
+      let d; try { d = await BB.api(`/api/tieups/${t.id}/share`); } catch (e) { return BB.fail(e); }
+      if (!d.jobs.length) return BB.toast('No live job openings to share', true);
+      const r = await BB.ask({ title: `Share openings · ${esc(t.name)}`, wide: true, note: 'They get a WhatsApp with what they earn and a link to their page: the message to forward in their network is there, with job links that carry their code. Resumes they send back on WhatsApp become candidates with the source "' + esc(t.name) + ' - Agent".', fields: [
+        `<div class="field"><span class="lab">Job openings</span><div class="ag-jobs">${d.jobs.map((j) => `<label class="row small" style="gap:8px"><input type="checkbox" data-agjob="${esc(j.id)}"> <b>${esc(j.title)}</b> <span class="muted">${esc(j.city || '')}${j.openings > 1 ? ` · ${j.openings} openings` : ''}</span> <span class="mono faint">${esc(j.id)}</span></label>`).join('')}</div></div>`,
+        field({ name: 'earning', label: 'They earn per candidate who joins ₹', type: 'number', value: d.rate || '', opt: true, voice: false })], ok: 'Share',
+        mount: (m) => { tieups.form = m; },
+        submit: (v) => { const jobs = $$('[data-agjob]:checked', tieups.form).map((x) => x.dataset.agjob); if (!jobs.length) throw new Error('Tick the job openings to share'); return BB.post(`/api/tieups/${t.id}/share`, { jobs, earning: v.earning }); } });
+      if (!r) return;
+      BB.modal({ title: 'Shared', wide: true, body: `<p class="small" style="margin-top:0">${esc(r.wa)}. Their page: <a href="${esc(r.link)}" target="_blank" rel="noopener">${esc(r.link)}</a></p><b class="small">The message they forward</b><textarea readonly rows="12" style="width:100%;margin-top:6px;font:13px/1.5 var(--font)">${esc(r.text)}</textarea>`,
+        foot: `<button class="btn" data-agcopy>Copy message</button>${r.phone ? `<a class="btn primary" href="https://wa.me/91${esc(r.phone)}?text=${encodeURIComponent(`${r.text}\n\nYour page: ${r.link}`)}" target="_blank" rel="noopener">Send from my WhatsApp</a>` : ''}`,
+        onMount: (m) => { $('[data-agcopy]', m).onclick = () => BB.copy(r.text); } });
+      BB.refreshPage();
+    };
+    const pay = async (t) => {
+      const hist = await BB.api(`/api/tieups/${t.id}/payments`).catch(() => []);
+      const r = await BB.ask({ title: `Record payment · ${esc(t.name)}`, note: `Also goes into Expenses (Agent payments).${hist.length ? ` Paid so far: ${hist.map((p) => `${fmtD(p.day)} ₹${Number(p.amount).toLocaleString('en-IN')}`).join(', ')}` : ''}`, fields: [`<div class="grid g2">${field({ name: 'amount', label: 'Amount paid ₹', type: 'number', voice: false })}${field({ name: 'day', label: 'Date', type: 'date', value: BB.istDay ? BB.istDay() : '' })}</div>`, { name: 'note', label: 'For', opt: true, placeholder: 'e.g. 2 joinings in October' }], ok: 'Save', submit: (v) => BB.post(`/api/tieups/${t.id}/pay`, v) });
+      if (r) { BB.toast('Payment saved'); BB.refreshPage(); }
+    };
     $('[data-add]', el).onclick = () => form();
     $$('[data-edit]', el).forEach((b) => (b.onclick = () => form(list.find((x) => String(x.id) === b.dataset.edit))));
+    $$('[data-tshare]', el).forEach((b) => (b.onclick = () => shareTo(list.find((x) => String(x.id) === b.dataset.tshare))));
+    $$('[data-tpay]', el).forEach((b) => (b.onclick = () => pay(list.find((x) => String(x.id) === b.dataset.tpay))));
+    $$('[data-tty]', el).forEach((b) => (b.onclick = () => BB.setQ({ ttype: b.dataset.tty })));
+    $('[data-srccodes]', el).onclick = async () => { const codes = await BB.api('/api/sources').catch(BB.fail); if (!codes) return; BB.modal({ title: 'Source codes', wide: true, body: `<p class="small muted" style="margin-top:0">Every source has a code. Add ?src=CODE to a job or apply link and people who apply through it are tagged to that source.</p><div class="tbl-wrap" style="max-height:60vh;overflow:auto"><table class="tbl"><thead><tr><th>Code</th><th>Source</th><th class="num">Candidates</th></tr></thead><tbody>${codes.map((c) => `<tr><td class="mono">${esc(c.code)}</td><td>${esc(c.source)}</td><td class="num">${c.candidates}</td></tr>`).join('')}</tbody></table></div>` }); };
   }
   // Backup to Google Drive in 3 steps: folder → script → web app link (then a test upload).
   const driveSetup = (dv) => {

@@ -115,6 +115,7 @@ const phoneVisible = (u, c) => isSuper(u) || (c.agency_id && c.agency_id === u.a
 function seeBill(u, b) { return isSuper(u) || accountsOnly(u) || sameAgency(u, b); }
 function seeThread(u, ptype, pid) {
   if (isSuper(u)) return true;
+  if (ptype === 'tieup') return !channelOnly(u); // agents and tie-ups are shared by the team
   if (ptype === 'user') { const t = D.get('SELECT * FROM users WHERE id=?', pid); return t && (t.id === u.id || (u.level === 'admin' && t.agency_id === u.agency_id)); }
   if (ptype === 'client') { const c = D.get('SELECT * FROM clients WHERE id=?', pid); if (!c) return false; return sharedWith(u) || (c.agency_id === u.agency_id || c.owner_id === u.id || !!D.get('SELECT 1 FROM jobs WHERE client_id=? AND recruiter_id=?', pid, u.id)); }
   if (ptype === 'candidate') { const c = D.get('SELECT * FROM candidates WHERE id=?', pid); if (!c) return false; return c.agency_id === u.agency_id || !!D.get('SELECT 1 FROM applications a JOIN jobs j ON j.id=a.job_id WHERE a.candidate_id=? AND j.agency_id=?', pid, u.agency_id) || c.recruiter_id === u.id || !!D.get('SELECT 1 FROM applications a JOIN jobs j ON j.id=a.job_id WHERE a.candidate_id=? AND (a.owner_id=? OR j.recruiter_id=?)', pid, u.id, u.id); }

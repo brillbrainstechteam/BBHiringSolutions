@@ -2591,3 +2591,12 @@ a.pipe-step { text-decoration: none; cursor: pointer; } a.pipe-step:hover { bord
 
 /* Verifications: spaced status buttons, package filter in the same row */
 .v-head { gap: 12px; flex-wrap: wrap; align-items: center; } .v-st { display: flex; flex-wrap: wrap; gap: 8px; } .v-pkg { width: auto; min-width: 200px; }
+
+/* Order verification: one row per service with our price and the vendor's cost */
+.vsvc-list { display: grid; gap: 8px; } .vsvc { display: grid; grid-template-columns: minmax(200px, 1.6fr) minmax(110px, 1fr) minmax(110px, 1fr); gap: 10px; align-items: end; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; }
+.vsvc .field { margin: 0; } .v-acts { gap: 6px; } .btn-link { background: none; border: 0; padding: 0; color: var(--primary, #2647A3); cursor: pointer; text-decoration: underline; }
+@media (max-width: 700px) { .vsvc { grid-template-columns: 1fr 1fr; } .vsvc > label:first-child { grid-column: 1 / -1; } }
+
+/* Share openings with an agent */
+.ag-jobs { display: grid; gap: 6px; max-height: 40vh; overflow: auto; padding: 8px 10px; border: 1px solid var(--border); border-radius: 10px; }
+.vsvc > label:first-child { display: flex; flex-wrap: nowrap; align-items: flex-start; } .vsvc > label:first-child input { margin-top: 3px; flex: none; }

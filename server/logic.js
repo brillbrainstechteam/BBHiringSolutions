@@ -110,6 +110,10 @@ function person(type, id) {
     const p = get('SELECT * FROM partners WHERE id=?', id); if (!p) return null;
     return { type, id: p.id, name: p.contact_name || p.name, company: p.name, phone: require('./partners').waNumber(p), lang: 'en', opted_out: p.opted_out, consent: 1, agency_id: null, record: { ...p, email: null } };
   }
+  if (type === 'tieup') {
+    const t = get('SELECT * FROM tieups WHERE id=?', Number(id)); if (!t) return null;
+    return { type, id: String(t.id), name: t.contact || t.name, company: t.name, phone: t.phone, lang: 'en', opted_out: t.opted_out, consent: 1, agency_id: null, record: { ...t, email: t.email || null } };
+  }
   if (type === 'user') {
     const u = get('SELECT * FROM users WHERE id=?', id); if (!u) return null;
     return { type, id, name: u.name, phone: u.whatsapp, lang: 'en', opted_out: 0, consent: 1, agency_id: u.agency_id, record: u };
