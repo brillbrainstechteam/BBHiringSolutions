@@ -2609,3 +2609,30 @@ a.pipe-step { text-decoration: none; cursor: pointer; } a.pipe-step:hover { bord
 .hire-kind { display: inline-flex; gap: 4px; padding: 3px; border: 1px solid var(--border); border-radius: 10px; } .hire-kind label { display: inline-flex; align-items: center; gap: 6px; padding: 7px 12px; border-radius: 8px; cursor: pointer; font-size: 13.5px; } .hire-kind label:has(input:checked) { background: var(--navy, #101A3A); color: #fff; } .hire-kind input { accent-color: var(--mustard); }
 
 .job-sub .chip-grp { display: inline-flex; gap: 6px; flex-wrap: wrap; margin-right: 14px; }
+
+/* Job page: section headings with a count, the matches toolbar */
+.sec-bar { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 8px; } .sec-bar h3 { margin: 0; display: flex; align-items: center; gap: 8px; }
+.count-pill { display: inline-flex; min-width: 24px; height: 22px; padding: 0 8px; align-items: center; justify-content: center; border-radius: 999px; background: var(--surface-2, #F1F3F8); font-size: 12.5px; font-weight: 700; color: var(--ink); }
+.match-bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; padding: 10px 12px; }
+.match-bar select { width: auto; min-width: 80px; }
+.pipe-step.picked { outline: 2px solid var(--mustard); outline-offset: 1px; }
+
+/* Job openings: status as a strip of cards; hiring type and CTC as card rows */
+.job-stages { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 8px; border-bottom: 0; margin-top: 14px; }
+.job-stages .jst { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 10px 12px; margin: 0; border: 1px solid var(--border); border-top: 3px solid var(--border); border-radius: 12px; background: var(--surface); text-align: left; min-width: 0; transition: border-color .15s, box-shadow .15s; }
+.job-stages .jst .jst-l { font: 600 12.5px var(--font); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.job-stages .jst .n { font: 700 22px/1.1 var(--font); padding: 0; background: none; color: var(--ink); }
+.job-stages .jst:hover { box-shadow: 0 2px 10px rgba(16,26,58,.08); }
+.job-stages .jst.on { border-color: var(--navy, #101A3A); border-top-color: var(--mustard); background: color-mix(in srgb, var(--mustard) 7%, var(--surface)); }
+.job-stages .jst.on .jst-l { color: var(--ink); }
+.job-stages .jst[data-stg="Open"] { border-top-color: #3B82F6; } .job-stages .jst[data-stg="Hiring in progress"] { border-top-color: #10B981; } .job-stages .jst[data-stg="No relevant candidates"] { border-top-color: #EF4444; } .job-stages .jst[data-stg="On hold"] { border-top-color: #F59E0B; } .job-stages .jst[data-stg="Closed"] { border-top-color: #94A3B8; }
+.job-stages .jst.on[data-stg] { border-color: var(--navy, #101A3A); }
+.job-stages .jst.warn .n { color: var(--red); background: none; }
+.job-sub { display: flex; align-items: center; gap: 8px 10px; flex-wrap: wrap; margin-top: 10px; }
+.job-sub .strip-l { font: 600 11.5px var(--font); letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
+.job-sub .chip-grp { display: inline-flex; gap: 6px; flex-wrap: wrap; margin-right: 18px; }
+.job-sub .chip { padding: 7px 14px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface); font-weight: 600; }
+.job-sub .chip.on { background: var(--navy, #101A3A); border-color: var(--navy, #101A3A); color: #fff; }
+@media (max-width: 1100px) { .job-stages { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+@media (max-width: 640px) { .job-stages { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.tpl-filters { flex-wrap: wrap; margin-bottom: 10px; } .tpl-filters select { width: auto; }

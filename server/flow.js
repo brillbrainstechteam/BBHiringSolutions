@@ -508,13 +508,20 @@ route('POST', '/api/jobs/:id/not-interested', T, (ctx) => {
 });
 route('GET', '/api/jobs/:id/screen', T, (ctx) => {
   const j = loadJob(ctx);
-  const apps = openApps(j).map((a) => { const c = get('SELECT * FROM candidates WHERE id=?', a.candidate_id); return rowFor(j, c, L.matchScore(c, j, L.ratingOf(c.id)), { app_id: a.id, step: a.step, screen: a.screen }); }).sort((x, y) => y.score - x.score);
+  const apps = openApps(j).map((a) => { const c = get('SELECT * FROM candidates WHERE id=?', a.candidate_id); return rowFor(j, c, L.matchScore(c, j, L.ratingOf(c.id)), { app_id: a.id, step: a.step, screen: a.screen, interested: !!get("SELECT 1 FROM app_history WHERE app_id=? AND note LIKE 'Interested%'", a.id) }); }).sort((x, y) => y.score - x.score);
   const seen = new Set(all('SELECT candidate_id FROM applications WHERE job_id=?', j.id).map((r) => r.candidate_id));
   // For each match not on the job: can they get the WhatsApp question, were they asked, did they say no.
   const askState = (c) => { const m = get("SELECT at FROM messages WHERE dedupe=? ORDER BY at DESC LIMIT 1", `alert:${j.id}:${c.id}`); const no = get("SELECT 1 FROM notes WHERE record_id=? AND text LIKE ?", c.id, `Not interested in ${j.id}%`);
     return { can_wa: !!(c.whatsapp && c.consent_alerts && !c.opted_out), asked_at: m ? m.at : null, not_interested: !!no }; };
-  const bank = bankOf(j, 40).filter((m) => !seen.has(m.c.id)).slice(0, 15).map((m) => rowFor(j, m.c, m, askState(m.c))).sort((x, y) => y.score - x.score);
-  return { apps, bank, strong: D.settings().match.strong, ai: LLM.available(), scored: apps.concat(bank).filter((x) => x.by_ai).length };
+  const floor = Number(j.match_floor) || 0; // matches below this score are left out of this job
+  const bank = bankOf(j, 300).filter((m) => !seen.has(m.c.id) && m.score >= floor).slice(0, 100).map((m) => rowFor(j, m.c, m, askState(m.c))).sort((x, y) => y.score - x.score);
+  return { apps, bank, floor, strong: D.settings().match.strong, ai: LLM.available(), scored: apps.concat(bank).filter((x) => x.by_ai).length };
+});
+// Leave out every match below a score for this job (they are not asked and do not show); 0 brings them back.
+route('POST', '/api/jobs/:id/match-floor', T, (ctx) => {
+  const j = loadJob(ctx); const fl = Math.max(0, Math.min(100, Math.round(Number((ctx.body || {}).floor) || 0)));
+  update('jobs', j.id, { match_floor: fl || null }); D.history(ctx.actor.label, 'match floor', j.id, 'match_floor', j.match_floor, fl);
+  return { floor: fl };
 });
 route('POST', '/api/jobs/:id/ai-fit', { auth: 'team', rate: { key: 'aifit', max: 60, minutes: 60 } }, async (ctx) => {
   const j = loadJob(ctx); const seen = new Set();
