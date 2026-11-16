@@ -460,14 +460,14 @@ route('POST', '/api/public/bulk-hire', { rate: { key: 'form', max: 60, minutes: 
   if (!L.validPhone(L.digits10(b.whatsapp))) throw httpError(400, 'Enter your 10-digit WhatsApp number', 'whatsapp');
   L.needEmail(b);
   const n = (v) => (Number(v) > 0 ? Math.round(Number(v)) : null);
-  const roles = (Array.isArray(b.roles) ? b.roles : []).map((x) => ({ role: String(x.role || '').trim().slice(0, 80), openings: n(x.openings), sal_from: n(x.sal_from), sal_to: n(x.sal_to), location: String(x.city || b.city || '').trim().slice(0, 60) })).filter((x) => x.role || x.openings);
+  const roles = (Array.isArray(b.roles) ? b.roles : []).map((x) => ({ role: String(x.role || '').trim().slice(0, 80), department: String(x.department || '').trim().slice(0, 60), openings: n(x.openings), sal_from: n(x.sal_from), sal_to: n(x.sal_to), location: String(x.city || b.city || '').trim().slice(0, 60) })).filter((x) => x.role || x.openings);
   if (!roles.length) throw httpError(400, 'Add at least one role', 'roles');
   roles.forEach((x, i) => { if (!x.role) throw httpError(400, `Write the role in row ${i + 1}`, 'roles'); if (!x.openings) throw httpError(400, `How many people for ${x.role}?`, 'roles'); if (x.sal_from && x.sal_to && x.sal_to < x.sal_from) throw httpError(400, `Salary to is less than salary from for ${x.role}`, 'roles'); });
   const total = roles.reduce((t, x) => t + x.openings, 0);
   const summary = roles.map((x) => `${x.role} x ${x.openings}`).join(', ');
   const r = L.intakeClient({ ...b, roles: summary, need: b.need || 'Hiring now', business_type: b.business_type || '', language: b.lang }, { source: b.src ? srcFrom(b) : 'Bulk hiring form' });
   L.saveClientExtras(r.client.id, b, null);
-  const lines = roles.map((x) => ({ role: x.role, openings: x.openings, location: x.location, department: L.deptOf(x.role) === 'Other' ? '' : L.deptOf(x.role), sal_from: x.sal_from, sal_to: x.sal_to, skills: '', duties: '', notes: '', job_id: null }));
+  const lines = roles.map((x) => ({ role: x.role, openings: x.openings, location: x.location, department: x.department || (L.deptOf(x.role) === 'Other' ? '' : L.deptOf(x.role)), sal_from: x.sal_from, sal_to: x.sal_to, skills: '', duties: '', notes: '', job_id: null }));
   insert('client_calls', { client_id: r.client.id, openings: String(total), location: [...new Set(lines.map((x) => x.location).filter(Boolean))].join(', '), department: '', roles: summary, call_roles: lines, skills: '', duties: '', notes: `Bulk hiring form${b.notes ? `: ${String(b.notes).slice(0, 1000)}` : ''}`, by: 'Bulk hiring form', at: now() });
   const c = get('SELECT * FROM clients WHERE id=?', r.client.id); update('clients', c.id, { extra: { ...(c.extra || {}), bulk_request: now() } });
   for (const uid of [...new Set([c.owner_id, ...L.superAdmins().map((x) => x.id)].filter(Boolean))]) L.alertUser(uid, `Bulk hiring request: ${c.company}, ${total} people (${summary.slice(0, 80)})`, c.id, 'client');

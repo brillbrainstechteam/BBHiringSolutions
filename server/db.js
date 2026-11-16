@@ -358,6 +358,22 @@ function ensureSettings() {
     }
     setSetting('done_once', [...(settings().done_once || []), 'support_dept_split']);
   }
+  if (!once.includes('jewel_depts_2026_11')) {
+    const NEW = defs.industries.Jewellery.groups; const byTitle = new Map(); for (const g of Object.values(NEW)) for (const t of g.jobs) byTitle.set(t.toLowerCase(), g.dept);
+    const OLD = { Sales: 'Retail Sales', Dispatch: 'Logistics', Admin: 'HR & Admin', Facilities: 'Security & Facilities', Support: 'Customer Service' };
+    const inds = JSON.parse(JSON.stringify(settings().industries || {}));
+    if (inds.Jewellery) {
+      // roles the team added keep a place: "Added roles", under the department their words point to
+      const added = new Set(); for (const g of Object.values(inds.Jewellery.groups || {})) for (const t of g.jobs || []) if (!byTitle.has(t.toLowerCase())) added.add(t);
+      inds.Jewellery.groups = { ...NEW, ...(added.size ? { 'Added roles': { dept: 'Other', jobs: [...added] } } : {}) };
+    }
+    setSetting('industries', inds);
+    setSetting('departments', [...new Set([...defs.departments, ...(settings().departments || []).filter((d) => !Object.keys(OLD).includes(d) && !['Quality Control', 'Dispatch'].includes(d))])]);
+    const next = (title, dept) => byTitle.get(String(title || '').toLowerCase()) || OLD[dept] || dept;
+    for (const r of all('SELECT id, title, department FROM jobs')) { const d = next(r.title, r.department); if (d && d !== r.department) run('UPDATE jobs SET department=? WHERE id=?', d, r.id); }
+    for (const r of all('SELECT id, job_wanted, department FROM candidates')) { const d = next(r.job_wanted, r.department); if (d && d !== r.department) run('UPDATE candidates SET department=? WHERE id=?', d, r.id); }
+    setSetting('done_once', [...(settings().done_once || []), 'jewel_depts_2026_11']);
+  }
   if (!once.includes('candidate_login_on_2026_11_01')) {
     setSetting('auto_rules', settings().auto_rules.map((r) => (r.key === 'candidate_login' ? { ...r, on: true } : r)));
     setSetting('done_once', [...(settings().done_once || []), 'candidate_login_on_2026_11_01']);

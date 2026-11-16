@@ -295,9 +295,12 @@
   BB.views.apply = (r) => page('job', r);
   // Bulk hiring: several roles at once (a new showroom, a hiring drive), each with a count and a salary range.
   BB.views.bulk = () => {
-    const roles = [...new Set((BB.boot.jobs || []).filter((j) => !j.hidden).map((j) => j.title))].sort();
-    const row = () => `<div class="bh-row" data-bhrow><label class="field"><span class="lab">Role</span><input data-b="role" list="bh-roles" placeholder="e.g. Sales Executive"></label><label class="field"><span class="lab">People</span><input data-b="openings" type="number" min="1" inputmode="numeric" placeholder="10"></label><label class="field"><span class="lab">Salary from ₹ / month</span><input data-b="sal_from" type="number" min="0" inputmode="numeric" placeholder="15000"></label><label class="field"><span class="lab">Salary to ₹ / month</span><input data-b="sal_to" type="number" min="0" inputmode="numeric" placeholder="22000"></label><label class="field"><span class="lab">City <span class="opt">(if different)</span></span><input data-b="city" list="cities"></label><button type="button" class="bh-x" data-bhx aria-label="Remove this role" title="Remove this role">×</button></div>`;
-    const card = `<form class="stack" data-bhform novalidate><datalist id="bh-roles">${roles.map((x) => `<option value="${esc(x)}">`).join('')}</datalist>
+    const jobs = (BB.boot.jobs || []).filter((j) => !j.hidden && j.dept && j.dept !== 'Other');
+    const depts = [...new Set(jobs.map((j) => j.dept))];
+    const rolesOf = (d) => [...new Set(jobs.filter((j) => !d || j.dept === d).map((j) => j.title))].sort();
+    let rowN = 0;
+    const row = () => { rowN++; return `<div class="bh-row" data-bhrow><label class="field bh-dept"><span class="lab">Department</span><select data-b="department" data-bhdept="${rowN}"><option value="">Choose…</option>${depts.map((d) => `<option>${esc(d)}</option>`).join('')}</select></label><label class="field bh-role"><span class="lab">Role</span><input data-b="role" list="bh-roles-${rowN}" placeholder="Pick or type a role"><datalist id="bh-roles-${rowN}">${rolesOf('').map((x) => `<option value="${esc(x)}">`).join('')}</datalist></label><label class="field"><span class="lab">People</span><input data-b="openings" type="number" min="1" inputmode="numeric" placeholder="10"></label><label class="field"><span class="lab">Salary from ₹ / month</span><input data-b="sal_from" type="number" min="0" inputmode="numeric" placeholder="15000"></label><label class="field"><span class="lab">Salary to ₹ / month</span><input data-b="sal_to" type="number" min="0" inputmode="numeric" placeholder="22000"></label><label class="field"><span class="lab">City <span class="opt">(if different)</span></span><input data-b="city" list="cities"></label><button type="button" class="bh-x" data-bhx aria-label="Remove this role" title="Remove this role">×</button></div>`; };
+    const card = `<form class="stack" data-bhform novalidate>
       <div class="grid g2">${field({ name: 'company', label: 'Company name' })}${field({ name: 'contact', label: 'Your name' })}</div>
       <div class="grid g2">${field({ name: 'whatsapp', label: 'WhatsApp number', type: 'tel', phone: true, placeholder: '10 digits' })}${field({ name: 'email', label: 'Email ID', type: 'email', voice: false })}</div>
       <div class="grid g2">${field({ name: 'city', label: 'City', list: 'cities' })}${field({ name: 'business_type', label: 'Your business', type: 'select', options: [['Showroom B2C', 'Showroom (B2C)'], ['Manufacturer B2B', 'Manufacturer / wholesale (B2B)'], ['Both', 'Both']], opt: true })}</div>
@@ -310,6 +313,7 @@
     const read = () => $$('[data-bhrow]', rows).map((r) => Object.fromEntries($$('[data-b]', r).map((i) => [i.dataset.b, i.value.trim()])));
     const total = () => { const n = read().reduce((t, x) => t + (Number(x.openings) || 0), 0); $('[data-bhtotal]', form).textContent = n ? `${n} people in all` : ''; $$('[data-bhx]', rows).forEach((x) => { x.hidden = $$('[data-bhrow]', rows).length === 1; }); };
     rows.oninput = total; total();
+    rows.addEventListener('change', (e) => { const d = e.target.closest('[data-bhdept]'); if (!d) return; const list = $(`#bh-roles-${d.dataset.bhdept}`); if (list) list.innerHTML = rolesOf(d.value).map((x) => `<option value="${esc(x)}">`).join(''); const r = $('[data-b=role]', d.closest('[data-bhrow]')); if (r && r.value && d.value && !rolesOf(d.value).includes(r.value)) r.value = ''; });
     $('[data-bhadd]', form).onclick = () => { rows.insertAdjacentHTML('beforeend', row()); total(); $$('[data-b=role]', rows).pop().focus(); };
     rows.onclick = (e) => { const x = e.target.closest('[data-bhx]'); if (x) { x.closest('[data-bhrow]').remove(); total(); } };
     form.onsubmit = async (e) => {

@@ -83,7 +83,7 @@ function jobList(industry) {
   return out;
 }
 // A job title not in the lists, placed by its words. IT comes first: "IT Support Executive" is IT, not support.
-const DEPT_WORDS = [['IT', /\b(it|software|developer|programmer|system admin|network|erp|sap|computer|hardware|technical support|web|data analyst)\b/i], ['Accounts', /account|finance|gst|tally|audit|cashier|billing/i], ['Customer Service', /customer (support|care|service)|telecall|call (centre|center)|after.?sales|helpdesk/i], ['Marketing', /marketing|social media|content|graphic|seo|brand|photograph|video/i], ['Design', /design|cad|render|sketch/i], ['Sales', /sales|showroom|store|business development|relationship|counter/i], ['Admin', /\bhr\b|human resource|recruit|admin|reception|front office|office assistant|data entry|mis/i], ['Purchase', /purchase|procure|inventory|stock|store keeper|vendor/i], ['Dispatch', /dispatch|logistic|delivery|courier|packing|warehouse/i], ['Production', /karigar|goldsmith|setter|polish|cast|production|factory|quality|gemolog|assay|hallmark/i], ['Facilities', /driver|housekeep|office boy|peon|security|guard/i]];
+const DEPT_WORDS = [['IT', /\b(it|software|developer|programmer|system admin|network|erp|sap|computer|hardware|technical support|web|data analyst)\b/i], ['Accounts', /account|finance|gst|tally|audit|chartered/i], ['Retail Operations', /cashier|billing|store operations/i], ['Customer Service', /customer (support|care|service)|telecall|call (centre|center)|after.?sales|helpdesk/i], ['Visual Merchandising', /visual merchand/i], ['Merchandising', /merchandis|product develop|category|collection/i], ['Marketing', /marketing|social media|content|graphic|seo|brand|photograph|video|e-?commerce/i], ['Design', /design|cad|render|sketch/i], ['B2B Sales', /b2b|wholesale|export|business development|key account|area sales|regional sales|franchise|distributor/i], ['Retail Sales', /sales|showroom|store manager|relationship|counter|consultant|floor/i], ['HR & Admin', /\bhr\b|human resource|recruit|admin|reception|front office|office assistant|data entry|mis\b/i], ['Purchase', /purchase|procure|sourcing|bullion|vendor/i], ['Inventory', /inventory|stock|store keeper|vault/i], ['Logistics', /dispatch|logistic|delivery|courier|packing|warehouse/i], ['Quality & Gemology', /quality|gemolog|assay|hallmark|grader|assorter|certification/i], ['Production', /karigar|goldsmith|setter|polish|cast|production|factory|wax|filer|enamel|kundan|chain|plater|laser|cnc/i], ['Security & Facilities', /driver|housekeep|office boy|peon|security|guard/i]];
 function deptByWords(title) { const t = String(title || ''); const hit = DEPT_WORDS.find(([, re]) => re.test(t)); return hit ? hit[0] : null; }
 function deptOf(title) {
   const s = settings();
@@ -1555,3 +1555,14 @@ const accountsUsers = () => all("SELECT * FROM users WHERE level='sub' AND team=
 const ownsTask = (t, userId) => t.owner_id === userId || (Array.isArray(t.owners) && t.owners.includes(userId));
 const openTasksOf = (userId) => all("SELECT * FROM tasks WHERE removed=0 AND status<>'Done' ORDER BY COALESCE(due_date, '9999'), at").filter((t) => ownsTask(t, userId));
 Object.assign(module.exports, { phoneTaskTimes, markInterest, ownsTask, prefAnswer, PREF, cleanPrefs, inPreferred, nextPreferred, prefNote, evalView, candidateStory, candidateKnown, startCall, openCall, needsCall, callGateOn, roundsOf, skipRounds, passRounds, openTasksOf, accountsUsers, fixAsk, openAsks, OPEN_ASK, resumeUse, RESUME_DAYS });
+
+// One-time: candidates and jobs under "Other" (or none) placed by the words of their role, now that the
+// department list follows the jewellery trade.
+try {
+  const once = settings().done_once || [];
+  if (!once.includes('dept_other_by_words')) {
+    for (const r of all("SELECT id, job_wanted FROM candidates WHERE (department IS NULL OR department='' OR department='Other') AND job_wanted IS NOT NULL AND job_wanted != ''")) { const d = deptByWords(r.job_wanted); if (d) update('candidates', r.id, { department: d }); }
+    for (const r of all("SELECT id, title FROM jobs WHERE department IS NULL OR department='' OR department='Other'")) { const d = deptByWords(r.title); if (d) update('jobs', r.id, { department: d }); }
+    D.setSetting('done_once', [...once, 'dept_other_by_words']);
+  }
+} catch (e) { console.error('Department by words', e.message); }

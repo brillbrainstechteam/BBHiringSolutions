@@ -2,19 +2,218 @@
 // every list below is copied into the settings table on first run and edited from Settings.
 
 const JOB_GROUPS = {
-  'Sales & Showroom': { dept: 'Sales', jobs: ['Sales Executive', 'Senior Sales Executive', 'Showroom Manager', 'Floor Manager', 'Store Manager', 'Assistant Store Manager', 'Cashier', 'Customer Relationship Executive', 'Diamond Consultant', 'Bridal Consultant', 'Gold Sales Executive', 'Silver Sales Executive', 'Counter Sales Executive', 'Billing Executive', 'Greeter / Hostess'] },
-  'B2B Sales & Business Development': { dept: 'Sales', jobs: ['B2B Sales Executive', 'Area Sales Manager', 'Regional Sales Manager', 'Business Development Executive', 'Business Development Manager', 'Key Account Manager', 'Export Sales Executive', 'Franchise Manager', 'Wholesale Sales Executive', 'Sales Coordinator'] },
-  'Design': { dept: 'Design', jobs: ['Jewellery Designer', 'Senior Jewellery Designer', 'CAD Designer', 'CAD Designer (Matrix)', 'CAD Designer (Rhino)', '3D Renderer', 'Hand Sketch Artist', 'Design Head', 'Product Developer', 'Merchandiser'] },
-  'Production & Manufacturing': { dept: 'Production', jobs: ['Goldsmith (Karigar)', 'Diamond Setter', 'Stone Setter', 'Polisher', 'Caster', 'Wax Model Maker', 'Filer', 'Enameller (Meenakari)', 'Kundan Worker', 'Chain Maker', 'Rhodium Plater', 'Laser Operator', 'CNC Operator', 'Production Supervisor', 'Production Manager', 'Factory Manager', 'Repair Karigar'] },
-  'Quality & Gemology': { dept: 'Production', jobs: ['Quality Checker', 'Quality Control Manager', 'Gemologist', 'Diamond Grader', 'Diamond Assorter', 'Hallmarking Executive', 'Assayer', 'Certification Executive'] },
-  'Marketing & Digital': { dept: 'Marketing', jobs: ['Marketing Executive', 'Marketing Manager', 'Digital Marketing Executive', 'Social Media Executive', 'Content Writer', 'Graphic Designer', 'Photographer', 'Video Editor', 'Visual Merchandiser', 'E-commerce Executive', 'Performance Marketing Executive', 'Brand Manager'] },
-  'Purchase & Inventory': { dept: 'Purchase', jobs: ['Purchase Executive', 'Purchase Manager', 'Inventory Executive', 'Inventory Manager', 'Stock Controller', 'Bullion Executive', 'Diamond Purchase Executive', 'Vendor Coordinator', 'Store Keeper'] },
-  'Dispatch & Logistics': { dept: 'Dispatch', jobs: ['Dispatch Executive', 'Dispatch Manager', 'Packing Executive', 'Logistics Coordinator', 'Delivery Executive', 'Courier Coordinator', 'Security Guard', 'Vault Keeper'] },
-  'Accounts & Finance': { dept: 'Accounts', jobs: ['Accountant', 'Senior Accountant', 'Accounts Manager', 'Accounts Assistant', 'GST Executive', 'Tally Operator', 'Audit Executive', 'Finance Manager', 'Chartered Accountant', 'Cash Manager'] },
-  'Admin & HR': { dept: 'Admin', jobs: ['HR Executive', 'HR Manager', 'Recruiter', 'Admin Executive', 'Office Assistant', 'Receptionist', 'Front Office Executive', 'Personal Assistant', 'Data Entry Operator', 'MIS Executive'] },
-  'IT & Technology': { dept: 'IT', jobs: ['IT Executive', 'IT Support Executive', 'Software Developer', 'System Administrator', 'Network Engineer', 'ERP Executive'] },
-  'Customer Service': { dept: 'Customer Service', jobs: ['Customer Support Executive', 'Customer Care Executive', 'Telecaller', 'After-sales Executive'] },
-  'Facilities & Others': { dept: 'Facilities', jobs: ['Driver', 'Housekeeping Staff', 'Office Boy'] },
+  "Retail Sales": {
+    dept: "Retail Sales",
+    jobs: [
+      "Sales Executive",
+      "Senior Sales Executive",
+      "Gold Sales Executive",
+      "Diamond Consultant",
+      "Bridal Consultant",
+      "Silver Sales Executive",
+      "Counter Sales Executive",
+      "Customer Relationship Executive",
+      "Floor Manager",
+      "Showroom Manager",
+      "Store Manager",
+      "Assistant Store Manager",
+      "Greeter / Hostess"
+    ]
+  },
+  "B2B Sales & Business Development": {
+    dept: "B2B Sales",
+    jobs: [
+      "B2B Sales Executive",
+      "Wholesale Sales Executive",
+      "Export Sales Executive",
+      "Business Development Executive",
+      "Business Development Manager",
+      "Key Account Manager",
+      "Area Sales Manager",
+      "Regional Sales Manager",
+      "Franchise Manager",
+      "Sales Coordinator"
+    ]
+  },
+  "Retail Operations": {
+    dept: "Retail Operations",
+    jobs: [
+      "Cashier",
+      "Billing Executive",
+      "Store Operations Executive",
+      "Store Operations Manager"
+    ]
+  },
+  "Design & CAD": {
+    dept: "Design",
+    jobs: [
+      "Jewellery Designer",
+      "Senior Jewellery Designer",
+      "CAD Designer",
+      "CAD Designer (Matrix)",
+      "CAD Designer (Rhino)",
+      "3D Renderer",
+      "Hand Sketch Artist",
+      "Design Head"
+    ]
+  },
+  "Merchandising & Product Development": {
+    dept: "Merchandising",
+    jobs: [
+      "Merchandiser",
+      "Product Developer",
+      "Category Manager",
+      "Collection Planner"
+    ]
+  },
+  "Production & Manufacturing": {
+    dept: "Production",
+    jobs: [
+      "Goldsmith (Karigar)",
+      "Repair Karigar",
+      "Diamond Setter",
+      "Stone Setter",
+      "Polisher",
+      "Caster",
+      "Wax Model Maker",
+      "Filer",
+      "Enameller (Meenakari)",
+      "Kundan Worker",
+      "Chain Maker",
+      "Rhodium Plater",
+      "Laser Operator",
+      "CNC Operator",
+      "Production Supervisor",
+      "Production Manager",
+      "Factory Manager"
+    ]
+  },
+  "Quality, Gemology & Hallmarking": {
+    dept: "Quality & Gemology",
+    jobs: [
+      "Quality Checker",
+      "Quality Control Manager",
+      "Gemologist",
+      "Diamond Grader",
+      "Diamond Assorter",
+      "Hallmarking Executive",
+      "Assayer",
+      "Certification Executive"
+    ]
+  },
+  "Purchase & Sourcing": {
+    dept: "Purchase",
+    jobs: [
+      "Purchase Executive",
+      "Purchase Manager",
+      "Bullion Executive",
+      "Diamond Purchase Executive",
+      "Vendor Coordinator"
+    ]
+  },
+  "Inventory & Vault": {
+    dept: "Inventory",
+    jobs: [
+      "Inventory Executive",
+      "Inventory Manager",
+      "Stock Controller",
+      "Store Keeper",
+      "Vault Keeper"
+    ]
+  },
+  "Marketing, Digital & E-commerce": {
+    dept: "Marketing",
+    jobs: [
+      "Marketing Executive",
+      "Marketing Manager",
+      "Digital Marketing Executive",
+      "Performance Marketing Executive",
+      "Social Media Executive",
+      "Content Writer",
+      "Graphic Designer",
+      "Photographer",
+      "Video Editor",
+      "E-commerce Executive",
+      "Brand Manager"
+    ]
+  },
+  "Visual Merchandising": {
+    dept: "Visual Merchandising",
+    jobs: [
+      "Visual Merchandiser",
+      "Visual Merchandising Manager"
+    ]
+  },
+  "Customer Service": {
+    dept: "Customer Service",
+    jobs: [
+      "Customer Support Executive",
+      "Customer Care Executive",
+      "Telecaller",
+      "After-sales Executive"
+    ]
+  },
+  "Accounts & Finance": {
+    dept: "Accounts",
+    jobs: [
+      "Accountant",
+      "Senior Accountant",
+      "Accounts Assistant",
+      "Accounts Manager",
+      "GST Executive",
+      "Tally Operator",
+      "Audit Executive",
+      "Finance Manager",
+      "Chartered Accountant",
+      "Cash Manager"
+    ]
+  },
+  "HR & Admin": {
+    dept: "HR & Admin",
+    jobs: [
+      "HR Executive",
+      "HR Manager",
+      "Recruiter",
+      "Admin Executive",
+      "Office Assistant",
+      "Receptionist",
+      "Front Office Executive",
+      "Personal Assistant",
+      "Data Entry Operator",
+      "MIS Executive"
+    ]
+  },
+  "IT & Technology": {
+    dept: "IT",
+    jobs: [
+      "IT Executive",
+      "IT Support Executive",
+      "Software Developer",
+      "System Administrator",
+      "Network Engineer",
+      "ERP Executive"
+    ]
+  },
+  "Logistics & Dispatch": {
+    dept: "Logistics",
+    jobs: [
+      "Dispatch Executive",
+      "Dispatch Manager",
+      "Packing Executive",
+      "Logistics Coordinator",
+      "Courier Coordinator",
+      "Delivery Executive"
+    ]
+  },
+  "Security & Facilities": {
+    dept: "Security & Facilities",
+    jobs: [
+      "Security Guard",
+      "Driver",
+      "Housekeeping Staff",
+      "Office Boy"
+    ]
+  }
 };
 
 const CITIES = [
@@ -279,7 +478,7 @@ module.exports.defaultSettings = () => ({
   industry_list: ['Jewellery', 'Retail', 'FMCG', 'Manufacturing', 'IT & Software', 'Banking & Financial Services', 'Insurance', 'Healthcare & Pharma', 'Hospitality & Travel',
     'Real Estate & Construction', 'Education', 'Logistics & Supply Chain', 'Automobile', 'Textile & Apparel', 'E-commerce', 'Telecom', 'Media & Entertainment', 'Agriculture', 'Energy & Power', 'Other'],
   hidden_jobs: [],
-  departments: ['Sales', 'Design', 'Production', 'Marketing', 'Purchase', 'Dispatch', 'Accounts', 'Admin', 'IT', 'Customer Service', 'Facilities'],
+  departments: ["Retail Sales","B2B Sales","Retail Operations","Design","Merchandising","Production","Quality & Gemology","Purchase","Inventory","Marketing","Visual Merchandising","Customer Service","Accounts","HR & Admin","IT","Logistics","Security & Facilities"],
   cities: CITIES,
   skills: ['Gold knowledge', 'Diamond knowledge', 'Customer handling', 'Billing software', 'Tally', 'MS Excel', 'CAD (Matrix)', 'CAD (Rhino)', 'Hand sketching', 'Stone setting', 'Polishing', 'Hallmarking', 'GST filing', 'Social media', 'Photography', 'Visual merchandising', 'Inventory software', 'Hindi', 'English', 'Gujarati', 'Marathi', 'Team handling', 'Negotiation', 'Cold calling'],
   client_stages: ['Call initiated', 'Requirement understanding', 'Requirement received', 'Proposal & pitch deck shared', 'Agreement shared', 'Agreement follow-up', 'Agreement received', 'JD and R&R shared', 'JD and R&R approved', 'Client activated', 'Client onboarded', 'Job opening activated', 'No current opening', 'Requirement later', 'Decision on hold', 'Inactive'],

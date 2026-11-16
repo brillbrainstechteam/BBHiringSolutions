@@ -2649,3 +2649,12 @@ a.pipe-step { text-decoration: none; cursor: pointer; } a.pipe-step:hover { bord
 .rpick-custom label { display: grid; gap: 4px; font-size: 12px; color: var(--muted); } .rpick-custom input { width: 100%; }
 .rpick-foot { display: flex; justify-content: space-between; margin-top: 10px; }
 .period-bar .rpick-btn { height: 38px; }
+
+/* Bulk hiring role card: two lines that fit the form (department and role, then count, salary and city) */
+.bh-row { position: relative; grid-template-columns: repeat(6, minmax(0, 1fr)); padding: 12px 40px 12px 12px; box-sizing: border-box; width: 100%; }
+.bh-row > .field { grid-column: span 2; min-width: 0; } .bh-row > .bh-role { grid-column: span 3; } .bh-row > .bh-dept { grid-column: span 2; }
+.bh-row > .field:nth-of-type(3) { grid-column: span 1; }
+.bh-row input, .bh-row select { width: 100%; min-width: 0; box-sizing: border-box; }
+.bh-row .lab { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bh-row .bh-x { position: absolute; top: 8px; right: 6px; height: 28px; }
+@media (max-width: 760px) { .bh-row { grid-template-columns: 1fr 1fr; } .bh-row > .field, .bh-row > .bh-role, .bh-row > .bh-dept, .bh-row > .field:nth-of-type(3) { grid-column: span 1; } .bh-row > .bh-role { grid-column: 1 / -1; } }
