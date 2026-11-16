@@ -2658,3 +2658,14 @@ a.pipe-step { text-decoration: none; cursor: pointer; } a.pipe-step:hover { bord
 .bh-row .lab { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .bh-row .bh-x { position: absolute; top: 8px; right: 6px; height: 28px; }
 @media (max-width: 760px) { .bh-row { grid-template-columns: 1fr 1fr; } .bh-row > .field, .bh-row > .bh-role, .bh-row > .bh-dept, .bh-row > .field:nth-of-type(3) { grid-column: span 1; } .bh-row > .bh-role { grid-column: 1 / -1; } }
+
+/* All open roles */
+.or-sec { max-width: 1180px; margin: 0 auto; padding-top: 28px; }
+.or-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+.or-head h1 { font-size: clamp(26px, 4vw, 36px); margin: 0; } .or-count { margin: 0; color: var(--muted, #64748B); }
+.or-bar { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+.or-bar input { flex: 1 1 280px; } .or-bar select { flex: 0 1 220px; }
+.or-bar input, .or-bar select { border: 1px solid #DCE5F1; border-radius: 12px; padding: 11px 14px; font: inherit; background: #fff; }
+.or-chips { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; } .or-chips .chip-link { cursor: pointer; font: inherit; } .or-chips .chip-link span { opacity: .6; margin-left: 2px; }
+.or-chips .chip-link.on { background: var(--ink, #0F172A); color: #fff; border-color: var(--ink, #0F172A); }
+.or-empty { grid-column: 1 / -1; display: grid; gap: 14px; justify-items: center; text-align: center; padding: 40px 12px; color: var(--muted, #64748B); }

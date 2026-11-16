@@ -490,7 +490,7 @@ document.addEventListener('click', (e) => {
   const a = e.target.closest && e.target.closest('a[href]'); if (!a || e.defaultPrevented || a.target || e.ctrlKey || e.metaKey || e.shiftKey) return;
   const href = a.getAttribute('href');
   if (href === '#' || href.startsWith('//')) return;
-  const appPage = href.startsWith('/') && ['', 'hire', 'apply', 'partners', 'my-account', 'my-profile', 'team'].includes(href.slice(1).split(/[/?#]/)[0]);
+  const appPage = href.startsWith('/') && ['', 'hire', 'apply', 'partners', 'open-roles', 'my-account', 'my-profile', 'team'].includes(href.slice(1).split(/[/?#]/)[0]);
   if (!href.startsWith('#') && !appPage) return;
   e.preventDefault(); BB.go(href.slice(1));
 });
@@ -515,7 +515,7 @@ BB.track = (event, params) => { try { if (window.fbq && document.body.dataset.vi
 let lastTracked = location.pathname;
 BB.route = () => {
   const r = BB.parseHash(); BB.adSource(); BB.adParams(); // remember ?src= and the ad for the rest of the visit
-  const map = { hire: 'hire', 'bulk-hiring': 'bulk', apply: 'apply', partners: 'partners', 'my-account': 'client', 'my-profile': 'candidate', team: 'team' };
+  const map = { hire: 'hire', 'bulk-hiring': 'bulk', apply: 'apply', partners: 'partners', 'open-roles': 'roles', 'my-account': 'client', 'my-profile': 'candidate', team: 'team' };
   const view = map[r.name] || 'landing';
   BB.portal = { client: 'client', candidate: 'candidate', team: 'team' }[view] || null;
   if (view !== 'team') { BB.closePanels(); if (BB.unguard) BB.unguard(); }

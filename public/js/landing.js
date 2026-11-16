@@ -41,7 +41,7 @@
     const l = L(); const c = l.contact || {}; const g = l.legal || {};
     return `<footer class="lp-foot"><div class="lp-foot-in">
       <div class="lp-foot-brand">${BB.brand('')}<p>Hiring for the jewellery trade, since 2011.</p></div>
-      <div><b>Job seekers</b><a href="/apply">Apply</a><a href="/my-profile">Job seeker login</a><a href="/#openings" data-jobs-link>Open jobs</a></div>
+      <div><b>Job seekers</b><a href="/apply">Apply</a><a href="/my-profile">Job seeker login</a><a href="/open-roles">All open roles</a></div>
       <div><b>Employers</b><a href="/hire">Hire with us</a><a href="/my-account">Client login</a><a href="/partners">Partners</a></div>
       <div><b>Talk to us</b>${(c.phones || []).map((p) => `<a href="tel:${esc(p.replace(/\s/g, ''))}" data-no-i18n>${esc(p)}</a>`).join('')}${c.email ? `<a href="mailto:${esc(c.email)}" data-no-i18n>${esc(c.email)}</a>` : ''}<a href="https://wa.me/91${esc(BB.boot.business.support_phone)}" target="_blank" rel="noopener">WhatsApp</a></div>
     </div><div class="lp-legal"><span>© ${new Date().getFullYear()} ${esc(BB.boot.business.name)}</span>${c.site ? `<a href="${esc(c.site)}" target="_blank" rel="noopener">brillbrainsconsultants.com</a>` : ''}${g.terms ? `<a href="${esc(g.terms)}" target="_blank" rel="noopener">Terms</a>` : ''}${g.privacy ? `<a href="${esc(g.privacy)}" target="_blank" rel="noopener">Privacy</a>` : ''}${g.refund ? `<a href="${esc(g.refund)}" target="_blank" rel="noopener">Refunds</a>` : ''}</div></footer>`;
@@ -56,18 +56,18 @@
     const c = L().contact || {}; const phone = (c.phones || [])[0];
     const acct = BB.token('client') ? 'client' : BB.token('candidate') ? 'candidate' : null;
     const item = (href, b, sub, attr = '') => `<a href="${href}"${attr}><b>${b}</b><span>${sub}</span></a>`;
-    const seekers = item('/apply', 'Apply for a job', 'One form, free for you') + item('/#openings', 'See open jobs', 'Roles we are hiring for now', ' data-jobs-link') + item('/my-profile', 'Job seeker login', 'Your profile and applications');
+    const seekers = item('/apply', 'Apply for a job', 'One form, free for you') + item('/open-roles', 'All open roles', 'Every job we are hiring for now') + item('/my-profile', 'Job seeker login', 'Your profile and applications');
     const employers = item('/hire', 'Hire with us', 'Share your requirement in two minutes') + item('/bulk-hiring', 'Bulk hiring', 'Many roles or a new showroom, in one form') + item('/my-account', 'Client login', 'Openings, shortlists and bills');
     const dd = (label, body, on) => `<details class="lp-dd lp-hov"><summary${on ? ' class="on"' : ''}>${label} <i aria-hidden="true">▾</i></summary><div class="lp-dd-menu">${body}</div></details>`;
     return `<div class="lp-util"><a href="${MAIN}" target="_blank" rel="noopener"><span>Part of</span> <b>BrillBrains Consultants</b> <span>· since 2011</span> ↗</a>
       <span class="lp-util-r">${phone ? `<a href="tel:${esc(phone.replace(/\s/g, ''))}" data-no-i18n>${esc(phone)}</a>` : ''}<a href="https://wa.me/91${esc(BB.boot.business.support_phone)}" target="_blank" rel="noopener">WhatsApp us</a></span></div>
       <header class="pub-top lp-top">${BB.brand('')}
-        <nav class="lp-nav">${dd('Job Seekers', seekers)}${dd('Employers', employers)}<a href="/partners"${here === 'partners' ? ' class="on"' : ''}>Partners</a></nav>
+        <nav class="lp-nav">${dd('Job Seekers', seekers)}${dd('Employers', employers)}<a href="/partners"${here === 'partners' ? ' class="on"' : ''}>Partners</a><a href="/open-roles"${here === 'roles' ? ' class="on"' : ''}>All Open Roles</a></nav>
         <div class="lp-right">
           ${BB.langSwitch()}
           ${acct ? `<a class="btn sm lp-acct" href="/${acct === 'client' ? 'my-account' : 'my-profile'}">My account</a><button class="btn sm lp-acct" data-lpout="${acct}">Log out</button>` : '<a class="btn gold sm lp-cta" href="/hire">Hire with us</a>'}
           <details class="lp-dd lp-menu"><summary aria-label="Menu"><span class="burger" aria-hidden="true"><i></i><i></i><i></i></span>Menu</summary><div class="lp-dd-menu">
-            <span class="lp-dd-h">Job Seekers</span>${seekers}<hr><span class="lp-dd-h">Employers</span>${employers}<hr>${item('/partners', 'Partners', 'Agencies, institutes and recruiters')}<hr><a href="${MAIN}" target="_blank" rel="noopener"><b>BrillBrains Consultants ↗</b><span>Our group website</span></a>${acct ? `<hr><a href="/${acct === 'client' ? 'my-account' : 'my-profile'}"><b>My account</b></a><a href="#" data-lpout="${acct}"><b>Log out</b></a>` : ''}</div></details>
+            <span class="lp-dd-h">Job Seekers</span>${seekers}<hr><span class="lp-dd-h">Employers</span>${employers}<hr>${item('/partners', 'Partners', 'Agencies, institutes and recruiters')}${item('/open-roles', 'All Open Roles', 'Every job we are hiring for now')}<hr><a href="${MAIN}" target="_blank" rel="noopener"><b>BrillBrains Consultants ↗</b><span>Our group website</span></a>${acct ? `<hr><a href="/${acct === 'client' ? 'my-account' : 'my-profile'}"><b>My account</b></a><a href="#" data-lpout="${acct}"><b>Log out</b></a>` : ''}</div></details>
         </div></header>`;
   };
   // Desktop: the audience menus open on hover as well as on click.
@@ -235,6 +235,32 @@
     if (searching && d && d.similar && d.similar.length) sim.innerHTML = `<h3 class="sim-head rv">Similar openings</h3><div class="jobs-grid">${d.similar.map(jobCard).join('')}</div>`;
     animate($('#openings'));
   }
+
+  // ---------- all open roles: live from the open jobs (closed, on-hold and draft jobs drop off by themselves) ----------
+  BB.views.roles = async (r) => {
+    const q = (r && r.q) || {};
+    $('#app').innerHTML = `<div class="pub lp">${top('roles')}
+      <main><section class="lp-sec or-sec"><div class="or-head"><h1>All Open Roles</h1><p class="or-count" data-orcount>&nbsp;</p></div>
+        <div class="or-bar"><input type="search" data-ort placeholder="Search a role, e.g. Sales Executive" value="${esc(q.q || '')}" aria-label="Search roles"><select data-orc aria-label="City"><option value="">All cities</option></select></div>
+        <div class="or-chips" data-org></div><div class="jobs-grid" data-orlist><div class="or-empty">Loading…</div></div></section></main>${footer()}</div>`;
+    let d; try { d = await (await fetch('/api/public/jobs?all=1')).json(); } catch { d = { jobs: [], total: 0 }; }
+    const jobs = d.jobs || []; let group = q.field || ''; const T = $('[data-ort]'); const Cs = $('[data-orc]');
+    const cities = [...new Set(jobs.map((j) => j.city).filter(Boolean))].sort(); Cs.innerHTML += cities.map((c) => `<option ${q.city === c ? 'selected' : ''}>${esc(c)}</option>`).join('');
+    const seats = (l) => l.reduce((n, j) => n + (j.seats || 1), 0);
+    const draw = () => {
+      const t = T.value.trim().toLowerCase(); const c = Cs.value;
+      const base = jobs.filter((j) => (!t || j.title.toLowerCase().includes(t)) && (!c || j.city === c));
+      const groups = {}; for (const j of base) groups[j.group] = (groups[j.group] || 0) + (j.seats || 1);
+      $('[data-org]').innerHTML = Object.keys(groups).length > 1 ? [['', 'All', seats(base)], ...Object.entries(groups).sort((a, b) => b[1] - a[1]).map(([g, n]) => [g, g, n])].map(([k, l, n]) => `<button type="button" class="chip-link ${group === k ? 'on' : ''}" data-orgk="${esc(k)}">${esc(l)} <span>${n}</span></button>`).join('') : '';
+      const list = base.filter((j) => !group || j.group === group);
+      $('[data-orcount]').innerHTML = jobs.length ? `<b data-no-i18n>${seats(list)}</b> ${seats(list) === 1 ? 'opening' : 'openings'}${list.length !== jobs.length ? ` of <span data-no-i18n>${seats(jobs)}</span>` : ''} · updated live` : 'No open roles right now';
+      $('[data-orlist]').innerHTML = list.length ? list.map(jobCard).join('') : `<div class="or-empty">${jobs.length ? 'No roles match. Try another search.' : 'We are not hiring for any role right now.'}<a class="btn gold" href="/apply">Share your profile for the next opening</a></div>`;
+      $$('[data-orgk]').forEach((b) => (b.onclick = () => { group = b.dataset.orgk; draw(); }));
+      animate($('.or-sec'));
+      const u = new URLSearchParams(); if (T.value.trim()) u.set('q', T.value.trim()); if (c) u.set('city', c); if (group) u.set('field', group); history.replaceState(null, '', `/open-roles${u.toString() ? `?${u}` : ''}`);
+    };
+    let tm; T.oninput = () => { clearTimeout(tm); tm = setTimeout(draw, 200); }; Cs.onchange = draw; draw();
+  };
 
   // ---------- partners ----------
   BB.views.partners = () => {
