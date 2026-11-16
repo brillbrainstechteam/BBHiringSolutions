@@ -716,9 +716,9 @@
     if (k === 'quarter') { const start = m - ((m + 8) % 3); return [day(y, start, 1), day(y, start + 3, 0)]; }
     if (k === 'fy') return [day(fy, 4, 1), day(fy + 1, 3, 31)]; if (k === 'lastfy') return [day(fy - 1, 4, 1), day(fy, 3, 31)]; return ['', ''];
   };
-  F.periodBar = (q) => `<div class="period-bar"><select data-period aria-label="Time period">${PERIODS.map(([k, l]) => `<option value="${k}" ${(q.period || '') === k ? 'selected' : ''}>${l}</option>`).join('')}</select><label class="small">From <input type="date" data-pf="from" value="${esc(q.from || '')}"></label><label class="small">To <input type="date" data-pf="to" value="${esc(q.to || '')}"></label></div>`;
+  F.periodBar = (q) => `<div class="period-bar">${BB.rangePicker(q, { any: 'All time' })}</div>`;
   F.wirePeriod = (el) => {
-    const p = $('[data-period]', el); p.onchange = () => { if (p.value === 'custom') return BB.setQ({ period: 'custom' }); const [from, to] = periodDates(p.value); BB.setQ({ period: p.value, from, to, page: 1 }); };
+    const p = $('[data-period]', el); if (!p) return; p.onchange = () => { if (p.value === 'custom') return BB.setQ({ period: 'custom' }); const [from, to] = periodDates(p.value); BB.setQ({ period: p.value, from, to, page: 1 }); };
     $$('[data-pf]', el).forEach((i) => (i.onchange = () => BB.setQ({ period: 'custom', [i.dataset.pf]: i.value, page: 1 })));
   };
   // An uploaded invoice is read like a CV: the form is filled and a person checks it before saving.

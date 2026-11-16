@@ -653,3 +653,33 @@ BB.tracker = (step, result, list = BB.boot.steps) => {
   const i = list.indexOf(step);
   return `<div class="tracker ${result && result !== 'open' && result !== 'Hired' ? 'closed' : ''}">${list.map((s, k) => `<div class="s ${k < i || (k === i && result === 'Hired') ? 'done' : ''} ${k === i && result !== 'Hired' ? 'cur' : ''}">${esc(s)}</div>`).join('')}</div>`;
 };
+
+// ---------- date range picker ----------
+BB.RANGES = [['7', 'Last 7 days'], ['30', 'Last 30 days'], ['90', 'Last 90 days'], ['month', 'This month'], ['last', 'Last month'], ['quarter', 'This quarter'], ['fy', 'This financial year'], ['lastfy', 'Last financial year']];
+BB.rangeDates = (k) => {
+  const today = BB.istDay(); const [y, m] = today.split('-').map(Number); const day = (a, b, c) => new Date(Date.UTC(a, b - 1, c)).toISOString().slice(0, 10); const fy = m >= 4 ? y : y - 1;
+  if (/^\d+$/.test(k)) return [BB.istDay(new Date(Date.now() - (Number(k) - 1) * 86400000)), today];
+  if (k === 'month') return [day(y, m, 1), today]; if (k === 'last') return [day(y, m - 1, 1), day(y, m, 0)];
+  if (k === 'quarter') { const st = m - ((m + 8) % 3); return [day(y, st, 1), today]; }
+  if (k === 'fy') return [day(fy, 4, 1), today]; if (k === 'lastfy') return [day(fy - 1, 4, 1), day(fy, 3, 31)]; return ['', ''];
+};
+BB.rangePicker = (q, o = {}) => {
+  const fk = o.from || 'from'; const tk = o.to || 'to'; const a = q[fk] || ''; const b = q[tk] || '';
+  const hit = BB.RANGES.find(([k]) => { const [x, y] = BB.rangeDates(k); return x === a && y === b; });
+  const d = (v) => new Date(`${v}T00:00:00`).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+  const label = !a && !b ? (o.any || 'Any time') : hit ? hit[1] : `${a ? d(a) : 'Start'} – ${b ? d(b) : 'Today'}`;
+  return `<div class="rpick" data-rf="${fk}" data-rt="${tk}"><button type="button" class="rpick-btn ${a || b ? 'on' : ''}" aria-haspopup="true" title="${esc(o.label || 'Dates')}"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg><span>${o.label ? `${esc(o.label)}: ` : ''}${esc(label)}</span></button>
+    <div class="rpick-pop" hidden><div class="rpick-quick">${BB.RANGES.map(([k, l]) => `<button type="button" data-rq="${k}" class="${hit && hit[0] === k ? 'on' : ''}">${l}</button>`).join('')}</div>
+    <div class="rpick-custom"><label>From<input type="date" data-rfrom value="${esc(a)}"></label><label>To<input type="date" data-rto value="${esc(b)}"></label></div>
+    <div class="rpick-foot"><button type="button" class="btn sm ghost" data-rclear>Any time</button><button type="button" class="btn sm primary" data-rapply>Apply</button></div></div></div>`;
+};
+document.addEventListener('click', (e) => {
+  const pick = e.target.closest('.rpick');
+  for (const p of document.querySelectorAll('.rpick-pop:not([hidden])')) if (!pick || !pick.contains(p)) p.hidden = true;
+  if (!pick) return;
+  const set = (x, y) => { pick.querySelector('.rpick-pop').hidden = true; BB.setQ({ [pick.dataset.rf]: x, [pick.dataset.rt]: y, period: '', page: 1 }); };
+  if (e.target.closest('.rpick-btn')) { const pop = pick.querySelector('.rpick-pop'); pop.hidden = !pop.hidden; return; }
+  const q = e.target.closest('[data-rq]'); if (q) { const [x, y] = BB.rangeDates(q.dataset.rq); return set(x, y); }
+  if (e.target.closest('[data-rapply]')) { const x = pick.querySelector('[data-rfrom]').value; const y = pick.querySelector('[data-rto]').value; if (x && y && y < x) return BB.toast('The To date is before the From date', true); return set(x, y); }
+  if (e.target.closest('[data-rclear]')) return set('', '');
+});

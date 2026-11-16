@@ -833,7 +833,7 @@ route('GET', '/api/jobs', T, (ctx) => {
   if (q.mass === '1') rows = rows.filter((j) => j.mass); else if (q.mass === '0') rows = rows.filter((j) => !j.mass);
   const counts = { All: rows.length, Active: rows.filter((j) => ['Open', 'Sourcing', 'Interviewing', 'Offer stage'].includes(j.status)).length };
   for (const s of ['Draft', 'Open', 'Sourcing', 'Interviewing', 'Offer stage', 'Filled', 'On hold', 'Closed']) counts[s] = rows.filter((j) => j.status === s).length;
-  rows = rows.filter((j) => (!q.status || q.status === 'All' || (q.status === 'Active' ? ['Open', 'Sourcing', 'Interviewing', 'Offer stage'].includes(j.status) : j.status === q.status)) && (!q.client || j.client_id === q.client) && (!q.city || j.city === q.city) && (!q.recruiter || j.recruiter_id === q.recruiter) && (!Number(q.opened) || L.daysBetween(j.reopened_at || j.created_at) <= Number(q.opened)) && (!Number(q.ctc_min) || (j.ctc || 0) >= Number(q.ctc_min)) && (!Number(q.ctc_max) || ((j.ctc || 0) > 0 && (j.ctc || 0) < Number(q.ctc_max))) && like(q.q, j.id, j.title, j.client_name, j.city, j.old_code, j.recruiter_name, j.reopen_tag, j.reopen_tag ? 'replacement' : ''));
+  rows = rows.filter((j) => (!q.status || q.status === 'All' || (q.status === 'Active' ? ['Open', 'Sourcing', 'Interviewing', 'Offer stage'].includes(j.status) : j.status === q.status)) && (!q.client || j.client_id === q.client) && (!q.city || j.city === q.city) && (!q.recruiter || j.recruiter_id === q.recruiter) && (!Number(q.opened) || L.daysBetween(j.reopened_at || j.created_at) <= Number(q.opened)) && (!q.ofrom || L.istDay(j.reopened_at || j.created_at) >= q.ofrom) && (!q.oto || L.istDay(j.reopened_at || j.created_at) <= q.oto) && (!Number(q.ctc_min) || (j.ctc || 0) >= Number(q.ctc_min)) && (!Number(q.ctc_max) || ((j.ctc || 0) > 0 && (j.ctc || 0) < Number(q.ctc_max))) && like(q.q, j.id, j.title, j.client_name, j.city, j.old_code, j.recruiter_name, j.reopen_tag, j.reopen_tag ? 'replacement' : ''));
   const p = page(ctx, sortBy(rows, q, ['title', 'client_name', 'ctc', 'pscore', 'client_openings', 'filled', 'apps_total', 'reach_done', 'status', 'recruiter_name', 'days_open']), 'job-openings', ['id', 'title', 'client_name', 'city', 'ctc', 'client_openings', 'pscore', 'openings', 'filled', 'apps_total', 'status', 'recruiter_name', 'days_open', 'old_code']);
   // Choices for the filters, from the jobs this person can see
   const all0 = visibleJobs(u).map((j) => V.jobView(j)); const uniq = (f) => [...new Map(all0.map(f).filter((x) => x && x[0]).map((x) => [x[0], x])).values()].sort((a, b) => String(a[1]).localeCompare(String(b[1])));
@@ -1282,11 +1282,13 @@ route('POST', '/api/jobs/:id/send-profiles', T, (ctx) => {
 const OLD_STATUS = { Hired: 'Placed - BBHS', 'In process': 'Active application - BBHS' };
 function candBase(q, u) {
   const fresh = q.updated ? Number(q.updated) : null;
+  const upd = (c) => L.istDay(c.last_updated || c.updated_at || c.created_at); // profile last updated, by day
+  const inUpd = (c) => (!q.ufrom || upd(c) >= q.ufrom) && (!q.uto || upd(c) <= q.uto);
   const want = many(q.looking).concat(OLD_STATUS[q.status] ? [OLD_STATUS[q.status]] : []); let states = null;
   const statusOk = (c) => { if (!want.length) return true; if (!states) states = L.appStates(); return want.includes(L.jobStatusOf(c, states.get(c.id))); };
   const worked = many(q.worked);
   const ind = q.industry || 'all'; const inInd = (c) => ind === 'all' || (c.industry || 'Jewellery') === ind; // old segments may still carry an industry
-  return (c) => (q.archived ? c.archived : !c.archived) && inInd(c) && (!q.notice || (c.notice_days ?? 999) <= Number(q.notice))
+  return (c) => (q.archived ? c.archived : !c.archived) && inInd(c) && inUpd(c) && (!q.notice || (c.notice_days ?? 999) <= Number(q.notice))
       && statusOk(c) && (!worked.length || (c.exp_business || []).some((x) => worked.includes(x))) && (!q.tieup || String(c.tieup_id) === String(q.tieup)) && (!q.agency || (q.agency === 'none' ? !c.agency_id : q.agency === 'any' ? !!c.agency_id : c.agency_id === q.agency)) && (!q.new || c.is_new)
       && (!q.cv || (q.cv === 'yes' ? !!c.cv_file : !c.cv_file))
       && (!fresh || L.daysBetween(c.last_updated || c.created_at) <= fresh) && (!q.stale || L.daysBetween(c.last_updated || c.created_at) > 90)
@@ -1655,7 +1657,7 @@ route('POST', '/api/tieups', T, (ctx) => {
 // ---------- segments (saved candidate searches) ----------
 // A segment is a named set of resume-bank filters. Its owner sees it; shared ones are seen by the whole team.
 // The list of people is worked out again each time, so counts and downloads are always current.
-const SEG_KEYS = ['q', 'industry', 'domain', 'skills', 'skillgroup', 'worked', 'biz', 'cv', 'company', 'dept', 'job', 'city', 'state', 'ad', 'jewellery', 'from', 'to', 'exp_min', 'exp_max', 'sal_min', 'sal_max', 'looking', 'status', 'source', 'updated', 'notice', 'stale', 'archived'];
+const SEG_KEYS = ['q', 'ufrom', 'uto', 'industry', 'domain', 'skills', 'skillgroup', 'worked', 'biz', 'cv', 'company', 'dept', 'job', 'city', 'state', 'ad', 'jewellery', 'from', 'to', 'exp_min', 'exp_max', 'sal_min', 'sal_max', 'looking', 'status', 'source', 'updated', 'notice', 'stale', 'archived'];
 const segQuery = (raw) => { const q = typeof raw === 'string' ? JSON.parse(raw || '{}') : raw || {}; return Object.fromEntries(SEG_KEYS.filter((k) => q[k] !== undefined && q[k] !== null && q[k] !== '').map((k) => [k, String(q[k])])); };
 const segVisible = (u) => all('SELECT s.*, us.name AS owner_name FROM saved_searches s LEFT JOIN users us ON us.id=s.user_id WHERE s.user_id=? OR s.shared=1 ORDER BY s.name COLLATE NOCASE', u.id);
 function segOwn(ctx) {
