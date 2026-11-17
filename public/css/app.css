@@ -1951,6 +1951,15 @@ button.fin-tile.on { border-color: var(--mustard); box-shadow: 0 0 0 1px var(--m
 .sub-more { margin-top: 8px; } .sub-more > summary { cursor: pointer; padding: 4px 2px; }
 .job-acts { margin-bottom: 12px; }
 .pipe-steps { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; } .pipe-step { display: inline-flex; align-items: baseline; gap: 5px; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--border); font-size: 12px; color: var(--muted); } .pipe-step b { font-size: 13px; color: var(--faint); } .pipe-step.on { border-color: var(--navy); color: var(--ink); } .pipe-step.on b { color: var(--navy); }
+.jd-steps { display: flex; align-items: center; gap: 7px; margin-top: 11px; flex-wrap: wrap; }
+.jd-step { display: inline-flex; align-items: center; gap: 7px; }
+.jd-dot { width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 700; background: var(--border); color: var(--surface); flex: none; }
+.jd-step.done .jd-dot { background: var(--green); color: #fff; }
+.jd-step.current .jd-dot { background: var(--gold); color: #fff; }
+.jd-step-l { font-size: 13px; font-weight: 600; color: var(--faint); }
+.jd-step.done .jd-step-l, .jd-step.current .jd-step-l { color: var(--ink); }
+.jd-step-n { font-weight: 500; font-size: 11px; color: var(--amber); }
+.jd-line { flex: 1; min-width: 14px; height: 2px; background: var(--border); border-radius: 2px; }
 .stage-tabs { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
 .stage-tabs button { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-width: 120px; padding: 10px 14px; border: 1px solid var(--border); border-radius: 14px; background: var(--surface); cursor: pointer; font: inherit; text-align: left; }
 .stage-tabs button b { font: 700 20px var(--display, inherit); color: var(--navy); line-height: 1.1; } .stage-tabs button span { font-size: 12px; color: var(--muted); }
