@@ -254,6 +254,21 @@ function computeJobStatus(job, apps) {
   if (open.length) return 'Sourcing';
   return 'Open';
 }
+// JD gate (5.2): a signed agreement opens the job for internal sourcing, but reaching out to
+// candidates and sending profiles to the client stay paused until the JD is approved. Our own
+// (internal) hiring has no client JD to approve, so it is never gated.
+function jdReady(job) {
+  if (!job) return false;
+  if (job.jd_approved) return true;
+  const cl = get('SELECT internal FROM clients WHERE id=?', job.client_id) || {};
+  return !!cl.internal;
+}
+function jdGate(job, kind) {
+  if (jdReady(job)) return;
+  throw httpError(400, kind === 'client'
+    ? 'Sending profiles to the client is paused until the JD is approved. Approve the JD on this job first.'
+    : 'Reaching out to candidates is paused until the JD is approved. Approve the JD on this job first.', 'jd');
+}
 function jobStatusReason(job, apps) {
   const st = computeJobStatus(job, apps); const open = apps.filter((a) => a.result === 'open');
   const n = (step) => open.filter((a) => a.step === step).length;
@@ -1554,7 +1569,7 @@ function resumeUse(user, candidateId) {
 const accountsUsers = () => all("SELECT * FROM users WHERE level='sub' AND team='Accounts' AND status='On'");
 const ownsTask = (t, userId) => t.owner_id === userId || (Array.isArray(t.owners) && t.owners.includes(userId));
 const openTasksOf = (userId) => all("SELECT * FROM tasks WHERE removed=0 AND status<>'Done' ORDER BY COALESCE(due_date, '9999'), at").filter((t) => ownsTask(t, userId));
-Object.assign(module.exports, { phoneTaskTimes, markInterest, ownsTask, prefAnswer, PREF, cleanPrefs, inPreferred, nextPreferred, prefNote, evalView, candidateStory, candidateKnown, startCall, openCall, needsCall, callGateOn, roundsOf, skipRounds, passRounds, openTasksOf, accountsUsers, fixAsk, openAsks, OPEN_ASK, resumeUse, RESUME_DAYS });
+Object.assign(module.exports, { jdReady, jdGate, phoneTaskTimes, markInterest, ownsTask, prefAnswer, PREF, cleanPrefs, inPreferred, nextPreferred, prefNote, evalView, candidateStory, candidateKnown, startCall, openCall, needsCall, callGateOn, roundsOf, skipRounds, passRounds, openTasksOf, accountsUsers, fixAsk, openAsks, OPEN_ASK, resumeUse, RESUME_DAYS });
 
 // One-time: candidates and jobs under "Other" (or none) placed by the words of their role, now that the
 // department list follows the jewellery trade.

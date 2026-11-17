@@ -1257,6 +1257,7 @@ route('POST', '/api/jobs/:id/posting', T, (ctx) => {
 });
 route('POST', '/api/jobs/:id/alert', T, (ctx) => {
   const j = get('SELECT * FROM jobs WHERE id=?', ctx.params.id); mustSee(seeJob(ctx.user, j), 'job opening');
+  L.jdGate(j, 'candidate');
   const targets = ctx.body.ids && ctx.body.ids.length ? ctx.body.ids : L.bestMatches(j, 30, true).filter((m) => m.score >= D.settings().match.strong).map((m) => m.c.id);
   const budget = D.settings().bulk_budget; let sent = 0; const skipped = []; const fm = D.settings().formats;
   const format = fm.bbhs_job_interest && fm.bbhs_job_interest.approved && !fm.bbhs_job_interest.off ? 'bbhs_job_interest' : fm.bbhs_job_alert && fm.bbhs_job_alert.approved && !fm.bbhs_job_alert.off ? 'bbhs_job_alert' : null;
@@ -1269,6 +1270,7 @@ route('POST', '/api/jobs/:id/alert', T, (ctx) => {
 });
 route('POST', '/api/jobs/:id/send-profiles', T, (ctx) => {
   const j = get('SELECT * FROM jobs WHERE id=?', ctx.params.id); mustSee(seeJob(ctx.user, j), 'job opening');
+  L.jdGate(j, 'client');
   const moved = [];
   for (const id of ctx.body.ids || []) { const a = get('SELECT * FROM applications WHERE id=? AND job_id=?', id, j.id); if (a && a.result === 'open' && L.stepIdx(a.step) < 3) { L.moveStep(a.id, 'Sent to client', ctx.actor, 'Profiles sent'); moved.push(a.id); } }
   const count = get("SELECT COUNT(*) c FROM applications WHERE job_id=? AND step='Sent to client' AND result='open'", j.id).c;
@@ -1842,6 +1844,7 @@ route('POST', '/api/applications/:id/step', T, (ctx) => {
   const step = ctx.body.next ? L.STEPS[Math.min(L.STEPS.length - 1, L.stepIdx(a.step) + 1)] : ctx.body.step;
   if (step === 'Joined' && a.step !== 'Offer accepted' && !ctx.body.force) throw httpError(400, 'Mark Joined after the offer is accepted.');
   if (L.needsCall(a, step, ctx.user)) throw httpError(400, 'Log a call on this application first: every step needs its call on record.', 'call');
+  if (L.stepIdx(step) >= L.stepIdx('Sent to client') && L.stepIdx(a.step) < L.stepIdx('Sent to client')) L.jdGate(get('SELECT * FROM jobs WHERE id=?', a.job_id), 'client');
   if (!ctx.body.force || ctx.body.rounds) L.passRounds(a.id, step, ctx.body.skip_reason, ctx.actor);
   return L.moveStep(a.id, step, ctx.actor, ctx.body.note || (ctx.body.next ? 'Move to next step' : 'Step set by hand'));
 });
@@ -1946,10 +1949,11 @@ route('POST', '/api/applications/bulk', T, (ctx) => {
   for (const id of ids || []) {
     try {
       const a = get('SELECT * FROM applications WHERE id=?', id); mustSee(a && seeApp(ctx.user, a), 'application');
-      if (action === 'step') { if (L.needsCall(get('SELECT * FROM applications WHERE id=?', id), step, ctx.user)) throw httpError(400, 'Log a call first'); L.passRounds(id, step, ctx.body.skip_reason, ctx.actor); L.moveStep(id, step, ctx.actor, 'Bulk move'); } else if (action === 'close') L.closeApplication(id, reason, ctx.actor, 'Bulk close');
+      if (action === 'step') { if (L.needsCall(get('SELECT * FROM applications WHERE id=?', id), step, ctx.user)) throw httpError(400, 'Log a call first'); if (L.stepIdx(step) >= L.stepIdx('Sent to client') && L.stepIdx(a.step) < L.stepIdx('Sent to client')) L.jdGate(get('SELECT * FROM jobs WHERE id=?', a.job_id), 'client'); L.passRounds(id, step, ctx.body.skip_reason, ctx.actor); L.moveStep(id, step, ctx.actor, 'Bulk move'); } else if (action === 'close') L.closeApplication(id, reason, ctx.actor, 'Bulk close');
       else if (action === 'screen') L.screenApplication(id, ctx.body.verdict, ctx.actor, ctx.body.note || 'Bulk');
       else if (action === 'wa') {
         const ptype = ctx.body.to === 'client' ? 'client' : 'candidate'; const job = get('SELECT * FROM jobs WHERE id=?', a.job_id);
+        if (ptype === 'client') L.jdGate(job, 'client'); else if (['bbhs_job_interest', 'bbhs_job_alert'].includes(ctx.body.format)) L.jdGate(job, 'candidate');
         const pid = ptype === 'client' ? job.client_id : a.candidate_id; const p = L.person(ptype, pid);
         const r = L.sendWA({ ptype, pid, format: ctx.body.format, vars: composeVars({ ptype, pid, ap: id }, p), ap: id, jb: a.job_id, by: ctx.actor, bulk: true });
         if (r.skipped) throw new Error(r.skipped);
@@ -2140,6 +2144,7 @@ route('POST', '/api/wa/send', T, (ctx) => {
   const b = ctx.body;
   if (b.ptype === 'user') { const t = get('SELECT * FROM users WHERE id=?', b.pid); mustSee(t && (isSuper(ctx.user) || t.agency_id === ctx.user.agency_id), 'person'); }
   else if (b.ptype === 'client') mustSee(seeThread(ctx.user, 'client', b.pid) || isSuper(ctx.user), 'client');
+  if (b.jb) { const jb = get('SELECT * FROM jobs WHERE id=?', b.jb); if (b.ptype === 'client') L.jdGate(jb, 'client'); else if (b.ptype === 'candidate' && ['bbhs_job_interest', 'bbhs_job_alert'].includes(b.format)) L.jdGate(jb, 'candidate'); }
   const r = L.sendWA({ ptype: b.ptype, pid: b.pid, format: b.format || null, text: b.text, lang: b.lang, vars: b.vars, ap: b.ap, jb: b.jb, iv: b.iv, bl: b.bl, by: ctx.actor, sendLater: b.sendLater ? true : undefined });
   if (r.skipped) throw httpError(400, r.skipped);
   if (b.ap) L.appHist(b.ap, get('SELECT step FROM applications WHERE id=?', b.ap).step, ctx.actor, `WhatsApp ${b.format || 'message'} to ${b.ptype}`, 'wa');
