@@ -1157,6 +1157,8 @@ function jobAction(jobId, action, o, by) {
     for (const a of appsOfJob(jobId).filter((x) => x.result === 'Job closed')) { try { reopenApplication(a.id, by); restored++; } catch (e) { appHist(a.id, a.step, by, `Not reopened with the job: ${e.message}`, 'reopen'); } }
   } else if (action === 'approve_jd') {
     update('jobs', jobId, { jd_approved: 1, jd_status: 'Approved', jd_note: o.note || null });
+    // Internal DB circulation goes out by itself once the JD is approved (Settings › Automatic messages can stop it).
+    if (!job.jd_approved) setImmediate(() => { try { require('./api-team').circulate(jobId, null, true); } catch (e) { console.error('circulate', jobId, e.message); } });
   } else throw httpError(400, 'Unknown action');
   history(who, `job ${action}`, jobId, 'manual', job.manual, o.reason || action);
   recalcJob(jobId, who, o.reason || action);

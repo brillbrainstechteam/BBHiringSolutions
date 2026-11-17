@@ -2678,3 +2678,7 @@ a.pipe-step { text-decoration: none; cursor: pointer; } a.pipe-step:hover { bord
 .or-chips { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; } .or-chips .chip-link { cursor: pointer; font: inherit; } .or-chips .chip-link span { opacity: .6; margin-left: 2px; }
 .or-chips .chip-link.on { background: var(--ink, #0F172A); color: #fff; border-color: var(--ink, #0F172A); }
 .or-empty { grid-column: 1 / -1; display: grid; gap: 14px; justify-items: center; text-align: center; padding: 40px 12px; color: var(--muted, #64748B); }
+
+.rs-circ { margin-top: 6px; }
+.ask-skips { display: grid; gap: 10px; margin: 10px 0; padding: 10px 12px; border: 1px solid #EEF2F7; border-radius: 10px; background: #FBFCFE; }
+[data-rsum] .rs-step { cursor: pointer; }

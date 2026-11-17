@@ -21,8 +21,8 @@
     return st === 'Posted' ? 'All done' : 'Mark the creative posted';
   };
   const stepper = (steps, cur, click) => { const at = steps.indexOf(cur); return `<div class="rs-steps">${steps.map((s, i) => { const locked = s === 'Approved' && limited(); const inner = `<span class="rs-dot">${i <= at ? '✓' : i + 1}</span><span class="rs-lab">${esc(s)}</span>`; return click && !locked ? `<button type="button" class="rs-step ${i <= at ? 'done' : ''} ${i === at ? 'cur' : ''}" data-rstep="${esc(s)}">${inner}</button>` : `<div class="rs-step ${i <= at ? 'done' : ''} ${i === at ? 'cur' : ''}">${inner}</div>`; }).join('')}</div>`; };
-  const ownerPick = (c, people) => { const p = people.find((u) => u.id === c.owner_id) || people.find((u) => u.name === c.owner); const other = !p && !SHARED.includes(c.owner); return `<select class="rs-own" data-rown="${esc(c.key || c.ckey)}" aria-label="Owner of ${esc(c.channel)}">${other ? `<option value="t:${esc(c.owner)}" selected>${esc(c.owner)} (no login)</option>` : ''}<optgroup label="Logins">${people.map((u) => `<option value="u:${u.id}" ${p && p.id === u.id ? 'selected' : ''}>${esc(u.name)}</option>`).join('')}</optgroup><optgroup label="Shared">${SHARED.map((t) => `<option value="t:${t}" ${!p && c.owner === t ? 'selected' : ''}>${t}</option>`).join('')}</optgroup></select>`; };
-  const wireOwners = (el) => $$('[data-rown]', el).forEach((x) => (x.onchange = () => { const v = x.value; say(() => BB.post('/api/channels/owner', v.startsWith('u:') ? { key: x.dataset.rown, owner_id: v.slice(2) } : { key: x.dataset.rown, owner: v.slice(2) }), 'Owner saved'); }));
+  const ownerPick = (c, people) => { const p = people.find((u) => u.id === c.owner_id) || people.find((u) => u.name === c.owner); const other = !p && !SHARED.includes(c.owner); return `<select class="rs-own" data-rown="${esc(c.key || c.ckey)}" aria-label="Owner of ${esc(c.channel)}">${!p ? `<option value="" selected disabled>${c.owner ? `${esc(c.owner)} · pick a person` : 'Pick a person'}</option>` : ''}${people.map((u) => `<option value="u:${u.id}" ${p && p.id === u.id ? 'selected' : ''}>${esc(u.name)}</option>`).join('')}</select>`; };
+  const wireOwners = (el) => $$('[data-rown]', el).forEach((x) => (x.onchange = () => { const v = x.value; if (!v) return; say(() => BB.post('/api/channels/owner', v.startsWith('u:') ? { key: x.dataset.rown, owner_id: v.slice(2) } : { key: x.dataset.rown, owner: v.slice(2) }), 'Owner saved'); }));
   const statusSeg = (attr, st) => `<div class="rs-seg" role="group" aria-label="Status">${STATUS.map(([v, l]) => `<button type="button" class="${st === v ? `on s-${v === 'Not needed' ? 'na' : v.toLowerCase()}` : ''}" ${attr}="${esc(v)}">${l}</button>`).join('')}</div>`;
 
   // ---------- one job: its creative and channels ----------
@@ -30,7 +30,7 @@
     const d = await BB.api(`/api/reach/${id}`); const cr = await BB.api(`/api/creatives/${id}`); const rows = d.rows; const j = d.job;
     const groups = [...new Set(rows.map((r) => r.group))]; const all = counted(rows.map((r) => r.status));
     const mine = BB.me.user.name; const anyMine = rows.some((r) => r.owner === mine);
-    const row = (r) => `<div class="rs-row" data-mine="${r.owner === mine ? 1 : 0}"><div class="rs-main"><b>${esc(r.channel)}</b><div class="tiny muted">${esc(r.how || '')}</div></div><div class="rs-acts">${limited() ? `<span class="small muted">${esc(r.owner || '')}</span>` : ownerPick(r, d.people)}${statusSeg(`data-rst="${esc(r.ckey)}" data-v`, r.status)}<button type="button" class="btn sm" data-rcopy="${esc(r.apply_link)}">Copy link</button></div>${r.status === 'Done' ? `<div class="rs-done"><input data-rlink="${esc(r.ckey)}" value="${esc(r.post_link || '')}" placeholder="Paste the post link" aria-label="Post link for ${esc(r.channel)}"><span class="tiny muted">${esc(r.updated_by || r.done_by || '')}${r.updated_at ? `, ${fmtD(r.updated_at)}` : ''}</span></div>` : ''}</div>`;
+    const row = (r) => `<div class="rs-row" data-mine="${r.owner === mine ? 1 : 0}"><div class="rs-main"><b>${esc(r.channel)}</b><div class="tiny muted">${esc(r.how || '')}</div>${r.ckey === 'internal-db' && !limited() ? `<button type="button" class="btn sm primary rs-circ" data-rcirc>${r.status === 'Done' ? 'Send again to new matches' : 'Send to matching candidates'}</button>` : ''}</div><div class="rs-acts">${limited() ? `<span class="small muted">${esc(r.owner || '')}</span>` : ownerPick(r, d.people)}${statusSeg(`data-rst="${esc(r.ckey)}" data-v`, r.status)}<button type="button" class="btn sm" data-rcopy="${esc(r.apply_link)}">Copy link</button></div>${r.status === 'Done' ? `<div class="rs-done"><input data-rlink="${esc(r.ckey)}" value="${esc(r.post_link || '')}" placeholder="Paste the post link" aria-label="Post link for ${esc(r.channel)}"><span class="tiny muted">${esc(r.updated_by || r.done_by || '')}${r.updated_at ? `, ${fmtD(r.updated_at)}` : ''}</span></div>` : ''}</div>`;
     return {
       head: `<div class="row"><h2>${esc(j.title)}</h2></div><div class="small muted">${[j.client, j.city, `${j.openings} opening${j.openings === 1 ? '' : 's'}`].filter(Boolean).map(esc).join(' · ')}</div>`,
       body: `<div class="sec"><h3><span>Creative development</span>${cr.at ? `<span class="sec-act small muted">${esc(cr.by || '')}, ${fmtD(cr.at)}</span>` : ''}</h3>${stepper(cr.steps, cr.status, true)}
@@ -51,20 +51,34 @@
         $$('[data-rgna]', el).forEach((b) => (b.onclick = () => { const left = rows.filter((r) => r.group === b.dataset.rgna && (!r.status || r.status === 'Pending')); say(async () => { for (const r of left) await setStatus(id, r.ckey, 'Not needed'); }, `${left.length} marked not needed`); }));
         const m = $('[data-rmine]', el); if (m) m.onchange = () => $$('.rs-row[data-mine="0"]', el).forEach((r) => { r.hidden = m.checked; });
         wireOwners(el);
+        const ci = $('[data-rcirc]', el); if (ci) ci.onclick = () => BB.circulate(id, ci);
       },
     };
+  };
+  // Internal DB circulation from a button: send now and say exactly what happened.
+  BB.circulate = async (jobId, btn) => {
+    if (!(await BB.confirm('Send to matching candidates', 'Everyone in the database who matches this job well and agreed to job alerts gets the job on WhatsApp, with Interested / Not interested. People already asked are skipped.', 'Send'))) return;
+    if (btn) { btn.disabled = true; btn.textContent = 'Sending…'; }
+    try { const r = await BB.post(`/api/jobs/${jobId}/circulate`); BB.askResult(r, `${r.matched} match${r.matched === 1 ? '' : 'es'} scoring ${r.strong}+ with consent`); refresh(); } catch (e) { BB.fail(e); if (btn) { btn.disabled = false; btn.textContent = 'Send to matching candidates'; } }
+  };
+  // The result of asking on WhatsApp: how many went, and why the rest did not (grouped).
+  BB.askResult = (r, sub, names = {}) => {
+    const by = {}; for (const x of r.skipped || []) { const i = x.indexOf(': '); const id = x.slice(0, i); const why = x.slice(i + 2); (by[why] = by[why] || []).push(names[id] || id); }
+    BB.modal({ title: r.sent ? `Sent to ${r.sent}` : 'Nothing sent', body: `${sub ? `<p class="small muted" style="margin-top:0">${esc(sub)}</p>` : ''}<p><b>${r.sent}</b> asked on WhatsApp. Their Interested reply opens the application on this job.</p>${Object.keys(by).length ? `<div class="ask-skips">${Object.entries(by).map(([why, who]) => `<div><b>${who.length} not sent · ${esc(why)}</b><div class="small muted">${who.slice(0, 12).map(esc).join(', ')}${who.length > 12 ? ` and ${who.length - 12} more` : ''}</div></div>`).join('')}</div>${by['No consent for job alerts yet'] ? '<p class="small muted">People without consent can be called; mark them Interested or Not interested here.</p>' : ''}` : ''}` });
   };
 
   // ---------- what shows on the job itself ----------
   BB.reachSummary = (j) => {
     const rows = j.postings || []; const n = counted(rows.map((p) => p.status)); const cr = j.creative || {}; const steps = ['Brief shared', 'With designer', 'Sent for approval', 'Approved', 'Posted'];
     const groups = [...new Set(rows.map((p) => p.group))]; const done = rows.filter((p) => p.status === 'Done');
-    return `<div class="sec"><h3><span>Digital Reach</span><span class="sec-act"><span class="small muted">${n.done} of ${n.needed} done</span><button class="btn sm" data-open="reach:${j.id}">Open</button></span></h3>
-      <div class="small muted" style="margin:8px 0 4px">Step 1 · Creative development</div>${stepper(steps, cr.status, false)}<div class="rs-next">Next: <b>${esc(nextStep(cr.status ? cr : null, n.left))}</b></div>
+    return `<div class="sec" data-rsum><h3><span>Digital Reach</span><span class="sec-act"><span class="small muted">${n.done} of ${n.needed} done</span><button class="btn sm" data-open="reach:${j.id}">Open</button></span></h3>
+      <div class="small muted" style="margin:8px 0 4px">Step 1 · Creative development <span class="faint">· tap a step to mark it</span></div>${stepper(steps, cr.status, true)}<div class="rs-next">Next: <b>${esc(nextStep(cr.status ? cr : null, n.left))}</b></div>
       <div class="rs-gsum">${groups.map((g) => { const c = counted(rows.filter((p) => p.group === g).map((p) => p.status)); return `<div><div class="row between small"><span>${esc(g)}</span><span class="muted">${c.done} of ${c.needed}</span></div>${bar(c.done, c.needed)}</div>`; }).join('')}</div>
       ${done.length ? `<div class="rs-posted">${done.map((p) => `<div class="hist-row"><span class="grow small"><b>${esc(p.channel)}</b>${p.post_link && /^https?:\/\//i.test(p.post_link) ? ` · <a href="${esc(p.post_link)}" target="_blank" rel="noopener">see post ↗</a>` : ''}</span><span class="small muted">${esc(p.updated_by || p.done_by || '')}, ${fmtD(p.updated_at || p.done_date)}</span></div>`).join('')}</div>` : ''}</div>`;
   };
 
+  // Job view: tap a creative step to mark it.
+  BB.wireReachSummary = (el, j) => $$('.job-reach [data-rstep], [data-rsum] [data-rstep]', el).forEach((b) => (b.onclick = () => say(() => BB.post('/api/creatives', { ids: [j.id], status: b.dataset.rstep }), `Creative: ${b.dataset.rstep}`)));
   // ---------- the page ----------
   BB.pages.channels = async ({ el, actions, q }) => {
     const d = await BB.api(`/api/postings/tracker?${BB.qs({ all: q.all })}`); const cr = await BB.api('/api/creatives'); const myName = BB.me.user.name;

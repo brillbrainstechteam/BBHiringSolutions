@@ -918,7 +918,7 @@ function postingRows(j, apps) {
 route('GET', '/api/reach/:id', { ...T, channels: true }, (ctx) => {
   const j = get('SELECT * FROM jobs WHERE id=?', ctx.params.id); const limited = R.channelOnly(ctx.user); mustSee(limited ? !!j : seeJob(ctx.user, j) || R.sameAgency(ctx.user, j), 'job opening');
   const v = V.jobView(j);
-  return { job: { id: j.id, title: j.title, city: j.city, openings: j.openings, client: limited ? '' : v.client_name }, rows: postingRows(j, all('SELECT * FROM applications WHERE job_id=?', j.id)), people: limited ? [] : all("SELECT id, name FROM users WHERE status='On' AND level IN ('super','admin','sub') ORDER BY name") };
+  return { job: { id: j.id, title: j.title, city: j.city, openings: j.openings, client: limited ? '' : v.client_name }, rows: postingRows(j, all('SELECT * FROM applications WHERE job_id=?', j.id)), people: limited ? [] : reachPeople() };
 });
 // Digital Reach: every active job, every channel.
 route('GET', '/api/postings/tracker', { ...T, channels: true }, (ctx) => {
@@ -930,7 +930,7 @@ route('GET', '/api/postings/tracker', { ...T, channels: true }, (ctx) => {
   // What was last changed, by whom: everyone sees the same list.
   const names = new Map(jobs.map((j) => [j.id, `${j.title}${j.city ? `, ${j.city}` : ''}`]));
   const recent = all('SELECT job_id, channel, status, updated_by, updated_at FROM postings WHERE updated_at IS NOT NULL ORDER BY updated_at DESC LIMIT 60').filter((p) => names.has(p.job_id)).slice(0, 12).map((p) => ({ ...p, job: names.get(p.job_id) }));
-  const people = limited ? [] : all("SELECT id, name FROM users WHERE status='On' AND level IN ('super','admin','sub') ORDER BY name");
+  const people = limited ? [] : reachPeople();
   return { recent, people, channels: channels(), link_base: L.link('apply', '?'), tags, jobs: jobs.map((j) => ({ id: j.id, title: j.title, city: j.city, client: limited ? '' : j.client_name, status: j.status, priority: j.priority })), cells };
 });
 // Who owns a channel: any login, or a shared label. Applies to every job.
@@ -1255,19 +1255,46 @@ route('POST', '/api/jobs/:id/posting', T, (ctx) => {
   setPosting(p, ctx.body.status !== undefined ? ctx.body.status : ctx.body.done ? 'Done' : '', ctx.body.post_link, ctx.actor);
   return { ok: true };
 });
+// Ask candidates on WhatsApp if they are interested in this job (the job details and Interested / Not interested).
+// An Interested reply opens their application. Each person once per job; nobody who said no to this job.
+function askMatches(j, ids, by, o = {}) {
+  const budget = D.settings().bulk_budget; let sent = 0; const skipped = []; const fm = D.settings().formats;
+  const format = fm.bbhs_job_interest && fm.bbhs_job_interest.approved && !fm.bbhs_job_interest.off ? 'bbhs_job_interest' : fm.bbhs_job_alert && fm.bbhs_job_alert.approved && !fm.bbhs_job_alert.off ? 'bbhs_job_alert' : null;
+  if (!format) throw httpError(400, 'The job interest message is waiting for Meta approval (Settings → Message formats). Until then, call them and use Interested / Not interested.');
+  for (const cid of ids.slice(0, budget)) {
+    if (get('SELECT 1 FROM notes WHERE record_id=? AND (text LIKE ? OR text LIKE ?)', cid, `Not interested in ${j.id}%`, `Removed from ${j.id} matches%`)) { skipped.push(`${cid}: Not interested in this job`); continue; }
+    if (get("SELECT 1 FROM applications WHERE candidate_id=? AND job_id=?", cid, j.id)) { skipped.push(`${cid}: Already on this job`); continue; }
+    const r = L.sendWA({ ptype: 'candidate', pid: cid, format, vars: { job: j.title, city: j.city, salary: L.SAL_HIDDEN, link: L.link(`jd/${j.id}`) }, jb: j.id, by, bulk: true, auto: !!o.auto, rule: o.rule, dedupe: `alert:${j.id}:${cid}` });
+    if (r.skipped) skipped.push(`${cid}: ${r.skipped === 'Already sent before' ? 'Already asked for this job' : r.skipped}`); else sent++;
+  }
+  if (ids.length > budget) skipped.push(`${ids.length - budget} more: over the ${budget} a time limit (Settings), send again for the rest`);
+  return { sent, skipped, format };
+}
 route('POST', '/api/jobs/:id/alert', T, (ctx) => {
   const j = get('SELECT * FROM jobs WHERE id=?', ctx.params.id); mustSee(seeJob(ctx.user, j), 'job opening');
   L.jdGate(j, 'candidate');
   const targets = ctx.body.ids && ctx.body.ids.length ? ctx.body.ids : L.bestMatches(j, 30, true).filter((m) => m.score >= D.settings().match.strong).map((m) => m.c.id);
-  const budget = D.settings().bulk_budget; let sent = 0; const skipped = []; const fm = D.settings().formats;
-  const format = fm.bbhs_job_interest && fm.bbhs_job_interest.approved && !fm.bbhs_job_interest.off ? 'bbhs_job_interest' : fm.bbhs_job_alert && fm.bbhs_job_alert.approved && !fm.bbhs_job_alert.off ? 'bbhs_job_alert' : null;
-  if (!format) throw httpError(400, 'The job interest message (bbhs_job_interest) is waiting for Meta approval. Send it from Settings → Message formats; until then, call and use Interested / Not interested.');
-  for (const cid of targets.slice(0, budget)) {
-    if (get('SELECT 1 FROM notes WHERE record_id=? AND (text LIKE ? OR text LIKE ?)', cid, `Not interested in ${j.id}%`, `Removed from ${j.id} matches%`)) { skipped.push(`${cid}: Not interested in this job`); continue; }
-    const r = L.sendWA({ ptype: 'candidate', pid: cid, format, vars: { job: j.title, city: j.city, salary: L.SAL_HIDDEN, link: L.link(`jd/${j.id}`) }, jb: j.id, by: ctx.actor, bulk: true, dedupe: `alert:${j.id}:${cid}` });
-    if (r.skipped) skipped.push(`${cid}: ${r.skipped}`); else sent++;
-  }
-  return { sent, skipped };
+  return askMatches(j, targets, ctx.actor);
+});
+// Internal DB circulation (Digital Reach, Free): every matching candidate in the database who agreed to job alerts and
+// scores at least the strong-match score gets the job. Runs by itself when the JD is approved (rule
+// internal_db_circulation), or from the channel's Send button. The channel is marked done with the count.
+function circulate(jobId, by, auto) {
+  const j = get('SELECT * FROM jobs WHERE id=?', jobId); if (!j) return null;
+  if (auto) { const rule = (D.settings().auto_rules || []).find((r) => r.key === 'internal_db_circulation'); if (rule && !rule.on) return null; }
+  L.jdGate(j, 'candidate');
+  const strong = D.settings().match.strong;
+  const ids = L.bestMatches(j, 400, true).filter((m) => m.score >= strong && m.c.consent_alerts && m.c.whatsapp).map((m) => m.c.id);
+  const r = ids.length ? askMatches(j, ids, by || { label: 'Auto' }, { auto: !!auto }) : { sent: 0, skipped: [] };
+  syncPostings(j.id); const p = get("SELECT * FROM postings WHERE job_id=? AND ckey='internal-db'", j.id);
+  if (p && r.sent) setPosting(p, 'Done', `Sent to ${r.sent} matching candidate${r.sent === 1 ? '' : 's'}${auto ? ' (by itself, on JD approval)' : ''}`, by || { label: 'Auto' });
+  D.history(L.actorName(by || { label: 'Auto' }), 'internal db circulation', j.id, null, null, `${r.sent} sent, ${r.skipped.length} skipped`);
+  return { ...r, matched: ids.length, strong };
+}
+module.exports.circulate = circulate;
+route('POST', '/api/jobs/:id/circulate', T, (ctx) => {
+  const j = get('SELECT * FROM jobs WHERE id=?', ctx.params.id); mustSee(seeJob(ctx.user, j) || R.sameAgency(ctx.user, j), 'job opening');
+  return circulate(j.id, ctx.actor, false);
 });
 route('POST', '/api/jobs/:id/send-profiles', T, (ctx) => {
   const j = get('SELECT * FROM jobs WHERE id=?', ctx.params.id); mustSee(seeJob(ctx.user, j), 'job opening');
@@ -2438,6 +2465,12 @@ route('POST', '/api/agencies/:id/delete', SUPER, (ctx) => {
 // ---------- tasks: who owns what ----------
 const canTask = (u, t) => isSuper(u) || !t.agency_id || t.agency_id === u.agency_id || taskOwnerIds(t).includes(u.id);
 // Owners to pick from: the team, not the super admins (they see and do everything already).
+// Who can own a Digital Reach channel: each admin and sub admin by name, and anyone who owns a job opening.
+const reachPeople = () => {
+  const owners = new Set();
+  for (const j of all('SELECT recruiter_id, owners FROM jobs WHERE archived=0')) { if (j.recruiter_id) owners.add(j.recruiter_id); for (const o of Array.isArray(j.owners) ? j.owners : []) owners.add(o); }
+  return all("SELECT id, name, level FROM users WHERE status='On' AND level IN ('super','admin','sub') ORDER BY name").filter((u) => u.level !== 'super' || owners.has(u.id)).map((u) => ({ id: u.id, name: u.name }));
+};
 const taskOwners = (u) => all("SELECT id, name, level, agency_id, team FROM users WHERE status='On' AND level IN ('super','admin','sub') ORDER BY CASE level WHEN 'super' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END, name").filter((x) => x.level === 'super' || isSuper(u) || !u.agency_id || x.agency_id === u.agency_id || x.id === u.id);
 const taskOwnerIds = (t) => [...new Set([t.owner_id, ...(Array.isArray(t.owners) ? t.owners : [])].filter(Boolean))];
 const taskRow = (t) => { const ids = taskOwnerIds(t); return { ...t, owners: ids, owner_name: ids.map((id) => (get('SELECT name FROM users WHERE id=?', id) || {}).name).filter(Boolean).join(', ') }; };

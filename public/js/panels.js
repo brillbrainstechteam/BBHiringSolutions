@@ -236,7 +236,7 @@
         : state === 'draft' ? `<div class="small muted" style="margin-top:7px">${hasClient ? 'Written. Send it to the client for approval, or mark it approved if they have already said yes.' : 'Written. Mark it approved to begin outreach.'}</div>`
         : '<div class="small muted" style="margin-top:7px">No JD yet. Create one — you can edit it before and after approval.</div>';
       const pdf = '<button class="btn sm" data-jdpdf>Download PDF</button>';
-      const links = `<button class="btn sm ghost" data-copy="${esc(`${location.origin}/jd/${j.id}`)}">Copy JD link</button><a class="btn sm ghost" href="/jd/${esc(j.id)}" target="_blank" rel="noopener">Open JD page</a>`;
+      const links = `<button class="btn sm" data-copy="${esc(`${location.origin}/jd/${j.id}`)}">${BB.icon('note')} Copy JD link</button><a class="btn sm" href="/jd/${esc(j.id)}" target="_blank" rel="noopener">${BB.icon('eye')} Open JD page</a>`;
       let acts;
       if (state === 'none') acts = '<button class="btn sm primary" data-jd>Create JD</button>';
       else if (approved) acts = `<button class="btn sm" data-jd>Edit JD</button>${pdf}${links}`;
@@ -288,7 +288,9 @@
         const gt = $('[data-go-tracker]', el); if (gt) gt.onclick = (e) => { e.preventDefault(); BB.closePanels(); BB.go('team/jobs?view=tracker'); };
         $$('[data-post]', el).forEach((cb) => (cb.onchange = () => { if (cb.checked) BB.ask({ title: 'Posting done', fields: [{ name: 'post_link', label: 'Link to the post', opt: true }], ok: 'Save', submit: (v) => BB.post(`/api/jobs/${j.id}/posting`, { id: cb.dataset.post, done: true, post_link: v.post_link }) }).then((x) => (x ? after('Saved') : (cb.checked = false))); else run(() => BB.post(`/api/jobs/${j.id}/posting`, { id: cb.dataset.post, done: false })); }));
         $$('[data-copy]', el).forEach((b) => (b.onclick = () => BB.copy(b.dataset.copy)));
-        $$('[data-jd]', el).forEach((b) => (b.onclick = () => writeJD(j)));
+        // Create / Edit JD: the full JD builder (sections, AI from the call, approval) on this job
+        $$('[data-jd]', el).forEach((b) => (b.onclick = async () => { try { const c = await BB.api(`/api/clients/${j.client_id}`); BB.flow.jdBuilder(c, j.id); } catch (e) { writeJD(j); } }));
+        BB.wireReachSummary(el, j);
         { const sb = $('[data-seats]', el); if (sb) sb.onclick = () => BB.ask({ title: `Openings · ${esc(j.title)}`, note: `${j.filled} filled now. Lower it to ${j.filled || 1} and the job is filled: the other applications close and those candidates are told on WhatsApp.`, fields: [{ name: 'openings', label: 'Number of openings', type: 'number', value: j.openings, voice: false }, { name: 'reason', label: 'Why', opt: true, placeholder: 'e.g. Client needs 2 more for the new counter' }], ok: 'Save', submit: (v) => BB.post(`/api/jobs/${j.id}/action`, { action: 'set_seats', openings: v.openings, reason: v.reason }) }).then((x) => x && after('Openings changed')); }
         const pdf = $('[data-jdpdf]', el); if (pdf) pdf.onclick = () => BB.download(`/api/jobs/${j.id}/jd.pdf`, true);
         const jsend = $('[data-jdsend]', el); if (jsend) jsend.onclick = () => BB.flow.composeMail([j.client_id], 'jd', 'Send job description', j.id);

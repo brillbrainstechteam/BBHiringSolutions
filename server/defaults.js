@@ -362,6 +362,7 @@ const AUTO_RULES = [
   { key: 'review_request', when: '14 days after joining: rate your recruiter', to: 'Candidate', format: 'bbhs_review_request', on: false },
   { key: 'client_thanks', when: 'After the first call (button on the client)', to: 'Client', format: 'bbhs_client_thanks', on: true },
   { key: 'client_welcome', when: 'Fills the form / added by team', to: 'Client', format: 'bbhs_client_welcome', on: true },
+  { key: 'internal_db_circulation', when: 'Job description approved: the job goes on WhatsApp to matching candidates in the database who agreed to job alerts', to: 'Candidate', format: 'bbhs_job_interest', on: true },
   { key: 'jd_approval', when: 'Job description sent for approval', to: 'Client', format: 'bbhs_jd_approval', on: true },
   { key: 'shortlist_ready', when: 'Application reaches Sent to client', to: 'Client', format: 'bbhs_shortlist_ready', on: true },
   { key: 'feedback_request', when: 'No feedback 48 hours after their interview', to: 'Client', format: 'bbhs_feedback_request', on: true },

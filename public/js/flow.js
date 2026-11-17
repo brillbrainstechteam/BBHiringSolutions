@@ -308,7 +308,8 @@
     $('[data-mmin]', box).onchange = (e) => { min = Number(e.target.value); applyMin(); };
     $('[data-mall]', box).onchange = (e) => { for (const c of $$('[data-mpick]', box)) if (!c.closest('tr').hidden) c.checked = e.target.checked; count(); };
     box.addEventListener('change', (e) => { if (e.target.matches('[data-mpick]')) count(); });
-    $('[data-mask]', box).onclick = () => { const ids = picked(); if (!ids.length) return; act(() => BB.post(`/api/jobs/${j.id}/alert`, { ids }), (r) => `Asked ${r.sent} on WhatsApp${r.skipped.length ? `, ${r.skipped.length} not sent` : ''}`); };
+    $('[data-mask]', box).onclick = async (e) => { const ids = picked(); if (!ids.length) return; const names = Object.fromEntries(d.bank.map((r) => [r.candidate_id, r.name])); const btn = e.currentTarget; btn.disabled = true;
+      try { const r = await BB.post(`/api/jobs/${j.id}/alert`, { ids }); BB.askResult(r, `${ids.length} ticked`, names); done(); } catch (er) { BB.fail(er); btn.disabled = false; } };
     $('[data-mrm]', box).onclick = async () => { const ids = picked(); if (!ids.length) return; if (!(await BB.confirm('Remove from matches', `Remove ${ids.length} candidate${ids.length === 1 ? '' : 's'} from this job's matches? They are marked not interested and left out of it.`, 'Remove'))) return; act(() => BB.post(`/api/jobs/${j.id}/not-interested`, { candidate_ids: ids, remove: true }), (r) => `Removed ${r.done} from matches`); };
     $('[data-mfloor]', box).onclick = async () => { if (!(await BB.confirm(`Leave out matches below ${min}`, `Everyone in the resume bank scoring below ${min} for this job is left out of it: not shown and not asked. You can bring them back.`, 'Leave them out'))) return; act(() => BB.post(`/api/jobs/${j.id}/match-floor`, { floor: min }), `Matches below ${min} left out`); };
     { const f0 = $('[data-mfloor0]', box); if (f0) f0.onclick = (e) => { e.preventDefault(); act(() => BB.post(`/api/jobs/${j.id}/match-floor`, { floor: 0 }), 'All matches shown again'); }; }
@@ -545,7 +546,7 @@
         <div class="jdb-client"><b>Client</b> ${facts.length ? esc(facts.join(' · ')) : '<span class="faint">No details yet</span>'}${!(ex.team_size || on2.team_size) || !(ex.est_year || on2.est_year) ? '<div class="tiny muted">Company size or year missing: fetch Client info for a better "About the employer".</div>' : ''}</div>
       </aside>
       <section class="jdb-main">
-        <div class="jdb-ai">${d.ai ? `<button type="button" class="btn primary" data-aiall>✦ Write the full JD with AI</button><input data-aiwhat placeholder="Tell the AI (optional), e.g. focus on target-based selling" aria-label="Instruction for the AI">` : '<span class="small muted">AI writing is not set up on the server.</span>'}${d.pool.includes(w.role.title) ? '<button type="button" class="btn sm" data-pool>Fill from JD pool</button>' : ''}</div>
+        <div class="jdb-ai">${d.ai ? `<button type="button" class="btn primary" data-aiall>✦ Write the full JD with AI</button><input data-aiwhat placeholder="Tell the AI (optional), e.g. focus on target-based selling" aria-label="Instruction for the AI">` : '<span class="small muted">AI writing is not set up on the server.</span>'}${d.pool.includes(w.role.title) ? '<button type="button" class="btn sm" data-pool>Fill from JD pool</button>' : ''}<button type="button" class="btn sm" data-jdfile>Fill from a JD file</button></div>
         <div class="tiny muted" style="margin:-4px 0 8px">Model: ${esc(d.model)} · about ₹0.10 a JD. Check every section before sending: you are responsible for what the client sees.</div>
         ${d.sections.map((s) => `<div class="jdb-sec"><div class="jdb-sec-h"><label for="jds-${s.key}"><b>${esc(s.label)}</b>${s.public === false ? ' <span class="badge b-outline tiny" title="Client sees it; candidates do not">Client only</span>' : ''}</label>${d.ai ? `<button type="button" class="btn sm ghost" data-aione="${s.key}">✦ Rewrite</button>` : ''}</div><div class="tiny muted">${esc(s.hint || '')}</div><textarea id="jds-${s.key}" data-sec="${s.key}" rows="${s.bullets ? 6 : 2}">${esc(w.jd[s.key] || '')}</textarea></div>`).join('')}
       </section></div>`}`;
@@ -566,6 +567,7 @@
       };
       const all2 = $('[data-aiall]', root); if (all2) all2.onclick = () => ai(null, all2);
       $$('[data-aione]', root).forEach((b) => (b.onclick = () => ai(b.dataset.aione, b)));
+      const jf = $('[data-jdfile]', root); if (jf) jf.onclick = async () => { const file = await BB.pickFile('.pdf,.docx'); if (!file) return; jf.disabled = true; jf.textContent = 'Reading…'; try { const r = await BB.post('/api/jd/read', file); for (const [k, v] of Object.entries(r.jd || {})) { if (v) { const t = $(`[data-sec="${k}"]`, root); if (t) t.value = v; } } collect(); BB.toast('Filled from the file: check every section'); } catch (er) { BB.fail(er); } jf.disabled = false; jf.textContent = 'Fill from a JD file'; };
       const pl = $('[data-pool]', root); if (pl) pl.onclick = async () => { const p = await BB.api('/api/jd-pool'); const t = p.pool[work[cur.key].role.title]; if (t) { for (const [k, v] of Object.entries(t)) { if (v) { const x = $(`[data-sec="${k}"]`, root) || $(`[data-jw="${k}"]`, root); if (x) x.value = v; } } collect(); BB.toast('Filled from the JD pool'); } };
     };
     const save = async (how) => {
