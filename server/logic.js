@@ -428,6 +428,11 @@ function closePlacedApps(by = { label: 'System' }) {
 }
 // Interested again (applied, or said yes to a job): back in matching. Not interested: the date, the status, a note,
 // and out of matching until they show interest again.
+// Not for this one job: a note the job's matching reads. The candidate's own job status is left alone.
+function jobNotInterested(candId, jobId, by, text) {
+  if (!get('SELECT 1 FROM candidates WHERE id=?', candId)) return false;
+  insert('notes', { record_id: candId, text: text || `Not interested in ${jobId}`, author: (by && by.label) || 'System', at: now() }); return true;
+}
 function markInterest(candId, yes, by, note) {
   const c = get('SELECT * FROM candidates WHERE id=?', candId); if (!c) return;
   if (yes) { setLooking(candId, 'Actively looking', by, 'showed interest in a job'); return; }
@@ -1523,7 +1528,7 @@ function receiveReply(phone, text, button, opts = {}) {
   else if (ref && ref.jb && t === 'interested' && ptype === 'candidate') { markInterest(pid, true, by); try { const a = createApplication(pid, ref.jb, by, 'WhatsApp bot', 'Interested (reply on WhatsApp)'); effect = `${a.id} created`; } catch (e) { effect = e.message; } }
   else if (ref && ref.ap && (ptype === 'candidate' || ptype === 'client') && (effect = require('./care').reply(ref, ptype, t, by) || effect) !== 'Saved in inbox') { /* a check-in answer was saved */ }
   else if (t === 'need help' && ref && ref.ap) { update('applications', ref.ap, { at_risk: 1 }); const ap = get('SELECT * FROM applications WHERE id=?', ref.ap); alertUser(ap.owner_id, `${ap.id} at risk: candidate needs help`, ap.id, 'candidate'); effect = 'Marked at risk'; }
-  else if (ref && ref.jb && t === 'not interested' && ptype === 'candidate') { markInterest(pid, false, by, `Not interested in ${ref.jb} (reply on WhatsApp)`); effect = `Marked not interested (${ref.jb})`; }
+  else if (ref && ref.jb && t === 'not interested' && ptype === 'candidate') { jobNotInterested(pid, ref.jb, by, `Not interested in ${ref.jb} (reply on WhatsApp)`); effect = `Marked not interested (${ref.jb})`; }
   else if (t === 'share details' && ptype === 'candidate') { const c = get('SELECT recruiter_id FROM candidates WHERE id=?', pid) || {}; const ap = ref && ref.ap ? get('SELECT owner_id FROM applications WHERE id=?', ref.ap) : null; const owner = (ap && ap.owner_id) || c.recruiter_id; if (owner) alertUser(owner, `${pid} wants to share their salary and notice details: call or message them`, pid, 'candidate'); sendSystemText('candidate', pid, 'Thank you. Please type your current salary, expected salary and notice period here, and we will update your profile.'); effect = 'Asked for details; recruiter alerted'; }
   else if (ptype === 'candidate' && expBand(t) !== null && (button || (ref && ref.format === 'bbhs_experience_ask'))) { update('candidates', pid, { exp_total: expBand(t), last_updated: now() }); D.history(by.label, 'experience from reply', pid, 'exp_total', null, String(expBand(t))); effect = `Total experience: ${text || button}`; }
   else if (ptype === 'candidate' && !button && t && ref && ['bbhs_details_reply', 'bbhs_profile_update'].includes(ref.format)) { setImmediate(() => require('./profilelink').readReply(pid, text).catch((e) => console.error('Details reply', pid, e.message))); effect = 'Reading their details from the reply'; }
@@ -1569,7 +1574,7 @@ function resumeUse(user, candidateId) {
 const accountsUsers = () => all("SELECT * FROM users WHERE level='sub' AND team='Accounts' AND status='On'");
 const ownsTask = (t, userId) => t.owner_id === userId || (Array.isArray(t.owners) && t.owners.includes(userId));
 const openTasksOf = (userId) => all("SELECT * FROM tasks WHERE removed=0 AND status<>'Done' ORDER BY COALESCE(due_date, '9999'), at").filter((t) => ownsTask(t, userId));
-Object.assign(module.exports, { jdReady, jdGate, phoneTaskTimes, markInterest, ownsTask, prefAnswer, PREF, cleanPrefs, inPreferred, nextPreferred, prefNote, evalView, candidateStory, candidateKnown, startCall, openCall, needsCall, callGateOn, roundsOf, skipRounds, passRounds, openTasksOf, accountsUsers, fixAsk, openAsks, OPEN_ASK, resumeUse, RESUME_DAYS });
+Object.assign(module.exports, { jdReady, jdGate, phoneTaskTimes, jobNotInterested, markInterest, ownsTask, prefAnswer, PREF, cleanPrefs, inPreferred, nextPreferred, prefNote, evalView, candidateStory, candidateKnown, startCall, openCall, needsCall, callGateOn, roundsOf, skipRounds, passRounds, openTasksOf, accountsUsers, fixAsk, openAsks, OPEN_ASK, resumeUse, RESUME_DAYS });
 
 // One-time: candidates and jobs under "Other" (or none) placed by the words of their role, now that the
 // department list follows the jewellery trade.

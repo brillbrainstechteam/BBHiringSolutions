@@ -503,8 +503,13 @@ route('POST', '/api/jobs/:id/interested', T, (ctx) => {
 });
 // They said no (on a call): marked not interested from today, and left out of matching.
 route('POST', '/api/jobs/:id/not-interested', T, (ctx) => {
-  const j = loadJob(ctx); const c = get('SELECT * FROM candidates WHERE id=?', (ctx.body || {}).candidate_id); if (!c) throw httpError(404, 'Candidate not found');
-  L.markInterest(c.id, false, ctx.actor, `Not interested in ${j.id} ${j.title} (told ${ctx.actor.label})`); return { ok: true };
+  const j = loadJob(ctx); const b = ctx.body || {};
+  const ids = Array.isArray(b.candidate_ids) && b.candidate_ids.length ? b.candidate_ids : b.candidate_id ? [b.candidate_id] : [];
+  if (!ids.length) throw httpError(400, 'No candidate given');
+  let done = 0;
+  // remove: the team takes them off this job's matches; otherwise they told us they are not interested in it
+  for (const cid of ids) if (L.jobNotInterested(cid, j.id, ctx.actor, b.remove ? `Removed from ${j.id} matches (${ctx.actor.label})` : `Not interested in ${j.id} ${j.title} (told ${ctx.actor.label})`)) done++;
+  return { ok: true, done };
 });
 route('GET', '/api/jobs/:id/screen', T, (ctx) => {
   const j = loadJob(ctx);
@@ -514,7 +519,8 @@ route('GET', '/api/jobs/:id/screen', T, (ctx) => {
   const askState = (c) => { const m = get("SELECT at FROM messages WHERE dedupe=? ORDER BY at DESC LIMIT 1", `alert:${j.id}:${c.id}`); const no = get("SELECT 1 FROM notes WHERE record_id=? AND text LIKE ?", c.id, `Not interested in ${j.id}%`);
     return { can_wa: !!(c.whatsapp && c.consent_alerts && !c.opted_out), asked_at: m ? m.at : null, not_interested: !!no }; };
   const floor = Number(j.match_floor) || 0; // matches below this score are left out of this job
-  const bank = bankOf(j, 300).filter((m) => !seen.has(m.c.id) && m.score >= floor).slice(0, 100).map((m) => rowFor(j, m.c, m, askState(m.c))).sort((x, y) => y.score - x.score);
+  const removed = new Set(all('SELECT record_id FROM notes WHERE text LIKE ?', `Removed from ${j.id} matches%`).map((r) => r.record_id));
+  const bank = bankOf(j, 300).filter((m) => !seen.has(m.c.id) && !removed.has(m.c.id) && m.score >= floor).slice(0, 100).map((m) => rowFor(j, m.c, m, askState(m.c))).sort((x, y) => y.score - x.score);
   return { apps, bank, floor, strong: D.settings().match.strong, ai: LLM.available(), scored: apps.concat(bank).filter((x) => x.by_ai).length };
 });
 // Leave out every match below a score for this job (they are not asked and do not show); 0 brings them back.

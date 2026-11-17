@@ -374,6 +374,11 @@ function ensureSettings() {
     for (const r of all('SELECT id, job_wanted, department FROM candidates')) { const d = next(r.job_wanted, r.department); if (d && d !== r.department) run('UPDATE candidates SET department=? WHERE id=?', d, r.id); }
     setSetting('done_once', [...(settings().done_once || []), 'jewel_depts_2026_11']);
   }
+  if (!once.includes('internal_db_channel_2026_11')) {
+    const def = defs.hiring_channels.find((c) => c.key === 'internal-db'); const cur = settings().hiring_channels || [];
+    if (def && !cur.some((c) => c.key === 'internal-db')) setSetting('hiring_channels', [def, ...cur]);
+    setSetting('done_once', [...(settings().done_once || []), 'internal_db_channel_2026_11']);
+  }
   if (!once.includes('candidate_login_on_2026_11_01')) {
     setSetting('auto_rules', settings().auto_rules.map((r) => (r.key === 'candidate_login' ? { ...r, on: true } : r)));
     setSetting('done_once', [...(settings().done_once || []), 'candidate_login_on_2026_11_01']);

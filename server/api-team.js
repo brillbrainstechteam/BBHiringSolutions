@@ -1263,6 +1263,7 @@ route('POST', '/api/jobs/:id/alert', T, (ctx) => {
   const format = fm.bbhs_job_interest && fm.bbhs_job_interest.approved && !fm.bbhs_job_interest.off ? 'bbhs_job_interest' : fm.bbhs_job_alert && fm.bbhs_job_alert.approved && !fm.bbhs_job_alert.off ? 'bbhs_job_alert' : null;
   if (!format) throw httpError(400, 'The job interest message (bbhs_job_interest) is waiting for Meta approval. Send it from Settings → Message formats; until then, call and use Interested / Not interested.');
   for (const cid of targets.slice(0, budget)) {
+    if (get('SELECT 1 FROM notes WHERE record_id=? AND (text LIKE ? OR text LIKE ?)', cid, `Not interested in ${j.id}%`, `Removed from ${j.id} matches%`)) { skipped.push(`${cid}: Not interested in this job`); continue; }
     const r = L.sendWA({ ptype: 'candidate', pid: cid, format, vars: { job: j.title, city: j.city, salary: L.SAL_HIDDEN, link: L.link(`jd/${j.id}`) }, jb: j.id, by: ctx.actor, bulk: true, dedupe: `alert:${j.id}:${cid}` });
     if (r.skipped) skipped.push(`${cid}: ${r.skipped}`); else sent++;
   }
