@@ -336,6 +336,10 @@ const FORMATS = {
   bbhs_monthly_summary: { type: 'Utility', approved: false, buttons: [],
     en: "Hello {name},\n\nYour BrillBrains hiring summary for *{month}* is ready:\n{summary}\n\nDownload the full report: {link}\n\nThank you for hiring with us.",
     hi: "नमस्ते {name},\n\n*{month}* का आपका BrillBrains हायरिंग सारांश तैयार है:\n{summary}\n\nपूरी रिपोर्ट डाउनलोड करें: {link}\n\nहमारे साथ हायर करने के लिए धन्यवाद।" },
+  // The job-alert opt-in (from Nov 2026): value first, a clear yes, free, opt out any time. Used once Meta approves it.
+  bbhs_job_alerts_optin: { type: 'Marketing', approved: false, buttons: ['Yes, Send Job Alerts', 'No, Thanks'],
+    en: "Hi {name} 👋\n\nLooking for better career opportunities?\n\n_BrillBrains Hiring_ can share relevant job openings based on your experience and preferences. It is free.\n\nWould you like to receive job alerts on WhatsApp?\n\nYou can opt out anytime.",
+    hi: "नमस्ते {name} 👋\n\nबेहतर करियर के मौके ढूँढ रहे हैं?\n\n_BrillBrains Hiring_ आपके अनुभव और पसंद के अनुसार नौकरियाँ भेज सकता है। यह मुफ़्त है।\n\nक्या आप WhatsApp पर जॉब अलर्ट पाना चाहेंगे?\n\nआप कभी भी बंद कर सकते हैं।" },
   bbhs_consent_request: { type: 'Utility', approved: false, buttons: ['I agree', 'Stop messages'],
     en: "Hello {name},\n\nBrillBrains Hiring would like to send you job updates on WhatsApp.\n\nDo you agree? Please tap a button below.",
     hi: "नमस्ते {name},\n\nBrillBrains Hiring आपको WhatsApp पर नौकरी की जानकारी भेजना चाहता है।\n\nक्या आप सहमत हैं? कृपया नीचे एक बटन दबाएँ।" },

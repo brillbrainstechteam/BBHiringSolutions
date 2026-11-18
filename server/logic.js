@@ -179,7 +179,8 @@ function sendWA(o) {
     if (r && !r.on) return { skipped: 'Automatic message turned off in Settings' };
   }
   if ((o.auto || o.bulk) && p.opted_out) return { skipped: 'Opted out (STOP)' };
-  if (((fmt && fmt.type === 'Marketing') || (tpl && tpl.category === 'MARKETING')) && p.type === 'candidate' && !p.consent) return { skipped: 'No consent for job alerts yet' };
+  // the consent ask itself is the one Marketing message that goes to people who have not agreed yet
+  if (((fmt && fmt.type === 'Marketing') || (tpl && tpl.category === 'MARKETING')) && p.type === 'candidate' && !p.consent && !['bbhs_job_alerts_optin', 'bbhs_consent_request'].includes(o.format)) return { skipped: 'No consent for job alerts yet' };
   if (o.dedupe && get('SELECT 1 FROM messages WHERE dedupe=?', o.dedupe)) return { skipped: 'Already sent before' };
   // Email copy of the same message, under the same rules (on in Settings, not after STOP, never twice) and the
   // same timing (held to 9 am in quiet hours). Codes and passwords never go by email.
@@ -1524,7 +1525,8 @@ function receiveReply(phone, text, button, opts = {}) {
     setImmediate(() => require('./flow').readSlotReply(ask.id, text).catch((e) => console.error('Slot reply', ask.id, e.message)));
   }
   else if (ptype === 'candidate' && ref && /^pref[123]/.test(ref.rule || '') && (effect = prefAnswer(ref.rule, t, pid, by) || effect) !== 'Saved in inbox') { /* a preference was saved */ }
-  else if (ptype === 'candidate' && t === 'i agree') { update('candidates', pid, { consent_alerts: 1 }); saveConsent('candidate', pid, 'WhatsApp', text); effect = 'Consent saved';
+  else if (ptype === 'candidate' && t === 'no, thanks') { insert('notes', { record_id: pid, text: 'Declined job alerts on WhatsApp', author: 'WhatsApp', at: now() }); effect = 'Declined job alerts'; }
+  else if (ptype === 'candidate' && (t === 'i agree' || t === 'yes, send job alerts')) { update('candidates', pid, { consent_alerts: 1 }); saveConsent('candidate', pid, 'WhatsApp', text); effect = 'Consent saved';
     // campaigns that waited for this consent now go to them
     setImmediate(() => { try { const n = require('./api-team').afterConsent(pid); if (n) console.log('campaign after consent', pid, n); } catch (e) { console.error('after consent', pid, e.message); } }); }
   else if (ref && ref.iv && t === 'confirm') { update('interviews', ref.iv, { confirmed: 1 }); history(by.label, 'confirm', ref.iv, 'confirmed', 0, 1); effect = `${ref.iv} confirmed`; }

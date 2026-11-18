@@ -119,6 +119,7 @@ function runTimer() {
   // Message templates waiting for Meta: their approval status, every 30 minutes.
   require('./api-team').autoSyncFormats().catch((e) => console.error('template status', e.message));
   try { const p = require('./portals').sweep(); if (p) done.portal_renewals = p; } catch (e) { require('./alerts').devAlert('Portal renewals failed', e.message); }
+  require('./api-team').campaignJobs().then((n) => { if (n) console.log('scheduled campaign steps run:', n); }).catch((e) => require('./alerts').devAlert('Scheduled campaign steps failed', e.message));
   require('./api-team').campaignWaits().then((n) => { if (n) console.log('campaigns sent after Meta approval:', n); }).catch((e) => require('./alerts').devAlert('Waiting campaigns failed', e.message));
   // Vendors: follow-up steps that are due (WhatsApp from the business number, or a task for the owner).
   try { const v = require('./partners').sweep(); if (v) done.vendor_followups = v; } catch (e) { require('./alerts').devAlert('Vendor follow-ups failed', e.message); }

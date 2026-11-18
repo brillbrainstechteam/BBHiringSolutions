@@ -2576,24 +2576,55 @@ const campaignRequest = (x) => { let req = x.request; if (!req) { const w = get(
 // The consent message ("I agree" / "Stop messages") to candidates who have not agreed yet. Sent only when a person asks.
 function askConsent(ids, by, campaignId) {
   const out = { sent: 0, skipped: {} }; const skip = (w) => { out.skipped[w] = (out.skipped[w] || 0) + 1; };
-  const fm = D.settings().formats.bbhs_consent_request; if (!fm || !fm.approved) throw httpError(400, 'The consent message (bbhs_consent_request) is not approved on Meta yet.');
+  const F2 = D.settings().formats; const fmtKey = F2.bbhs_job_alerts_optin && F2.bbhs_job_alerts_optin.approved ? 'bbhs_job_alerts_optin' : 'bbhs_consent_request';
+  const fm = F2[fmtKey]; if (!fm || !fm.approved) throw httpError(400, 'The consent message is not approved on Meta yet.');
   for (const id of ids) {
     const c = get('SELECT * FROM candidates WHERE id=? AND removed=0', id); if (!c) continue;
     if (c.consent_alerts) { skip('Already agreed'); continue; } if (c.opted_out) { skip('Said STOP'); continue; } if (!c.whatsapp) { skip('No WhatsApp number'); continue; }
     if (out.sent >= D.settings().bulk_budget) { skip(`Over the limit of ${D.settings().bulk_budget} per send: press again for the rest`); continue; }
-    const r = L.sendWA({ ptype: 'candidate', pid: c.id, format: 'bbhs_consent_request', by, bulk: true, allowOff: true, noEmailCopy: true, dedupe: `consent:${c.id}:${campaignId || L.istDay()}` });
+    const r = L.sendWA({ ptype: 'candidate', pid: c.id, format: fmtKey, by, bulk: true, allowOff: true, noEmailCopy: true, dedupe: `consent:${c.id}:${campaignId || L.istDay()}` });
     if (r.skipped) { skip(r.skipped === 'Already sent before' ? 'Already asked' : r.skipped); } else out.sent++;
     if (campaignId && !r.skipped || (campaignId && r.skipped === 'Already sent before')) D.run('INSERT OR IGNORE INTO consent_waits (candidate_id, campaign_id, by, at) VALUES (?,?,?,?)', c.id, campaignId, L.actorName(by), now());
   }
   D.history(L.actorName(by), 'consent asked', campaignId || null, null, null, `${out.sent} sent`);
   return out;
 }
-route('POST', '/api/campaigns/:id/ask-consent', T, (ctx) => {
+D.db.exec('CREATE TABLE IF NOT EXISTS campaign_jobs (id INTEGER PRIMARY KEY AUTOINCREMENT, campaign_id TEXT, kind TEXT, run_at TEXT, user_id TEXT, by TEXT, status TEXT, result TEXT, at TEXT, done_at TEXT)');
+const consentNow = (x, u, actor) => { const req = campaignRequest(x); if (!req) throw httpError(400, 'This campaign was sent before the portal kept its details.'); const { people } = campaignAudience(req, u); return askConsent(people.filter((p) => !get('SELECT consent_alerts FROM candidates WHERE id=?', p.id).consent_alerts).map((p) => p.id), actor, x.id); };
+const restNow = (x, u, actor) => { const req = campaignRequest(x); if (!req) throw httpError(400, 'This campaign was sent before the portal kept its details: start a new one with the same message.'); return makeCampaign({ body: { ...req, _resend: x.id }, user: u, actor }); };
+// "Now", or at a time (e.g. tomorrow 10:30 am): kept here and run by the timer at that time, in time order.
+function laterOrNow(ctx, kind) {
   const x = get('SELECT * FROM campaigns WHERE id=?', ctx.params.id); if (!x || !seeCampaign(ctx.user, x)) throw httpError(404, 'Campaign not found');
-  const req = campaignRequest(x); if (!req) throw httpError(400, 'This campaign was sent before the portal kept its details.');
-  const { people } = campaignAudience(req, ctx.user);
-  return askConsent(people.filter((p) => !get('SELECT consent_alerts FROM candidates WHERE id=?', p.id).consent_alerts).map((p) => p.id), ctx.actor, x.id);
+  const at = (ctx.body || {}).send_at;
+  if (at) {
+    const d = new Date(at); if (Number.isNaN(d.getTime())) throw httpError(400, 'Pick a valid time', 'send_at');
+    if (d < new Date(Date.now() - 60000)) throw httpError(400, 'That time has passed', 'send_at'); if (d > new Date(Date.now() + 30 * 86400000)) throw httpError(400, 'Pick a time within 30 days', 'send_at');
+    insert('campaign_jobs', { campaign_id: x.id, kind, run_at: d.toISOString(), user_id: ctx.user.id, by: ctx.actor.label, status: 'Scheduled', at: now() });
+    D.history(ctx.actor.label, `campaign ${kind} scheduled`, x.id, null, null, d.toISOString()); return { scheduled: true, run_at: d.toISOString(), kind };
+  }
+  return kind === 'consent' ? consentNow(x, ctx.user, ctx.actor) : restNow(x, ctx.user, ctx.actor);
+}
+route('POST', '/api/campaigns/:id/ask-consent', T, (ctx) => laterOrNow(ctx, 'consent'));
+route('POST', '/api/campaigns/:id/jobs/:job/cancel', T, (ctx) => {
+  const x = get('SELECT * FROM campaigns WHERE id=?', ctx.params.id); if (!x || !seeCampaign(ctx.user, x)) throw httpError(404, 'Campaign not found');
+  D.run("UPDATE campaign_jobs SET status='Cancelled', done_at=? WHERE id=? AND campaign_id=? AND status='Scheduled'", now(), ctx.params.job, x.id); return { ok: true };
 });
+// Timer: scheduled consent asks and "send to the rest", oldest time first.
+let jobsBusy = false;
+async function campaignJobs() {
+  if (jobsBusy) return 0; const due = all("SELECT * FROM campaign_jobs WHERE status='Scheduled' AND run_at<=? ORDER BY run_at, id", now()); if (!due.length) return 0;
+  jobsBusy = true; let n = 0;
+  try {
+    for (const j of due) {
+      D.run("UPDATE campaign_jobs SET status='Running' WHERE id=?", j.id);
+      const x = get('SELECT * FROM campaigns WHERE id=?', j.campaign_id); const u = get('SELECT * FROM users WHERE id=?', j.user_id); const actor = { uid: u.id, label: u.name };
+      try { const r = j.kind === 'consent' ? consentNow(x, u, actor) : await restNow(x, u, actor); const sent = j.kind === 'consent' ? r.sent : r.wa + r.email; update('campaign_jobs', j.id, { status: 'Done', result: `${sent} sent`, done_at: now() }); L.alertUser(u.id, `${x.name}: ${j.kind === 'consent' ? 'consent asked' : 'sent to the rest'}: ${sent}`, x.id, false); n++; }
+      catch (e) { update('campaign_jobs', j.id, { status: 'Failed', result: e.message, done_at: now() }); L.alertUser(u.id, `${x.name}: the scheduled ${j.kind === 'consent' ? 'consent ask' : 'send'} failed: ${e.message}`, x.id, false); }
+    }
+  } finally { jobsBusy = false; }
+  return n;
+}
+module.exports.campaignJobs = campaignJobs;
 // They tapped "I agree": every campaign that waited for them sends its message to them now.
 function afterConsent(candidateId) {
   let n = 0;
@@ -2608,13 +2639,7 @@ function afterConsent(candidateId) {
 module.exports.afterConsent = afterConsent;
 // Send a campaign again to everyone it has not reached yet (over the limit, or newly matching / newly consented).
 // The same message and audience; nobody gets it twice.
-route('POST', '/api/campaigns/:id/resend', T, async (ctx) => {
-  const x = get('SELECT * FROM campaigns WHERE id=?', ctx.params.id); if (!x || !seeCampaign(ctx.user, x)) throw httpError(404, 'Campaign not found');
-  let req = x.request; if (!req) { const w = get('SELECT body FROM campaign_waits WHERE campaign_id=?', x.id); req = w && w.body; }
-  if (!req) throw httpError(400, 'This campaign was sent before the portal kept its details: start a new one with the same message.');
-  const body = typeof req === 'string' ? JSON.parse(req) : req;
-  return makeCampaign({ ...ctx, body: { ...body, _resend: x.id } });
-});
+route('POST', '/api/campaigns/:id/resend', T, async (ctx) => laterOrNow(ctx, 'rest'));
 D.db.exec('CREATE TABLE IF NOT EXISTS campaign_waits (id INTEGER PRIMARY KEY AUTOINCREMENT, tpl_key TEXT, body TEXT, user_id TEXT, by TEXT, status TEXT, campaign_id TEXT, note TEXT, at TEXT, done_at TEXT)');
 // "Hi {{Name}}, …" written at send time → a WhatsApp template of its own (WhatsApp only lets approved templates reach
 // people who have not written in the last 24 hours, and a template keeps the lines and emojis as typed).
@@ -2700,7 +2725,11 @@ route('GET', '/api/campaigns/:id', T, (ctx) => {
   const people = {};
   for (const m of all("SELECT * FROM messages WHERE direction='out' AND dedupe LIKE ?", `camp:${x.id}:%`)) people[m.person_id] = { ...(people[m.person_id] || {}), id: m.person_id, whatsapp: waState(m.status), wa_error: m.error || '' };
   for (const m of all('SELECT * FROM emails WHERE dedupe LIKE ?', `camp:${x.id}:%`)) people[m.record_id] = { ...(people[m.record_id] || {}), id: m.record_id, email: mailState(m.status), mail_error: m.error || '' };
-  return { ...campRow(x), people: Object.values(people).map((p) => ({ ...p, name: name(p.id), replied: replied(p.id) })) };
+  const cw = all('SELECT * FROM consent_waits WHERE campaign_id=?', x.id); const cm = all("SELECT id, person_id FROM messages WHERE direction='out' AND dedupe LIKE ?", `consent:%:${x.id}`);
+  const ans = (pid) => { const ids = cm.filter((m) => m.person_id === pid).map((m) => m.id); if (!ids.length) return ''; const r = get(`SELECT text FROM messages WHERE direction='in' AND reply_to IN (${ids.map(() => '?').join(',')}) ORDER BY at DESC LIMIT 1`, ...ids); return r ? String(r.text || '').trim().toLowerCase() : ''; };
+  const consent = cw.length ? cw.reduce((o, w) => { const a = ans(w.candidate_id); if (['i agree', 'yes, send job alerts'].includes(a) || w.done_at) o.agreed++; else if (['no, thanks', 'stop messages', 'stop'].includes(a)) o.declined++; else o.waiting++; return o; }, { asked: cw.length, agreed: 0, declined: 0, waiting: 0 }) : null;
+  const jobs = all('SELECT id, kind, run_at, status, result, by FROM campaign_jobs WHERE campaign_id=? ORDER BY run_at DESC LIMIT 10', x.id);
+  return { ...campRow(x), consent, jobs, people: Object.values(people).map((p) => ({ ...p, name: name(p.id), replied: replied(p.id) })) };
 });
 route('GET', '/api/contact-prefs', T, () => L.PREF);
 // The message they will get, shown before sending.
@@ -2827,6 +2856,14 @@ async function pushFormats(namesIn, who) {
   return { ...out, results: [...(out.results || []).map((r) => (r.ok ? r : { ...r, error: hint(r.error) })), ...skipped] };
 }
 // One time, on the copy where the CRM is set up: the two vendor outreach messages go to Meta for approval.
+setTimeout(async () => {
+  try {
+    const s = D.settings(); if (D.ENV.name !== 'live' || (s.done_once || []).includes('push_optin_format') || !s.crm || !s.crm.send_url || !s.crm.token) return;
+    const r = await pushFormats(['bbhs_job_alerts_optin'], 'System (job alerts opt-in)');
+    console.log('opt-in format sent to Meta:', JSON.stringify(r.results || r).slice(0, 400));
+    D.setSetting('done_once', [...(D.settings().done_once || []), 'push_optin_format']);
+  } catch (e) { console.error('opt-in format push failed:', e.message); }
+}, 25000);
 setTimeout(async () => {
   try {
     const s = D.settings(); if (D.ENV.name !== "live" || (s.done_once || []).includes("push_partner_formats") || !s.crm || !s.crm.send_url || !s.crm.token) return;
