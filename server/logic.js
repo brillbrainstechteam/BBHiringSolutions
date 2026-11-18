@@ -166,7 +166,7 @@ function sendWA(o) {
     fmt = s.formats[o.format];
     if (!fmt) return { skipped: 'Unknown format' };
     // Switched off in Settings → Message formats: not sent to anyone, by WhatsApp or email.
-    if (fmt.off) { if (o.auto || o.bulk) return { skipped: 'Message switched off in Settings' }; throw httpError(400, 'This message is switched off in Settings → Message formats. Switch it on there to send it.'); }
+    if (fmt.off && !o.allowOff) { if (o.auto || o.bulk) return { skipped: 'Message switched off in Settings' }; throw httpError(400, 'This message is switched off in Settings → Message formats. Switch it on there to send it.'); }
     if (!fmt.approved && !(s.wa_pause || {}).everyone) { if (o.auto) waOnlyStop = 'Format waiting for Meta approval'; else throw httpError(400, 'This format is waiting for Meta approval and cannot be sent.'); }
   }
   // o.template: any approved Meta template picked in the campaign studio, already filled for this person
@@ -1524,7 +1524,9 @@ function receiveReply(phone, text, button, opts = {}) {
     setImmediate(() => require('./flow').readSlotReply(ask.id, text).catch((e) => console.error('Slot reply', ask.id, e.message)));
   }
   else if (ptype === 'candidate' && ref && /^pref[123]/.test(ref.rule || '') && (effect = prefAnswer(ref.rule, t, pid, by) || effect) !== 'Saved in inbox') { /* a preference was saved */ }
-  else if (ptype === 'candidate' && t === 'i agree') { update('candidates', pid, { consent_alerts: 1 }); saveConsent('candidate', pid, 'WhatsApp', text); effect = 'Consent saved'; }
+  else if (ptype === 'candidate' && t === 'i agree') { update('candidates', pid, { consent_alerts: 1 }); saveConsent('candidate', pid, 'WhatsApp', text); effect = 'Consent saved';
+    // campaigns that waited for this consent now go to them
+    setImmediate(() => { try { const n = require('./api-team').afterConsent(pid); if (n) console.log('campaign after consent', pid, n); } catch (e) { console.error('after consent', pid, e.message); } }); }
   else if (ref && ref.iv && t === 'confirm') { update('interviews', ref.iv, { confirmed: 1 }); history(by.label, 'confirm', ref.iv, 'confirmed', 0, 1); effect = `${ref.iv} confirmed`; }
   else if (ref && ref.iv && t === 'reschedule') { const ap = get('SELECT * FROM applications WHERE id=?', ref.ap); if (ap) alertUser(ap.owner_id, `Reschedule asked for ${ref.iv}`, ref.iv, 'candidate'); effect = 'Task alert to recruiter'; }
   else if (ref && ref.ap && t === 'accept offer') { moveStep(ref.ap, 'Offer accepted', by, 'Accepted on WhatsApp'); effect = `${ref.ap} → Offer accepted`; }

@@ -1609,6 +1609,8 @@ route('POST', '/api/candidates/bulk', T, (ctx) => {
     for (const id of ids.slice(0, D.settings().bulk_budget)) { const r = require('./profilelink').ask(id, ctx.actor, false); if (r && r.skipped) out.errors.push(`${id}: ${r.skipped}`); else out.done++; }
   } else if (action === 'ask_experience') { // total experience question on WhatsApp; the tap saves it
     for (const id of ids.slice(0, D.settings().bulk_budget)) { const r = require('./profilelink').askExperience(L.resolveId ? L.resolveId(id) : id, ctx.actor, true); if (r && r.skipped) out.errors.push(`${id}: ${r.skipped}`); else out.done++; }
+  } else if (action === 'ask_consent') { // the consent message to the ticked who have not agreed yet
+    const r = askConsent(ids, ctx.actor, null); out.done = r.sent; for (const [k, n] of Object.entries(r.skipped)) out.errors.push(`${n}: ${k}`);
   } else if (action === 'ask_status') { // the job status question on WhatsApp; their tap sets the status
     const states = L.appStates();
     for (const id of ids.slice(0, D.settings().bulk_budget)) { const c = get('SELECT * FROM candidates WHERE id=?', L.resolveId(id)); if (!c) { out.errors.push(`${id}: not found`); continue; }
@@ -2561,7 +2563,7 @@ async function makeCampaign(ctx) {
   const autoName = kind === 'template' ? `WhatsApp: ${tpl.name}` : kind === 'design' ? `Email: ${design.name}` : job ? `Job alert: ${job.title}` : kind === 'prefs' ? 'Contact preferences' : subject || text.slice(0, 40);
   if (b._resend) {
     const was = get('SELECT * FROM campaigns WHERE id=?', id);
-    update('campaigns', id, { wa: (was.wa || 0) + out.wa, email: (was.email || 0) + out.email, total: people.length, skipped: JSON.stringify(out.skipped) });
+    update('campaigns', id, { wa: (was.wa || 0) + out.wa, email: (was.email || 0) + out.email, ...(b._add ? {} : { total: people.length, skipped: JSON.stringify(out.skipped) }) });
     D.history(ctx.actor.label, 'campaign: sent to the rest', id, null, null, `${out.wa} WhatsApp, ${out.email} email`); return { id, ...out, total: people.length, resend: true };
   }
   insert('campaigns', { request: JSON.stringify({ ...b, _resend: undefined }), id, name: String(b.name || '').trim() || autoName, kind, job_id: job ? job.id : null, subject, body: kind === 'template' ? tpl.body : text, channel, timing, audience, total: people.length, wa: out.wa, email: out.email, skipped: JSON.stringify(out.skipped), user_id: u.id, agency_id: u.agency_id || null, by: ctx.actor.label, at: now(), segments: JSON.stringify(segments), send_at: sendAt, tpl: tpl ? JSON.stringify({ key: tpl.key, name: tpl.name, language: tpl.language, map: tmap, media_key: (b.tpl || {}).media_key || null }) : null, design_id: design ? design.id : null });
@@ -2569,6 +2571,41 @@ async function makeCampaign(ctx) {
 }
 route('POST', '/api/campaigns', T, (ctx) => makeCampaign(ctx));
 try { D.db.exec('ALTER TABLE campaigns ADD COLUMN request TEXT'); } catch { /* already there */ }
+D.db.exec('CREATE TABLE IF NOT EXISTS consent_waits (candidate_id TEXT, campaign_id TEXT, by TEXT, at TEXT, done_at TEXT, PRIMARY KEY (candidate_id, campaign_id))');
+const campaignRequest = (x) => { let req = x.request; if (!req) { const w = get('SELECT body FROM campaign_waits WHERE campaign_id=?', x.id); req = w && w.body; } return req ? (typeof req === 'string' ? JSON.parse(req) : req) : null; };
+// The consent message ("I agree" / "Stop messages") to candidates who have not agreed yet. Sent only when a person asks.
+function askConsent(ids, by, campaignId) {
+  const out = { sent: 0, skipped: {} }; const skip = (w) => { out.skipped[w] = (out.skipped[w] || 0) + 1; };
+  const fm = D.settings().formats.bbhs_consent_request; if (!fm || !fm.approved) throw httpError(400, 'The consent message (bbhs_consent_request) is not approved on Meta yet.');
+  for (const id of ids) {
+    const c = get('SELECT * FROM candidates WHERE id=? AND removed=0', id); if (!c) continue;
+    if (c.consent_alerts) { skip('Already agreed'); continue; } if (c.opted_out) { skip('Said STOP'); continue; } if (!c.whatsapp) { skip('No WhatsApp number'); continue; }
+    if (out.sent >= D.settings().bulk_budget) { skip(`Over the limit of ${D.settings().bulk_budget} per send: press again for the rest`); continue; }
+    const r = L.sendWA({ ptype: 'candidate', pid: c.id, format: 'bbhs_consent_request', by, bulk: true, allowOff: true, noEmailCopy: true, dedupe: `consent:${c.id}:${campaignId || L.istDay()}` });
+    if (r.skipped) { skip(r.skipped === 'Already sent before' ? 'Already asked' : r.skipped); } else out.sent++;
+    if (campaignId && !r.skipped || (campaignId && r.skipped === 'Already sent before')) D.run('INSERT OR IGNORE INTO consent_waits (candidate_id, campaign_id, by, at) VALUES (?,?,?,?)', c.id, campaignId, L.actorName(by), now());
+  }
+  D.history(L.actorName(by), 'consent asked', campaignId || null, null, null, `${out.sent} sent`);
+  return out;
+}
+route('POST', '/api/campaigns/:id/ask-consent', T, (ctx) => {
+  const x = get('SELECT * FROM campaigns WHERE id=?', ctx.params.id); if (!x || !seeCampaign(ctx.user, x)) throw httpError(404, 'Campaign not found');
+  const req = campaignRequest(x); if (!req) throw httpError(400, 'This campaign was sent before the portal kept its details.');
+  const { people } = campaignAudience(req, ctx.user);
+  return askConsent(people.filter((p) => !get('SELECT consent_alerts FROM candidates WHERE id=?', p.id).consent_alerts).map((p) => p.id), ctx.actor, x.id);
+});
+// They tapped "I agree": every campaign that waited for them sends its message to them now.
+function afterConsent(candidateId) {
+  let n = 0;
+  for (const w of all('SELECT * FROM consent_waits WHERE candidate_id=? AND done_at IS NULL', candidateId)) {
+    const x = get('SELECT * FROM campaigns WHERE id=?', w.campaign_id); const req = x && campaignRequest(x);
+    D.run('UPDATE consent_waits SET done_at=? WHERE candidate_id=? AND campaign_id=?', now(), candidateId, w.campaign_id);
+    if (!req) continue; const u = get('SELECT * FROM users WHERE id=?', x.user_id) || get("SELECT * FROM users WHERE level='super' LIMIT 1");
+    makeCampaign({ body: { ...req, filters: undefined, segments: undefined, segment: undefined, ids: [candidateId], _resend: x.id, _add: true }, user: u, actor: { uid: u.id, label: 'After consent' } }).catch((e) => console.error('after consent send', x.id, e.message)); n++;
+  }
+  return n;
+}
+module.exports.afterConsent = afterConsent;
 // Send a campaign again to everyone it has not reached yet (over the limit, or newly matching / newly consented).
 // The same message and audience; nobody gets it twice.
 route('POST', '/api/campaigns/:id/resend', T, async (ctx) => {
