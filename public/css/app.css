@@ -2684,3 +2684,6 @@ a.pipe-step { text-decoration: none; cursor: pointer; } a.pipe-step:hover { bord
 [data-rsum] .rs-step { cursor: pointer; }
 
 .cand-sendall { margin-left: auto; }
+
+.mw-strip { margin-bottom: 12px; } .mw-list { display: grid; gap: 6px; margin-top: 8px; }
+.mw-row { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid #EEF2F7; border-radius: 10px; }

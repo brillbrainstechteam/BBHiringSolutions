@@ -15,7 +15,15 @@
     if (tab === 'templates') return S.templates(body, actions, q);
     if (tab === 'designs' && S.designs) return S.designs(body, actions);
     if (tab === 'ads' && S.ads) return S.ads(body, actions);
+    // Messages written in a campaign: their own template, waiting for Meta or sent
+    const waits = await BB.api('/api/campaigns/waits').catch(() => []);
+    const strip = document.createElement('div');
+    if (waits.length) {
+      const st = (w) => (w.status === 'Waiting' ? '<span class="badge b-amber tiny">Waiting for Meta approval</span>' : w.status === 'Sent' ? `<span class="badge b-green tiny">Approved · ${esc(w.note || 'sent')}</span>` : `<span class="badge b-red tiny">${esc(w.status)}</span>`);
+      strip.innerHTML = `<section class="card pad mw-strip"><h3 class="dsec-h">Messages sent to Meta</h3><div class="mw-list">${waits.slice(0, 8).map((w) => `<div class="mw-row"><div class="grow"><b class="mono small">${esc(w.template)}</b><div class="tiny muted">${esc(w.by || '')} · ${BB.fmtDT ? BB.fmtDT(w.at) : esc(w.at)}${w.status === 'Rejected' && w.note ? ` · ${esc(w.note)}` : ''}</div></div>${st(w)}${w.campaign_id ? `<button class="btn sm" data-open="campaign:${esc(w.campaign_id)}">Open</button>` : ''}</div>`).join('')}</div>${waits.some((w) => w.status === 'Waiting') ? '<div class="tiny muted" style="margin-top:6px">Checked every 10 minutes; each one sends by itself once Meta approves.</div>' : ''}</section>`;
+    }
     await classicPage({ ...o, el: body });
+    if (waits.length) body.prepend(strip);
     const nb = $('[data-cnew]', actions); if (nb) nb.onclick = () => S.start({});
   };
 
