@@ -2527,11 +2527,11 @@ async function makeCampaign(ctx) {
   const { people, audience, segments } = campaignAudience(b, u);
   if (!people.length) throw httpError(400, 'Nobody to send to');
   const media = tpl && tpl.header && ['IMAGE', 'VIDEO', 'DOCUMENT'].includes(tpl.header.format) ? await S.headerMedia(String((b.tpl || {}).media_key || '')) : null;
-  const cap = D.settings().bulk_budget; const id = D.nextId('CM'); const out = { wa: 0, email: 0, skipped: {} }; const skip = (why) => { out.skipped[why] = (out.skipped[why] || 0) + 1; };
+  const cap = D.settings().bulk_budget; const id = b._resend || D.nextId('CM'); const out = { wa: 0, email: 0, skipped: {} }; const skip = (why) => { out.skipped[why] = (out.skipped[why] || 0) + 1; };
   const news = D.settings().formats.bbhs_candidate_news; const waFormat = kind === 'job' ? 'bbhs_job_alert' : kind === 'prefs' ? 'bbhs_contact_prefs' : 'bbhs_candidate_news'; const waReady = kind === 'job' || ((D.settings().formats[waFormat] || {}).approved);
   const link = L.link('my-profile'); const fill = (t, c) => String(t).replace(/\{name\}/g, c.name || 'there');
   people.forEach((p, n) => {
-    const c = get('SELECT * FROM candidates WHERE id=?', p.id); if (n >= cap) return skip(`Over the limit of ${cap} per campaign`);
+    const c = get('SELECT * FROM candidates WHERE id=?', p.id); if (out.wa + out.email >= cap) return skip(`Over the limit of ${cap} per send: press Send to the rest`);
     if (c.opted_out) return skip('Said STOP'); if (!c.consent_alerts) return skip('No consent for messages');
     const when = timing === 'preferred' ? L.nextPreferred(c) : sendAt;
     if (kind === 'template') {
@@ -2559,10 +2559,25 @@ async function makeCampaign(ctx) {
     }
   });
   const autoName = kind === 'template' ? `WhatsApp: ${tpl.name}` : kind === 'design' ? `Email: ${design.name}` : job ? `Job alert: ${job.title}` : kind === 'prefs' ? 'Contact preferences' : subject || text.slice(0, 40);
-  insert('campaigns', { id, name: String(b.name || '').trim() || autoName, kind, job_id: job ? job.id : null, subject, body: kind === 'template' ? tpl.body : text, channel, timing, audience, total: people.length, wa: out.wa, email: out.email, skipped: JSON.stringify(out.skipped), user_id: u.id, agency_id: u.agency_id || null, by: ctx.actor.label, at: now(), segments: JSON.stringify(segments), send_at: sendAt, tpl: tpl ? JSON.stringify({ key: tpl.key, name: tpl.name, language: tpl.language, map: tmap, media_key: (b.tpl || {}).media_key || null }) : null, design_id: design ? design.id : null });
+  if (b._resend) {
+    const was = get('SELECT * FROM campaigns WHERE id=?', id);
+    update('campaigns', id, { wa: (was.wa || 0) + out.wa, email: (was.email || 0) + out.email, total: people.length, skipped: JSON.stringify(out.skipped) });
+    D.history(ctx.actor.label, 'campaign: sent to the rest', id, null, null, `${out.wa} WhatsApp, ${out.email} email`); return { id, ...out, total: people.length, resend: true };
+  }
+  insert('campaigns', { request: JSON.stringify({ ...b, _resend: undefined }), id, name: String(b.name || '').trim() || autoName, kind, job_id: job ? job.id : null, subject, body: kind === 'template' ? tpl.body : text, channel, timing, audience, total: people.length, wa: out.wa, email: out.email, skipped: JSON.stringify(out.skipped), user_id: u.id, agency_id: u.agency_id || null, by: ctx.actor.label, at: now(), segments: JSON.stringify(segments), send_at: sendAt, tpl: tpl ? JSON.stringify({ key: tpl.key, name: tpl.name, language: tpl.language, map: tmap, media_key: (b.tpl || {}).media_key || null }) : null, design_id: design ? design.id : null });
   D.history(ctx.actor.label, 'campaign', id, null, null, `${out.wa} WhatsApp, ${out.email} email to ${audience}${sendAt ? ` at ${sendAt}` : ''}`); return { id, ...out, total: people.length, send_at: sendAt };
 }
 route('POST', '/api/campaigns', T, (ctx) => makeCampaign(ctx));
+try { D.db.exec('ALTER TABLE campaigns ADD COLUMN request TEXT'); } catch { /* already there */ }
+// Send a campaign again to everyone it has not reached yet (over the limit, or newly matching / newly consented).
+// The same message and audience; nobody gets it twice.
+route('POST', '/api/campaigns/:id/resend', T, async (ctx) => {
+  const x = get('SELECT * FROM campaigns WHERE id=?', ctx.params.id); if (!x || !seeCampaign(ctx.user, x)) throw httpError(404, 'Campaign not found');
+  let req = x.request; if (!req) { const w = get('SELECT body FROM campaign_waits WHERE campaign_id=?', x.id); req = w && w.body; }
+  if (!req) throw httpError(400, 'This campaign was sent before the portal kept its details: start a new one with the same message.');
+  const body = typeof req === 'string' ? JSON.parse(req) : req;
+  return makeCampaign({ ...ctx, body: { ...body, _resend: x.id } });
+});
 D.db.exec('CREATE TABLE IF NOT EXISTS campaign_waits (id INTEGER PRIMARY KEY AUTOINCREMENT, tpl_key TEXT, body TEXT, user_id TEXT, by TEXT, status TEXT, campaign_id TEXT, note TEXT, at TEXT, done_at TEXT)');
 // "Hi {{Name}}, …" written at send time → a WhatsApp template of its own (WhatsApp only lets approved templates reach
 // people who have not written in the last 24 hours, and a template keeps the lines and emojis as typed).
