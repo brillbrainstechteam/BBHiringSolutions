@@ -2510,11 +2510,12 @@ const campaignAudience = (b, u) => {
     const byId = new Map(); for (const s of segs) for (const c of candRows(segQuery(s.query), u)) if (!byId.has(c.id)) byId.set(c.id, c);
     return { people: [...byId.values()], audience: `${segs.length > 1 ? 'Segments' : 'Segment'}: ${segs.map((s) => s.name).join(', ')}`, segments: segIds };
   }
+  if (b.filters && typeof b.filters === 'object') { const people = candRows(segQuery(b.filters), u); return { people, audience: `${people.length} matching the filters`, segments: [], filters: segQuery(b.filters) }; }
   const people = (b.ids || []).map((id) => get('SELECT * FROM candidates WHERE id=? AND removed=0', id)).filter(Boolean);
   return { people, audience: `${people.length} ticked`, segments: [] };
 };
-route('GET', '/api/campaigns/audience', T, (ctx) => { const q = ctx.query || {}; const r = campaignAudience({ segments: String(q.segments || '').split(',').filter(Boolean), ids: String(q.ids || '').split(',').filter(Boolean) }, ctx.user); return { total: r.people.length, audience: r.audience, first: r.people[0] ? r.people[0].id : null }; });
-route('POST', '/api/campaigns', T, async (ctx) => {
+route('GET', '/api/campaigns/audience', T, (ctx) => { const q = ctx.query || {}; let filters = null; try { filters = q.filters ? JSON.parse(q.filters) : null; } catch { /* ignore */ } const r = campaignAudience({ segments: String(q.segments || '').split(',').filter(Boolean), ids: String(q.ids || '').split(',').filter(Boolean), filters }, ctx.user); return { total: r.people.length, audience: r.audience, first: r.people[0] ? r.people[0].id : null }; });
+async function makeCampaign(ctx) {
   const M = require('./mailer'); const S = require('./studio'); const b = ctx.body || {}; const u = ctx.user; const kind = ['job', 'prefs', 'template', 'design'].includes(b.kind) ? b.kind : 'message'; let channel = CHANNELS.includes(b.channel) ? b.channel : 'preferred'; const timing = b.timing === 'preferred' ? 'preferred' : 'now';
   if (kind === 'template') channel = 'whatsapp'; if (kind === 'design') channel = 'email';
   const job = ['job', 'template', 'design'].includes(kind) && b.job_id ? get('SELECT * FROM jobs WHERE id=?', String(b.job_id)) : null; if (kind === 'job' && !job) throw httpError(400, 'Pick the job', 'job_id');
@@ -2560,7 +2561,53 @@ route('POST', '/api/campaigns', T, async (ctx) => {
   const autoName = kind === 'template' ? `WhatsApp: ${tpl.name}` : kind === 'design' ? `Email: ${design.name}` : job ? `Job alert: ${job.title}` : kind === 'prefs' ? 'Contact preferences' : subject || text.slice(0, 40);
   insert('campaigns', { id, name: String(b.name || '').trim() || autoName, kind, job_id: job ? job.id : null, subject, body: kind === 'template' ? tpl.body : text, channel, timing, audience, total: people.length, wa: out.wa, email: out.email, skipped: JSON.stringify(out.skipped), user_id: u.id, agency_id: u.agency_id || null, by: ctx.actor.label, at: now(), segments: JSON.stringify(segments), send_at: sendAt, tpl: tpl ? JSON.stringify({ key: tpl.key, name: tpl.name, language: tpl.language, map: tmap, media_key: (b.tpl || {}).media_key || null }) : null, design_id: design ? design.id : null });
   D.history(ctx.actor.label, 'campaign', id, null, null, `${out.wa} WhatsApp, ${out.email} email to ${audience}${sendAt ? ` at ${sendAt}` : ''}`); return { id, ...out, total: people.length, send_at: sendAt };
+}
+route('POST', '/api/campaigns', T, (ctx) => makeCampaign(ctx));
+D.db.exec('CREATE TABLE IF NOT EXISTS campaign_waits (id INTEGER PRIMARY KEY AUTOINCREMENT, tpl_key TEXT, body TEXT, user_id TEXT, by TEXT, status TEXT, campaign_id TEXT, note TEXT, at TEXT, done_at TEXT)');
+// "Hi {{Name}}, …" written at send time → a WhatsApp template of its own (WhatsApp only lets approved templates reach
+// people who have not written in the last 24 hours, and a template keeps the lines and emojis as typed).
+route('POST', '/api/campaigns/new-message', T, async (ctx) => {
+  const b = ctx.body || {}; const S = require('./studio');
+  let text = String(b.text || '').replace(/\r/g, '').trim(); if (!text) throw httpError(400, 'Write the message', 'text');
+  const unknown = [...text.matchAll(/\{\{\s*([^}]*?)\s*\}\}/g)].map((m) => m[1]).filter((x) => !/^(first[ _]?)?name$/i.test(x));
+  if (unknown.length) throw httpError(400, `Only {{Name}} can be filled in for each person; take out ${unknown.map((x) => `{{${x}}}`).join(', ')}`, 'text');
+  text = text.replace(/\{\{\s*(first[ _]?)?name\s*\}\}/gi, '{{1}}');
+  const { people, audience } = campaignAudience(b, ctx.user); if (!people.length) throw httpError(400, 'Nobody to send to');
+  const job = b.job_id ? get('SELECT * FROM jobs WHERE id=?', String(b.job_id)) : null;
+  const stamp = new Date(Date.now() + 5.5 * 3600000).toISOString().slice(0, 10).replace(/-/g, '');
+  const name = `bbhs_msg_${stamp}_${require('crypto').randomBytes(2).toString('hex')}`;
+  const t = { name, category: 'MARKETING', language: 'en', header_type: 'NONE', body: text, examples: text.includes('{{1}}') ? ['Priya'] : [], footer: '', button_kind: b.buttons ? 'quick' : 'none', buttons: b.buttons ? [{ text: 'Interested' }, { text: 'Not Interested' }] : [] };
+  const r = await S.createTemplate(t, ctx.actor.label);
+  const send = { kind: 'template', tpl: { key: r.key, map: { body: text.includes('{{1}}') ? [{ src: 'first_name', fallback: 'there' }] : [] } }, job_id: job ? job.id : null, name: String(b.name || '').trim() || `WhatsApp: ${text.split('\n')[0].replace(/\{\{1\}\}/g, '').slice(0, 50)}`,
+    ...(b.filters ? { filters: b.filters } : b.segments ? { segments: b.segments } : { ids: people.map((p) => p.id) }) };
+  insert('campaign_waits', { tpl_key: r.key, body: JSON.stringify(send), user_id: ctx.user.id, by: ctx.actor.label, status: 'Waiting', at: now() });
+  const wid = get('SELECT last_insert_rowid() id').id; D.history(ctx.actor.label, 'campaign waiting for Meta', String(wid), null, null, `${name} to ${audience}`);
+  if (r.status === 'APPROVED') await campaignWaits();
+  return { wait_id: wid, template: name, status: r.status, total: people.length, audience };
 });
+// Timer: campaigns waiting for their template. Approved → sent; rejected → the person who wrote it is told.
+let waitsBusy = false;
+async function campaignWaits() {
+  if (waitsBusy) return 0; const rows = all("SELECT * FROM campaign_waits WHERE status='Waiting'"); if (!rows.length) return 0;
+  waitsBusy = true; let n = 0; const S = require('./studio');
+  try {
+    try { await S.syncTemplates(null); } catch { /* try again next run */ }
+    for (const w of rows) {
+      const t = S.templateRow(w.tpl_key); const st = t ? String(t.status || '').toUpperCase() : 'MISSING';
+      if (st === 'APPROVED') {
+        const u = get('SELECT * FROM users WHERE id=?', w.user_id);
+        try { const r = await makeCampaign({ body: JSON.parse(w.body), user: u, actor: { uid: u.id, label: u.name } }); update('campaign_waits', w.id, { status: 'Sent', campaign_id: r.id, done_at: now(), note: `${r.wa} sent` }); L.alertUser(u.id, `Meta approved your WhatsApp message: sent to ${r.wa} of ${r.total}`, r.id, false); n++; }
+        catch (e) { update('campaign_waits', w.id, { status: 'Failed', note: e.message, done_at: now() }); L.alertUser(w.user_id, `Your WhatsApp campaign could not go: ${e.message}`, null, false); }
+      } else if (['REJECTED', 'PAUSED', 'DISABLED', 'MISSING'].includes(st)) {
+        update('campaign_waits', w.id, { status: 'Rejected', note: (t && t.error) || st, done_at: now() });
+        L.alertUser(w.user_id, `Meta did not approve your WhatsApp message (${(t && t.error) || st}). Edit and send it again from Candidates.`, null, false);
+      }
+    }
+  } finally { waitsBusy = false; }
+  return n;
+}
+module.exports.campaignWaits = campaignWaits;
+route('GET', '/api/campaigns/waits', T, (ctx) => all('SELECT * FROM campaign_waits ORDER BY id DESC LIMIT 30').filter((w) => w.user_id === ctx.user.id || ['super', 'admin'].includes(ctx.user.level)).map((w) => { const t = require('./studio').templateRow(w.tpl_key); return { ...w, body: undefined, template: t ? t.name : w.tpl_key, tpl_status: t ? t.status : '' }; }));
 // Stop a scheduled campaign: whatever has not gone yet is taken off.
 route('POST', '/api/campaigns/:id/cancel', T, (ctx) => {
   const x = get('SELECT * FROM campaigns WHERE id=?', ctx.params.id); if (!x || !seeCampaign(ctx.user, x)) throw httpError(404, 'Campaign not found');

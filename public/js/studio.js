@@ -21,22 +21,46 @@
 
   // ---------- who gets it, and what ----------
   // aud: { ids, label } for ticked candidates, or { segment | segments, label } for saved segments.
-  const WHAT = [['template', 'WhatsApp template', 'Any Meta-approved template: header image, video or PDF, buttons, blanks filled per person'], ['design', 'Email design', 'A designed HTML email with merge fields'], ['job', 'Job alert', 'The approved job alert, WhatsApp or plain email'], ['message', 'Message', 'A short message, WhatsApp or plain email'], ['prefs', 'Ask contact preferences', 'Best channel and time, on WhatsApp']];
+  const WHAT = [['newmsg', 'Write a new WhatsApp message', 'Type it now (with {{Name}}). It goes to Meta and sends by itself once approved, usually within minutes'], ['template', 'WhatsApp template', 'Any Meta-approved template: header image, video or PDF, buttons, blanks filled per person'], ['design', 'Email design', 'A designed HTML email with merge fields'], ['job', 'Job alert', 'The approved job alert, WhatsApp or plain email'], ['message', 'Message', 'A short message, WhatsApp or plain email'], ['prefs', 'Ask contact preferences', 'Best channel and time, on WhatsApp']];
   S.start = async (aud) => {
     const segs = (await BB.api('/api/campaigns?from=2999-01-01')).segments; const pre = new Set([...(aud.segments || []), ...(aud.segment ? [aud.segment] : [])].map(String));
-    if (!aud.ids && !segs.length) return BB.toast('Save a segment first in Candidates, or tick candidates there and press Send campaign', true);
+    if (!aud.ids && !aud.filters && !segs.length) return BB.toast('Save a segment first in Candidates, or tick candidates there and press Send campaign', true);
     const what = WHAT.filter(([k]) => k !== 'design' || S.designs);
     const v = await BB.ask({ title: 'New campaign', wide: true, ok: 'Next', fields: [
-      aud.ids ? `<div class="notice">${esc(aud.label || `${aud.ids.length} ticked candidates`)}</div>` : `<div class="field" data-f="segments"><span class="lab">Send to (one or more segments; people in several get it once)</span><div class="st-segs">${segs.map(([id, n]) => `<label class="row small"><input type="checkbox" data-seg="${esc(id)}" ${pre.has(String(id)) ? 'checked' : ''}> ${esc(n)}</label>`).join('')}</div><div class="small muted" data-segn></div></div>`,
+      aud.ids || aud.filters ? `<div class="notice">${esc(aud.label || `${(aud.ids || []).length} ticked candidates`)}</div>` : `<div class="field" data-f="segments"><span class="lab">Send to (one or more segments; people in several get it once)</span><div class="st-segs">${segs.map(([id, n]) => `<label class="row small"><input type="checkbox" data-seg="${esc(id)}" ${pre.has(String(id)) ? 'checked' : ''}> ${esc(n)}</label>`).join('')}</div><div class="small muted" data-segn></div></div>`,
       `<div class="field" data-f="what"><span class="lab">What to send</span><div class="st-what">${what.map(([k, l, h], i) => `<label class="st-what-o"><input type="radio" name="what" value="${k}" ${(aud.what || 'template') === k || (!aud.what && i === 0) ? 'checked' : ''}><span><b>${l}</b><span class="tiny muted">${h}</span></span></label>`).join('')}</div></div>`],
     mount: (m) => { const count = async () => { const ids = $$('[data-seg]:checked', m).map((x) => x.dataset.seg); const n = $('[data-segn]', m); if (!n) return; if (!ids.length) { n.textContent = ''; return; } try { const r = await BB.api(`/api/campaigns/audience?segments=${encodeURIComponent(ids.join(','))}`); n.textContent = `${r.total} people`; } catch (e) { n.textContent = e.message; } }; $$('[data-seg]', m).forEach((x) => (x.onchange = count)); count(); },
-    submit: (x) => { const m = $('.modal'); const ids = $$('[data-seg]:checked', m).map((y) => y.dataset.seg); if (!aud.ids && !ids.length) throw Object.assign(new Error('Tick at least one segment'), { field: 'segments' }); return { ...x, segments: ids }; } });
+    submit: (x) => { const m = $('.modal'); const ids = $$('[data-seg]:checked', m).map((y) => y.dataset.seg); if (!aud.ids && !aud.filters && !ids.length) throw Object.assign(new Error('Tick at least one segment'), { field: 'segments' }); return { ...x, segments: ids }; } });
     if (!v) return;
     const names = segs.filter(([id]) => v.segments.includes(String(id))).map(([, n]) => n);
-    const a = aud.ids ? { ids: aud.ids, label: aud.label } : { segments: v.segments, segment: v.segments[0], label: names.join(', ') };
+    const a = aud.filters ? { filters: aud.filters, label: aud.label } : aud.ids ? { ids: aud.ids, label: aud.label } : { segments: v.segments, segment: v.segments[0], label: names.join(', ') };
+    if (v.what === 'newmsg') return S.newMessage(a);
     if (v.what === 'template') return S.waBuilder(a, aud.tplKey);
     if (v.what === 'design' && S.sendDesign) return S.sendDesign(a, aud.designId);
     return classicCampaign({ ...a, kind: v.what });
+  };
+  // A message written now: it becomes its own WhatsApp template; the campaign goes once Meta approves it.
+  S.newMessage = async (a) => {
+    const jobs = (await BB.api('/api/jobs?size=200')).rows.filter((j) => ['Open', 'Sourcing', 'Interviewing', 'Offer stage'].includes(j.status));
+    const qs = a.filters ? `filters=${encodeURIComponent(JSON.stringify(a.filters))}` : a.ids ? `ids=${encodeURIComponent(a.ids.join(','))}` : `segments=${encodeURIComponent((a.segments || [a.segment]).join(','))}`;
+    const who = await BB.api(`/api/campaigns/audience?${qs}`).catch(() => ({ total: 0 }));
+    const m = BB.modal({ title: 'New WhatsApp message', wide: true, body: `<div class="st-grid"><form class="stack" data-nm onsubmit="return false">
+        <div class="notice small">${esc(a.label || '')} · <b>${who.total}</b> people. Only those who agreed to WhatsApp job alerts get it.</div>
+        <label class="field"><span class="lab">Message <span class="opt">· {{Name}} becomes each person's first name · *bold* and emojis work</span></span><textarea name="text" rows="14" placeholder="Hi {{Name}}, 👋&#10;&#10;Greetings from BrillBrains Hiring Solutions!"></textarea></label>
+        <label class="field"><span class="lab">For which job <span class="opt">(optional: an Interested reply opens their application on it)</span></span><select name="job_id"><option value="">No job</option>${jobs.map((j) => `<option value="${esc(j.id)}">${esc(j.id)} · ${esc(j.title)} · ${esc(j.city || '')}</option>`).join('')}</select></label>
+        <label class="row small"><input type="checkbox" name="buttons" checked> Add Interested / Not Interested buttons</label>
+        <label class="field"><span class="lab">Campaign name <span class="opt">(optional)</span></span><input name="name" placeholder="e.g. CAD designers Surat"></label>
+      </form><div><div class="tiny muted" style="margin-bottom:6px">Preview</div><div data-nmprev></div></div></div>`,
+      foot: '<span class="small muted grow">Meta reviews it first (usually minutes, sometimes a few hours). It then sends by itself and you get a bell alert.</span><button class="btn" data-x2>Cancel</button><button class="btn primary" data-nmgo>Send for approval</button>' });
+    const f = $('[data-nm]', m.el); const prev = () => { const v = BB.formValues(f); $('[data-nmprev]', m.el).innerHTML = S.phone({ text: String(v.text || 'Your message').replace(/\{\{\s*(first[ _]?)?name\s*\}\}/gi, 'Priya'), buttons: f.buttons.checked ? ['Interested', 'Not Interested'] : [] }); };
+    f.oninput = prev; f.onchange = prev; prev(); $('[data-x2]', m.el).onclick = m.close;
+    $('[data-nmgo]', m.el).onclick = async (e) => {
+      const v = BB.formValues(f); const btn = e.currentTarget; btn.disabled = true; btn.textContent = 'Sending to Meta…';
+      try {
+        const r = await BB.post('/api/campaigns/new-message', { ...(a.filters ? { filters: a.filters } : a.ids ? { ids: a.ids } : { segments: a.segments }), text: v.text, job_id: v.job_id || null, buttons: f.buttons.checked, name: v.name });
+        m.close(); BB.modal({ title: r.status === 'APPROVED' ? 'Approved and sending' : 'Sent to Meta for approval', body: `<p>Template <span class="mono">${esc(r.template)}</span> for <b>${r.total}</b> people (${esc(r.audience)}).</p><p class="small muted">${r.status === 'APPROVED' ? 'It is going out now.' : 'As soon as Meta approves it, the campaign sends by itself and you get a bell alert. The portal checks every 10 minutes. If Meta rejects it, you are told why.'}</p>` });
+      } catch (er) { BB.fail(er); btn.disabled = false; btn.textContent = 'Send for approval'; }
+    };
   };
   // Ticked candidates, or a segment's Send campaign button, start here too.
   F.campaign = (aud) => S.start(aud || {});
@@ -60,7 +84,7 @@
     const ok = d.templates.filter((t) => t.status === 'APPROVED');
     if (!ok.length) return BB.modal({ title: 'No approved templates', body: `<p>None of the WhatsApp templates on Meta is approved yet.${d.note ? ` ${esc(d.note)}` : ''}</p><p class="small muted">Make one in Campaigns › WhatsApp templates and send it to Meta. Approval usually takes minutes to a day.</p>`, foot: false });
     const jobs = jobsR.rows.filter((j) => ['Open', 'Sourcing', 'Interviewing'].includes(j.status));
-    const qs = aud.ids ? `ids=${encodeURIComponent(aud.ids.join(','))}` : `segments=${encodeURIComponent((aud.segments || [aud.segment]).join(','))}`;
+    const qs = aud.filters ? `filters=${encodeURIComponent(JSON.stringify(aud.filters))}` : aud.ids ? `ids=${encodeURIComponent(aud.ids.join(','))}` : `segments=${encodeURIComponent((aud.segments || [aud.segment]).join(','))}`;
     const who = await BB.api(`/api/campaigns/audience?${qs}`).catch(() => ({ total: 0 }));
     const st = { key: (ok.find((t) => t.key === preKey) || ok[0]).key, map: {}, media: null };
     const tpl = () => ok.find((t) => t.key === st.key);
@@ -245,7 +269,7 @@
   // Send a design to the people picked in New campaign.
   S.sendDesign = async (aud, designId) => {
     const d = await BB.api('/api/studio/designs'); if (!d.rows.length) { BB.toast('Make an email design first', true); return BB.go('team/campaigns?tab=designs'); }
-    const qs = aud.ids ? `ids=${encodeURIComponent(aud.ids.join(','))}` : `segments=${encodeURIComponent((aud.segments || [aud.segment]).join(','))}`;
+    const qs = aud.filters ? `filters=${encodeURIComponent(JSON.stringify(aud.filters))}` : aud.ids ? `ids=${encodeURIComponent(aud.ids.join(','))}` : `segments=${encodeURIComponent((aud.segments || [aud.segment]).join(','))}`;
     const who = await BB.api(`/api/campaigns/audience?${qs}`).catch(() => ({ total: 0 }));
     const pick = d.rows.find((x) => String(x.id) === String(designId)) || d.rows[0];
     setTimeout(() => { const m = $('.modal'); if (!m) return; const at = $('[name=send_at]', m).closest('.field'); const show = () => at.classList.toggle('hidden', ($('[name=when]:checked', m) || {}).value !== 'at'); $$('[name=when]', m).forEach((r) => (r.onchange = show)); show(); const ds = $('[name=design_id]', m); ds.onchange = () => { const x = d.rows.find((y) => String(y.id) === ds.value); $('[name=subject]', m).placeholder = x ? x.subject : ''; }; }, 0);

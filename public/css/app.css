@@ -2682,3 +2682,5 @@ a.pipe-step { text-decoration: none; cursor: pointer; } a.pipe-step:hover { bord
 .rs-circ { margin-top: 6px; }
 .ask-skips { display: grid; gap: 10px; margin: 10px 0; padding: 10px 12px; border: 1px solid #EEF2F7; border-radius: 10px; background: #FBFCFE; }
 [data-rsum] .rs-step { cursor: pointer; }
+
+.cand-sendall { margin-left: auto; }

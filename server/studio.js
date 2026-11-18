@@ -228,6 +228,13 @@ route('POST', '/api/studio/wa/templates', T, async (ctx) => {
   if (!b.submit) { D.history(ctx.actor.label, 'WhatsApp template draft', key); return { key, status: 'DRAFT' }; }
   return submitTemplate(key, ctx.actor.label);
 });
+// Make a template from code (a message written in a campaign) and send it to Meta.
+async function createTemplate(input, by) {
+  const t = checkTemplate(input); const key = `${t.name}|${t.language}`;
+  if (templateRow(key)) throw httpError(400, 'A template with this name already exists');
+  insert('wa_templates', { key, name: t.name, language: t.language, category: t.category, status: 'DRAFT', components: JSON.stringify(draftComponents(t)), source: 'portal', draft: JSON.stringify(t), error: null, by, at: now() });
+  return submitTemplate(key, by);
+}
 async function submitTemplate(key, by) {
   const r = templateRow(key); const t = JSON.parse(r.draft || '{}');
   if (!crmReady()) { update('wa_templates', key, { status: 'NOT SENT', error: 'The WhatsApp CRM is not linked (Settings → WhatsApp). Saved as a draft.' }, 'key'); throw httpError(400, 'Saved as a draft. Link the WhatsApp CRM in Settings → WhatsApp to send it to Meta.'); }
@@ -321,4 +328,4 @@ route('POST', '/api/studio/designs/:id/test', T, (ctx) => {
   return { to, configured: M.configured() };
 });
 
-module.exports = { renderDesign, designRow, FIELDS, mergeVars, fillText, tplView, templateRow, campaignTemplate, filled, headerMedia, syncTemplates, crmReady };
+module.exports = { createTemplate, renderDesign, designRow, FIELDS, mergeVars, fillText, tplView, templateRow, campaignTemplate, filled, headerMedia, syncTemplates, crmReady };
