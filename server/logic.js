@@ -1378,7 +1378,14 @@ function intakeCandidate(d, o) {
     if (d.exp_jewellery !== undefined && d.exp_jewellery !== null && d.exp_jewellery !== '') fill.exp_jewellery = d.exp_jewellery;
     if (d.city) { fill.city = d.city; fill.state = d.state || stateOf(d.city); }
     if (d.exp_total !== undefined && d.exp_total !== null && d.exp_total !== '') fill.exp_total = d.exp_total;
+    // The candidate filled the form again themselves: what they typed now is the latest, so it replaces the old answer.
+    const changed = [];
+    if (o.refresh) for (const k of ['email', 'cur_salary', 'exp_salary', 'notice_days', 'exp_total', 'exp_jewellery', 'current_company']) {
+      const v = d[k]; if (v === undefined || v === null || v === '') continue;
+      if (String(existing[k] ?? '') !== String(v)) { fill[k] = v; if (existing[k] !== null && existing[k] !== undefined && existing[k] !== '') changed.push(`${k.replace(/_/g, ' ')}: ${existing[k]} → ${v}`); }
+    }
     update('candidates', existing.id, { ...fill, ...adCols(o.ad), is_new: 1, last_updated: now() });
+    if (changed.length) insert('notes', { record_id: existing.id, text: `Updated by the candidate on the apply form: ${changed.join('; ')}`, author: who, at: now() });
     insert('notes', { record_id: existing.id, text: `Came again from ${source}${o.ad ? ` (ad: ${adLabel(adCols(o.ad))})` : ''} on ${istFmt(now(), false)}`, author: who, at: now() });
     history(who, 'repeat lead', existing.id, null, null, source);
     if (o.consent !== false) { saveConsent('candidate', existing.id, source, o.wording); update('candidates', existing.id, { consent_alerts: 1 }); }
@@ -1527,12 +1534,17 @@ function receiveReply(phone, text, button, opts = {}) {
     if (iv) { const r = recordInterview(iv.id, { status: 'Completed', result: t === 'selected' ? 'Selected' : t === 'another round' ? 'Another round' : 'Not selected', remark: 'Feedback on WhatsApp' }, by); effect = `${iv.id} result saved`; if (r.next === 'OPEN_OFFER') { const ap = get('SELECT * FROM applications WHERE id=?', iv.app_id); alertUser(ap.owner_id, `Client selected on ${ap.id}: record the offer`, ap.id, 'client'); } }
   }
   else if (ref && ref.ap && t === "i've joined") { const ap = get('SELECT * FROM applications WHERE id=?', ref.ap); alertUser(ap.owner_id, `${ap.id}: candidate says they have joined. Mark Joined.`, ap.id, 'candidate'); effect = 'Task alert to recruiter'; }
-  else if (ref && ref.jb && t === 'interested' && ptype === 'candidate') { markInterest(pid, true, by); try { const a = createApplication(pid, ref.jb, by, 'WhatsApp bot', 'Interested (reply on WhatsApp)'); effect = `${a.id} created`; } catch (e) { effect = e.message; } }
+  else if (ref && ref.jb && t === 'interested' && ptype === 'candidate') { markInterest(pid, true, by); try { const a = createApplication(pid, ref.jb, by, /^camp:/.test(ref.dedupe || '') ? 'WhatsApp campaign' : 'WhatsApp bot', 'Interested (reply on WhatsApp)'); effect = `${a.id} created`; } catch (e) { effect = e.message; } }
   else if (ref && ref.ap && (ptype === 'candidate' || ptype === 'client') && (effect = require('./care').reply(ref, ptype, t, by) || effect) !== 'Saved in inbox') { /* a check-in answer was saved */ }
   else if (t === 'need help' && ref && ref.ap) { update('applications', ref.ap, { at_risk: 1 }); const ap = get('SELECT * FROM applications WHERE id=?', ref.ap); alertUser(ap.owner_id, `${ap.id} at risk: candidate needs help`, ap.id, 'candidate'); effect = 'Marked at risk'; }
   else if (ref && ref.jb && t === 'not interested' && ptype === 'candidate') { jobNotInterested(pid, ref.jb, by, `Not interested in ${ref.jb} (reply on WhatsApp)`); effect = `Marked not interested (${ref.jb})`; }
   else if (t === 'share details' && ptype === 'candidate') { const c = get('SELECT recruiter_id FROM candidates WHERE id=?', pid) || {}; const ap = ref && ref.ap ? get('SELECT owner_id FROM applications WHERE id=?', ref.ap) : null; const owner = (ap && ap.owner_id) || c.recruiter_id; if (owner) alertUser(owner, `${pid} wants to share their salary and notice details: call or message them`, pid, 'candidate'); sendSystemText('candidate', pid, 'Thank you. Please type your current salary, expected salary and notice period here, and we will update your profile.'); effect = 'Asked for details; recruiter alerted'; }
   else if (ptype === 'candidate' && expBand(t) !== null && (button || (ref && ref.format === 'bbhs_experience_ask'))) { update('candidates', pid, { exp_total: expBand(t), last_updated: now() }); D.history(by.label, 'experience from reply', pid, 'exp_total', null, String(expBand(t))); effect = `Total experience: ${text || button}`; }
+  // A campaign without a job: Interested / Not interested set their job status.
+  else if (ptype === 'candidate' && ref && !ref.jb && /^camp:/.test(ref.dedupe || '') && t === 'interested') { setLooking(pid, 'Actively looking', by, 'Interested (reply to a campaign)'); effect = 'Job status: Actively looking'; }
+  else if (ptype === 'candidate' && ref && !ref.jb && /^camp:/.test(ref.dedupe || '') && ['not interested', 'not looking'].includes(t)) { setLooking(pid, 'Not interested', by, 'Not interested (reply to a campaign)'); effect = 'Job status: Not interested'; }
+  // A typed reply to a campaign (CTC, expected CTC, experience, notice): read into the profile, like the details request.
+  else if (ptype === 'candidate' && !button && t && t.length > 3 && ref && /^camp:/.test(ref.dedupe || '')) { setImmediate(() => require('./profilelink').readReply(pid, text).catch((e) => console.error('Campaign reply', pid, e.message))); effect = 'Reading the reply into the profile'; }
   else if (ptype === 'candidate' && !button && t && ref && ['bbhs_details_reply', 'bbhs_profile_update'].includes(ref.format)) { setImmediate(() => require('./profilelink').readReply(pid, text).catch((e) => console.error('Details reply', pid, e.message))); effect = 'Reading their details from the reply'; }
   else if (['not looking', 'not interested now', 'not looking now', 'happy where i am'].includes(t) && ptype === 'candidate') { setLooking(pid, 'Not interested', by, 'reply on WhatsApp'); effect = 'Job status: Not interested'; }
   else if (['still looking', 'looking for a job', 'yes, looking', 'actively looking'].includes(t) && ptype === 'candidate') { setLooking(pid, 'Actively looking', by, 'reply on WhatsApp'); effect = 'Job status: Actively looking'; }
