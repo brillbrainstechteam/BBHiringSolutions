@@ -409,6 +409,14 @@ function matchScore(c, j, rating) {
   if (same.length) reasons.push(`${same.join(' / ')} experience`);
   if (rating) part('rating', rating / 5, rating >= 4 ? `Rated ${rating.toFixed(1)}/5 in interviews` : null); else part('rating', 0.6);
   let pct = Math.round((score / total) * 100);
+  // Tools / software the job requires (e.g. Rhino, Matrix): those who have them stay on top; each one missing
+  // takes the score down, up to half for none of them.
+  const tools = Array.isArray(j.tools) ? j.tools.filter(Boolean) : [];
+  if (tools.length) {
+    const have = skillHit(tools, [...(c.skills || []), c.job_wanted, c.domain].filter(Boolean)); const miss = tools.filter((t) => !have.includes(t));
+    pct = Math.round(pct * (0.5 + 0.5 * (have.length / tools.length)));
+    if (have.length) reasons.unshift(`Tools: ${have.join(', ')}`); if (miss.length) gaps.unshift(`Missing: ${miss.join(', ')}`);
+  }
   if (NOT_LOOKING.includes(c.looking)) { pct = Math.round(pct * 0.8); gaps.push('Not looking now'); }
   return { score: pct, reasons: reasons.slice(0, 4), gaps: gaps.slice(0, 3) };
 }

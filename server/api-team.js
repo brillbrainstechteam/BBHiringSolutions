@@ -1062,7 +1062,8 @@ route('GET', '/api/jobs/:id', T, (ctx) => {
 });
 route('PATCH', '/api/jobs/:id', T, (ctx) => {
   const j = get('SELECT * FROM jobs WHERE id=?', ctx.params.id); mustSee(seeJob(ctx.user, j), 'job opening');
-  const allowed = ['title', 'city', 'openings', 'sal_from', 'sal_to', 'exp_from', 'exp_to', 'notice_days', 'skills', 'priority', 'rounds', 'screening_qs', 'notes', 'archived', 'market', 'department', 'mass'];
+  if (ctx.body.tools !== undefined) ctx.body.tools = (Array.isArray(ctx.body.tools) ? ctx.body.tools : String(ctx.body.tools || '').split(',')).map((x) => String(x).trim()).filter(Boolean).slice(0, 15);
+  const allowed = ['tools', 'title', 'city', 'openings', 'sal_from', 'sal_to', 'exp_from', 'exp_to', 'notice_days', 'skills', 'priority', 'rounds', 'screening_qs', 'notes', 'archived', 'market', 'department', 'mass'];
   if (ctx.body.mass !== undefined) ctx.body.mass = ctx.body.mass ? 1 : 0;
   allowed.push('recruiter_id');
   const patch = {}; for (const k of allowed) if (ctx.body[k] !== undefined) patch[k] = ctx.body[k];

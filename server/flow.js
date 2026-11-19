@@ -467,7 +467,7 @@ const cleanText = (t, c) => {
 };
 function jobFacts(j) {
   const jd = j.jd || {}; const pm = (y) => (y ? Math.round(y / 12) : null);
-  return { title: j.title, city: j.city, department: j.department, experience_years: [j.exp_from, j.exp_to], salary_per_month: [pm(j.sal_from), pm(j.sal_to)], join_within_days: j.notice_days, skills: j.skills || [], summary: jd.summary || '', duties: jd.duties || '', must_have: jd.must || '', good_to_have: jd.good || '', jewellery_experience: jd.jewel_need ? { need: jd.jewel_need, years: jd.jewel_years || '', detail: jd.jewel_note || '' } : 'not stated', notes: j.notes || '' };
+  return { title: j.title, city: j.city, department: j.department, experience_years: [j.exp_from, j.exp_to], salary_per_month: [pm(j.sal_from), pm(j.sal_to)], join_within_days: j.notice_days, tools_required: j.tools || [], skills: j.skills || [], summary: jd.summary || '', duties: jd.duties || '', must_have: jd.must || '', good_to_have: jd.good || '', jewellery_experience: jd.jewel_need ? { need: jd.jewel_need, years: jd.jewel_years || '', detail: jd.jewel_note || '' } : 'not stated', notes: j.notes || '' };
 }
 function candFacts(c) {
   const pm = (y) => (y ? Math.round(y / 12) : null);
@@ -478,6 +478,7 @@ const fitOf = (j, c) => { const r = get('SELECT * FROM ai_fit WHERE candidate_id
 const FIT_SCHEMA = { type: 'object', additionalProperties: false, required: ['results'], properties: { results: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['id', 'score', 'points', 'gaps'], properties: { id: { type: 'string' }, score: { type: 'number', description: '0 to 100' }, points: { type: 'array', items: { type: 'string' }, description: '2 to 4 short reasons this person suits the job, with facts from their profile' }, gaps: { type: 'array', items: { type: 'string' }, description: 'Up to 3 short risks or missing things to check on the call' } } } } } };
 const FIT_SYSTEM = `You screen candidates for a recruitment agency in India's jewellery trade. For each candidate, judge how well they suit this job from the facts and CV given, and write key pointers a recruiter can read in seconds.
 Score honestly: 85+ strong fit on role, experience and must-haves; 60-84 worth a call; below 60 weak. If jewellery experience is "Required", a person without it cannot score above 55.
+"tools_required" are must-haves: rank those who show them (in skills or CV) above those who do not; someone with none of them cannot score above 55, and say which tools are missing.
 Base every point on what is written. Never invent experience. Short phrases, no full stops.`;
 async function fitBatch(job, cands) {
   const r = await LLM.json({ system: FIT_SYSTEM, user: `Job:\n${JSON.stringify(jobFacts(job))}\n\nCandidates:\n${JSON.stringify(cands.map(candFacts))}`, schema: FIT_SCHEMA, name: 'screening', maxTokens: 2500 });
