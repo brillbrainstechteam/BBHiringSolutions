@@ -2533,7 +2533,7 @@ async function makeCampaign(ctx) {
   const media = tpl && tpl.header && ['IMAGE', 'VIDEO', 'DOCUMENT'].includes(tpl.header.format) ? await S.headerMedia(String((b.tpl || {}).media_key || '')) : null;
   const cap = D.settings().bulk_budget; const id = b._resend || D.nextId('CM'); const out = { wa: 0, email: 0, skipped: {} }; const skip = (why) => { out.skipped[why] = (out.skipped[why] || 0) + 1; };
   const news = D.settings().formats.bbhs_candidate_news; const waFormat = kind === 'job' ? 'bbhs_job_alert' : kind === 'prefs' ? 'bbhs_contact_prefs' : 'bbhs_candidate_news'; const waReady = kind === 'job' || ((D.settings().formats[waFormat] || {}).approved);
-  const link = L.link('my-profile'); const fill = (t, c) => String(t).replace(/\{name\}/g, c.name || 'there');
+  const link = L.link('my-profile'); const fill = (t, c) => String(t).replace(/\{name\}/g, L.realName(c.name) || 'there');
   people.forEach((p, n) => {
     const c = get('SELECT * FROM candidates WHERE id=?', p.id); if (out.wa + out.email >= cap) return skip(`Over the limit of ${cap} per send: press Send to the rest`);
     if (c.opted_out) return skip('Said STOP'); if (!c.consent_alerts) return skip('No consent for messages');

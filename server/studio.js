@@ -24,7 +24,7 @@ const FIELDS = [
 function mergeVars(c, job) {
   const b = D.settings().business || {};
   return {
-    name: c.name || '', first_name: String(c.name || '').trim().split(/\s+/)[0] || '', city: c.city || '', job_wanted: c.job_wanted || '',
+    name: require('./logic').realName(c.name), first_name: require('./logic').realName(c.name).split(' ')[0] || '', city: c.city || '', job_wanted: c.job_wanted || '',
     job_title: job ? job.title : '', job_city: job ? job.city || '' : '', job_link: job ? L.link(`jd/${job.id}`) : '', job_apply: job ? L.link('apply', `?job=${job.id}&src=campaign`) : '',
     profile_link: L.link('my-profile'), apply_link: L.link('apply', '?src=campaign'), company: b.name || 'BrillBrains Hiring Solutions',
   };

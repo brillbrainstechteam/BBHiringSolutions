@@ -156,6 +156,10 @@ function setDispatcher(fn) { dispatcher = fn; }
 
 // One function for every message. Rules: approved formats only, quiet hours, daily limit,
 // never the same reminder twice, opted-out people get no automatic or bulk messages.
+// A name fit to greet someone with: placeholders from imports or resume reading ("Name not found", "Unknown",
+// "N/A", a number, an email, "WhatsApp 98…") are no name at all, so the message says "there" instead.
+const BAD_NAME = /not\s*found|^(unknown|n\/?a|na|nil|null|undefined|none|no\s*name|name|candidate|applicant|resume|cv|test|-+|\.+)$|^whatsapp\b|^\+?\d[\d\s-]{5,}$|@/i;
+function realName(n) { const t = String(n || '').replace(/\s+/g, ' ').trim(); return !t || BAD_NAME.test(t) ? '' : t; }
 function sendWA(o) {
   const s = settings();
   const p = person(o.ptype, o.pid);
@@ -188,7 +192,7 @@ function sendWA(o) {
   if (o.format && !o.secret && !o.noEmailCopy && email && D.ENV.emailCopies !== false) {
     const mailAt = o.sendLater && o.sendLater !== true ? o.sendLater : (o.auto || o.sendLater) && inQuiet() && p.type !== 'user' ? next9am() : null;
     emailed = require('./mailer').configured(); // only counts once email is really set up
-    require('./mailer').copyOfWhatsApp({ to: email, personType: p.type, format: o.format, text: fillFormat(o.format, o.lang || p.lang || 'en', { name: p.name, ...(o.vars || {}) }), recordId: p.id, sendAfter: mailAt, dedupe: o.dedupe ? `mail:${o.dedupe}` : null });
+    require('./mailer').copyOfWhatsApp({ to: email, personType: p.type, format: o.format, text: fillFormat(o.format, o.lang || p.lang || 'en', { name: realName(p.name) || 'there', ...(o.vars || {}) }), recordId: p.id, sendAfter: mailAt, dedupe: o.dedupe ? `mail:${o.dedupe}` : null });
   }
   if (waOnlyStop) return { skipped: waOnlyStop, emailed };
   // "Email only" messages skip WhatsApp when the email went; someone without an email still gets WhatsApp.
@@ -205,7 +209,7 @@ function sendWA(o) {
   // A format goes in the person's language once it has that text (and Meta has approved it, where we know); else in English.
   const want = o.lang || p.lang || 'en'; const ms = (fmt && fmt.meta_status) || {};
   const lang = !fmt || want === 'en' || (fmt[want] && (!Object.keys(ms).length || ms[want] === 'APPROVED')) ? want : 'en';
-  const vars = { name: p.name, ...(o.vars || {}) };
+  const vars = { name: realName(p.name) || 'there', ...(o.vars || {}) };
   const text = tpl ? tpl.text : o.format ? fillFormat(o.format, lang, vars) : o.text;
   let scheduled = null;
   if ((o.auto || o.sendLater) && inQuiet() && p.type !== 'user') scheduled = next9am();
@@ -1592,6 +1596,7 @@ function resumeUse(user, candidateId) {
 const accountsUsers = () => all("SELECT * FROM users WHERE level='sub' AND team='Accounts' AND status='On'");
 const ownsTask = (t, userId) => t.owner_id === userId || (Array.isArray(t.owners) && t.owners.includes(userId));
 const openTasksOf = (userId) => all("SELECT * FROM tasks WHERE removed=0 AND status<>'Done' ORDER BY COALESCE(due_date, '9999'), at").filter((t) => ownsTask(t, userId));
+Object.assign(module.exports, { realName, BAD_NAME });
 Object.assign(module.exports, { jdReady, jdGate, phoneTaskTimes, jobNotInterested, markInterest, ownsTask, prefAnswer, PREF, cleanPrefs, inPreferred, nextPreferred, prefNote, evalView, candidateStory, candidateKnown, startCall, openCall, needsCall, callGateOn, roundsOf, skipRounds, passRounds, openTasksOf, accountsUsers, fixAsk, openAsks, OPEN_ASK, resumeUse, RESUME_DAYS });
 
 // One-time: candidates and jobs under "Other" (or none) placed by the words of their role, now that the
