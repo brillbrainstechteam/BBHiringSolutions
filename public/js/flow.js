@@ -595,7 +595,7 @@
       try {
         const r = await BB.post(`/api/clients/${c.id}/jd`, body);
         cur.job = r.job; cur.key = cur.key.startsWith('new:') ? `job:${r.job.id}` : cur.key; work[cur.key] = { ...w, role: { ...w.role, job_id: r.job.id } };
-        BB.toast(how === 'send' ? `Sent for approval${r.sent ? ` · ${r.sent}` : ''}` : how === 'ok' ? 'Approved: the job opening is live' : `Saved as draft · job ${r.job.id}`);
+        BB.toast(`${how === 'send' ? `Sent for approval${r.sent ? ` · ${r.sent}` : ''}` : how === 'ok' ? 'Approved: the job opening is live' : `Saved as draft · job ${r.job.id}`}${r.rerank && r.rerank.added.length ? ` · ${r.rerank.added.length} skill${r.rerank.added.length === 1 ? '' : 's'} from the JD added to matching` : ''}${r.rerank && r.rerank.reranking ? ' · matches are being ranked again' : ''}`);
         draw(); if (BB.refreshPanel) BB.refreshPanel();
         if (how === 'send' && d.email && d.can_email && await BB.confirm('Email the JD too?', `Send the ${esc(w.role.title)} JD as a PDF to ${esc(d.email)}.`, 'Write the email')) F.composeMail([c.id], 'jd', 'Send job description', r.job.id);
       } catch (e) { BB.fail(e); }

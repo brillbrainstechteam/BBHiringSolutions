@@ -1080,6 +1080,7 @@ route('PATCH', '/api/jobs/:id', T, (ctx) => {
   D.edit('jobs', j.id, patch, ctx.actor.label, ctx.ip);
   if (patch.recruiter_id && patch.recruiter_id !== j.recruiter_id) L.alertUser(patch.recruiter_id, `You are now the recruiter on ${j.id}`, j.id, 'jobs');
   L.recalcJob(j.id, ctx.actor.label, 'Edited');
+  if (['tools', 'skills', 'exp_from', 'exp_to', 'sal_from', 'sal_to', 'title', 'city'].some((x) => ctx.body[x] !== undefined)) { try { require('./flow').jdChanged(j.id, ctx.actor); } catch (e) { console.error('job changed', e.message); } }
   return get('SELECT * FROM jobs WHERE id=?', j.id);
 });
 // Bulk actions on ticked job openings: status (approve JD, hold, resume, close, reopen), priority, recruiter, client.
@@ -1122,6 +1123,7 @@ route('POST', '/api/jobs/:id/jd', T, (ctx) => {
     insert('job_history', { job_id: j.id, at: now(), status: 'JD sent', by: ctx.actor.label, note: 'Sent to client for approval' });
     L.sendWA({ ptype: 'client', pid: j.client_id, format: 'bbhs_jd_approval', vars: { job: j.title, job_id: j.id, link: L.link('my-account') }, jb: j.id, by: ctx.actor, auto: true, rule: 'jd_approval' });
   }
+  try { require('./flow').jdChanged(j.id, ctx.actor); } catch (e) { console.error('jd changed', e.message); }
   return get('SELECT * FROM jobs WHERE id=?', j.id);
 });
 // ---------- JD pool: one JD per role, and AI writing ----------

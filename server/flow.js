@@ -240,6 +240,7 @@ route('POST', '/api/clients/:id/jd', T, (ctx) => {
   const approved = b.approved_by_client;
   const status = approved ? 'Approved' : b.send ? 'Waiting for client' : (j.jd_status === 'Not written' || !j.jd_status ? 'Draft' : j.jd_status === 'Changes asked' ? 'Changes asked' : j.jd_status);
   D.edit('jobs', j.id, { jd, jd_status: status }, ctx.actor.label, ctx.ip);
+  const rerank = jdChanged(j.id, ctx.actor);
   if (b.save_pool || !(D.settings().jd_templates || {})[title]) D.setSetting('jd_templates', { ...(D.settings().jd_templates || {}), [title]: jd });
   let sent = null;
   if (b.send) {
@@ -250,7 +251,7 @@ route('POST', '/api/clients/:id/jd', T, (ctx) => {
   if (approved) { L.jobAction(j.id, 'approve_jd', { note: `Client approved (${String(approved).slice(0, 80)}), marked by ${ctx.actor.label}` }, ctx.actor); insert('job_history', { job_id: j.id, at: now(), status: 'JD approved', by: ctx.actor.label, note: String(approved).slice(0, 200) }); }
   L.syncClientStage(c.id, ctx.actor);
   const fresh = get('SELECT * FROM jobs WHERE id=?', j.id);
-  return { job: jobCard(fresh), sent };
+  return { job: jobCard(fresh), sent, rerank };
 });
 
 // ---------- email from the portal: one client or many ----------
@@ -952,4 +953,36 @@ route('GET', '/api/holds', T, () => {
   return { wa: !!w.everyone, email: !!w.email, allow: w.allow || [], rows, mails, smtp: M.configured(), crm: !!s.crm.enabled, accounts_email: s.accounts_email || '', unapproved: Object.entries(fm).filter(([, f]) => !f.approved).map(([k]) => k) };
 });
 
-module.exports = { VOICE_PROMPT, VOICE_SCHEMA, rowFor, LOOK_SYSTEM, LOOK_SCHEMA, agreementFile, clientMail, clientByEmail, mailFiles, clientCvFor, makeClientCv, checkClientCv, readSlotReply, autoAccounts, accountsMail, followupsDue, nextStep, cleanText };
+// The JD (or the job's requirements) changed: matching follows by itself.
+// 1. Skills the JD names (must-have, good to have, duties, experience) join the job's skills, so the score uses them.
+// 2. The AI ranks the applicants and the top matches again against the new requirement, in the background.
+const reranking = new Set();
+function jdChanged(jobId, by) {
+  const j = get('SELECT * FROM jobs WHERE id=?', jobId); if (!j) return { added: [] };
+  const jd = j.jd || {}; const text = ` ${[jd.must, jd.good, jd.duties, jd.summary, jd.experience].filter(Boolean).join(' \n ').toLowerCase()} `;
+  const known = [...new Set([...(D.settings().skills || []), ...require('./skills').groups(D.settings()).flatMap((g) => g.skills || [])])];
+  const esc = (x) => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const said = (term) => term.length > 2 && new RegExp(`[^a-z0-9]${esc(term.toLowerCase())}[^a-z0-9]`).test(text);
+  // "CAD (Matrix)" counts when the JD says Matrix; plain skills when the JD says them
+  const found = known.filter((s) => { const inner = (s.match(/\(([^)]+)\)/) || [])[1]; return said(s) || (inner && said(inner)); });
+  const have = Array.isArray(j.skills) ? j.skills : []; const low = new Set(have.map((x) => x.toLowerCase()));
+  const added = found.filter((s) => !low.has(s.toLowerCase())).slice(0, 15);
+  if (added.length) { update('jobs', j.id, { skills: [...have, ...added] }); D.history(L.actorName(by), 'skills from the JD', j.id, 'skills', have.join(', '), [...have, ...added].join(', ')); }
+  if (LLM.available() && !reranking.has(j.id)) {
+    reranking.add(j.id);
+    setImmediate(async () => {
+      try {
+        const job = get('SELECT * FROM jobs WHERE id=?', j.id); const seen = new Set();
+        const apps = openApps(job).map((a) => get('SELECT * FROM candidates WHERE id=?', a.candidate_id));
+        const onJob = new Set(all('SELECT candidate_id FROM applications WHERE job_id=?', job.id).map((r) => r.candidate_id));
+        const bank = bankOf(job, 60).filter((m) => !onJob.has(m.c.id)).slice(0, 24).map((m) => m.c);
+        const todo = [...apps, ...bank].filter((c) => c && !seen.has(c.id) && seen.add(c.id) && !fitOf(job, c));
+        for (let i = 0; i < todo.length; i += 8) await fitBatch(job, todo.slice(i, i + 8));
+        D.history('AI', 'ranked again after the JD changed', job.id, null, null, `${todo.length} candidates`);
+      } catch (e) { console.error('re-rank', j.id, e.message); } finally { reranking.delete(j.id); }
+    });
+  }
+  return { added, reranking: LLM.available() };
+}
+module.exports.jdChanged = jdChanged;
+module.exports = { jdChanged, VOICE_PROMPT, VOICE_SCHEMA, rowFor, LOOK_SYSTEM, LOOK_SCHEMA, agreementFile, clientMail, clientByEmail, mailFiles, clientCvFor, makeClientCv, checkClientCv, readSlotReply, autoAccounts, accountsMail, followupsDue, nextStep, cleanText };
