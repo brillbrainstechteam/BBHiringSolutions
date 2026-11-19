@@ -480,6 +480,7 @@ const FIT_SCHEMA = { type: 'object', additionalProperties: false, required: ['re
 const FIT_SYSTEM = `You screen candidates for a recruitment agency in India's jewellery trade. For each candidate, judge how well they suit this job from the facts and CV given, and write key pointers a recruiter can read in seconds.
 Score honestly: 85+ strong fit on role, experience and must-haves; 60-84 worth a call; below 60 weak. If jewellery experience is "Required", a person without it cannot score above 55.
 "tools_required" are must-haves: rank those who show them (in skills or CV) above those who do not; someone with none of them cannot score above 55, and say which tools are missing.
+Location matters: people who live in the job's city (or say they will work there) are more willing to join, so rank them above people elsewhere with a similar fit; another city lowers the score by about 15 points unless they say they will relocate.
 Base every point on what is written. Never invent experience. Short phrases, no full stops.`;
 async function fitBatch(job, cands) {
   const r = await LLM.json({ system: FIT_SYSTEM, user: `Job:\n${JSON.stringify(jobFacts(job))}\n\nCandidates:\n${JSON.stringify(cands.map(candFacts))}`, schema: FIT_SCHEMA, name: 'screening', maxTokens: 2500 });

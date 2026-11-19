@@ -378,9 +378,10 @@ function matchScore(c, j, rating) {
   // Place: the job's city, or a city they will work in; the same state counts a little.
   const cities = [c.city, ...(Array.isArray(c.work_cities) ? c.work_cities : [])].filter(Boolean).map((x) => x.toLowerCase());
   const jcity = String(j.city || '').toLowerCase(); const jstate = stateOf(j.city); const cstate = c.state || stateOf(c.city);
-  if (jcity && cities.includes(jcity)) part('city', 1, c.city && c.city.toLowerCase() === jcity ? `Lives in ${j.city}` : `Will work in ${j.city}`);
-  else if (jstate && cstate && jstate === cstate) part('city', 0.45, null, `In ${c.city || cstate}, same state`);
-  else part('city', 0, null, c.city ? `Based in ${c.city}` : 'City not given');
+  let locFit = 0.6; // city not known on one side: in between
+  if (jcity && cities.includes(jcity)) { locFit = 1; part('city', 1, c.city && c.city.toLowerCase() === jcity ? `Lives in ${j.city}` : `Will work in ${j.city}`); }
+  else if (jstate && cstate && jstate === cstate) { locFit = 0.5; part('city', 0.45, null, `In ${c.city || cstate}, same state`); }
+  else { if (jcity && (c.city || cities.length)) locFit = 0; part('city', 0, null, c.city ? `Based in ${c.city}` : 'City not given'); }
   // Experience against the job's range (freshers fit jobs that start at 0).
   const e = c.exp_total; const from = j.exp_from ?? 0; const to = j.exp_to ?? 99;
   if (e === null || e === undefined) part('experience', 0.3, null, 'Experience not given');
@@ -417,6 +418,9 @@ function matchScore(c, j, rating) {
     pct = Math.round(pct * (0.5 + 0.5 * (have.length / tools.length)));
     if (have.length) reasons.unshift(`Tools: ${have.join(', ')}`); if (miss.length) gaps.unshift(`Missing: ${miss.join(', ')}`);
   }
+  // Location: people in the job's city (or who will work there) are more willing, so they stay on top:
+  // the same state takes 10% off, another city 20%.
+  pct = Math.round(pct * (0.8 + 0.2 * locFit));
   if (NOT_LOOKING.includes(c.looking)) { pct = Math.round(pct * 0.8); gaps.push('Not looking now'); }
   return { score: pct, reasons: reasons.slice(0, 4), gaps: gaps.slice(0, 3) };
 }
