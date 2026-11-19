@@ -2687,3 +2687,7 @@ a.pipe-step { text-decoration: none; cursor: pointer; } a.pipe-step:hover { bord
 
 .mw-strip { margin-bottom: 12px; } .mw-list { display: grid; gap: 6px; margin-top: 8px; }
 .mw-row { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid #EEF2F7; border-radius: 10px; }
+
+/* Job history tab: one card per action */
+.tl-list { display: grid; gap: 8px; } .tl-card { border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; background: var(--surface); }
+.tl-top { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; } .job-owners { margin: 4px 0 10px; }

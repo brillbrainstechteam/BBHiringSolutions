@@ -288,6 +288,9 @@ const FORMATS = {
   bbhs_job_status_update: { type: 'Utility', approved: false, buttons: [],
     en: "Hello {name},\n\nAn update on the {job} role you applied for: {update}.\n\nWe will keep sending you other jobs that suit you.\n\nThank you.",
     hi: "नमस्ते {name},\n\nआपने जिस {job} पद के लिए आवेदन किया था, उसकी जानकारी: {update}।\n\nहम आपको आपके लायक दूसरी नौकरियाँ भेजते रहेंगे।\n\nधन्यवाद।" },
+  bbhs_jd_share: { type: 'Utility', approved: false, buttons: [],
+    en: "Hello {name},\n\nHere are the full details of the {job} role you applied for: {link}\n\nReply here if you have any questions.\n\nThank you.",
+    hi: "नमस्ते {name},\n\nआपने जिस {job} पद के लिए आवेदन किया है, उसकी पूरी जानकारी यहाँ है: {link}\n\nकोई सवाल हो तो यहीं जवाब दें।\n\nधन्यवाद।" },
   bbhs_job_interest: { type: 'Marketing', approved: false, buttons: ['Interested', 'Not interested'],
     en: "Hello {name},\n\nWe have a job opening that matches your profile:\n\nRole: *{job}*\nCity: {city}\nSalary: {salary}\n\nSee the full job details here: {link}\n\nAre you interested in applying? Please tap a button below.",
     hi: "नमस्ते {name},\n\nआपकी प्रोफ़ाइल से मिलती एक नौकरी खुली है:\n\nपद: *{job}*\nशहर: {city}\nसैलरी: {salary}\n\nपूरी जानकारी यहाँ देखें: {link}\n\nक्या आप आवेदन करना चाहेंगे? कृपया नीचे एक बटन दबाएँ।" },
@@ -415,7 +418,7 @@ module.exports.defaultSettings = () => ({
   accounts_email: '',
   resume_alert_pct: 30,
   // Group | Criterion. Edited in Settings → Lists.
-  eval_criteria: ['Communication | Communication, confidence and conduct', 'Communication | English', 'Communication | Hindi or local language', 'Background | Qualification and certifications', 'Background | Relevant experience and stability', 'Role fit | Jewellery and product knowledge', 'Role fit | Skills for this role', 'Role fit | Customer handling', 'Role fit | Team handling', 'Practical | Salary and notice fit', 'Practical | Location fit'],
+  eval_criteria: ['Communication | Communication and confidence','Role fit | Product and jewellery knowledge','Role fit | Skills and experience for this role','Attitude | Attitude, conduct and stability','Practical | Salary, notice and location fit'],
   call_topics: ['Introduction', 'Hiring requirement', 'Job description', 'Agreement and KYC', 'CV shared', 'Interview scheduling', 'Interview feedback', 'Salary discussion', 'Offer', 'Joining', 'Replacement', 'Invoice and payment', 'Follow-up', 'Other'],
   // The standing work of the team. Each gets an owner on the Tasks page.
   task_list: [
@@ -494,6 +497,8 @@ module.exports.defaultSettings = () => ({
   src_tags: { 'fb-ad': 'Facebook ad', fb: 'Facebook ad', ig: 'Instagram', linkedin: 'LinkedIn', naukri: 'Naukri', apna: 'Apna', wa: 'WhatsApp bot', college: 'College tie-up', walkin: 'Walk-in', expo: 'Exhibition', web: 'Website', post: 'Job post' },
   fee: { type: 'percent', value: 8.33 },
   agency_share_pct: 33.33,
+  profit_split: { partner: 35, brillbrains: 65, partner_label: 'Partner share', brillbrains_label: 'BrillBrains share' }, // profit after expenses
+  invoice_after_days: 7, // an invoice goes to the client this many days after the candidate joins
   gst: { on: true, rate: 18 },
   replacement_days: 90,
   aftercare: { candidate: [7, 14, 21, 30, 60, 90], client: [7, 30, 60, 90] },

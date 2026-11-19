@@ -158,7 +158,7 @@ route('GET', '/api/adspend/report', SUPER, () => {
   const fetched = new Set(); for (const r of all('SELECT adset, day_from FROM ad_spend WHERE upload_id=?', API)) fetched.add(`${norm(r.adset)}|${r.day_from}`);
   const covered = (r) => { if (r.upload_id === API || r.platform !== 'Meta' || !fetched.size || !isoDay(r.day_from) || !isoDay(r.day_to)) return false; for (let d = new Date(`${r.day_from}T00:00:00Z`), k = 0; d.toISOString().slice(0, 10) <= r.day_to && k < 400; d.setUTCDate(d.getUTCDate() + 1), k++) if (fetched.has(`${norm(r.adset)}|${d.toISOString().slice(0, 10)}`)) return true; return false; };
   const every = all('SELECT * FROM ad_spend'); const rows = every.filter((r) => !covered(r)); const overlap = every.reduce((t, r) => t + r.spend, 0) - rows.reduce((t, r) => t + r.spend, 0);
-  const apps = all("SELECT id, job_id, ad_set, ad_name, ad_campaign, result FROM applications WHERE ad_set IS NOT NULL OR ad_name IS NOT NULL");
+  const apps = all("SELECT id, job_id, ad_set, ad_name, ad_campaign, result, step, screen, joined_at FROM applications WHERE ad_set IS NOT NULL OR ad_name IS NOT NULL");
   const jobs = {}; const sets = {};
   for (const r of rows) {
     const k = `${r.platform}|${r.campaign || ''}|${r.adset || ''}`;
@@ -176,7 +176,8 @@ route('GET', '/api/adspend/report', SUPER, () => {
   const total = rows.reduce((t, r) => t + r.spend, 0); const matched = out.reduce((t, j) => t + j.spend, 0);
   const adApps = out.reduce((t, j) => t + j.ad_apps, 0); const hires = out.reduce((t, j) => t + j.hires, 0);
   return {
-    summary: { total: Math.round(total), overlap: Math.round(overlap), unmatched: Math.round(total - matched), ad_apps: adApps, hires, per_app: adApps ? Math.round(matched / adApps) : null, per_hire: hires ? Math.round(matched / hires) : null },
+    summary: { ...(() => { const L = require('./logic'); const reached = (a, st) => a.result === 'Hired' || L.stepIdx(a.step) >= L.stepIdx(st); const ids = apps.map((a) => a.id); const rev = ids.length ? (get(`SELECT SUM(fee) s FROM bills WHERE app_id IN (${ids.map(() => '?').join(',')}) AND status NOT IN ('Cancelled','Draft') AND credit_of IS NULL`, ...ids) || {}).s || 0 : 0;
+      return { all_ad_apps: apps.length, screened: apps.filter((a) => a.screen === 'Accepted' || reached(a, 'Our interview')).length, interviewed: apps.filter((a) => reached(a, 'Our interview')).length, joined: apps.filter((a) => a.result === 'Hired' || a.step === 'Joined' || a.joined_at).length, revenue: Math.round(rev) }; })(), total: Math.round(total), overlap: Math.round(overlap), unmatched: Math.round(total - matched), ad_apps: adApps, hires, per_app: adApps ? Math.round(matched / adApps) : null, per_hire: hires ? Math.round(matched / hires) : null },
     jobs: out,
     sets: Object.values(sets).map((s) => ({ ...s, spend: Math.round(s.spend), portal_apps: apps.filter((a) => norm(a.ad_set) === norm(s.adset)).length, jobs: Object.keys(s.jobs) })).sort((a, b) => b.spend - a.spend),
     uploads: all('SELECT * FROM ad_spend_uploads ORDER BY at DESC'),

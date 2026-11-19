@@ -121,7 +121,7 @@ function saveCall(c, lines, notes, actor) {
   learnRoles(lines, c.industry);
   const uniq = (k) => [...new Set(lines.map((x) => x[k]).filter(Boolean))].join(', ');
   const row = { client_id: c.id, openings: lines.length ? String(lines.reduce((t, x) => t + x.openings, 0)) : '', location: uniq('location'), department: uniq('department'), roles: lines.map((x) => `${x.role} (${x.openings})`).join(', '), call_roles: lines, skills: '', duties: '', notes, by: actor.label, at: now() };
-  insert('client_calls', row);
+  insert('client_calls', row); try { L.recalcClientJobs(c.id, actor.label); } catch { /* the jobs catch up on their next change */ }
   // The requirement call is a call like any other: it goes on the log, and closes one started from the portal.
   const open = L.openCall(actor.uid); const log = { party: 'client', client_id: c.id, at: now(), outcome: 'Connected', topics: ['Hiring requirement'], note: [row.roles, notes].filter(Boolean).join('. ').slice(0, 4000) || 'Requirement call', status: 'Done' };
   if (open && open.client_id === c.id) update('calls', open.id, log); else insert('calls', { ...log, user_id: actor.uid, by: actor.label });
@@ -516,7 +516,7 @@ route('POST', '/api/jobs/:id/not-interested', T, (ctx) => {
 });
 route('GET', '/api/jobs/:id/screen', T, (ctx) => {
   const j = loadJob(ctx);
-  const apps = openApps(j).map((a) => { const c = get('SELECT * FROM candidates WHERE id=?', a.candidate_id); return rowFor(j, c, L.matchScore(c, j, L.ratingOf(c.id)), { app_id: a.id, step: a.step, screen: a.screen, interested: !!get("SELECT 1 FROM app_history WHERE app_id=? AND note LIKE 'Interested%'", a.id) }); }).sort((x, y) => y.score - x.score);
+  const apps = openApps(j).map((a) => { const c = get('SELECT * FROM candidates WHERE id=?', a.candidate_id); return rowFor(j, c, L.matchScore(c, j, L.ratingOf(c.id)), { app_id: a.id, step: a.step, stage: L.stageOfApp(a), screen: a.screen, interested: !!get("SELECT 1 FROM app_history WHERE app_id=? AND note LIKE 'Interested%'", a.id) }); }).sort((x, y) => y.score - x.score);
   const seen = new Set(all('SELECT candidate_id FROM applications WHERE job_id=?', j.id).map((r) => r.candidate_id));
   // For each match not on the job: can they get the WhatsApp question, were they asked, did they say no.
   const askState = (c) => { const m = get("SELECT at FROM messages WHERE dedupe=? ORDER BY at DESC LIMIT 1", `alert:${j.id}:${c.id}`); const no = get("SELECT 1 FROM notes WHERE record_id=? AND text LIKE ?", c.id, `Not interested in ${j.id}%`);
@@ -525,6 +525,17 @@ route('GET', '/api/jobs/:id/screen', T, (ctx) => {
   const removed = new Set(all('SELECT record_id FROM notes WHERE text LIKE ?', `Removed from ${j.id} matches%`).map((r) => r.record_id));
   const bank = bankOf(j, 300).filter((m) => !seen.has(m.c.id) && !removed.has(m.c.id) && m.score >= floor).slice(0, 100).map((m) => rowFor(j, m.c, m, askState(m.c))).sort((x, y) => y.score - x.score);
   return { apps, bank, floor, strong: D.settings().match.strong, ai: LLM.available(), scored: apps.concat(bank).filter((x) => x.by_ai).length };
+});
+// The JD to applied candidates on WhatsApp (ticked ones): the job's JD page link.
+route('POST', '/api/jobs/:id/share-jd', T, (ctx) => {
+  const j = loadJob(ctx); const jd = j.jd || {};
+  if (!Object.values(jd).some((v) => v && String(v).trim())) throw httpError(400, 'Write the JD first (Edit JD), then share it.');
+  const out = { sent: 0, skipped: [] };
+  for (const id of [].concat((ctx.body || {}).app_ids || []).slice(0, 300)) {
+    const a = get("SELECT * FROM applications WHERE id=? AND job_id=? AND result='open'", id, j.id); if (!a) { out.skipped.push(`${id}: not an open application on ${j.id}`); continue; }
+    try { const r = L.sendWA({ ptype: 'candidate', pid: a.candidate_id, format: 'bbhs_jd_share', vars: { job: j.title, link: L.link(`jd/${j.id}`) }, ap: a.id, jb: j.id, by: ctx.actor, bulk: true, dedupe: `jdshare:${a.id}:${L.istDay()}` }); if (r && r.skipped) out.skipped.push(`${id}: ${r.skipped}`); else { out.sent++; L.appHist(a.id, a.step, ctx.actor, 'JD shared on WhatsApp'); } } catch (e) { out.skipped.push(`${id}: ${e.message}`); }
+  }
+  return out;
 });
 // Leave out every match below a score for this job (they are not asked and do not show); 0 brings them back.
 route('POST', '/api/jobs/:id/match-floor', T, (ctx) => {
@@ -743,7 +754,7 @@ route('GET', '/api/accounts/candidates', { ...ACC, levels: ['super'] }, (ctx) =>
 function noticeAccounts(text, id) { for (const u of [...L.accountsUsers(), ...L.superAdmins()]) L.alertUser(u.id, text, id, false); }
 route('POST', '/api/bills/:id/send', { ...ADMINS, accounts: true }, (ctx) => {
   const b = loadBill(ctx); const x = ctx.body || {}; const reminder = x.kind === 'reminder'; const v = L.billView(b); const c = get('SELECT * FROM clients WHERE id=?', b.client_id); const said = []; const today = L.istDay();
-  if (b.status === 'Draft') throw httpError(400, 'Record the invoice number first.'); if (reminder && v.balance <= 0) throw httpError(400, 'Nothing is pending on this bill.');
+  if (b.status === 'Draft') throw httpError(400, 'Record the invoice number first.'); if (!reminder) { const no = L.billNotYet(b); if (no) throw httpError(400, no); } if (reminder && v.balance <= 0) throw httpError(400, 'Nothing is pending on this bill.');
   if (x.already) { update('bills', b.id, { sent_at: now(), sent_via: 'Outside the portal' }); insert('bill_followups', { bill_id: b.id, note: 'Invoice sent outside the portal', next_at: b.due_date ? new Date(`${b.due_date}T10:00:00+05:30`).toISOString() : null, by: ctx.actor.label, at: now() }); return { ok: true }; }
   if (!x.email && !x.whatsapp) throw httpError(400, 'Pick email, WhatsApp or both');
   const pending = L.inr(reminder ? v.balance : b.total); const no = b.bill_no || b.id; const a = b.app_id ? V.appView(get('SELECT * FROM applications WHERE id=?', b.app_id)) : {}; const who = a.candidate_name || b.person_name || 'your hire';
@@ -875,7 +886,8 @@ route('GET', '/api/books', { ...ADMINS, accounts: true }, (ctx) => {
   const dues = all("SELECT * FROM bills WHERE status='Issued' AND credit_of IS NULL").filter(sc.has).map(L.billView).reduce((t, b) => t + b.balance, 0);
   const nameOf = (t, col, id) => (id ? (get(`SELECT ${col} n FROM ${t} WHERE id=?`, id) || {}).n || '' : '');
   const tags = { clients: all('SELECT * FROM clients WHERE removed=0 AND junk=0 AND placeholder=0 AND merged_into IS NULL ORDER BY company').filter((c) => seeClient(u, c)).map((c) => ({ id: c.id, name: c.company })), jobs: all('SELECT * FROM jobs WHERE archived=0 ORDER BY created_at DESC').filter((j) => seeJob(u, j)).map((j) => ({ id: j.id, name: `${j.title}${j.city ? `, ${j.city}` : ''}` })) };
-  return { tags, months, expenses: exp.slice(0, 200).map((x) => ({ ...x, client_name: nameOf('clients', 'company', x.client_id), job_name: nameOf('jobs', 'title', x.job_id) })), revenue: rev.filter((y) => inP(y.date)).slice(0, 200), people, dues, categories: s.expense_tree.map((x) => x.name), kinds: s.revenue_kinds, clients: isSuper(u) ? [] : undefined, agency: sc.id ? get('SELECT id, name FROM agencies WHERE id=?', sc.id) : null, agencies: isSuper(u) ? all('SELECT id, name FROM agencies') : [] };
+  const sp = s.profit_split || { partner: 35, brillbrains: 65 };
+   return { split: { partner: Number(sp.partner) || 0, brillbrains: Number(sp.brillbrains) || 0, partner_label: sp.partner_label || 'Partner share', brillbrains_label: sp.brillbrains_label || 'BrillBrains share' }, tags, months, expenses: exp.slice(0, 200).map((x) => ({ ...x, client_name: nameOf('clients', 'company', x.client_id), job_name: nameOf('jobs', 'title', x.job_id) })), revenue: rev.filter((y) => inP(y.date)).slice(0, 200), people, dues, categories: s.expense_tree.map((x) => x.name), kinds: s.revenue_kinds, clients: isSuper(u) ? [] : undefined, agency: sc.id ? get('SELECT id, name FROM agencies WHERE id=?', sc.id) : null, agencies: isSuper(u) ? all('SELECT id, name FROM agencies') : [] };
 });
 const amount = (v) => { const n = Number(v); if (!n || n <= 0) throw httpError(400, 'Enter the amount', 'amount'); return n; };
 const ownRow = (ctx, table) => { const r = get(`SELECT * FROM ${table} WHERE id=?`, ctx.params.id); if (!r || !bookScope(ctx).has(r)) throw httpError(404, 'Entry not found'); return r; };

@@ -2472,11 +2472,9 @@ route('POST', '/api/agencies/:id/delete', SUPER, (ctx) => {
 // ---------- tasks: who owns what ----------
 const canTask = (u, t) => isSuper(u) || !t.agency_id || t.agency_id === u.agency_id || taskOwnerIds(t).includes(u.id);
 // Owners to pick from: the team, not the super admins (they see and do everything already).
-// Who can own a Digital Reach channel: each admin and sub admin by name, and anyone who owns a job opening.
+// Who can own a Digital Reach channel: every active super admin, admin and sub admin, by name.
 const reachPeople = () => {
-  const owners = new Set();
-  for (const j of all('SELECT recruiter_id, owners FROM jobs WHERE archived=0')) { if (j.recruiter_id) owners.add(j.recruiter_id); for (const o of Array.isArray(j.owners) ? j.owners : []) owners.add(o); }
-  return all("SELECT id, name, level FROM users WHERE status='On' AND level IN ('super','admin','sub') ORDER BY name").filter((u) => u.level !== 'super' || owners.has(u.id)).map((u) => ({ id: u.id, name: u.name }));
+  return all("SELECT id, name, level FROM users WHERE status='On' AND level IN ('super','admin','sub') ORDER BY name").map((u) => ({ id: u.id, name: u.name })); // everyone on the team, super admins too
 };
 const taskOwners = (u) => all("SELECT id, name, level, agency_id, team FROM users WHERE status='On' AND level IN ('super','admin','sub') ORDER BY CASE level WHEN 'super' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END, name").filter((x) => x.level === 'super' || isSuper(u) || !u.agency_id || x.agency_id === u.agency_id || x.id === u.id);
 const taskOwnerIds = (t) => [...new Set([t.owner_id, ...(Array.isArray(t.owners) ? t.owners : [])].filter(Boolean))];
@@ -2977,6 +2975,17 @@ route('POST', '/api/followups', T, (ctx) => {
   return { ok: true, people: want.length };
 });
 route('POST', '/api/followups/:id/done', T, (ctx) => { D.run('UPDATE followups SET done=1 WHERE id=? AND for_user=?', ctx.params.id, ctx.user.id); return { ok: true }; });
+// A job's timeline: its own changes, its status changes and every step on its applications, newest first.
+route('GET', '/api/jobs/:id/timeline', T, (ctx) => {
+  const j = get('SELECT * FROM jobs WHERE id=?', ctx.params.id); mustSee(seeJob(ctx.user, j) || R.sameAgency(ctx.user, j), 'job opening');
+  const lvl = new Map(all('SELECT name, level FROM users').map((u) => [u.name, u.level]));
+  const who = (n) => ({ by: n || 'System', level: lvl.get(n) || null });
+  const out = [];
+  for (const h of all('SELECT * FROM history WHERE record_id=? ORDER BY id DESC LIMIT 300', j.id)) out.push({ at: h.at, kind: 'Job', what: [h.action, h.field && `${h.field}`, h.new && `→ ${h.new}`].filter(Boolean).join(' '), ...who(h.who) });
+  for (const h of all('SELECT * FROM job_history WHERE job_id=? ORDER BY at DESC LIMIT 200', j.id)) out.push({ at: h.at, kind: 'Status', status: h.status, what: `${h.status}${h.note ? ` · ${h.note}` : ''}`, ...who(h.by) });
+  for (const h of all("SELECT h.*, c.name AS cand FROM app_history h JOIN applications a ON a.id=h.app_id LEFT JOIN candidates c ON c.id=a.candidate_id WHERE a.job_id=? ORDER BY h.at DESC LIMIT 600", j.id)) out.push({ at: h.at, kind: 'Application', app_id: h.app_id, candidate: h.cand, status: h.step, what: `${h.cand || h.app_id} · ${h.step}${h.note ? ` · ${h.note}` : ''}`, ...who(h.by) });
+  return out.filter((x) => x.at).sort((a, b) => String(b.at).localeCompare(String(a.at))).slice(0, 800);
+});
 route('GET', '/api/history/:id', T, (ctx) => all('SELECT * FROM history WHERE record_id=? ORDER BY id DESC LIMIT 200', ctx.params.id));
 route('POST', '/api/files', T, async (ctx) => {
   const b = ctx.body; if (b.type === 'agreement_client' && !/\.(docx|pdf)$/i.test(b.name || '')) throw httpError(400, 'Upload the agreement as a Word or PDF file');

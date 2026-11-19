@@ -124,6 +124,8 @@ function runTimer() {
   // Vendors: follow-up steps that are due (WhatsApp from the business number, or a task for the owner).
   try { const v = require('./partners').sweep(); if (v) done.vendor_followups = v; } catch (e) { require('./alerts').devAlert('Vendor follow-ups failed', e.message); }
   try { require('./sources').tagAll(); } catch (e) { console.error('source codes', e.message); }
+  // Invoices ready to go (7 days after joining): one alert each to accounts and super admins.
+  try { for (const b of all("SELECT * FROM bills WHERE app_id IS NOT NULL AND credit_of IS NULL AND sent_at IS NULL AND ready_alerted IS NULL AND status IN ('Draft','Issued')")) { const r = L.billReadyOn(b); if (!r || r === 'not joined' || L.istDay() < r) continue; const a = get('SELECT * FROM applications WHERE id=?', b.app_id) || {}; const c = get('SELECT name FROM candidates WHERE id=?', a.candidate_id) || {}; for (const u of all("SELECT id FROM users WHERE status='On' AND (level='super' OR team='Accounts')")) L.alertUser(u.id, `Invoice ${b.id} can go to the client now (${c.name || ''} joined 7 days ago)`, b.id, 'bills'); update('bills', b.id, { ready_alerted: now() }); } } catch (e) { console.error('invoice ready', e.message); }
   // Matching candidates per live job (for "No relevant candidates").
   try { L.refreshMatchCounts(); } catch (e) { console.error('match counts', e.message); }
   // Meta ad spend, once a day (when the token is in .env).

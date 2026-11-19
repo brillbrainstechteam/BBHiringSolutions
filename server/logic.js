@@ -247,12 +247,25 @@ function superAdmins() { return all("SELECT * FROM users WHERE level='super' AND
 // ---------- job status (5.2) ----------
 function appsOfJob(jobId) { return all('SELECT * FROM applications WHERE job_id=?', jobId); }
 function filledCount(apps) { return apps.filter((a) => (a.result === 'open' && a.step === 'Offer accepted') || a.result === 'Hired').length; }
+// What still stops a job from opening (none = it can open).
+const OPEN_RULE_FROM = '2026-11-20'; // jobs made before this opened on an approved JD or a signed contract
+function openBlockers(job) {
+  const cl = get('SELECT * FROM clients WHERE id=?', job.client_id) || {};
+  if (String(job.created_at || '') < OPEN_RULE_FROM) return job.jd_approved || cl.contract || cl.internal ? [] : ['the signed contract (or an approved JD)'];
+  const out = [];
+  if (!job.title || !job.city || !(job.openings >= 1) || !(job.sal_from || job.sal_to)) out.push('the job details (role, city, count and salary)');
+  if (cl.internal) return out;
+  const ob = cl.onboarding || {}; const req = (ob.requirement && ob.requirement.done) || (ob.intro_call && ob.intro_call.done) || !!get('SELECT 1 FROM client_calls WHERE client_id=? LIMIT 1', cl.id);
+  if (!req) out.push('the requirement understanding (Understand requirement on the client)');
+  if (!cl.contract) out.push("the client's signed contract");
+  return out;
+}
 function computeJobStatus(job, apps) {
   if (job.manual === 'Closed') return 'Closed';
   if (job.manual === 'On hold') return 'On hold';
   if (filledCount(apps) >= job.openings) return 'Filled';
   // Live once the client's signed agreement is in (or the JD is approved, or it is our own hiring); the JD can follow.
-  if (!job.jd_approved && apps.length === 0) { const cl = get('SELECT contract, internal FROM clients WHERE id=?', job.client_id) || {}; if (!cl.contract && !cl.internal) return 'Draft'; }
+  if (apps.length === 0 && openBlockers(job).length) return 'Draft';
   const open = apps.filter((a) => a.result === 'open');
   if (open.some((a) => a.step === 'Offer made')) return 'Offer stage';
   if (open.some((a) => INTERVIEW_STEPS.includes(a.step))) return 'Interviewing';
@@ -281,7 +294,7 @@ function jobStatusReason(job, apps) {
     case 'Closed': return `Closed: ${job.manual_reason || 'no reason given'}`;
     case 'On hold': return `Paused: ${job.manual_reason || 'hiring paused'}`;
     case 'Filled': return `${filledCount(apps)} of ${job.openings} seats filled`;
-    case 'Draft': return 'Waiting for the signed agreement (or an approved JD)';
+    case 'Draft': return `Waiting for ${openBlockers(job).join(', ') || 'the first step'}`;
     case 'Offer stage': return `${n('Offer made')} offer(s) made, waiting for the candidate`;
     case 'Interviewing': return `${n('Our interview') + n('Sent to client') + n('Client interview')} candidate(s) in interviews`;
     case 'Sourcing': return `${open.length} candidate(s) being screened`;
@@ -580,8 +593,16 @@ function createBillForApp(app, by) {
   return bill;
 }
 // Accounts raise the invoice and send it to the client themselves: o.bill_no is their number, and we send nothing.
+// The day an invoice may go to the client: N days after the candidate joined (bills without a joining: any day).
+function billReadyOn(b) {
+  if (!b || !b.app_id) return null; const a = get('SELECT joined_at, joining_date, step, result FROM applications WHERE id=?', b.app_id); if (!a) return null;
+  const joined = a.joined_at || (a.step === 'Joined' || a.result === 'Hired' ? a.joining_date : null); if (!joined) return 'not joined';
+  return istDay(new Date(new Date(joined).getTime() + (Number(settings().invoice_after_days) || 7) * 86400000));
+}
+function billNotYet(b) { const r = billReadyOn(b); if (r === 'not joined') return 'The invoice goes after the candidate joins.'; if (r && istDay() < r) return `The invoice goes 7 days after joining: from ${istFmt(r, false)}.`; return null; }
 function issueBill(billId, by, o = {}) {
   const b = get('SELECT * FROM bills WHERE id=?', billId);
+  { const no = billNotYet(b); if (no) throw httpError(400, no); }
   if (b.status !== 'Draft') throw httpError(400, 'Only a draft bill can be issued.');
   const client = get('SELECT * FROM clients WHERE id=?', b.client_id);
   const days = client.payment_days || settings().payment_days;
@@ -886,7 +907,7 @@ function recordInterview(ivId, o, by) {
       else if (o.result === 'Not selected') { const why = iv.mode === 'phone' ? 'Rejected at telephonic round' : iv.mode === 'video' ? 'Rejected at virtual round' : 'Not suitable'; closeApplication(app.id, why, by, `${ivId}: ${o.remark}`); next = `${app.id} closed (${why})`; }
       else if (o.result === 'On hold') { update('applications', app.id, { on_hold: 1, hold_reason: o.remark }); appHist(app.id, app.step, by, `On hold after ${ivId}`, 'hold'); next = `${app.id} put on hold`; }
     } else {
-      if (o.result === 'Selected') next = 'OPEN_OFFER';
+      if (o.result === 'Selected') { update('applications', app.id, { selected_at: now() }); next = 'OPEN_OFFER'; }
       else if (o.result === 'Not selected') { closeApplication(app.id, 'Client rejected', by, `${ivId}: ${o.remark}`); next = `${app.id} closed (Client rejected)`; }
       else if (o.result === 'On hold') { update('applications', app.id, { on_hold: 1, hold_reason: o.remark }); next = `${app.id} put on hold`; }
       else next = 'Schedule the next round';
@@ -1585,7 +1606,7 @@ function sendSystemText(ptype, pid, text) {
 }
 
 module.exports = { stageStateOf, ownersOfJob, ownerMap, ownsApp, STAGES, stageOfApp, nextStageOf, reopenRefilled, adPlanFor, openAdApplications, placedOn, closePlacedApps, adLabel,
-  STEPS, deptByWords, refreshMatchCounts, recalcClientJobs, stepIdx, digits10, validPhone, inr, istDay, istFmt, istTime, istHour, inQuiet, next9am, daysBetween, addDays, hashPassword, checkPassword, newPassword, sha,
+  STEPS, deptByWords, refreshMatchCounts, recalcClientJobs, openBlockers, billReadyOn, billNotYet, stepIdx, digits10, validPhone, inr, istDay, istFmt, istTime, istHour, inQuiet, next9am, daysBetween, addDays, hashPassword, checkPassword, newPassword, sha,
   activationState, checkActivation, waHeld, TEAMS, IV_MODES, clientSeesIv, addIvNote, CALL_OUTCOMES, logCall, jobList, deptOf, stateOf, person, fillFormat, windowOpenUntil, sendWA, setDispatcher, alertUser, link, agencyAdmin, superAdmins,
   quickClient, AUTO_WEIGHTS, agencyScores, autoAssignOn, autoAssignClient, EMAIL_RE, needEmail, okHrEmail, cleanPoc, saveClientExtras, pocOf, CLIENT_MAIN, CLIENT_SIDE, ONBOARD_STEPS, clientFacts, onboardDone, earnedStage, syncClientStage, computeJobStatus, jobStatusReason, recalcJob, filledCount, appsOfJob, matchScore, jobsFor, cleanBusiness, BUSINESS_TYPES, EXP_YEARS, JEW_YEARS, LOOKING, NOT_LOOKING, JOB_STATUSES, LOOK_FRESH, appStates, appStateOf, jobStatusOf, setLooking, ratingOf, bestMatches, isPlaced, salaryText, autoJobAlert,
   SAL_HIDDEN, feeFor, gstFor, fyOf, billView, refreshBill, createBillForApp, issueBill, upiLink,

@@ -527,7 +527,7 @@ BB.route = () => {
 // The full logo on wide screens, the BB mark where space is tight; the tagline names the part of the site.
 // Point of contact (if not the owner): the person we call and message for day-to-day work.
 BB.pocFields = () => `<details class="poc-box"><summary><b>Point of contact</b> <span class="small muted">if it is not the owner (optional)</span></summary><div class="grid g2" style="margin-top:8px">${BB.field({ name: 'poc_name', label: 'Name', opt: true })}${BB.field({ name: 'poc_role', label: 'Designation or role', opt: true, placeholder: 'e.g. HR manager' })}${BB.field({ name: 'poc_email', label: 'Email ID', type: 'email', opt: true, voice: false })}${BB.field({ name: 'poc_whatsapp', label: 'WhatsApp number', type: 'tel', phone: true, opt: true })}</div></details>`;
-BB.addPoc = (c) => BB.ask({ title: `Add a point of contact · ${String(c.company || '').replace(/[<>&"]/g, '')}`, note: 'The person we call and message for day-to-day work on this account.', fields: [
+BB.addPoc = (c) => BB.ask({ title: `Add a point of contact · ${String(c.company || '').replace(/[<>&"]/g, '')}`, fields: [
   `<div class="grid g2">${BB.field({ name: 'name', label: 'Name' })}${BB.field({ name: 'role', label: 'Designation or role', opt: true, placeholder: 'e.g. HR manager, Store manager' })}</div>`,
   `<div class="grid g2">${BB.field({ name: 'email', label: 'Email ID', type: 'email', opt: true, voice: false })}${BB.field({ name: 'whatsapp', label: 'WhatsApp number', type: 'tel', phone: true, opt: true })}</div>`,
   { name: 'main', label: 'Make this the main point of contact', type: 'check' }], ok: 'Add',
@@ -648,7 +648,8 @@ BB.jobOptions = (selected, withOther = true, industry) => {
 BB.STAGES = ['Applied', 'Screening', 'Telephonic round', 'Virtual round', 'Sent to client', 'Client interview', 'Offer made', 'Offer accepted', 'Joined'];
 BB.stageOf = (a) => { if (a.step !== 'Our interview') return a.step; const r = (a.rounds || []).find((x) => x.mode !== 'in_person' && !['Cleared', 'Not needed', 'Not cleared'].includes(x.status)); return r && r.mode === 'phone' ? 'Telephonic round' : 'Virtual round'; };
 // Move to step: every stage, then Rejected (closes the application).
-BB.stageOptions = (cur) => `${BB.STAGES.map((x) => `<option ${x === cur ? 'disabled' : ''}>${x}</option>`).join('')}<option disabled>──────────</option><option value="Rejected">Rejected</option>`;
+BB.STEP_LABEL = { 'Offer made': 'Selected & offer released' };
+BB.stageOptions = (cur) => `${BB.STAGES.map((x) => `<option value="${x}" ${x === cur ? 'disabled' : ''}>${BB.STEP_LABEL[x] || x}</option>`).join('')}<option disabled>──────────</option><option value="Rejected">Rejected</option>`;
 BB.tracker = (step, result, list = BB.boot.steps) => {
   const i = list.indexOf(step);
   return `<div class="tracker ${result && result !== 'open' && result !== 'Hired' ? 'closed' : ''}">${list.map((s, k) => `<div class="s ${k < i || (k === i && result === 'Hired') ? 'done' : ''} ${k === i && result !== 'Hired' ? 'cur' : ''}">${esc(s)}</div>`).join('')}</div>`;

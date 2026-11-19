@@ -98,6 +98,7 @@ const server = http.createServer(async (req, res) => {
     if (p === '/team' || p.startsWith('/team/')) return send(res, 200, pageHtml('/team'), { 'Content-Type': TYPES['.html'], 'Cache-Control': 'no-cache', 'X-Robots-Tag': 'noindex, nofollow' });
     // A job description page for candidates: /jd/JB-2001.
     const jdm = /^\/jd\/(JB-\d+)\/?$/i.exec(p);
+    if (p === '/jobs' || p === '/jobs/') { res.writeHead(302, { Location: '/open-roles' + (url.search || '') }); return res.end(); }
     const agm = /^\/agent\/([\w-]{8,40})\/?$/.exec(p);
     if (agm) return send(res, 200, require('./agents').pageHtml(agm[1]), { 'Content-Type': TYPES['.html'], 'Cache-Control': 'no-store', 'X-Robots-Tag': 'noindex' });
     if (jdm) { const h = require('./api-team').jdHtml(jdm[1], url.searchParams.get('src')); return send(res, h ? 200 : 404, h || 'This job was not found.', { 'Content-Type': h ? TYPES['.html'] : 'text/plain', 'Cache-Control': 'no-cache' }); }
