@@ -1257,6 +1257,8 @@ route('POST', '/api/jobs/:id/posting', T, (ctx) => {
 });
 // Ask candidates on WhatsApp if they are interested in this job (the job details and Interested / Not interested).
 // An Interested reply opens their application. Each person once per job; nobody who said no to this job.
+// What happened to a WhatsApp the portal made: sent on to the CRM, or kept back (and why).
+const notOut = (r) => (!r || r.skipped ? null : r.status === 'held' ? `On hold: ${String(r.error || 'messages are paused').replace(/^Held: /, '')}` : r.status === 'would send' ? 'Not sent: the WhatsApp CRM is not connected (Settings › WhatsApp › Connected)' : null);
 function askMatches(j, ids, by, o = {}) {
   const budget = D.settings().bulk_budget; let sent = 0; const skipped = []; const fm = D.settings().formats;
   const format = fm.bbhs_job_interest && fm.bbhs_job_interest.approved && !fm.bbhs_job_interest.off ? 'bbhs_job_interest' : fm.bbhs_job_alert && fm.bbhs_job_alert.approved && !fm.bbhs_job_alert.off ? 'bbhs_job_alert' : null;
@@ -1265,7 +1267,7 @@ function askMatches(j, ids, by, o = {}) {
     if (get('SELECT 1 FROM notes WHERE record_id=? AND (text LIKE ? OR text LIKE ?)', cid, `Not interested in ${j.id}%`, `Removed from ${j.id} matches%`)) { skipped.push(`${cid}: Not interested in this job`); continue; }
     if (get("SELECT 1 FROM applications WHERE candidate_id=? AND job_id=?", cid, j.id)) { skipped.push(`${cid}: Already on this job`); continue; }
     const r = L.sendWA({ ptype: 'candidate', pid: cid, format, vars: { job: j.title, city: j.city, salary: L.SAL_HIDDEN, link: L.link(`jd/${j.id}`) }, jb: j.id, by, bulk: true, auto: !!o.auto, rule: o.rule, dedupe: `alert:${j.id}:${cid}` });
-    if (r.skipped) skipped.push(`${cid}: ${r.skipped === 'Already sent before' ? 'Already asked for this job' : r.skipped}`); else sent++;
+    if (r.skipped) skipped.push(`${cid}: ${r.skipped === 'Already sent before' ? 'Already asked for this job' : r.skipped}`); else if (notOut(r)) skipped.push(`${cid}: ${notOut(r)}`); else sent++;
   }
   if (ids.length > budget) skipped.push(`${ids.length - budget} more: over the ${budget} a time limit (Settings), send again for the rest`);
   return { sent, skipped, format };
@@ -2539,7 +2541,7 @@ async function makeCampaign(ctx) {
     if (kind === 'template') {
       if (!c.whatsapp) return skip('No WhatsApp number');
       let t; try { t = S.filled(tpl, tmap, S.mergeVars(c, job), media); } catch (e) { if (e.skip) return skip(e.message); throw e; }
-      try { const r = L.sendWA({ ptype: 'candidate', pid: c.id, template: t, jb: job ? job.id : null, by: ctx.actor, bulk: true, noEmailCopy: true, sendLater: when || undefined, dedupe: `camp:${id}:${c.id}` }); if (r.skipped) skip(r.skipped); else out.wa++; } catch (e) { skip(e.message); }
+      try { const r = L.sendWA({ ptype: 'candidate', pid: c.id, template: t, jb: job ? job.id : null, by: ctx.actor, bulk: true, noEmailCopy: true, sendLater: when || undefined, dedupe: `camp:${id}:${c.id}` }); if (r.skipped) skip(r.skipped); else if (notOut(r)) skip(notOut(r)); else out.wa++; } catch (e) { skip(e.message); }
       return;
     }
     if (kind === 'design') {
@@ -2553,7 +2555,7 @@ async function makeCampaign(ctx) {
     if (wa && !waReady) { wa = false; if (channel === 'preferred' && c.email) mail = true; skip('WhatsApp format waiting for Meta approval'); }
     if (wa && !c.whatsapp) { wa = false; skip('No WhatsApp number'); }
     if (mail && !c.email) { mail = false; skip('No email'); }
-    if (wa) { try { const r = L.sendWA({ ptype: 'candidate', pid: c.id, format: waFormat, vars: kind === 'job' ? { job: job.title, city: job.city, salary: L.SAL_HIDDEN } : kind === 'prefs' ? {} : { message: fill(text, c) }, rule: kind === 'prefs' ? 'pref1-bulk' : undefined, jb: job ? job.id : null, by: ctx.actor, bulk: true, noEmailCopy: true, sendLater: when || undefined, dedupe: `camp:${id}:${c.id}` }); if (r.skipped) skip(r.skipped); else out.wa++; } catch (e) { skip(e.message); } }
+    if (wa) { try { const r = L.sendWA({ ptype: 'candidate', pid: c.id, format: waFormat, vars: kind === 'job' ? { job: job.title, city: job.city, salary: L.SAL_HIDDEN } : kind === 'prefs' ? {} : { message: fill(text, c) }, rule: kind === 'prefs' ? 'pref1-bulk' : undefined, jb: job ? job.id : null, by: ctx.actor, bulk: true, noEmailCopy: true, sendLater: when || undefined, dedupe: `camp:${id}:${c.id}` }); if (r.skipped) skip(r.skipped); else if (notOut(r)) skip(notOut(r)); else out.wa++; } catch (e) { skip(e.message); } }
     if (mail) {
       const sub = kind === 'job' ? `New job: ${job.title}, ${job.city}` : fill(subject, c); const body = kind === 'job' ? `Hello ${c.name || 'there'},\n\nWe have a ${job.title} opening in ${job.city}. If you are interested, reply to this email or open your profile: ${link}\n\nBrillBrains Hiring Solutions` : `${fill(text, c)}\n\nBrillBrains Hiring Solutions`;
       const html = M.layout(sub, body.split(/\n{2,}/).map((x) => `<p style="font-size:14px;line-height:1.65;margin:0 0 12px">${x.replace(/[&<>]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[ch])).replace(/\n/g, '<br>')}</p>`).join(''));
@@ -2583,7 +2585,7 @@ function askConsent(ids, by, campaignId) {
     if (c.consent_alerts) { skip('Already agreed'); continue; } if (c.opted_out) { skip('Said STOP'); continue; } if (!c.whatsapp) { skip('No WhatsApp number'); continue; }
     if (out.sent >= D.settings().bulk_budget) { skip(`Over the limit of ${D.settings().bulk_budget} per send: press again for the rest`); continue; }
     const r = L.sendWA({ ptype: 'candidate', pid: c.id, format: fmtKey, by, bulk: true, allowOff: true, noEmailCopy: true, dedupe: `consent:${c.id}:${campaignId || L.istDay()}` });
-    if (r.skipped) { skip(r.skipped === 'Already sent before' ? 'Already asked' : r.skipped); } else out.sent++;
+    if (r.skipped) { skip(r.skipped === 'Already sent before' ? 'Already asked' : r.skipped); } else if (notOut(r)) skip(notOut(r)); else out.sent++;
     if (campaignId && !r.skipped || (campaignId && r.skipped === 'Already sent before')) D.run('INSERT OR IGNORE INTO consent_waits (candidate_id, campaign_id, by, at) VALUES (?,?,?,?)', c.id, campaignId, L.actorName(by), now());
   }
   D.history(L.actorName(by), 'consent asked', campaignId || null, null, null, `${out.sent} sent`);
@@ -2605,6 +2607,17 @@ function laterOrNow(ctx, kind) {
   return kind === 'consent' ? consentNow(x, ctx.user, ctx.actor) : restNow(x, ctx.user, ctx.actor);
 }
 route('POST', '/api/campaigns/:id/ask-consent', T, (ctx) => laterOrNow(ctx, 'consent'));
+route('POST', '/api/campaigns/:id/retry-held', T, async (ctx) => {
+  const x = get('SELECT * FROM campaigns WHERE id=?', ctx.params.id); if (!x || !seeCampaign(ctx.user, x)) throw httpError(404, 'Campaign not found');
+  const st = D.settings(); const wp = st.wa_pause || {};
+  if (!st.crm.enabled) throw httpError(400, 'Connect the WhatsApp CRM first (Settings › WhatsApp › Connected). Nothing was sent.');
+  if (wp.candidates) throw httpError(400, 'WhatsApp to candidates is still paused (Settings › WhatsApp). Nothing was sent.');
+  const stuck = all("SELECT id, person_id, dedupe FROM messages WHERE direction='out' AND status IN ('held','would send') AND (dedupe LIKE ? OR dedupe LIKE ?)", `consent:%:${x.id}`, `camp:${x.id}:%`);
+  for (const m of stuck) { D.run('DELETE FROM messages WHERE id=?', m.id); if (/^consent:/.test(m.dedupe)) D.run('DELETE FROM consent_waits WHERE candidate_id=? AND campaign_id=? AND done_at IS NULL', m.person_id, x.id); }
+  const c1 = consentNow(x, ctx.user, ctx.actor); const c2 = await restNow(x, ctx.user, ctx.actor);
+  D.history(ctx.actor.label, 'campaign: held sent again', x.id, null, null, `${stuck.length} held; consent ${c1.sent}, job ${c2.wa}`);
+  return { held: stuck.length, consent: c1, job: c2 };
+});
 route('POST', '/api/campaigns/:id/jobs/:job/cancel', T, (ctx) => {
   const x = get('SELECT * FROM campaigns WHERE id=?', ctx.params.id); if (!x || !seeCampaign(ctx.user, x)) throw httpError(404, 'Campaign not found');
   D.run("UPDATE campaign_jobs SET status='Cancelled', done_at=? WHERE id=? AND campaign_id=? AND status='Scheduled'", now(), ctx.params.job, x.id); return { ok: true };
@@ -2729,7 +2742,12 @@ route('GET', '/api/campaigns/:id', T, (ctx) => {
   const ans = (pid) => { const ids = cm.filter((m) => m.person_id === pid).map((m) => m.id); if (!ids.length) return ''; const r = get(`SELECT text FROM messages WHERE direction='in' AND reply_to IN (${ids.map(() => '?').join(',')}) ORDER BY at DESC LIMIT 1`, ...ids); return r ? String(r.text || '').trim().toLowerCase() : ''; };
   const consent = cw.length ? cw.reduce((o, w) => { const a = ans(w.candidate_id); if (['i agree', 'yes, send job alerts'].includes(a) || w.done_at) o.agreed++; else if (['no, thanks', 'stop messages', 'stop'].includes(a)) o.declined++; else o.waiting++; return o; }, { asked: cw.length, agreed: 0, declined: 0, waiting: 0 }) : null;
   const jobs = all('SELECT id, kind, run_at, status, result, by FROM campaign_jobs WHERE campaign_id=? ORDER BY run_at DESC LIMIT 10', x.id);
-  return { ...campRow(x), consent, jobs, people: Object.values(people).map((p) => ({ ...p, name: name(p.id), replied: replied(p.id) })) };
+  const st = D.settings(); const wp = st.wa_pause || {};
+  const blockers = [!st.crm.enabled && 'The WhatsApp CRM is not connected, so nothing reaches WhatsApp. Settings › WhatsApp › tick "Connected".', wp.candidates && 'WhatsApp to candidates is paused (testing). Settings › WhatsApp › untick "Pause candidate WhatsApp".', wp.everyone && 'All automatic WhatsApp is on hold, which holds the consent message. Settings › Messages on hold › untick "Hold all automatic WhatsApp".'].filter(Boolean);
+  const label = { held: 'On hold', 'would send': 'Not sent (CRM off)', sent: 'Sent', sending: 'Sending', delivered: 'Delivered', read: 'Read', failed: 'Failed', scheduled: 'Scheduled' };
+  const tally = (like, arg) => all(`SELECT status, error, COUNT(*) n FROM messages WHERE direction='out' AND dedupe LIKE ? GROUP BY status, error`, arg).map((r) => ({ status: label[r.status] || r.status, error: r.error || '', n: r.n }));
+  const delivery = { consent: tally('', `consent:%:${x.id}`), job: tally('', `camp:${x.id}:%`) };
+  return { ...campRow(x), consent, jobs, blockers, delivery, people: Object.values(people).map((p) => ({ ...p, name: name(p.id), replied: replied(p.id) })) };
 });
 route('GET', '/api/contact-prefs', T, () => L.PREF);
 // The message they will get, shown before sending.
