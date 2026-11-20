@@ -10,6 +10,7 @@ require('./api-public');
 require('./crm');
 require('./agents');
 require('./drive');
+const social = require('./social');
 const { seed } = require('./seed');
 const timer = require('./timer');
 
@@ -87,6 +88,7 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname.startsWith('/api/')) {
       const body = ['POST', 'PUT', 'PATCH'].includes(req.method) ? await readBody(req) : {};
       const out = await R.dispatch(req, res, url, body);
+      if (out && out.__redirect) { res.writeHead(302, { Location: out.__redirect, 'Cache-Control': 'no-store' }); return res.end(); }
       if (out && out.__file) {
         const f = out.__file;
         return send(res, 200, f.buf, { 'Content-Type': f.mime, 'Content-Disposition': `${f.inline ? 'inline' : 'attachment'}; filename="${String(f.name).replace(/"/g, '')}"`, 'Cache-Control': 'no-store' });
@@ -125,4 +127,5 @@ if (D.ENV.name !== 'live' && process.env.BBHS_NO_SEED !== '1' && seed()) console
 process.on('uncaughtException', (e) => { console.error(e); devAlert('Server error', e.stack || e.message); });
 process.on('unhandledRejection', (e) => { console.error(e); devAlert('Server error', (e && e.message) || String(e)); });
 timer.start();
+social.start();
 server.listen(PORT, () => console.log(`BBHS hiring software (${D.ENV.name} copy) on http://localhost:${PORT}  (forms: /hire /apply · accounts: /my-account /my-profile · team: /team)`));

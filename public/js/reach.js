@@ -25,6 +25,59 @@
   const wireOwners = (el) => $$('[data-rown]', el).forEach((x) => (x.onchange = () => { const v = x.value; if (!v) return; say(() => BB.post('/api/channels/owner', v.startsWith('u:') ? { key: x.dataset.rown, owner_id: v.slice(2) } : { key: x.dataset.rown, owner: v.slice(2) }), 'Owner saved'); }));
   const statusSeg = (attr, st) => `<div class="rs-seg" role="group" aria-label="Status">${STATUS.map(([v, l]) => `<button type="button" class="${st === v ? `on s-${v === 'Not needed' ? 'na' : v.toLowerCase()}` : ''}" ${attr}="${esc(v)}">${l}</button>`).join('')}</div>`;
 
+  // ---------- automatic posts: Facebook, Instagram, LinkedIn ----------
+  const SOC = [['facebook', 'Facebook'], ['instagram', 'Instagram'], ['linkedin', 'LinkedIn']];
+  const SOC_BADGE = { Scheduled: 'b-gold', Posting: 'b-primary', Posted: 'b-green', Failed: 'b-red', Cancelled: 'b-outline' };
+  const isAdm = () => ['super', 'admin'].includes(BB.me.user.level);
+  const connChips = (st) => `<div class="soc-conn">${SOC.map(([k, l]) => { const x = st[k] || {}; return `<span class="soc-chip ${x.ready ? 'ok' : 'no'}" title="${esc(x.ready ? '' : x.why || '')}"><b>${l}</b> ${x.ready ? esc(x.name || 'connected') : 'not connected'}</span>`; }).join('')}${st.linkedin && !st.linkedin.ready && st.linkedin.can_connect && isAdm() ? '<button type="button" class="btn sm" data-liconn>Connect LinkedIn</button>' : ''}${st.linkedin && st.linkedin.ready && isAdm() ? '<button type="button" class="btn-link tiny" data-liconn>Reconnect LinkedIn</button>' : ''}</div>`;
+  const wireConn = (el) => { const b = $('[data-liconn]', el); if (b) b.onclick = async () => { try { const r = await BB.post('/api/social/linkedin/connect'); location.href = r.url; } catch (e) { BB.fail(e); } }; };
+  const postLine = (p, withJob) => `<div class="soc-post"><span class="badge b-outline tiny">${esc(p.label)}</span><span class="badge ${SOC_BADGE[p.status] || 'b-outline'} tiny">${esc(p.status)}</span>${withJob ? `<a href="#" data-open="reach:${esc(p.job_id)}" class="small"><b>${esc(p.title || p.job_id)}</b>${p.city ? `, ${esc(p.city)}` : ''}</a>` : ''}<span class="small muted">${p.status === 'Posted' ? 'posted ' : p.status === 'Scheduled' ? 'for ' : ''}${fmtDT(p.posted_at || p.run_at)} · ${esc(p.by || '')}</span><span class="grow"></span>${p.url ? `<a class="small" href="${esc(p.url)}" target="_blank" rel="noopener">see post ↗</a>` : ''}${p.status === 'Scheduled' ? `<button type="button" class="btn-link tiny" data-scancel="${p.id}">Cancel</button>` : ''}${p.status === 'Failed' ? `<button type="button" class="btn sm" data-sretry="${p.id}">Try again</button>` : ''}${p.error && p.status === 'Failed' ? `<div class="tiny soc-err">${esc(p.error)}</div>` : ''}</div>`;
+  const wirePostActs = (el, after) => {
+    $$('[data-scancel]', el).forEach((b) => (b.onclick = async () => { try { await BB.post(`/api/social/posts/${b.dataset.scancel}/cancel`); BB.toast('Cancelled'); after(); } catch (e) { BB.fail(e); } }));
+    $$('[data-sretry]', el).forEach((b) => (b.onclick = async () => { b.disabled = true; b.textContent = 'Posting…'; try { const p = await BB.post(`/api/social/posts/${b.dataset.sretry}/retry`); BB.toast(p.status === 'Posted' ? `Posted on ${p.label}` : `Not posted: ${p.error}`, p.status !== 'Posted'); after(); } catch (e) { BB.fail(e); after(); } }));
+  };
+  // Any image becomes a JPG in Instagram's shape (between 4:5 portrait and 1.91:1 landscape, white edges added), max 1440 px.
+  const toPostJpg = (file) => new Promise((resolve, reject) => {
+    const img = new Image(); const u = URL.createObjectURL(file);
+    img.onload = () => { let w = img.naturalWidth; let h = img.naturalHeight; let cw = w; let ch = h; if (w / h < 0.8) cw = Math.round(h * 0.8); else if (w / h > 1.91) ch = Math.round(w / 1.91);
+      const k = Math.min(1, 1440 / Math.max(cw, ch)); const c = document.createElement('canvas'); c.width = Math.round(cw * k); c.height = Math.round(ch * k); const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height);
+      g.drawImage(img, Math.round(((cw - w) / 2) * k), Math.round(((ch - h) / 2) * k), Math.round(w * k), Math.round(h * k)); URL.revokeObjectURL(u); resolve(c.toDataURL('image/jpeg', 0.9)); };
+    img.onerror = () => { URL.revokeObjectURL(u); reject(new Error('That file is not an image the browser can open. Use a JPG or PNG.')); };
+    img.src = u;
+  });
+  const localDT = (d) => { const x = new Date(d.getTime() - d.getTimezoneOffset() * 60000); return x.toISOString().slice(0, 16); };
+  // The Post automatically block on one job (filled after the panel opens: Meta is asked who is connected).
+  const socialBlock = async (box, id) => {
+    let st; let d; try { [st, d] = await Promise.all([BB.api('/api/social/status'), BB.api(`/api/social/job/${id}`)]); } catch (e) { box.innerHTML = `<div class="small muted">${esc(e.message)}</div>`; return; }
+    const draw = (text) => {
+      const plat = SOC.map(([k, l]) => { const x = st[k] || {}; const off = !x.ready || (k === 'instagram' && !d.image); const why = !x.ready ? x.why : k === 'instagram' && !d.image ? 'Instagram needs an image' : ''; return `<label class="soc-plat ${off ? 'off' : ''}" title="${esc(why || '')}"><input type="checkbox" data-splat="${k}" ${off ? 'disabled' : 'checked'}> ${l}${why ? `<span class="tiny muted"> · ${esc(why.length > 60 ? 'not connected' : why)}</span>` : ''}</label>`; }).join('');
+      box.innerHTML = `${connChips(st)}
+        <div class="soc-grid"><div class="soc-img">${d.image ? `<img src="${esc(d.image.url)}" alt="Creative for this job">` : '<div class="soc-noimg small muted">No image yet</div>'}<button type="button" class="btn sm" data-simg>${d.image ? 'Change image' : 'Upload image'}</button></div>
+        <div class="soc-form"><textarea data-stext rows="9" aria-label="Post text">${esc(text)}</textarea><div class="tiny muted">{link} becomes this job's apply link, tagged for each channel.</div>
+          <div class="soc-plats">${plat}</div>
+          <div class="soc-go"><button type="button" class="btn primary" data-snow>Post now</button><span class="small muted">or</span><input type="datetime-local" data-sat value="${localDT(new Date(Date.now() + 3600000))}" aria-label="Post on"><button type="button" class="btn" data-ssched>Schedule</button></div></div></div>
+        <div class="soc-list">${d.posts.length ? d.posts.map((p) => postLine(p)).join('') : '<div class="faint small">No posts yet from the portal.</div>'}</div>`;
+      wireConn(box);
+      const reload = async () => { const t = $('[data-stext]', box).value; try { d = await BB.api(`/api/social/job/${id}`); } catch (e) { BB.fail(e); } draw(t); };
+      wirePostActs(box, reload);
+      $('[data-simg]', box).onclick = () => { const i = document.createElement('input'); i.type = 'file'; i.accept = 'image/*'; i.onchange = async () => { const file = i.files[0]; if (!file) return; const b = $('[data-simg]', box); b.disabled = true; b.textContent = 'Uploading…'; try { const base64 = await toPostJpg(file); await BB.post('/api/social/image', { job_id: id, base64 }); BB.toast('Image saved'); } catch (e) { BB.fail(e); } reload(); }; i.click(); };
+      const picked = () => $$('[data-splat]:checked', box).map((c) => c.dataset.splat);
+      const go = async (btn, at) => {
+        const platforms = picked(); if (!platforms.length) return BB.toast('Tick where to post', true);
+        btn.disabled = true; const was = btn.textContent; btn.textContent = at ? 'Scheduling…' : 'Posting…';
+        try {
+          const r = await BB.post('/api/social/posts', { job_id: id, platforms, text: $('[data-stext]', box).value, at });
+          if (r.posted) { const ok = r.posted.filter((p) => p.status === 'Posted'); const bad = r.posted.filter((p) => p.status !== 'Posted'); BB.toast(bad.length ? `${bad.map((p) => `${p.label}: ${p.error}`).join(' · ')}` : `Posted on ${ok.map((p) => p.label).join(', ')}`, !!bad.length); refresh(); }
+          else { BB.toast(r.warn || `Scheduled for ${fmtDT(r.at)}`, !!r.warn); }
+        } catch (e) { BB.fail(e); }
+        btn.disabled = false; btn.textContent = was; reload();
+      };
+      $('[data-snow]', box).onclick = (e) => go(e.currentTarget);
+      $('[data-ssched]', box).onclick = (e) => { const v = $('[data-sat]', box).value; if (!v) return BB.toast('Pick the date and time', true); go(e.currentTarget, new Date(v).toISOString()); };
+    };
+    draw(d.text);
+  };
+
   // ---------- one job: its creative and channels ----------
   BB.panels.reach = async (id) => {
     const d = await BB.api(`/api/reach/${id}`); const cr = await BB.api(`/api/creatives/${id}`); const rows = d.rows; const j = d.job;
@@ -37,6 +90,7 @@
           <div class="rs-next">Next: <b>${esc(nextStep(cr.status ? cr : null, all.left))}</b></div>
           <div class="rs-link"><input data-rclink value="${esc(cr.link || '')}" placeholder="Paste the link to the creative" aria-label="Link to the creative"><button type="button" class="btn sm" data-rcsave>Save link</button>${/^https?:\/\//i.test(cr.link || '') ? `<a class="btn sm" href="${esc(cr.link)}" target="_blank" rel="noopener">Open ↗</a>` : ''}</div>
           <details class="rs-brief" open><summary>Creative brief — details pulled from this job</summary><textarea data-rbrief rows="10">${esc(cr.brief || '')}</textarea><div class="row"><button type="button" class="btn sm" data-rbsave>Save brief</button><button type="button" class="btn sm" data-rbcopy>Copy brief</button></div></details></div>
+        <div class="sec"><h3><span>Post automatically</span><span class="sec-act small muted">Facebook · Instagram · LinkedIn</span></h3><div data-social><div class="faint small">Checking what is connected…</div></div></div>
         <div class="sec"><h3><span>Channels</span><span class="sec-act"><span class="small muted">${all.done} of ${all.needed} done</span>${anyMine ? '<label class="row small"><input type="checkbox" data-rmine> My channels</label>' : ''}</span></h3>${bar(all.done, all.needed)}
           ${groups.map((g) => { const gr = rows.filter((r) => r.group === g); const n = counted(gr.map((r) => r.status)); return `<details class="rs-group" ${n.left ? 'open' : ''}><summary><b>${esc(g)}</b>${n.left && !limited() ? `<button type="button" class="btn-link tiny" data-rgna="${esc(g)}" title="Every channel in ${esc(g)} still to do becomes Not needed">Skip the ${n.left} left</button>` : ''}<span class="small muted">${n.done} of ${n.needed} done</span><span class="ci-chev" aria-hidden="true"></span></summary>${gr.map(row).join('')}</details>`; }).join('')}</div>
         ${limited() ? '' : `<div class="row"><button class="btn sm" data-open="job:${j.id}">Open the job</button></div>`}`,
@@ -52,6 +106,7 @@
         const m = $('[data-rmine]', el); if (m) m.onchange = () => $$('.rs-row[data-mine="0"]', el).forEach((r) => { r.hidden = m.checked; });
         wireOwners(el);
         const ci = $('[data-rcirc]', el); if (ci) ci.onclick = () => BB.circulate(id, ci);
+        socialBlock($('[data-social]', el), id);
       },
     };
   };
@@ -99,10 +154,15 @@
     const channelTable = () => { let g = null; return chs.map((c) => { const n = counted(d.jobs.map((j) => cell(j, c).status || '')); const head = c.group !== g ? `<div class="rs-ghead">${esc((g = c.group))}</div>` : ''; return `${head}<div class="rs-chrow"><button type="button" class="rs-chname" data-rch="${esc(c.key)}"><b>${esc(c.channel)}</b><span class="tiny muted">${esc(c.how || '')}</span></button><span class="rs-chown">${limited() ? `<span class="small muted">${esc(c.owner)}</span>` : ownerPick(c, d.people)}</span><span class="rs-j3">${bar(n.done, n.needed)}<span class="tiny muted">${n.done} of ${n.needed} jobs</span></span></div>`; }).join(''); };
     el.innerHTML = `${stats}<section class="card pad rs-tools"><input data-rs placeholder="Search job, client or city" aria-label="Search jobs"><select data-own aria-label="Owner"><option value="">All owners</option>${owners.includes(myName) ? `<option value="${esc(myName)}" ${own === myName ? 'selected' : ''}>My channels</option>` : ''}${owners.filter((o) => o !== myName).map((o) => `<option ${own === o ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select>${seg('by', by, [['job', 'By job'], ['channel', 'By channel']])}${by === 'job' ? seg('show', show, [['todo', 'To do'], ['all', 'All']]) : ''}</section>
       ${by === 'job' ? '<div class="card" data-rlist></div>' : `<div class="card pad">${channelTable()}</div>`}
+      <section class="card pad" data-socpage><div class="row between"><h3 style="margin:0">Automatic posts</h3><span class="small muted">scheduled and the last 14 days</span></div><div data-socbody><div class="faint small">Loading…</div></div></section>
       <details class="card pad rs-recent"><summary><b>Recent updates</b> <span class="small muted">${d.recent.length}</span></summary>${d.recent.map((r) => `<div class="trk-rec"><b>${esc(r.updated_by)}</b> marked ${esc(r.channel)} <span class="badge b-outline">${esc(r.status === 'Pending' ? 'To do' : r.status || 'cleared')}</span> for ${esc(r.job)} <span class="faint">${fmtDT(r.updated_at)}</span></div>`).join('') || '<div class="faint small">No updates yet.</div>'}</details>`;
     if (by === 'job') { list(); $('[data-rs]', el).oninput = list; } else $('[data-rs]', el).hidden = true;
     $$('[data-rq]', el).forEach((b) => (b.onclick = () => BB.setQ({ [b.dataset.rq]: b.dataset.val })));
     $('[data-own]', el).onchange = (e) => BB.setQ({ owner: e.target.value }); wireOwners(el);
+    if (q.li) { BB.toast(q.li === 'connected' ? 'LinkedIn connected' : `LinkedIn: ${q.li}`, q.li !== 'connected'); BB.setQ({ li: '' }); }
+    { const sb = $('[data-socbody]', el); const load = async () => { try { const [st, ps] = await Promise.all([BB.api('/api/social/status'), BB.api('/api/social/posts')]); const day = (p) => new Date(p.posted_at || p.run_at).toDateString(); const up = ps.rows.filter((p) => p.status === 'Scheduled'); const past = ps.rows.filter((p) => p.status !== 'Scheduled').reverse();
+      const group = (rows) => { let g = null; return rows.map((p) => { const h = day(p) !== g ? `<div class="rs-ghead">${fmtD((g = day(p)) && (p.posted_at || p.run_at))}</div>` : ''; return h + postLine(p, true); }).join(''); };
+      sb.innerHTML = `${connChips(st)}<div class="soc-list"><div class="small"><b>Scheduled</b> · ${up.length}</div>${group(up) || '<div class="faint small">Nothing scheduled. Open a job below and use Post automatically.</div>'}${past.length ? `<details><summary class="small"><b>Posted and failed</b> · ${past.length}</summary>${group(past)}</details>` : ''}</div>`; wireConn(sb); wirePostActs(sb, load); } catch (e) { sb.innerHTML = `<div class="small muted">${esc(e.message)}</div>`; } }; load(); }
     $$('[data-rch]', el).forEach((b) => (b.onclick = () => {
       const c = d.channels.find((x) => x.key === b.dataset.rch); const link = (j) => `${d.link_base}job=${j.id}&src=${d.tags[c.key]}`;
       BB.modal({ title: c.channel, wide: true, body: `${c.how ? `<p class="small muted" style="margin-top:0">${esc(c.how)}</p>` : ''}${d.jobs.map((j) => `<div class="rs-row"><div class="rs-main"><b>${esc(j.title)}</b><div class="tiny muted">${[j.client, j.city].filter(Boolean).map(esc).join(' · ')}</div></div><div class="rs-acts">${statusSeg(`data-mj="${j.id}" data-v`, cell(j, c).status || '')}<button type="button" class="btn sm" data-mcopy="${esc(link(j))}">Copy link</button></div></div>`).join('') || '<div class="empty">No open jobs.</div>'}`, foot: '<button class="btn" data-mclose>Close</button>',

@@ -2691,3 +2691,19 @@ a.pipe-step { text-decoration: none; cursor: pointer; } a.pipe-step:hover { bord
 /* Job history tab: one card per action */
 .tl-list { display: grid; gap: 8px; } .tl-card { border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; background: var(--surface); }
 .tl-top { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; } .job-owners { margin: 4px 0 10px; }
+
+/* Automatic posts (Digital Reach) */
+.soc-conn { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 6px 0 10px; }
+.soc-chip { font-size: 12px; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface); }
+.soc-chip.ok { border-color: color-mix(in srgb, #16a34a 45%, var(--border)); } .soc-chip.ok b { color: #15803d; }
+.soc-chip.no { opacity: .8; } .soc-chip.no b { color: var(--muted, #5B6478); }
+.soc-grid { display: grid; grid-template-columns: 180px 1fr; gap: 12px; align-items: start; }
+.soc-img { display: grid; gap: 8px; } .soc-img img { width: 100%; border-radius: 10px; border: 1px solid var(--border); background: #fff; }
+.soc-noimg { aspect-ratio: 4 / 5; border: 1px dashed var(--border); border-radius: 10px; display: grid; place-items: center; }
+.soc-form textarea { width: 100%; font: inherit; font-size: 14px; }
+.soc-plats { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 10px 0; } .soc-plat { display: flex; align-items: center; gap: 6px; font-size: 14px; } .soc-plat.off { opacity: .6; }
+.soc-go { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; } .soc-go input { height: 36px; }
+.soc-list { display: grid; gap: 6px; margin-top: 12px; }
+.soc-post { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 10px; }
+.soc-err { flex-basis: 100%; color: #b91c1c; }
+@media (max-width: 640px) { .soc-grid { grid-template-columns: 1fr; } .soc-img { grid-template-columns: 120px 1fr; align-items: center; } }
