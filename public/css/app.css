@@ -2808,3 +2808,13 @@ a.pipe-step { text-decoration: none; cursor: pointer; } a.pipe-step:hover { bord
 .logs-grid .tbl td:first-child { min-width: 180px; }
 .logs-grid .dots7 { white-space: nowrap; }
 @media (max-width: 1000px) { .logs-grid.two { grid-template-columns: minmax(0, 1fr); } }
+/* Sticky table headers everywhere: each table scrolls inside its own box (at most a screen tall), and its header row
+   stays on top while the rows scroll under it. Smaller boxes set on a page (max-height inline) still win. */
+.tbl-wrap, .dt-wrap { max-height: calc(100vh - 140px); overflow: auto; }
+.tbl-wrap.tbl-scroll { overflow-y: auto; }
+.tbl thead th { position: sticky; top: 0; z-index: 3; background-color: var(--surface-2); box-shadow: inset 0 -1px 0 var(--border); }
+.dt-cl th.dt-act { top: 0; z-index: 4; }
+/* Short lists whose row menus must spill outside the box keep a plain header. */
+.seg-table .tbl thead th, .card.cand-table.seg-table .tbl thead th { position: static; }
+/* Phone card view of tables: no header row to pin. */
+@media (max-width: 640px) { .tbl-wrap, .dt-wrap { max-height: none; } .tbl thead th { position: static; } }
