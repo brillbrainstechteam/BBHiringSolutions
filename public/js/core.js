@@ -17,6 +17,8 @@ const fromLocalInput = (v) => (v ? new Date(v + ':00+05:30').toISOString() : '')
 Object.assign(BB, { $, $$, esc, inr, fmtD, fmtDT, fmtT, daysAgo, istDay, toLocalInput, fromLocalInput });
 
 const ICONS = {
+  trash: '<path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/>',
+  megaphone: '<path d="M3 10v4h4l6 4V6L7 10H3z"/><path d="M16 9a4 4 0 0 1 0 6M18.5 6.5a8 8 0 0 1 0 11"/>',
   star: '<path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z"/>',
   check: '<path d="M20 6 9 17l-5-5"/>',
   download: '<path d="M12 3v12M7 11l5 5 5-5M4 20h16"/>',
