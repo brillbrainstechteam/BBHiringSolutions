@@ -2800,3 +2800,11 @@ a.pipe-step { text-decoration: none; cursor: pointer; } a.pipe-step:hover { bord
 @media (max-width: 640px) { .jf-top { grid-template-columns: 1fr 1fr; } .jf-lab { flex-basis: 100%; } .ph-ico { width: 44px; height: 44px; } .ph-ico svg { width: 22px; height: 22px; } .job-tb .seg { width: 100%; overflow-x: auto; } .job-tb .seg button { padding: 8px 12px; white-space: nowrap; } .job-stages .jst, .job-stages .jst[data-stg] { min-height: 92px; } }
 .page-h [hidden] { display: none !important; }
 .ph-row h1 { font-size: clamp(26px, 2.4vw, 32px); }
+/* Icons inside any tab strip stay small, wherever the strip is placed. */
+.seg button svg { width: 16px; height: 16px; flex: none; vertical-align: -3px; }
+/* Daily logs: my log beside the team's when I write one; the team's full width when I only review (super admin). */
+.logs-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; align-items: start; }
+.logs-grid.two { grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); }
+.logs-grid .tbl td:first-child { min-width: 180px; }
+.logs-grid .dots7 { white-space: nowrap; }
+@media (max-width: 1000px) { .logs-grid.two { grid-template-columns: minmax(0, 1fr); } }

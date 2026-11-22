@@ -503,7 +503,7 @@
   // Ad spend: upload what Meta Ads Manager / LinkedIn Campaign Manager exported; spend goes to the jobs each ad set
   // brought applications to. Shows spend, cost per application and per hire, per job and per ad set.
   async function adSpend(el, actions) {
-    actions.innerHTML = `${jobViews('spend')}<button class="btn primary" data-spup>Upload spend report</button>`;
+    actions.innerHTML = `<div class="job-tb">${jobViews('spend')}<span class="tb-div"></span><button class="btn primary" data-spup>${BB.icon('upload')} Upload spend report</button></div>`;
     $$('[data-jv]', actions).forEach((b) => (b.onclick = () => BB.setQ({ view: b.dataset.jv })));
     const [d, mt] = await Promise.all([BB.api('/api/adspend/report'), BB.api('/api/adspend/meta')]); const sm = d.summary; const money = (v) => (v === null || v === undefined ? '—' : inr(v));
     // Meta: fetched every morning by itself once the token is on the server; Fetch now for any dates.
@@ -1288,7 +1288,7 @@
   // ---------- Daily logs (9.3) ----------
   P.logs = async ({ el, me }) => {
     const d = await BB.api('/api/logs'); const m = d.mine; const c = d.counts;
-    el.innerHTML = `<div class="grid" style="grid-template-columns:minmax(0,1fr) minmax(0,1.4fr);gap:14px;align-items:start">
+    el.innerHTML = `<div class="logs-grid ${me.level !== 'super' ? 'two' : ''}">
       ${me.level !== 'super' ? `<div class="card"><div class="card-h"><h3>My log for today</h3>${m ? `<span class="badge ${m.status === 'Approved' ? 'b-green' : 'b-amber'} right">${m.status}</span>` : `<span class="small muted right">deadline ${esc(d.deadline)}</span>`}</div><div class="card-b stack">
         <div class="row small">${[['Added', c.added], ['Screened', c.screened], ['Interviews', c.interviews], ['Sent', c.sent], ['Offers', c.offers], ['Joined', c.joined]].map(([l, v]) => `<span class="badge b-primary">${l}: ${v}</span>`).join('')}<span class="faint tiny">counted for you</span></div>
         <form class="stack" data-log>${field({ name: 'tasks', label: 'Tasks done today', type: 'textarea', value: m ? m.tasks : '' })}${field({ name: 'problems', label: 'Problems', type: 'textarea', value: m ? m.problems : '', opt: true })}${field({ name: 'plan', label: 'Plan for tomorrow', type: 'textarea', value: m ? m.plan : '' })}<button class="btn primary" ${m && m.status === 'Approved' ? 'disabled' : ''}>${m ? 'Update log' : 'Submit log'}</button></form>
