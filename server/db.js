@@ -374,6 +374,18 @@ function ensureSettings() {
     for (const r of all('SELECT id, job_wanted, department FROM candidates')) { const d = next(r.job_wanted, r.department); if (d && d !== r.department) run('UPDATE candidates SET department=? WHERE id=?', d, r.id); }
     setSetting('done_once', [...(settings().done_once || []), 'jewel_depts_2026_11']);
   }
+  // Management department: Business Consultant and Management Consultant, added to what the team already has.
+  if (!once.includes('management_dept_2026_11')) {
+    const inds = JSON.parse(JSON.stringify(settings().industries || {}));
+    for (const ind of Object.values(inds)) {
+      if (!ind || !ind.groups) continue; const g = ind.groups.Management || { dept: 'Management', jobs: [] };
+      const have = new Set(g.jobs.map((t) => t.toLowerCase())); for (const t of ['Business Consultant', 'Management Consultant']) if (!have.has(t.toLowerCase())) g.jobs.push(t);
+      const { 'Added roles': added, ...rest } = ind.groups; ind.groups = { ...rest, Management: g, ...(added ? { 'Added roles': added } : {}) };
+    }
+    setSetting('industries', inds);
+    const ds = settings().departments || []; if (!ds.includes('Management')) setSetting('departments', [...ds, 'Management']);
+    setSetting('done_once', [...(settings().done_once || []), 'management_dept_2026_11']);
+  }
   if (!once.includes('internal_db_channel_2026_11')) {
     const def = defs.hiring_channels.find((c) => c.key === 'internal-db'); const cur = settings().hiring_channels || [];
     if (def && !cur.some((c) => c.key === 'internal-db')) setSetting('hiring_channels', [def, ...cur]);

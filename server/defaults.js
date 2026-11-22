@@ -213,6 +213,13 @@ const JOB_GROUPS = {
       "Housekeeping Staff",
       "Office Boy"
     ]
+  },
+  "Management": {
+    dept: "Management",
+    jobs: [
+      "Business Consultant",
+      "Management Consultant"
+    ]
   }
 };
 
@@ -486,7 +493,7 @@ module.exports.defaultSettings = () => ({
   industry_list: ['Jewellery', 'Retail', 'FMCG', 'Manufacturing', 'IT & Software', 'Banking & Financial Services', 'Insurance', 'Healthcare & Pharma', 'Hospitality & Travel',
     'Real Estate & Construction', 'Education', 'Logistics & Supply Chain', 'Automobile', 'Textile & Apparel', 'E-commerce', 'Telecom', 'Media & Entertainment', 'Agriculture', 'Energy & Power', 'Other'],
   hidden_jobs: [],
-  departments: ["Retail Sales","B2B Sales","Retail Operations","Design","Merchandising","Production","Quality & Gemology","Purchase","Inventory","Marketing","Visual Merchandising","Customer Service","Accounts","HR & Admin","IT","Logistics","Security & Facilities"],
+  departments: ["Retail Sales","B2B Sales","Retail Operations","Design","Merchandising","Production","Quality & Gemology","Purchase","Inventory","Marketing","Visual Merchandising","Customer Service","Accounts","HR & Admin","IT","Logistics","Security & Facilities","Management"],
   cities: CITIES,
   skills: ['Gold knowledge', 'Diamond knowledge', 'Customer handling', 'Billing software', 'Tally', 'MS Excel', 'CAD (Matrix)', 'CAD (Rhino)', 'Hand sketching', 'Stone setting', 'Polishing', 'Hallmarking', 'GST filing', 'Social media', 'Photography', 'Visual merchandising', 'Inventory software', 'Hindi', 'English', 'Gujarati', 'Marathi', 'Team handling', 'Negotiation', 'Cold calling'],
   client_stages: ['Call initiated', 'Requirement understanding', 'Requirement received', 'Proposal & pitch deck shared', 'Agreement shared', 'Agreement follow-up', 'Agreement received', 'JD and R&R shared', 'JD and R&R approved', 'Client activated', 'Client onboarded', 'Job opening activated', 'No current opening', 'Requirement later', 'Decision on hold', 'Inactive'],

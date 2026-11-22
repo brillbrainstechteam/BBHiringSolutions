@@ -1180,9 +1180,12 @@ route('POST', '/api/jd/write', { auth: 'team', rate: { key: 'jdwrite', max: 30, 
 const jewelLine = (jd) => (jd && jd.jewel_need ? [jd.jewel_need, jd.jewel_years ? `${jd.jewel_years}+ years` : '', jd.jewel_note].filter(Boolean).join(' · ') : '');
 module.exports.jewelLine = jewelLine;
 module.exports.jdPdf = (j) => jdPdf(j);
+// A JD file named for people: "Sales Executive - Mumbai - JD (J-12).pdf" (safe letters only, so every browser and mail app keeps it).
+const jdFileName = (j) => { const c = (x) => String(x || '').normalize('NFKD').replace(/[^\w\s&().,-]/g, '').replace(/\s+/g, ' ').trim().slice(0, 60); return `${[c(j.title) || 'Job', c(j.city)].filter(Boolean).join(' - ')} - JD (${j.id}).pdf`; };
+module.exports.jdFileName = jdFileName;
 route('GET', '/api/jobs/:id/jd.pdf', T, (ctx) => {
   const j = get('SELECT * FROM jobs WHERE id=?', ctx.params.id); mustSee(seeJob(ctx.user, j), 'job opening');
-  return { __file: { name: `${j.id}-JD.pdf`, mime: 'application/pdf', buf: jdPdf(j) } };
+  return { __file: { name: jdFileName(j), mime: 'application/pdf', buf: jdPdf(j) } };
 });
 // The JD the portal shows: the job's own, on top of the JD pool copy for its title (or the standard JD), {job} and
 // {city} filled in. Shared by the PDF and the public page.
