@@ -2707,3 +2707,42 @@ a.pipe-step { text-decoration: none; cursor: pointer; } a.pipe-step:hover { bord
 .soc-post { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 10px; }
 .soc-err { flex-basis: 100%; color: #b91c1c; }
 @media (max-width: 640px) { .soc-grid { grid-template-columns: 1fr; } .soc-img { grid-template-columns: 120px 1fr; align-items: center; } }
+
+/* Job openings: status cards — one neutral border, a small coloured dot for the status, the picked one in navy. */
+.job-stages .jst, .job-stages .jst[data-stg] { border: 1px solid var(--border); border-top: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; gap: 6px; background: var(--surface); box-shadow: none; }
+.job-stages .jst .jst-l { display: inline-flex; align-items: center; gap: 7px; font: 600 12.5px var(--font); }
+.job-stages .jst .jst-l::before { content: ''; width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--navy, #101A3A); }
+.job-stages .jst[data-stg="Open"] .jst-l::before { background: #3B82F6; }
+.job-stages .jst[data-stg="Hiring in progress"] .jst-l::before { background: #10B981; }
+.job-stages .jst[data-stg="No relevant candidates"] .jst-l::before { background: #EF4444; }
+.job-stages .jst[data-stg="On hold"] .jst-l::before { background: #F59E0B; }
+.job-stages .jst[data-stg="Closed"] .jst-l::before { background: #94A3B8; }
+.job-stages .jst[data-stg="All"] .jst-l::before { background: var(--border-strong, #CBD2E0); }
+.job-stages .jst .n { font: 700 22px/1.1 var(--font); }
+.job-stages .jst:hover { border-color: var(--border-strong, #CBD2E0); box-shadow: 0 2px 8px rgba(16,26,58,.06); }
+.job-stages .jst.on, .job-stages .jst.on[data-stg] { border-color: var(--navy, #101A3A); box-shadow: inset 0 0 0 1px var(--navy, #101A3A); background: color-mix(in srgb, var(--mustard) 6%, var(--surface)); }
+/* Hiring and CTC: their own card under the status cards, one row each. */
+.job-filter2 { padding: 12px 14px; margin-bottom: 12px; display: grid; gap: 10px; }
+.job-filter2 .jf-row { display: flex; align-items: center; gap: 8px 12px; flex-wrap: wrap; }
+.job-filter2 .strip-l { flex: 0 0 92px; font: 600 11.5px var(--font); letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
+.job-filter2 .chip-grp { display: inline-flex; gap: 6px; flex-wrap: wrap; }
+.job-filter2 .chip { padding: 6px 13px; border-radius: 10px; }
+@media (max-width: 640px) { .job-filter2 .strip-l { flex-basis: 100%; } }
+/* Bulk actions: compact buttons that sit in one line instead of a grid of big tiles. */
+.bulk-card { padding: 12px 14px; gap: 10px; }
+.bulk-head { gap: 10px; } .bulk-ico { width: 30px; height: 30px; border-radius: 9px; } .bulk-ico svg { width: 16px; height: 16px; } .bulk-t { font-size: 14.5px; }
+.bulk-grid { display: flex; flex-wrap: wrap; gap: 6px; }
+.bulk-btn { height: 32px; padding: 0 12px; gap: 6px; border-radius: 8px; font-size: 12.5px; flex: 0 0 auto; }
+.bulk-btn svg { width: 13px; height: 13px; }
+.bulkbar.bulk-card { padding: 12px 14px; gap: 6px; }
+.bulkbar.bulk-card > .btn, .bulkbar.bulk-card > select.mini, .bulkbar.bulk-card > .bulk-menu { flex: 0 0 auto; min-width: 0; height: 32px; font-size: 12.5px; border-radius: 8px; padding: 0 12px; }
+.bulkbar.bulk-card > select.mini { padding: 0 28px 0 10px; }
+.bulkbar.bulk-card > .bulk-menu { padding: 0; } .bulkbar.bulk-card > .bulk-menu > summary.btn { height: 32px; border-radius: 8px; font-size: 12.5px; }
+.bulkbar.bulk-card > .btn:disabled::before { width: 13px; height: 13px; }
+@media (max-width: 900px) { .bulk-grid { display: flex; } }
+/* Campaigns: status filter. */
+.camp-status { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 12px; }
+.camp-status .chip { border-radius: 10px; padding: 6px 12px; }
+.job-stages .jst .jst-l { white-space: normal; line-height: 1.25; align-items: flex-start; text-align: left; overflow: visible; }
+.job-stages .jst .jst-l::before { margin-top: 4px; }
+.job-stages .jst { justify-content: space-between; }

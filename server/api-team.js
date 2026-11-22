@@ -2598,6 +2598,7 @@ const restNow = (x, u, actor) => { const req = campaignRequest(x); if (!req) thr
 // "Now", or at a time (e.g. tomorrow 10:30 am): kept here and run by the timer at that time, in time order.
 function laterOrNow(ctx, kind) {
   const x = get('SELECT * FROM campaigns WHERE id=?', ctx.params.id); if (!x || !seeCampaign(ctx.user, x)) throw httpError(404, 'Campaign not found');
+  if (campStopped(x)) throw httpError(400, `This campaign is ${campStopped(x)}: ${x.status === 'Paused' ? 'resume' : x.archived ? 'unarchive' : 'start a new campaign for'} it first.`);
   const at = (ctx.body || {}).send_at;
   if (at) {
     const d = new Date(at); if (Number.isNaN(d.getTime())) throw httpError(400, 'Pick a valid time', 'send_at');
@@ -2610,6 +2611,7 @@ function laterOrNow(ctx, kind) {
 route('POST', '/api/campaigns/:id/ask-consent', T, (ctx) => laterOrNow(ctx, 'consent'));
 route('POST', '/api/campaigns/:id/retry-held', T, async (ctx) => {
   const x = get('SELECT * FROM campaigns WHERE id=?', ctx.params.id); if (!x || !seeCampaign(ctx.user, x)) throw httpError(404, 'Campaign not found');
+  if (campStopped(x)) throw httpError(400, `This campaign is ${campStopped(x)}. Nothing was sent.`);
   const st = D.settings(); const wp = st.wa_pause || {};
   if (!st.crm.enabled) throw httpError(400, 'Connect the WhatsApp CRM first (Settings › WhatsApp › Connected). Nothing was sent.');
   if (wp.candidates) throw httpError(400, 'WhatsApp to candidates is still paused (Settings › WhatsApp). Nothing was sent.');
@@ -2630,8 +2632,9 @@ async function campaignJobs() {
   jobsBusy = true; let n = 0;
   try {
     for (const j of due) {
-      D.run("UPDATE campaign_jobs SET status='Running' WHERE id=?", j.id);
-      const x = get('SELECT * FROM campaigns WHERE id=?', j.campaign_id); const u = get('SELECT * FROM users WHERE id=?', j.user_id); const actor = { uid: u.id, label: u.name };
+      const x = get('SELECT * FROM campaigns WHERE id=?', j.campaign_id);
+      if (!x || campStopped(x)) { update('campaign_jobs', j.id, { status: x && x.status === 'Paused' ? 'Paused' : 'Cancelled', done_at: x && x.status === 'Paused' ? null : now(), result: x ? `Campaign ${campStopped(x)}` : 'Campaign gone' }); continue; }
+      D.run("UPDATE campaign_jobs SET status='Running' WHERE id=?", j.id); const u = get('SELECT * FROM users WHERE id=?', j.user_id); const actor = { uid: u.id, label: u.name };
       try { const r = j.kind === 'consent' ? consentNow(x, u, actor) : await restNow(x, u, actor); const sent = j.kind === 'consent' ? r.sent : r.wa + r.email; update('campaign_jobs', j.id, { status: 'Done', result: `${sent} sent`, done_at: now() }); L.alertUser(u.id, `${x.name}: ${j.kind === 'consent' ? 'consent asked' : 'sent to the rest'}: ${sent}`, x.id, false); n++; }
       catch (e) { update('campaign_jobs', j.id, { status: 'Failed', result: e.message, done_at: now() }); L.alertUser(u.id, `${x.name}: the scheduled ${j.kind === 'consent' ? 'consent ask' : 'send'} failed: ${e.message}`, x.id, false); }
     }
@@ -2644,8 +2647,9 @@ function afterConsent(candidateId) {
   let n = 0;
   for (const w of all('SELECT * FROM consent_waits WHERE candidate_id=? AND done_at IS NULL', candidateId)) {
     const x = get('SELECT * FROM campaigns WHERE id=?', w.campaign_id); const req = x && campaignRequest(x);
+    if (x && x.status === 'Paused' && !x.archived) continue; // sent when the campaign is resumed
     D.run('UPDATE consent_waits SET done_at=? WHERE candidate_id=? AND campaign_id=?', now(), candidateId, w.campaign_id);
-    if (!req) continue; const u = get('SELECT * FROM users WHERE id=?', x.user_id) || get("SELECT * FROM users WHERE level='super' LIMIT 1");
+    if (!req || campStopped(x)) continue; const u = get('SELECT * FROM users WHERE id=?', x.user_id) || get("SELECT * FROM users WHERE level='super' LIMIT 1");
     makeCampaign({ body: { ...req, filters: undefined, segments: undefined, segment: undefined, ids: [candidateId], _resend: x.id, _add: true }, user: u, actor: { uid: u.id, label: 'After consent' } }).catch((e) => console.error('after consent send', x.id, e.message)); n++;
   }
   return n;
@@ -2699,16 +2703,71 @@ async function campaignWaits() {
 }
 module.exports.campaignWaits = campaignWaits;
 route('GET', '/api/campaigns/waits', T, (ctx) => all('SELECT * FROM campaign_waits ORDER BY id DESC LIMIT 30').filter((w) => w.user_id === ctx.user.id || ['super', 'admin'].includes(ctx.user.level)).map((w) => { const t = require('./studio').templateRow(w.tpl_key); return { ...w, body: undefined, template: t ? t.name : w.tpl_key, tpl_status: t ? t.status : '' }; }));
-// Stop a scheduled campaign: whatever has not gone yet is taken off.
+// Campaign status. Paused, Cancelled and Archived are set by a person; the rest follow from its messages:
+// Scheduled (all still waiting for their time), Live (going out now, or more steps planned), Completed (nothing left to send).
+// Draft is a message still waiting for Meta's approval (campaign_waits): it has no campaign yet.
+for (const col of ['status TEXT', 'archived INTEGER DEFAULT 0', 'status_by TEXT', 'status_at TEXT']) { try { D.db.exec(`ALTER TABLE campaigns ADD COLUMN ${col}`); } catch { /* already there */ } }
+const CAMP_STATUSES = ['Draft', 'Scheduled', 'Live', 'Paused', 'Completed', 'Cancelled', 'Archived'];
+function campStatus(x, stats) {
+  if (x.archived) return 'Archived'; if (x.status === 'Cancelled' || x.status === 'Paused') return x.status;
+  const w = stats.whatsapp.by; const e = stats.email.by; const n = (o, k) => o[k] || 0;
+  // Held messages (messages switched off) still count as to be sent: they go once someone releases them.
+  const waiting = n(w, 'Scheduled') + n(e, 'Scheduled') + n(w, 'On hold') + n(e, 'On hold'); const going = n(w, 'Sending') + n(e, 'Sending');
+  const gone = ['Sent', 'Delivered', 'Read', 'Failed'].reduce((t, k) => t + n(w, k), 0) + n(e, 'Sent') + n(e, 'Failed');
+  const steps = get("SELECT COUNT(*) c FROM campaign_jobs WHERE campaign_id=? AND status IN ('Scheduled','Running')", x.id).c;
+  if (waiting && !gone && !going && (n(w, 'Scheduled') + n(e, 'Scheduled') === waiting || (x.send_at && x.send_at > now()))) return 'Scheduled';
+  if (waiting || going || steps) return 'Live';
+  return 'Completed';
+}
+const campOwn = (ctx) => { const x = get('SELECT * FROM campaigns WHERE id=?', ctx.params.id); if (!x || !seeCampaign(ctx.user, x)) throw httpError(404, 'Campaign not found'); return x; };
+const campSet = (x, ctx, patch, what, note) => { update('campaigns', x.id, { ...patch, status_by: ctx.actor.label, status_at: now() }); D.history(ctx.actor.label, `campaign ${what}`, x.id, null, null, note || ''); };
+// Nothing more goes from a paused, cancelled or archived campaign (send to the rest, consent follow-ups, scheduled steps).
+const campStopped = (x) => (!x ? '' : x.archived ? 'archived' : x.status === 'Cancelled' ? 'cancelled' : x.status === 'Paused' ? 'paused' : '');
+// Stop a campaign: whatever has not gone yet is taken off, and its planned steps are cancelled.
 route('POST', '/api/campaigns/:id/cancel', T, (ctx) => {
-  const x = get('SELECT * FROM campaigns WHERE id=?', ctx.params.id); if (!x || !seeCampaign(ctx.user, x)) throw httpError(404, 'Campaign not found');
-  const wa = D.run("DELETE FROM messages WHERE direction='out' AND status='scheduled' AND dedupe LIKE ?", `camp:${x.id}:%`).changes; const mail = D.run("DELETE FROM emails WHERE status='scheduled' AND dedupe LIKE ?", `camp:${x.id}:%`).changes;
-  D.history(ctx.actor.label, 'campaign cancelled', x.id, null, null, `${wa} WhatsApp, ${mail} email taken off`); return { wa, email: mail };
+  const x = campOwn(ctx); if (x.archived) throw httpError(400, 'Unarchive the campaign first.');
+  const wa = D.run("DELETE FROM messages WHERE direction='out' AND status IN ('scheduled','paused','held') AND dedupe LIKE ?", `camp:${x.id}:%`).changes; const mail = D.run("DELETE FROM emails WHERE status IN ('scheduled','paused','held') AND dedupe LIKE ?", `camp:${x.id}:%`).changes;
+  D.run("UPDATE campaign_jobs SET status='Cancelled', done_at=? WHERE campaign_id=? AND status IN ('Scheduled','Paused')", now(), x.id);
+  campSet(x, ctx, { status: 'Cancelled' }, 'cancelled', `${wa} WhatsApp, ${mail} email taken off`); return { wa, email: mail, status: 'Cancelled' };
+});
+// Pause: messages waiting for their time stay waiting and go only after Resume. Ones already handed to WhatsApp or the mailer cannot be pulled back.
+route('POST', '/api/campaigns/:id/pause', T, (ctx) => {
+  const x = campOwn(ctx); const was = campStatus(x, campaignStats(x));
+  if (!['Scheduled', 'Live'].includes(was)) throw httpError(400, `Only a scheduled or live campaign can be paused (this one is ${was}).`);
+  const wa = D.run("UPDATE messages SET status='paused' WHERE direction='out' AND status='scheduled' AND dedupe LIKE ?", `camp:${x.id}:%`).changes; const mail = D.run("UPDATE emails SET status='paused' WHERE status='scheduled' AND dedupe LIKE ?", `camp:${x.id}:%`).changes;
+  D.run("UPDATE campaign_jobs SET status='Paused' WHERE campaign_id=? AND status='Scheduled'", x.id);
+  campSet(x, ctx, { status: 'Paused' }, 'paused', `${wa} WhatsApp, ${mail} email held`); return { wa, email: mail, status: 'Paused' };
+});
+// Resume: held messages go back in line (any whose time has passed go at once).
+route('POST', '/api/campaigns/:id/resume', T, (ctx) => {
+  const x = campOwn(ctx); if (x.status !== 'Paused' || x.archived) throw httpError(400, 'This campaign is not paused.');
+  const wa = D.run("UPDATE messages SET status='scheduled' WHERE direction='out' AND status='paused' AND dedupe LIKE ?", `camp:${x.id}:%`).changes; const mail = D.run("UPDATE emails SET status='scheduled' WHERE status='paused' AND dedupe LIKE ?", `camp:${x.id}:%`).changes;
+  D.run("UPDATE campaign_jobs SET status='Scheduled' WHERE campaign_id=? AND status='Paused'", x.id);
+  update('campaigns', x.id, { status: null });
+  // People who agreed to messages while it was paused get it now.
+  for (const w of all('SELECT cw.candidate_id FROM consent_waits cw JOIN candidates c ON c.id=cw.candidate_id WHERE cw.campaign_id=? AND cw.done_at IS NULL AND c.consent_alerts=1', x.id)) afterConsent(w.candidate_id);
+  campSet(x, ctx, { status: null }, 'resumed', `${wa} WhatsApp, ${mail} email back in line`); const y = get('SELECT * FROM campaigns WHERE id=?', x.id); return { wa, email: mail, status: campStatus(y, campaignStats(y)) };
+});
+// Archive: only once nothing is left to send. It drops out of the All list; Archived shows it.
+route('POST', '/api/campaigns/:id/archive', T, (ctx) => {
+  const x = campOwn(ctx); const was = campStatus(x, campaignStats(x));
+  if (!['Completed', 'Cancelled'].includes(was)) throw httpError(400, `Only a completed or cancelled campaign can be archived (this one is ${was}). Let it finish, or cancel it first.`);
+  campSet(x, ctx, { archived: 1 }, 'archived'); return { status: 'Archived' };
+});
+route('POST', '/api/campaigns/:id/unarchive', T, (ctx) => {
+  const x = campOwn(ctx); if (!x.archived) throw httpError(400, 'This campaign is not archived.');
+  campSet(x, ctx, { archived: 0 }, 'unarchived'); const y = get('SELECT * FROM campaigns WHERE id=?', x.id); return { status: campStatus(y, campaignStats(y)) };
+});
+// A draft (a message waiting for Meta) taken away: it will not send when Meta approves.
+route('POST', '/api/campaigns/waits/:id/remove', T, (ctx) => {
+  const w = get('SELECT * FROM campaign_waits WHERE id=?', ctx.params.id); if (!w || (w.user_id !== ctx.user.id && !['super', 'admin'].includes(ctx.user.level))) throw httpError(404, 'Draft not found');
+  if (w.status === 'Sent') throw httpError(400, 'This one has already been sent as a campaign.');
+  update('campaign_waits', w.id, { status: 'Removed', done_at: now(), note: `Removed by ${ctx.actor.label}` }); D.history(ctx.actor.label, 'campaign draft removed', `W${w.id}`); return { ok: true };
 });
 // What happened to each campaign, by channel, read from the messages and emails it made (they carry the campaign in their key).
 const WA_STEP = { sent: 'Sent', delivered: 'Delivered', read: 'Read', failed: 'Failed' };
-const waState = (st) => WA_STEP[st] || (st === 'held' ? 'On hold' : st === 'scheduled' ? 'Scheduled' : st === 'would send' ? 'Not sent (test copy)' : 'Sending');
-const mailState = (st) => (st === 'sent' ? 'Sent' : st === 'failed' ? 'Failed' : st === 'held' ? 'On hold' : st === 'scheduled' ? 'Scheduled' : /not sent/.test(st || '') ? 'Not sent (email not set up)' : 'Sending');
+const waState = (st) => WA_STEP[st] || (st === 'held' ? 'On hold' : st === 'scheduled' ? 'Scheduled' : st === 'paused' ? 'Paused' : st === 'would send' ? 'Not sent (test copy)' : 'Sending');
+const mailState = (st) => (st === 'sent' ? 'Sent' : st === 'failed' ? 'Failed' : st === 'held' ? 'On hold' : st === 'scheduled' ? 'Scheduled' : st === 'paused' ? 'Paused' : /not sent/.test(st || '') ? 'Not sent (email not set up)' : 'Sending');
 const pct = (n, d) => (d ? Math.round((n / d) * 100) : null);
 function campaignStats(x) {
   const wa = all("SELECT * FROM messages WHERE direction='out' AND dedupe LIKE ?", `camp:${x.id}:%`); const mails = all('SELECT * FROM emails WHERE dedupe LIKE ?', `camp:${x.id}:%`);
@@ -2726,12 +2785,18 @@ function campaignStats(x) {
   return { taps, whatsapp: { total: wa.length, by: w, delivered_rate: pct(waReached, waTried), read_rate: pct(w.Read || 0, waTried), failed: w.Failed || 0 }, email: { total: mails.length, by: e, sent_rate: pct(e.Sent || 0, mailTried), failed: e.Failed || 0 }, reached: people.length, replied, reply_rate: pct(replied, people.length), applied, stopped };
 }
 const seeCampaign = (u, x) => isSuper(u) || x.user_id === u.id || (x.agency_id && x.agency_id === u.agency_id);
-const campRow = (x) => ({ ...x, skipped: JSON.parse(x.skipped || '{}'), job_title: x.job_id ? (get('SELECT title FROM jobs WHERE id=?', x.job_id) || {}).title : '', stats: campaignStats(x) });
+const campRow = (x) => { const stats = campaignStats(x); return { ...x, skipped: JSON.parse(x.skipped || '{}'), job_title: x.job_id ? (get('SELECT title FROM jobs WHERE id=?', x.job_id) || {}).title : '', stats, status: campStatus(x, stats) }; };
 route('GET', '/api/campaigns', T, (ctx) => {
-  const q = ctx.query || {}; const rows = all('SELECT * FROM campaigns ORDER BY at DESC LIMIT 500').filter((x) => seeCampaign(ctx.user, x) && (!q.from || x.at.slice(0, 10) >= q.from) && (!q.to || x.at.slice(0, 10) <= q.to) && (!q.kind || x.kind === q.kind) && like(q.q, x.name, x.audience, x.by)).map(campRow);
+  const q = ctx.query || {}; const inPeriod = (at) => (!q.from || String(at).slice(0, 10) >= q.from) && (!q.to || String(at).slice(0, 10) <= q.to);
+  const found = all('SELECT * FROM campaigns ORDER BY at DESC LIMIT 500').filter((x) => seeCampaign(ctx.user, x) && inPeriod(x.at) && (!q.kind || x.kind === q.kind) && like(q.q, x.name, x.audience, x.by)).map(campRow);
+  // Drafts: messages written in a campaign and still waiting for Meta (or turned down, to edit and send again).
+  const drafts = (!q.kind || q.kind === 'template') ? all("SELECT * FROM campaign_waits WHERE status IN ('Waiting','Rejected','Failed') ORDER BY id DESC LIMIT 100").filter((w) => (w.user_id === ctx.user.id || ['super', 'admin'].includes(ctx.user.level)) && inPeriod(w.at)).map((w) => { let b = {}; try { b = JSON.parse(w.body || '{}'); } catch { /* old row */ } const t = require('./studio').templateRow(w.tpl_key); return { id: `W${w.id}`, draft: true, kind: 'template', name: b.name || (t ? t.name : w.tpl_key), audience: b.ids ? `${b.ids.length} people` : b.segments ? 'Saved segment' : 'Filtered candidates', by: w.by, at: w.at, total: b.ids ? b.ids.length : null, wait: w.status, note: w.note || '', template: t ? t.name : w.tpl_key, status: 'Draft' }; }).filter((d) => like(q.q, d.name, d.audience, d.by)) : [];
+  const every = [...drafts, ...found]; const counts = CAMP_STATUSES.reduce((o, k) => ({ ...o, [k]: every.filter((x) => x.status === k).length }), {}); counts.All = every.filter((x) => x.status !== 'Archived').length;
+  const st = CAMP_STATUSES.includes(q.status) ? q.status : ''; const rows = found.filter((x) => (st ? x.status === st : x.status !== 'Archived'));
+  const draftRows = !st || st === 'Draft' ? drafts : [];
   const sum = (f) => rows.reduce((t, r) => t + (f(r) || 0), 0); const tried = (r, ks) => ks.reduce((t, k) => t + (r.stats.whatsapp.by[k] || 0), 0);
   const waTried = sum((r) => tried(r, ['Sent', 'Delivered', 'Read', 'Failed'])); const waReached = sum((r) => tried(r, ['Delivered', 'Read'])); const mailTried = sum((r) => (r.stats.email.by.Sent || 0) + (r.stats.email.by.Failed || 0));
-  return { rows, totals: { campaigns: rows.length, whatsapp: sum((r) => r.stats.whatsapp.total), email: sum((r) => r.stats.email.total), wa_delivered_rate: pct(waReached, waTried), wa_read_rate: pct(sum((r) => r.stats.whatsapp.by.Read), waTried), email_sent_rate: pct(sum((r) => r.stats.email.by.Sent), mailTried), replied: sum((r) => r.stats.replied), reached: sum((r) => r.stats.reached) }, segments: segVisible(ctx.user).map((x) => [x.id, x.name]) };
+  return { rows: [...draftRows, ...rows], counts, statuses: CAMP_STATUSES, totals: { campaigns: rows.length, whatsapp: sum((r) => r.stats.whatsapp.total), email: sum((r) => r.stats.email.total), wa_delivered_rate: pct(waReached, waTried), wa_read_rate: pct(sum((r) => r.stats.whatsapp.by.Read), waTried), email_sent_rate: pct(sum((r) => r.stats.email.by.Sent), mailTried), replied: sum((r) => r.stats.replied), reached: sum((r) => r.stats.reached) }, segments: segVisible(ctx.user).map((x) => [x.id, x.name]) };
 });
 route('GET', '/api/campaigns/:id', T, (ctx) => {
   const x = get('SELECT * FROM campaigns WHERE id=?', ctx.params.id); if (!x || !seeCampaign(ctx.user, x)) throw httpError(404, 'Campaign not found');
