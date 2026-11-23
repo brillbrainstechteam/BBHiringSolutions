@@ -107,6 +107,13 @@ const server = http.createServer(async (req, res) => {
     // A candidate sharing their resume and details, from the WhatsApp link: /u/<code>.
     const pfm = /^\/u\/([\w-]{8,40})\/?$/.exec(p);
     if (pfm) return send(res, 200, require('./profilelink').pageHtml(pfm[1]), { 'Content-Type': TYPES['.html'], 'Cache-Control': 'no-store', 'X-Robots-Tag': 'noindex' });
+    // Unsubscribe from campaign emails: the link in each email (GET shows the page), and Gmail's one-click (POST).
+    const usm = /^\/unsubscribe\/([\w.-]{6,80})\/?$/.exec(p);
+    if (usm) {
+      const M = require('./mailer'); const cid = M.unsubscribe(usm[1]); const nm = D.settings().business.name;
+      if (req.method === 'POST') return send(res, cid ? 200 : 404, cid ? 'Unsubscribed' : 'Not found', { 'Content-Type': 'text/plain' });
+      return send(res, cid ? 200 : 404, `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>Unsubscribed · ${nm}</title><style>body{margin:0;font:16px/1.55 system-ui,sans-serif;background:#f6f7fb;color:#1d2433}header{background:#101a3a;color:#fff;padding:18px 16px;font-weight:700}main{max-width:520px;margin:24px auto;padding:0 16px}.box{background:#fff;border:1px solid #e6e8ef;border-radius:12px;padding:22px}</style></head><body><header>${nm}</header><main><div class="box">${cid ? '<b>You are unsubscribed.</b><p>You will not get our job emails any more. Interview and offer messages about your own applications still reach you.</p>' : 'This link is not valid.'}</div></main></body></html>`, { 'Content-Type': TYPES['.html'], 'Cache-Control': 'no-store', 'X-Robots-Tag': 'noindex' });
+    }
     // What the two feedback forms look like (nothing is saved from a preview).
     if (p === '/feedback/preview' || p === '/feedback/preview/') return send(res, 200, require('./care').feedbackHtml('preview'), { 'Content-Type': TYPES['.html'], 'Cache-Control': 'no-store', 'X-Robots-Tag': 'noindex' });
     if (p === '/rate/preview' || p === '/rate/preview/') return send(res, 200, require('./care').rateHtml('preview', url.searchParams.get('job')), { 'Content-Type': TYPES['.html'], 'Cache-Control': 'no-store', 'X-Robots-Tag': 'noindex' });

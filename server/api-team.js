@@ -2705,7 +2705,7 @@ async function makeCampaign(ctx) {
       return;
     }
     if (kind === 'design') {
-      if (!c.email) return skip('No email');
+      if (!c.email) return skip('No email'); if (c.email_off) return skip('Unsubscribed from email');
       const vars = S.mergeVars(c, job); const sub = S.fillText(subject, vars); const m = S.renderDesign(design, vars, sub);
       if (M.queue({ to: c.email, subject: sub, text: m.text, html: m.html, kind: 'campaign', recordId: c.id, sendAfter: when || undefined, dedupe: `camp:${id}:${c.id}:mail` })) out.email++; else skip('Email not valid');
       return;
@@ -2715,6 +2715,7 @@ async function makeCampaign(ctx) {
     if (wa && !waReady) { wa = false; if (channel === 'preferred' && c.email) mail = true; skip('WhatsApp format waiting for Meta approval'); }
     if (wa && !c.whatsapp) { wa = false; skip('No WhatsApp number'); }
     if (mail && !c.email) { mail = false; skip('No email'); }
+    if (mail && c.email_off) { mail = false; skip('Unsubscribed from email'); }
     if (wa) { try { const r = L.sendWA({ ptype: 'candidate', pid: c.id, format: waFormat, vars: kind === 'job' ? { job: job.title, city: job.city, salary: L.SAL_HIDDEN } : kind === 'prefs' ? {} : { message: fill(text, c) }, rule: kind === 'prefs' ? 'pref1-bulk' : undefined, jb: job ? job.id : null, by: ctx.actor, bulk: true, noEmailCopy: true, sendLater: when || undefined, dedupe: `camp:${id}:${c.id}` }); if (r.skipped) skip(r.skipped); else if (notOut(r)) skip(notOut(r)); else out.wa++; } catch (e) { skip(e.message); } }
     if (mail) {
       const sub = kind === 'job' ? `New job: ${job.title}, ${job.city}` : fill(subject, c); const body = kind === 'job' ? `Hello ${c.name || 'there'},\n\nWe have a ${job.title} opening in ${job.city}. If you are interested, reply to this email or open your profile: ${link}\n\nBrillBrains Hiring Solutions` : `${fill(text, c)}\n\nBrillBrains Hiring Solutions`;

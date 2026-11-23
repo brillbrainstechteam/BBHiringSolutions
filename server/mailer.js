@@ -11,7 +11,7 @@ const configured = () => !!(cfg().host && cfg().from);
 const secureMode = () => cfg().secure || (cfg().port === 465 ? 'ssl' : cfg().port === 25 ? 'none' : 'starttls');
 
 // One SMTP conversation: EHLO, STARTTLS when asked, AUTH, MAIL/RCPT/DATA, QUIT.
-function smtpSend({ to, subject, text, html, attachments }) {
+function smtpSend({ to, subject, text, html, attachments, headers }) {
   const c = cfg();
   return new Promise((resolve, reject) => {
     let sock; let buf = ''; let waiting = null;
@@ -55,7 +55,7 @@ function smtpSend({ to, subject, text, html, attachments }) {
       await cmd(`MAIL FROM:<${fromAddr}>`, /^250/);
       for (const r of to) await cmd(`RCPT TO:<${r}>`, /^25[01]/);
       await cmd('DATA', /^354/);
-      sock.write(buildMessage({ from: c.from, to, subject, text, html, attachments }) + '\r\n.\r\n');
+      sock.write(buildMessage({ from: c.from, to, subject, text, html, attachments, headers }) + '\r\n.\r\n');
       const done = await read(); if (!/^250/.test(done)) throw new Error(`Email server said: ${done.trim()}`);
       try { sock.write('QUIT\r\n'); } catch { /* closing */ }
       sock.end(); resolve(true);
@@ -64,12 +64,12 @@ function smtpSend({ to, subject, text, html, attachments }) {
 }
 const b64lines = (s) => Buffer.from(s, 'utf8').toString('base64').replace(/(.{76})/g, '$1\r\n');
 const encHeader = (s) => (/^[\x20-\x7E]*$/.test(s) ? s : `=?UTF-8?B?${Buffer.from(s, 'utf8').toString('base64')}?=`);
-function buildMessage({ from, to, subject, text, html, attachments = [] }) {
+function buildMessage({ from, to, subject, text, html, attachments = [], headers = [] }) {
   const boundary = 'bbhs-' + crypto.randomBytes(8).toString('hex'); const outer = 'bbhs-mix-' + crypto.randomBytes(8).toString('hex');
   const domain = (/@([^>\s]+)/.exec(from) || [null, 'bbhs.local'])[1];
   const msg = [
     `From: ${from}`, `To: ${to.join(', ')}`, `Subject: ${encHeader(subject)}`, `Date: ${new Date().toUTCString()}`,
-    `Message-ID: <${crypto.randomBytes(12).toString('hex')}@${domain}>`, 'MIME-Version: 1.0',
+    `Message-ID: <${crypto.randomBytes(12).toString('hex')}@${domain}>`, ...headers, 'MIME-Version: 1.0',
     ...(attachments.length ? [`Content-Type: multipart/mixed; boundary="${outer}"`, '', `--${outer}`] : []),
     `Content-Type: multipart/alternative; boundary="${boundary}"`, '',
     `--${boundary}`, 'Content-Type: text/plain; charset=UTF-8', 'Content-Transfer-Encoding: base64', '', b64lines(text), '',
@@ -121,13 +121,51 @@ function queue({ to, subject, text, html, kind, recordId, sendAfter, dedupe, att
   const r = D.run('INSERT INTO emails (to_addr,subject,kind,record_id,text,html,status,tries,at,dedupe) VALUES (?,?,?,?,?,?,?,?,?,?)', list.join(', '), subject, kind || null, recordId || null, text, html, configured() ? 'queued' : 'not sent (email not set up)', 0, D.now(), dedupe || null);
   const id = Number(r.lastInsertRowid);
   if (att) D.update('emails', id, { attachments: att });
-  if (configured()) setImmediate(() => deliver(id));
+  if (configured() && kind !== 'campaign') setImmediate(() => deliver(id)); // campaign emails go through the paced sender
   return id;
 }
+// ---------- Gmail / Workspace limits: campaign emails are paced and capped per day ----------
+// Google Workspace takes about 2,000 emails a day per account; above that it stops the account sending for up to a
+// day (interview and offer emails too). So campaign emails stop at email_limits.campaign a day (default 1,500) and all
+// email at email_limits.total (default 1,900); what is over waits for 9:30 am India time the next day.
+const limits = () => ({ campaign: 1500, total: 1900, per_minute: 25, ...(D.settings().email_limits || {}) });
+const istDayStart = () => { const n = new Date(Date.now() + 5.5 * 3600000); n.setUTCHours(0, 0, 0, 0); return new Date(n.getTime() - 5.5 * 3600000).toISOString(); };
+const tomorrow930 = () => new Date(new Date(istDayStart()).getTime() + 86400000 + 9.5 * 3600000).toISOString();
+const sentToday = (kindSql) => D.get(`SELECT COUNT(*) n FROM emails WHERE status='sent' AND sent_at>=?${kindSql || ''}`, istDayStart()).n;
+function overLimit(e) {
+  const l = limits(); const total = sentToday();
+  if (total >= l.total && e.kind !== 'login code') return `Today's email limit (${l.total}) is reached: it goes tomorrow at 9:30 am`;
+  if (e.kind === 'campaign' && sentToday(" AND kind='campaign'") >= l.campaign) return `Today's campaign email limit (${l.campaign}) is reached: it goes tomorrow at 9:30 am`;
+  return null;
+}
+// One-click unsubscribe: a signed link per candidate (no login), in the email's headers and its footer.
+function unsubSecret() { let r = D.get("SELECT value FROM health WHERE key='unsub_secret'"); if (!r) { const v = crypto.randomBytes(24).toString('hex'); D.run("INSERT OR REPLACE INTO health (key, value) VALUES ('unsub_secret', ?)", v); r = { value: v }; } return r.value; }
+const unsubToken = (cid) => `${cid}.${crypto.createHmac('sha256', unsubSecret()).update(String(cid)).digest('base64url').slice(0, 22)}`;
+const unsubCheck = (tok) => { const [cid, sig] = String(tok || '').split('.'); return cid && sig && unsubToken(cid) === `${cid}.${sig}` ? cid : null; };
+function unsubscribe(tok) { const cid = unsubCheck(tok); if (!cid) return null; D.run('UPDATE candidates SET email_off=1 WHERE id=?', cid); D.history('Candidate', 'unsubscribed from email', cid); return cid; }
+const unsubUrl = (cid) => `${String(D.settings().business.base_url || '').replace(/\/$/, '')}/unsubscribe/${unsubToken(cid)}`;
+let pumping = false;
+async function campaignPump() {
+  if (pumping || !configured()) return 0; pumping = true; let n = 0;
+  try {
+    const list = D.all("SELECT id FROM emails WHERE kind='campaign' AND status='queued' AND tries < 3 ORDER BY id LIMIT ?", limits().per_minute);
+    for (const e of list) { await deliver(e.id); n++; }
+  } finally { pumping = false; }
+  return n;
+}
+setInterval(() => campaignPump().catch((e) => console.error('campaign emails', e.message)), 60000);
 async function deliver(id) {
   const e = D.get('SELECT * FROM emails WHERE id=?', id); if (!e || e.status === 'sent') return;
+  const over = overLimit(e); if (over) { D.update('emails', id, { status: 'scheduled', send_after: tomorrow930(), error: over }); return; }
+  let text = e.text; let html = e.html; const headers = [];
+  if (e.kind === 'campaign' && e.record_id && /^CA-/.test(e.record_id)) {
+    const url = unsubUrl(e.record_id); const from = (/<([^>]+)>/.exec(cfg().from) || [null, cfg().from])[1];
+    headers.push(`List-Unsubscribe: <${url}>, <mailto:${from}?subject=unsubscribe>`, 'List-Unsubscribe-Post: List-Unsubscribe=One-Click');
+    text = `${text}\n\n---\nTo stop these emails: ${url}`;
+    html = `${html}<div style="font:12px/1.5 Arial,sans-serif;color:#8a90a0;text-align:center;margin:18px 0">Don't want these emails? <a href="${url}" style="color:#8a90a0">Unsubscribe</a></div>`;
+  }
   try {
-    await smtpSend({ to: e.to_addr.split(',').map((x) => x.trim()), subject: e.subject, text: e.text, html: e.html, attachments: e.attachments ? require('./flow').mailFiles(JSON.parse(e.attachments)) : [] });
+    await smtpSend({ to: e.to_addr.split(',').map((x) => x.trim()), subject: e.subject, text, html, headers, attachments: e.attachments ? require('./flow').mailFiles(JSON.parse(e.attachments)) : [] });
     D.update('emails', id, { status: 'sent', tries: e.tries + 1, error: null, sent_at: D.now() });
     D.setHealth('last_email_sent', D.now());
   } catch (err) {
@@ -141,7 +179,7 @@ function retryQueued() {
   // Held for quiet hours: due now → queued (or marked not sent while email is not set up).
   D.run("UPDATE emails SET status=? WHERE status='scheduled' AND send_after<=?", configured() ? 'queued' : 'not sent (email not set up)', D.now());
   if (!configured()) return 0;
-  const list = D.all("SELECT id FROM emails WHERE status IN ('queued','not sent (email not set up)') AND tries < 3 ORDER BY id LIMIT 50");
+  const list = D.all("SELECT id FROM emails WHERE status IN ('queued','not sent (email not set up)') AND tries < 3 AND COALESCE(kind,'') != 'campaign' ORDER BY id LIMIT 50");
   for (const e of list) deliver(e.id);
   return list.length;
 }
@@ -220,4 +258,4 @@ function testEmail(to) {
   return queue({ force: true, to, kind: 'test', subject: 'BBHS test email', text: 'This is a test email from BBHS. If you can read this, outgoing email works.', html: layout('Outgoing email works', '<p style="font-size:14px">This is a test email from BBHS. If you can read this, outgoing email works.</p>') });
 }
 
-module.exports = { buildMessage, layout, accountCode, configured, queue, deliver, retryQueued, newLead, confirmToPerson, copyOfWhatsApp, testEmail, smtpSend };
+module.exports = { unsubscribe, unsubCheck, unsubUrl, limits, campaignPump, buildMessage, layout, accountCode, configured, queue, deliver, retryQueued, newLead, confirmToPerson, copyOfWhatsApp, testEmail, smtpSend };
