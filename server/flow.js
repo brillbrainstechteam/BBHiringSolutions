@@ -536,10 +536,13 @@ const fitKey = (j, c) => crypto.createHash('sha1').update(JSON.stringify([jobFac
 const fitOf = (j, c) => { const r = get('SELECT * FROM ai_fit WHERE candidate_id=? AND job_id=?', c.id, j.id); if (!r || r.key !== fitKey(j, c)) return null; return { score: r.score, points: JSON.parse(r.points || '[]'), gaps: JSON.parse(r.gaps || '[]') }; };
 const FIT_SCHEMA = { type: 'object', additionalProperties: false, required: ['results'], properties: { results: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['id', 'score', 'points', 'gaps'], properties: { id: { type: 'string' }, score: { type: 'number', description: '0 to 100' }, points: { type: 'array', items: { type: 'string' }, description: '2 to 4 short reasons this person suits the job, with facts from their profile' }, gaps: { type: 'array', items: { type: 'string' }, description: 'Up to 3 short risks or missing things to check on the call' } } } } } };
 const FIT_SYSTEM = `You screen candidates for a recruitment agency in India's jewellery trade. For each candidate, judge how well they suit this job from the facts and CV given, and write key pointers a recruiter can read in seconds.
+The role comes first: judge whether the candidate does the same kind of work as the job (their current or wanted role, past roles, skills, CV). Someone from a different function cannot score above 30, whatever their city, experience or salary: for example a sales executive for an ERP / IT support job, a cashier for a CAD designer job, or a karigar for an accounts job. Shared words like "executive" or "manager" mean nothing on their own.
 Score honestly: 85+ strong fit on role, experience and must-haves; 60-84 worth a call; below 60 weak. If jewellery experience is "Required", a person without it cannot score above 55.
 "tools_required" are must-haves: rank those who show them (in skills or CV) above those who do not; someone with none of them cannot score above 55, and say which tools are missing.
 Location matters: people who live in the job's city (or say they will work there) are more willing to join, so rank them above people elsewhere with a similar fit; another city lowers the score by about 15 points unless they say they will relocate.
 Base every point on what is written. Never invent experience. Short phrases, no full stops.`;
+// AI checks made before the role-first rule are dropped once, so they are made again the strict way.
+try { if (!get("SELECT 1 FROM health WHERE key='ai_fit_role_first'")) { D.run('DELETE FROM ai_fit'); D.run("INSERT OR REPLACE INTO health (key, value) VALUES ('ai_fit_role_first', ?)", now()); } } catch (e) { console.error('ai_fit reset', e.message); }
 async function fitBatch(job, cands) {
   const r = await LLM.json({ system: FIT_SYSTEM, user: `Job:\n${JSON.stringify(jobFacts(job))}\n\nCandidates:\n${JSON.stringify(cands.map(candFacts))}`, schema: FIT_SCHEMA, name: 'screening', maxTokens: 2500 });
   let saved = 0;
@@ -581,8 +584,9 @@ route('GET', '/api/jobs/:id/screen', T, (ctx) => {
     return { can_wa: !!(c.whatsapp && c.consent_alerts && !c.opted_out), asked_at: m ? m.at : null, not_interested: !!no }; };
   const floor = Number(j.match_floor) || 0; // matches below this score are left out of this job
   const removed = new Set(all('SELECT record_id FROM notes WHERE text LIKE ?', `Removed from ${j.id} matches%`).map((r) => r.record_id));
-  const bank = bankOf(j, 300).filter((m) => !seen.has(m.c.id) && !removed.has(m.c.id) && m.score >= floor).slice(0, 100).map((m) => rowFor(j, m.c, m, askState(m.c))).sort((x, y) => y.score - x.score);
-  return { apps, bank, floor, strong: D.settings().match.strong, ai: LLM.available(), scored: apps.concat(bank).filter((x) => x.by_ai).length };
+  const show = D.settings().match.show;
+  const bank = bankOf(j, 300).filter((m) => !seen.has(m.c.id) && !removed.has(m.c.id) && m.score >= floor).slice(0, 100).map((m) => rowFor(j, m.c, m, askState(m.c))).filter((r) => !r.by_ai || r.score >= Math.max(show, floor)).sort((x, y) => y.score - x.score);
+  return { show, apps, bank, floor, strong: D.settings().match.strong, ai: LLM.available(), scored: apps.concat(bank).filter((x) => x.by_ai).length };
 });
 // The JD to applied candidates on WhatsApp (ticked ones): the job's JD page link.
 route('POST', '/api/jobs/:id/share-jd', T, (ctx) => {

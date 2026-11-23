@@ -326,10 +326,15 @@ function ratingOf(candId) {
 // reasons = what fits (shown to the team, clients and candidates); gaps = what does not (team only).
 const WORD_SKIP = new Set(['senior', 'sr', 'junior', 'jr', 'trainee', 'assistant', 'asst', 'head', 'lead', 'the', 'and', 'of', 'for', '&', '-']);
 const words = (t) => String(t || '').toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').split(/\s+/).filter((w) => w && !WORD_SKIP.has(w)).map((w) => w.replace(/s$/, ''));
+// Words that say the level, not the work: "ERP Support Executive" and "Sales Executive" share only "executive",
+// which says nothing about the role, so only the other words are compared.
+const GENERIC_WORDS = new Set(['executive', 'exe', 'officer', 'assistant', 'asst', 'associate', 'senior', 'sr', 'junior', 'jr', 'trainee', 'fresher', 'staff', 'lead', 'head', 'manager', 'mgr', 'incharge', 'in', 'charge', 'team', 'member', 'specialist', 'coordinator', 'co', 'ordinator', 'cum', 'and', 'of', 'the', 'for', 'level', 'grade', 'i', 'ii', 'iii', 'intern', 'helper', 'boy', 'girl', 'person', 'professional', 'expert', 'consultant']);
 function titleCloseness(a, b) {
-  const x = new Set(words(a)); const y = new Set(words(b)); if (!x.size || !y.size) return 0;
+  const core = (t) => words(t).filter((w) => !GENERIC_WORDS.has(w) && w.length > 1);
+  const x = new Set(core(a)); const y = new Set(core(b));
+  if (!x.size || !y.size) { const fx = new Set(words(a)); const fy = new Set(words(b)); return fx.size && fy.size && [...fx].every((w) => fy.has(w)) && [...fy].every((w) => fx.has(w)) ? 1 : 0; }
   const both = [...x].filter((w) => y.has(w)).length;
-  return both / Math.min(x.size, y.size); // "Senior Sales Executive" vs "Sales Executive" = 1
+  return both / Math.min(x.size, y.size); // "Senior Sales Executive" vs "Sales Executive" = 1; "ERP Support Executive" vs "Sales Executive" = 0
 }
 function groupOf(title) {
   const t = String(title || '').toLowerCase();
@@ -385,9 +390,20 @@ function matchScore(c, j, rating) {
     const close = titleCloseness(r, j.title); const cg = groupOf(r);
     if (r.toLowerCase() === String(j.title).toLowerCase()) return [1, `Wants ${j.title}`]; if (close >= 0.99) return [0.9, `Wants ${r}`]; if (close >= 0.5) return [0.75, `Wants ${r} (close)`]; if (cg && cg === jg) return [0.5, `Same field: ${cg}`]; return [0, null];
   }).sort((x, y) => y[0] - x[0]);
+  // The role decides: someone in another line of work is not a match, however well city, salary and experience fit,
+  // unless their skills clearly cover the job's skills.
+  // Everyday office skills (Excel, MS Office, typing, languages …) do not make someone fit another role: only the job's
+  // distinctive skills (ERP, SQL, CAD, Tally …) count here.
+  const COMMON = /^(ms )?(excel|word|powerpoint|office|ms office.*|computer.*|basic computer.*|internet.*|typing|email.*|communication.*|english|hindi|marathi|gujarati|teamwork|team work|data entry|customer service|good communication.*)$/;
+  const norm = (x) => String(x).toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').replace(/\s+/g, ' ').trim();
+  const distinct = (j.skills || []).filter(Boolean).filter((x) => !COMMON.test(norm(x)));
+  const dHits = distinct.length ? skillHit(distinct, c.skills || []).length : 0;
+  const skillFit = distinct.length >= 2 ? dHits >= 2 && dHits / distinct.length >= 0.6 : distinct.length === 1 && dHits === 1;
+  let roleOff = false;
   if (fits[0] && fits[0][0]) part('role', fits[0][0], fits[0][1]);
-  else if (c.department && c.department === j.department) part('role', 0.4, null, `${j.department} background, other role`);
-  else part('role', 0, null, c.job_wanted ? `Wants ${c.job_wanted}` : 'Job wanted not given');
+  else if (skillFit) part('role', 0.5, 'Has the skills for this role');
+  else if (c.department && c.department === j.department && dHits > 0) part('role', 0.4, null, `${j.department} background, other role`);
+  else { roleOff = true; part('role', 0, null, c.job_wanted ? `Different role: wants ${c.job_wanted}` : 'Job wanted not given'); }
   // Place: the job's city, or a city they will work in; the same state counts a little.
   const cities = [c.city, ...(Array.isArray(c.work_cities) ? c.work_cities : [])].filter(Boolean).map((x) => x.toLowerCase());
   const jcity = String(j.city || '').toLowerCase(); const jstate = stateOf(j.city); const cstate = c.state || stateOf(c.city);
@@ -431,6 +447,7 @@ function matchScore(c, j, rating) {
     pct = Math.round(pct * (0.5 + 0.5 * (have.length / tools.length)));
     if (have.length) reasons.unshift(`Tools: ${have.join(', ')}`); if (miss.length) gaps.unshift(`Missing: ${miss.join(', ')}`);
   }
+  if (roleOff) { pct = Math.min(pct, 30); }
   // Location: people in the job's city (or who will work there) are more willing, so they stay on top:
   // the same state takes 10% off, another city 20%.
   pct = Math.round(pct * (0.8 + 0.2 * locFit));
