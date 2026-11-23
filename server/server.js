@@ -114,7 +114,9 @@ const server = http.createServer(async (req, res) => {
     if (PAGES.includes(page) || p === '/index.html') return send(res, 200, pageHtml(PAGES.includes(page) ? page : '/'), { 'Content-Type': TYPES['.html'], 'Cache-Control': 'no-cache' }); // the app's own pages, e.g. /my-account/jobs
     const file = path.normalize(path.join(PUBLIC, p));
     if (!file.startsWith(PUBLIC) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) return send(res, 404, 'Not found', { 'Content-Type': 'text/plain' });
-    return send(res, 200, fs.readFileSync(file), { 'Content-Type': TYPES[path.extname(file)] || 'application/octet-stream', 'Cache-Control': 'no-cache' });
+    const st = fs.statSync(file); const tag = `"${st.size.toString(36)}-${Math.floor(st.mtimeMs).toString(36)}"`;
+    if (req.headers['if-none-match'] === tag) return send(res, 304, '', { ETag: tag, 'Cache-Control': 'no-cache' });
+    return send(res, 200, fs.readFileSync(file), { 'Content-Type': TYPES[path.extname(file)] || 'application/octet-stream', 'Cache-Control': 'no-cache', ETag: tag });
   } catch (e) {
     const code = e.status || 500;
     if (code >= 500) { console.error(e); devAlert(`Error on ${req.method} ${url.pathname}`, e.message); }

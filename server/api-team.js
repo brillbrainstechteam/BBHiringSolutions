@@ -2365,7 +2365,7 @@ route('GET', '/api/earnings', T, (ctx) => {
 // ---------- logins & team ----------
 route('GET', '/api/users', T, (ctx) => {
   const u = ctx.user;
-  const users = all('SELECT * FROM users ORDER BY id').filter((x) => isSuper(u) || x.agency_id === u.agency_id).map((x) => ({ id: x.id, name: x.name, whatsapp: x.whatsapp, email: x.email || '', level: x.level, team: x.team || 'Recruitment', agency_id: x.agency_id, agency_name: V.agencyName(x.agency_id), role: x.role, username: x.username, status: x.status, last_login: x.last_login, locked: x.locked_until && x.locked_until > now(), created_by: x.created_by, view_status: personStatus(x) }));
+  const users = all('SELECT * FROM users ORDER BY id').filter((x) => isSuper(u) || x.agency_id === u.agency_id).map((x) => ({ id: x.id, name: x.name, whatsapp: x.whatsapp, email: x.email || '', level: x.level, team: x.team || 'Recruitment', agency_id: x.agency_id, agency_name: V.agencyName(x.agency_id), role: x.role, username: x.username, reports_to: x.reports_to || null, status: x.status, last_login: x.last_login, locked: x.locked_until && x.locked_until > now(), created_by: x.created_by, view_status: personStatus(x) }));
   if (ctx.query.format) return page(ctx, users, 'logins', ['id', 'name', 'username', 'level', 'team', 'agency_name', 'role', 'status', 'view_status', 'last_login', 'created_by']);
   return { users, agencies: isSuper(u) ? all('SELECT * FROM agencies ORDER BY id').map((a) => ({ ...a, view_status: agencyStatus(a), people: all('SELECT 1 FROM users WHERE agency_id=?', a.id).length })) : [] };
 });
@@ -2376,8 +2376,18 @@ route('GET', '/api/users/suggest', T, (ctx) => {
   return { username: n };
 });
 route('POST', '/api/users', ADMINS, (ctx) => { // super admins anywhere; an agency's admin adds sub admins to their own agency
-  const u = ctx.user; const b = ctx.body;
+  const u = ctx.user; const b = { ...ctx.body };
   if (!b.name) throw httpError(400, 'Enter the name', 'name');
+  // A digital owner is a sub admin in Social media & marketing: they see Digital Reach and their hiring channels.
+  if (b.level === 'digital') { b.level = 'sub'; b.team = 'Social media & marketing'; }
+  // A sub admin under an admin works in that admin's team (agency).
+  let boss = null;
+  if (!isSuper(u)) boss = u.level === 'admin' ? u : null;
+  else if (b.reports_to && (b.level || 'sub') === 'sub') { boss = get("SELECT * FROM users WHERE id=? AND level='admin'", b.reports_to); if (!boss) throw httpError(400, 'Pick the admin they work under', 'reports_to'); if (b.team !== 'Social media & marketing') b.agency_id = boss.agency_id; }
+  if (isSuper(u) && b.level === 'admin' && b.agency_id === 'new') { // the admin gets a team of their own
+    const nm = `${String(b.name).trim()}'s team`; if (get('SELECT 1 FROM agencies WHERE lower(name)=lower(?)', nm)) throw httpError(400, `A team called ${nm} already exists: pick it`, 'agency_id');
+    b.agency_id = D.nextId('AG'); insert('agencies', { id: b.agency_id, name: nm, city: '', since: L.istDay(), status: 'Active', share_pct: null, created_at: now() });
+  }
   const level = isSuper(u) ? (b.level || 'sub') : 'sub';
   if (!['super', 'admin', 'sub'].includes(level)) throw httpError(400, 'Pick the level: sub admin, admin or super admin', 'level');
   const team = isSuper(u) && L.TEAMS.includes(b.team) ? b.team : 'Recruitment';
@@ -2391,7 +2401,7 @@ route('POST', '/api/users', ADMINS, (ctx) => { // super admins anywhere; an agen
   const phone = L.digits10(b.whatsapp); if (!L.validPhone(phone)) throw httpError(400, 'Enter a 10-digit WhatsApp number', 'whatsapp');
   const pw = L.newPassword(); const id = D.nextId('U');
   const email = String(b.email || '').trim(); if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) throw httpError(400, 'Enter a valid email, or leave it empty', 'email');
-  insert('users', { id, name: b.name, whatsapp: phone, email: email || null, level, team, agency_id: level === 'super' || limited ? null : agency, role: b.role || (level === 'admin' ? 'Agency owner' : limited ? team : 'Recruiter'), username, pass_hash: L.hashPassword(pw), status: 'On', must_change: 1, failed: 0, created_by: u.id, created_at: now() });
+  insert('users', { id, name: b.name, whatsapp: phone, email: email || null, level, team, agency_id: level === 'super' || limited ? null : agency, role: b.role || (level === 'admin' ? 'Agency owner' : limited ? team : 'Recruiter'), reports_to: level === 'sub' && boss ? boss.id : null, username, pass_hash: L.hashPassword(pw), status: 'On', must_change: 1, failed: 0, created_by: u.id, created_at: now() });
   D.history(ctx.actor.label, 'create login', id, null, null, `${username} (${level})`);
   L.sendWA({ ptype: 'user', pid: id, format: 'bbhs_team_login', vars: { username, password: pw, link: L.link('team') }, by: ctx.actor, rule: 'team_login', secret: pw, auto: true }); // quietly skipped while Meta has not approved it: the admin sees the password on screen
   return { id, username, password: pw, name: b.name, whatsapp: phone, email: email || null };
@@ -2421,7 +2431,37 @@ route('PATCH', '/api/users/:id', ADMINS, (ctx) => {
   const patch = {}; for (const k of self && !isSuper(ctx.user) ? ['name', 'whatsapp', 'email'] : ['name', 'role', 'whatsapp', 'email']) if (ctx.body[k] !== undefined) patch[k] = k === 'whatsapp' ? L.digits10(ctx.body[k]) : k === 'email' ? String(ctx.body[k]).trim() || null : ctx.body[k];
   if (patch.email && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(patch.email)) throw httpError(400, 'Enter a valid email, or leave it empty', 'email');
   if (ctx.body.team !== undefined && isSuper(ctx.user) && !self) { if (!L.TEAMS.includes(ctx.body.team)) throw httpError(400, 'Pick the team', 'team'); patch.team = ctx.body.team; }
+  if (ctx.body.reports_to !== undefined && isSuper(ctx.user) && !self && t.level === 'sub') {
+    if (!ctx.body.reports_to) patch.reports_to = null;
+    else { const boss = get("SELECT * FROM users WHERE id=? AND level='admin'", ctx.body.reports_to); if (!boss) throw httpError(400, 'Pick the admin', 'reports_to'); patch.reports_to = boss.id; if ((ctx.body.team || t.team) === 'Recruitment') patch.agency_id = boss.agency_id; }
+  }
+  const pw = String(ctx.body.password || '');
+  if (pw && !self) { // the admin types the new password: it works at once, they are logged out everywhere
+    if (pw.length < 8) throw httpError(400, 'Use at least 8 characters', 'password');
+    update('users', t.id, { pass_hash: L.hashPassword(pw), must_change: 0, failed: 0, locked_until: null });
+    D.run('DELETE FROM sessions WHERE kind=? AND subject_id=?', 'team', t.id); D.history(ctx.actor.label, 'set password', t.id);
+  }
   return D.edit('users', t.id, patch, ctx.actor.label, ctx.ip);
+});
+// Deleting a login for good. Only for a login with no work in the portal (a test login, or one made by mistake):
+// anyone who has worked is turned off instead, so their history stays readable.
+const USER_REFS = [['calls', 'user_id'], ['clients', 'owner_id'], ['jobs', 'recruiter_id'], ['candidates', 'recruiter_id'], ['applications', 'owner_id'], ['app_history', 'by_id'], ['tasks', 'owner_id'], ['campaigns', 'user_id'], ['tieups', 'owner_id']];
+const userWork = (id) => USER_REFS.reduce((n, [t, c]) => { try { return n + get(`SELECT COUNT(*) n FROM ${t} WHERE ${c}=?`, id).n; } catch { return n; } }, 0);
+route('POST', '/api/users/:id/delete', ADMINS, (ctx) => {
+  const t = get('SELECT * FROM users WHERE id=?', ctx.params.id);
+  if (!t || !canManage(ctx.user, t) || t.id === ctx.user.id || t.level === 'super') throw httpError(403, 'You cannot delete this login.');
+  if (String((ctx.body || {}).username || '').trim().toLowerCase() !== t.username) throw httpError(400, 'Type the username exactly', 'username');
+  const under = all("SELECT name FROM users WHERE reports_to=?", t.id);
+  if (under.length) throw httpError(400, `${under.map((x) => x.name).join(', ')} work${under.length === 1 ? 's' : ''} under ${t.name}. Delete or move them first.`);
+  const work = userWork(t.id); if (work) throw httpError(400, `${t.name} has ${work} record${work === 1 ? '' : 's'} of work in the portal, so the login cannot be deleted. Turn it off instead: they cannot log in, and their work stays.`);
+  D.run('DELETE FROM sessions WHERE kind=? AND subject_id=?', 'team', t.id);
+  for (const [tb, c] of [['alerts', 'user_id'], ['saved_searches', 'user_id'], ['resume_alerts', 'user_id'], ['resume_use', 'user_id']]) { try { D.run(`DELETE FROM ${tb} WHERE ${c}=?`, t.id); } catch { /* table not there */ } }
+  D.run('DELETE FROM users WHERE id=?', t.id);
+  // an admin's own team goes too when nobody and nothing is left in it
+  let team = null;
+  if (t.agency_id && !get('SELECT 1 FROM users WHERE agency_id=?', t.agency_id) && !['clients', 'jobs', 'candidates', 'bills'].some((tb) => get(`SELECT 1 FROM ${tb} WHERE agency_id=?`, t.agency_id)) && /'s team$/.test((get('SELECT name FROM agencies WHERE id=?', t.agency_id) || {}).name || '')) { team = t.agency_id; D.run('DELETE FROM agencies WHERE id=?', t.agency_id); }
+  D.history(ctx.actor.label, 'delete login', t.id, null, `${t.username} (${t.level})`, null);
+  return { ok: true, team };
 });
 route('POST', '/api/agencies', SUPER, (ctx) => {
   const b = ctx.body; const name = String(b.name || '').trim(); if (!name) throw httpError(400, 'Enter the agency name', 'name');
