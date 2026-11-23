@@ -2884,3 +2884,9 @@ a.pipe-step { text-decoration: none; cursor: pointer; } a.pipe-step:hover { bord
 .ag-p:hover, .ag-p:focus { border-color: var(--border); background: var(--surface); }
 .ag-p.ag-h { font-weight: 700; }
 .ag-p.ag-ch { border-color: var(--mustard, #D4A017); background: color-mix(in srgb, var(--mustard, #D4A017) 8%, var(--surface)); }
+
+/* New job opening: fill from a JD */
+.jd-fill { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; padding: 10px 12px; border: 1px dashed var(--border); border-radius: 12px; background: var(--surface-2, #F6F8FB); }
+.jd-fill .lab { font-weight: 700; font-size: 13px; margin: 0 4px 0 0; }
+.jd-fill select.mini { width: auto; max-width: 280px; }
+.jd-fill .btn svg { width: 15px; height: 15px; }

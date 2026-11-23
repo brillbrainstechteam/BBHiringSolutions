@@ -879,11 +879,28 @@
     const p = BB.ask({ title: pre.heading || (pre.bulk ? 'Bulk hiring' : 'New job opening'), wide: true, fields: [
       `<div class="grid g2"><label class="field" data-f="client_id"><span class="lab">Client</span><select name="client_id" data-clients><option value="${esc(clientId || '')}">${esc(clientId || 'Loading…')}</option></select></label>${pre.clone_of ? '' : `<div class="field"><span class="lab">Type of hiring</span><div class="seg hire-kind"><label><input type="radio" name="hire_kind" value="normal" ${pre.bulk ? '' : 'checked'}> Normal hiring</label><label><input type="radio" name="hire_kind" value="bulk" ${pre.bulk ? 'checked' : ''}> Bulk hiring</label></div></div>`}</div>`,
       `<div data-drive ${pre.bulk ? '' : 'hidden'}>${field({ name: 'mass_name', label: 'Drive name', opt: true, placeholder: 'e.g. New showroom, Lucknow' })}</div>`,
+      `<div class="jd-fill"><span class="lab">Fill from a JD</span><button type="button" class="btn sm" data-jdup>${BB.icon('upload')} Upload JD (PDF or Word)</button><select class="mini" data-jdpool><option value="">Or pick from the JD pool…</option></select><span class="small muted" data-jdst></span></div>`,
       `<div class="field" data-froles data-f="roles"><div class="row between" style="margin-bottom:8px"><span class="small muted" data-ftotal></span><span class="tiny muted" data-bulkhint></span></div><div data-frows>${BB.flow.roleCard(first)}</div>${pre.clone_of ? '' : '<button type="button" class="btn sm" data-fadd style="margin-top:8px">+ Add another role</button>'}</div>`,
       { name: 'jd_approved', label: 'Job description already approved', type: 'check' },
     ], ok: pre.clone_of ? 'Create the clone' : pre.bulk ? 'Create openings' : 'Create job opening',
     mount: (m) => {
       form = m; box = $('[data-froles]', m); BB.flow.wireRoleCards(box);
+      // Fill from a JD: the role card that is empty (or the last one) gets the role, city, experience, salary, skills and duties;
+      // the JD itself is saved on the job when it is made.
+      const st = $('[data-jdst]', m);
+      const target = () => { const cards = $$('[data-frole]', box); return cards.find((c) => !($('[data-r=role]', c) || {}).value) || cards[cards.length - 1]; };
+      const put = (card, k, v, force) => { const i = $(`[data-r=${k}]`, card); if (!i || v === '' || v === undefined || v === null) return; if (!force && i.value) return; if (i.tagName === 'SELECT' && ![...i.options].some((o) => o.value === String(v) || o.text === String(v))) return; i.value = v; i.dispatchEvent(new Event('input', { bubbles: true })); i.dispatchEvent(new Event('change', { bubbles: true })); };
+      const fill = (r) => { const card = target(); const f = r.facts || {}; const jd = r.jd || {};
+        put(card, 'role', f.title, true); put(card, 'location', f.city); put(card, 'department', f.department); put(card, 'exp_from', f.exp_from); put(card, 'exp_to', f.exp_to); put(card, 'sal_from', f.sal_from); put(card, 'sal_to', f.sal_to);
+        put(card, 'skills', (f.skills || []).join(', ')); put(card, 'duties', [jd.duties, jd.must ? `Must have:\n${jd.must}` : ''].filter(Boolean).join('\n\n'), true);
+        card.dataset.jd = JSON.stringify(jd); const t = $('[data-rtitle]', card); if (t) t.textContent = f.title || 'Role';
+        st.textContent = `Filled from the JD: ${f.title || 'role'}. Check the details; the JD is saved on the job.`; };
+      $('[data-jdup]', m).onclick = async () => {
+        const fs2 = await BB.pickFiles('.pdf,.docx'); if (!fs2 || !fs2.length) return; const f = fs2[0]; st.textContent = `Reading ${f.name}…`;
+        try { const base64 = await new Promise((ok, no) => { const r = new FileReader(); r.onload = () => ok(r.result); r.onerror = no; r.readAsDataURL(f); }); fill(await BB.post('/api/jobs/jd-read', { name: f.name, base64 })); } catch (e) { st.textContent = ''; BB.fail(e); }
+      };
+      BB.api('/api/jd-pool').then((d) => { const sel = $('[data-jdpool]', m); const titles = Object.keys(d.pool || {}).sort(); sel.innerHTML = `<option value="">${titles.length ? `Or pick from the JD pool (${titles.length})…` : 'The JD pool is empty'}</option>${titles.map((t) => `<option>${esc(t)}</option>`).join('')}`;
+        sel.onchange = () => { const t = sel.value; if (!t) return; const jd = d.pool[t] || {}; fill({ jd, facts: { title: t, city: '', skills: [] } }); sel.value = ''; }; }).catch(() => {});
       const kind = () => (($('[name=hire_kind]:checked', m) || {}).value || 'normal');
       const showDrive = () => { $('[data-drive]', m).hidden = kind() !== 'bulk'; };
       $$('[name=hire_kind]', m).forEach((r) => (r.onchange = showDrive));
@@ -895,8 +912,12 @@
       if (!roles.length) throw new Error('Add the role');
       const bulk = (($('[name=hire_kind]:checked', form) || {}).value || (pre.bulk ? 'bulk' : 'normal')) === 'bulk' || roles.length > 5;
       const job = (r) => ({ title: r.role, city: r.location, openings: r.openings || 1, priority: r.priority, sal_from: r.sal_from, sal_to: r.sal_to, exp_from: r.exp_from, exp_to: r.exp_to, market: r.market, department: r.department, notice_days: r.notice_days, jewel_need: r.jewel_need, duties: r.duties, notes: r.notes, skills: String(r.skills || '').split(',').map((x) => x.trim()).filter(Boolean) });
-      if (roles.length === 1 && !bulk) return BB.post('/api/jobs', { client_id: v.client_id, jd_approved: v.jd_approved, ...job(roles[0]), clone_of: pre.clone_of, call_id: pre.call_id, call_line: pre.call_line, salary_per: 'month' });
-      return BB.post('/api/jobs/mass', { client_id: v.client_id, jd_approved: v.jd_approved, mass: bulk ? 1 : 0, mass_name: v.mass_name, salary_per: 'month', roles: roles.map(job) }).then((x) => ({ id: x.jobs[0], many: x.jobs.length, bulk }));
+      // the JD read for each role card goes on its job once the job is made
+      const jds = $$('[data-frole]', box).map((c) => { try { return c.dataset.jd ? JSON.parse(c.dataset.jd) : null; } catch { return null; } });
+      const roleJds = BB.flow.readRoleCards(box).map((r, i) => ((r.role || r.openings) ? jds[i] : undefined)).filter((x) => x !== undefined);
+      const saveJds = async (ids) => { for (let i = 0; i < ids.length; i++) if (roleJds[i]) await BB.post(`/api/jobs/${ids[i]}/jd`, { jd: roleJds[i] }).catch(() => {}); };
+      if (roles.length === 1 && !bulk) return BB.post('/api/jobs', { client_id: v.client_id, jd_approved: v.jd_approved, ...job(roles[0]), clone_of: pre.clone_of, call_id: pre.call_id, call_line: pre.call_line, salary_per: 'month' }).then(async (x) => { await saveJds([x.id]); return x; });
+      return BB.post('/api/jobs/mass', { client_id: v.client_id, jd_approved: v.jd_approved, mass: bulk ? 1 : 0, mass_name: v.mass_name, salary_per: 'month', roles: roles.map(job) }).then(async (x) => { await saveJds(x.jobs); return { id: x.jobs[0], many: x.jobs.length, bulk }; });
     } }).then((x) => { if (x) { BB.toast(x.many ? `${x.many} job openings made${x.bulk ? ' (bulk hiring)' : ''}` : `${x.id} made`); BB.refreshPage && BB.refreshPage(); BB.open('job', x.id); } });
     setTimeout(async () => {
       const sel = $('[data-clients]'); if (!sel) return; const r = await BB.api('/api/clients?all=1'); all = r.rows;
