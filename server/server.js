@@ -107,6 +107,9 @@ const server = http.createServer(async (req, res) => {
     // A candidate sharing their resume and details, from the WhatsApp link: /u/<code>.
     const pfm = /^\/u\/([\w-]{8,40})\/?$/.exec(p);
     if (pfm) return send(res, 200, require('./profilelink').pageHtml(pfm[1]), { 'Content-Type': TYPES['.html'], 'Cache-Control': 'no-store', 'X-Robots-Tag': 'noindex' });
+    // What the two feedback forms look like (nothing is saved from a preview).
+    if (p === '/feedback/preview' || p === '/feedback/preview/') return send(res, 200, require('./care').feedbackHtml('preview'), { 'Content-Type': TYPES['.html'], 'Cache-Control': 'no-store', 'X-Robots-Tag': 'noindex' });
+    if (p === '/rate/preview' || p === '/rate/preview/') return send(res, 200, require('./care').rateHtml('preview', url.searchParams.get('job')), { 'Content-Type': TYPES['.html'], 'Cache-Control': 'no-store', 'X-Robots-Tag': 'noindex' });
     // A candidate's feedback, from the WhatsApp link: /feedback/<code>.
     const fbm = /^\/feedback\/([\w-]{8,40})\/?$/.exec(p);
     if (fbm) { const h = require('./care').feedbackHtml(fbm[1]); return send(res, h ? 200 : 404, h || 'This link is not valid any more.', { 'Content-Type': h ? TYPES['.html'] : 'text/plain', 'Cache-Control': 'no-store', 'X-Robots-Tag': 'noindex' }); }

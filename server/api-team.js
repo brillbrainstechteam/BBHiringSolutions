@@ -1347,7 +1347,7 @@ function interestPlan(jobIds, user) {
   for (const j of jobs) j.people = [...best.entries()].filter(([, v]) => v.job === j.id).map(([cid, v]) => ({ id: cid, name: v.name, city: v.city, role: v.role, score: v.score })).sort((a, b) => b.score - a.score);
   return { format, strong, budget: D.settings().bulk_budget, jobs };
 }
-route('GET', '/api/jobs/interest/options', T, (ctx) => ({ jobs: all("SELECT * FROM jobs WHERE archived=0 AND COALESCE(status,'') NOT IN ('Filled','Closed','On hold') ORDER BY created_at DESC").filter((j) => seeJob(ctx.user, j)).map((j) => ({ status: j.status, id: j.id, title: j.title, city: j.city, company: (get('SELECT company FROM clients WHERE id=?', j.client_id) || {}).company || '', jd_ready: L.jdReady(j), matches: L.jdReady(j) ? L.bestMatches(j, 200, true).filter((m) => m.score >= D.settings().match.strong).length : 0 })) }));
+route('GET', '/api/jobs/interest/options', T, (ctx) => ({ jobs: all("SELECT * FROM jobs WHERE archived=0 AND COALESCE(status,'') NOT IN ('Filled','Closed','On hold') ORDER BY created_at DESC").filter((j) => seeJob(ctx.user, j)).map((j) => ({ status: j.status, id: j.id, title: j.title, city: j.city, company: (get('SELECT company FROM clients WHERE id=?', j.client_id) || {}).company || '', jd_ready: L.jdReady(j), matches: j.match_n || 0 })) }));
 route('POST', '/api/jobs/interest/preview', T, (ctx) => interestPlan((ctx.body || {}).jobs || [], ctx.user));
 route('POST', '/api/jobs/interest/send', T, (ctx) => {
   const plan = Array.isArray((ctx.body || {}).plan) ? ctx.body.plan : []; const out = [];

@@ -945,14 +945,15 @@
 (() => {
   const { esc } = BB; const $ = (s, r = document) => r.querySelector(s); const $$ = (s, r = document) => [...r.querySelectorAll(s)];
   BB.askInterest = async () => {
-    const all = (await BB.api('/api/jobs/interest/options').catch(BB.fail) || {}).jobs; if (!all) return;
-    const mm = BB.modal({ title: 'Ask for Interest in specific Jobs', wide: true, foot: '<span class="grow small muted" data-aisum>Pick one or more jobs.</span><button class="btn" data-aiback hidden>Back</button><button class="btn primary" data-ainext disabled>See message and people</button>',
+    const mm0 = BB.modal({ title: 'Ask for Interest in specific Jobs', wide: true, foot: false, body: '<div class="empty">Loading the jobs…</div>' });
+    const all = (await BB.api('/api/jobs/interest/options').catch((e) => { mm0.close(); BB.fail(e); }) || {}).jobs; mm0.close(); if (!all) return;
+    const mm = BB.modal({ title: 'Ask for Interest in specific Jobs', wide: true, foot: '<span class="grow small muted" data-aisum></span><button class="btn" data-aiback hidden>Back</button><button class="btn primary" data-ainext disabled>See message and people</button>',
       body: `<div data-aistep="1"><input placeholder="Find a job…" data-aifind style="margin-bottom:8px"><div class="ai-jobs">${all.map((j) => `<label class="ai-job"><input type="checkbox" value="${esc(j.id)}"><span class="grow"><b>${esc(j.title)}</b><span class="tiny muted"> · ${esc(j.city || '')} · ${esc(j.company || '')} · ${esc(j.id)}</span></span>${j.jd_ready ? `<span class="badge b-outline tiny">${j.matches} match${j.matches === 1 ? '' : 'es'}</span>` : `<span class="badge b-amber tiny" title="Approve the JD on the job before asking candidates">${j.status === 'Draft' ? 'Draft · ' : ''}JD not approved</span>`}</label>`).join('') || '<div class="empty">No open jobs.</div>'}</div></div><div data-aistep="2" hidden></div>` });
     const m = mm.el; const foot = (sel) => $(sel, m);
     const next = foot('[data-ainext]'); const back = foot('[data-aiback]'); const sum = foot('[data-aisum]');
     const s1 = $('[data-aistep="1"]', m); const s2 = $('[data-aistep="2"]', m); let plan = null;
     const picked = () => $$('.ai-jobs input:checked', m).map((x) => x.value);
-    const sync1 = () => { const n = picked().length; next.disabled = !n || n > 10; sum.textContent = n ? `${n} job${n === 1 ? '' : 's'} picked${n > 10 ? ' (10 at most)' : ''}` : 'Pick one or more jobs.'; };
+    const sync1 = () => { const n = picked().length; next.disabled = !n || n > 10; sum.textContent = n ? `${n} job${n === 1 ? '' : 's'} picked${n > 10 ? ' (10 at most)' : ''}` : ''; };
     $$('.ai-jobs input', m).forEach((x) => (x.onchange = sync1));
     $('[data-aifind]', m).oninput = (e) => { const t = e.target.value.toLowerCase(); $$('.ai-job', m).forEach((l) => { l.hidden = !l.textContent.toLowerCase().includes(t); }); };
     const count2 = () => { const n = $$('[data-aip]:checked', s2).length; next.disabled = !n; next.textContent = n ? `Send to ${n} ${n === 1 ? 'person' : 'people'}` : 'Send'; sum.textContent = plan ? `${plan.jobs.filter((j) => j.people && j.people.length).length} job${plan.jobs.length === 1 ? '' : 's'} · each person gets one message, for their best match` : ''; };

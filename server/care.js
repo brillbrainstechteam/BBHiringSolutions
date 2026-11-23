@@ -231,9 +231,10 @@ route('POST', '/api/pub/feedback/:token', { rate: { key: 'cfb', max: 20, minutes
   return { ok: true };
 });
 function feedbackHtml(token) {
-  const f = get('SELECT * FROM cand_feedback WHERE token=?', String(token || '')); if (!f) return null;
+  const preview = token === 'preview';
+  const f = preview ? { token: 'preview', candidate_id: '', user_id: null, done_at: null } : get('SELECT * FROM cand_feedback WHERE token=?', String(token || '')); if (!f) return null;
   const e = (x) => String(x == null ? '' : x).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-  const b = D.settings().business; const c = get('SELECT name FROM candidates WHERE id=?', f.candidate_id) || {}; const r = f.user_id ? get('SELECT name FROM users WHERE id=?', f.user_id) : null;
+  const b = D.settings().business; const c = preview ? { name: 'Priya' } : get('SELECT name FROM candidates WHERE id=?', f.candidate_id) || {}; const r = preview ? { name: 'Rahul (recruiter)' } : f.user_id ? get('SELECT name FROM users WHERE id=?', f.user_id) : null;
   const rows = FB_POINTS.map(([k, l, h]) => `<fieldset data-k="${k}"><legend>${e(l)}</legend><div class="hint">${e(h)}</div><div class="stars">${[1, 2, 3, 4, 5].map((n) => `<label><input type="radio" name="${k}" value="${n}"><span>★</span></label>`).join('')}</div></fieldset>`).join('');
   const body = f.done_at ? '<div class="done">Thank you! Your feedback has reached our senior team.</div>'
     : `<form id="f"><p>Hello ${e(String(c.name || '').split(' ')[0])}, how was your experience with BrillBrains${r ? ` and ${e(r.name.split(' ')[0])}, your recruiter` : ''}? It takes 30 seconds. Only our senior team reads it.</p>${rows}<label class="nm">Anything else to tell us? (optional)<textarea name="text" maxlength="1500"></textarea></label><button>Send</button><div id="err"></div></form>`;
@@ -250,7 +251,7 @@ button{width:100%;background:var(--navy);color:#fff;border:0;border-radius:10px;
 f.querySelectorAll('.stars').forEach(function(g){var ls=g.querySelectorAll('label');ls.forEach(function(l,i){l.addEventListener('click',function(){ls.forEach(function(x,k){x.classList.toggle('on',k<=i)})})})});
 f.addEventListener('submit',function(ev){ev.preventDefault();var btn=f.querySelector('button'),err=document.getElementById('err');err.textContent='';var s={};
 f.querySelectorAll('fieldset').forEach(function(fs){var c=fs.querySelector('input:checked');if(c)s[fs.dataset.k]=Number(c.value)});
-if(!Object.keys(s).length){err.textContent='Please tap the stars for at least one point.';return}btn.disabled=true;
+if(!Object.keys(s).length){err.textContent='Please tap the stars for at least one point.';return}${preview ? "err.style.color='#027a48';err.textContent='Preview: this is what the candidate sees. Nothing is saved.';return;" : ''}btn.disabled=true;
 fetch('/api/pub/feedback/${e(f.token)}',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({scores:s,text:f.text.value})}).then(function(r){return r.json().then(function(d){if(!r.ok)throw new Error(d.error||'Could not send');f.outerHTML='<div class="done">Thank you! Your feedback has reached our senior team.</div>'})}).catch(function(x){err.textContent=x.message;btn.disabled=false})})})();</script></body></html>`;
 }
 module.exports.feedbackHtml = feedbackHtml;
@@ -300,11 +301,13 @@ route('POST', '/api/pub/rate/:token', { rate: { key: 'crate', max: 20, minutes: 
   return { ok: true };
 });
 // The form a client opens from the WhatsApp: stars and a line for each recruiter, one Send.
-function rateHtml(token) {
-  const a = get('SELECT * FROM client_review_asks WHERE token=?', String(token || '')); if (!a) return null;
+function rateHtml(token, previewJob) {
+  const preview = token === 'preview';
+  const pj = preview && previewJob ? get('SELECT * FROM jobs WHERE id=?', String(previewJob)) : null;
+  const a = preview ? { token: 'preview', job_id: pj ? pj.id : '', client_id: pj ? pj.client_id : '', done_at: null } : get('SELECT * FROM client_review_asks WHERE token=?', String(token || '')); if (!a) return null;
   const e = (x) => String(x == null ? '' : x).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   const b = D.settings().business; const j = get('SELECT title FROM jobs WHERE id=?', a.job_id) || {}; const c = get('SELECT company, contact FROM clients WHERE id=?', a.client_id) || {};
-  const people = jobRecruiters(a.job_id);
+  const people = preview ? (a.job_id && jobRecruiters(a.job_id).length ? jobRecruiters(a.job_id) : [{ id: 'r1', name: 'Recruiter name' }]) : jobRecruiters(a.job_id);
   const rows = people.map((p) => `<fieldset data-u="${e(p.id)}"><legend>${e(p.name)}</legend><div class="stars">${[1, 2, 3, 4, 5].map((n) => `<label><input type="radio" name="s_${e(p.id)}" value="${n}"><span>★</span></label>`).join('')}</div><textarea maxlength="1500" placeholder="What went well, what could be better (optional)"></textarea></fieldset>`).join('');
   const body = a.done_at ? '<div class="done">Thank you! Your rating has reached our senior team.</div>'
     : people.length ? `<form id="f"><p>Thank you for meeting our candidates for <b>${e(j.title)}</b>. How did our recruiter${people.length > 1 ? 's' : ''} do? Only our senior team reads this.</p>${rows}<label class="nm">Your name<input name="name" value="${e(c.contact || '')}" maxlength="80"></label><button>Send</button><div id="err"></div></form>`
@@ -322,7 +325,7 @@ button{width:100%;background:var(--navy);color:#fff;border:0;border-radius:10px;
 f.querySelectorAll('.stars').forEach(function(g){var ls=g.querySelectorAll('label');ls.forEach(function(l,i){l.addEventListener('click',function(){ls.forEach(function(x,k){x.classList.toggle('on',k<=i)})})})});
 f.addEventListener('submit',function(ev){ev.preventDefault();var btn=f.querySelector('button'),err=document.getElementById('err');err.textContent='';
 var ratings=[].map.call(f.querySelectorAll('fieldset'),function(fs){var c=fs.querySelector('input:checked');return{user_id:fs.dataset.u,stars:c?Number(c.value):0,text:fs.querySelector('textarea').value}}).filter(function(r){return r.stars});
-if(!ratings.length){err.textContent='Please tap the stars for at least one person.';return}btn.disabled=true;
+if(!ratings.length){err.textContent='Please tap the stars for at least one person.';return}${preview ? "err.style.color='#027a48';err.textContent='Preview: this is what the client sees. Nothing is saved.';return;" : ''}btn.disabled=true;
 fetch('/api/pub/rate/${e(a.token)}',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:f.name.value,ratings:ratings})}).then(function(r){return r.json().then(function(d){if(!r.ok)throw new Error(d.error||'Could not send');f.outerHTML='<div class="done">Thank you! Your rating has reached our senior team.</div>'})}).catch(function(x){err.textContent=x.message;btn.disabled=false})})})();</script></body></html>`;
 }
 // Super admin: ask a client by hand (the jobs whose client has interviewed our candidates are offered).

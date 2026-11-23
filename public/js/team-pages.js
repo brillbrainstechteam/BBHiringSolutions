@@ -1155,7 +1155,7 @@
     const dt2 = (d) => (d ? `<div class="nw">${new Date(d).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short' })}</div><div class="tiny muted nw">${fmtT(d)}</div>` : '—');
     const jobCell = (title, client) => `<div class="iv-job"><div class="ellipsis" title="${esc(title)}">${esc(title)}</div>${client ? `<div class="tiny muted ellipsis" title="${esc(client)}">${esc(client)}</div>` : ''}</div>`;
     // Tick booked interviews and send a reminder: who, WhatsApp and/or email (with a calendar invite), when, which message.
-    const ivBar = `<div class="card bulkbar bulk-card" data-ivbar>${BB.bulkHead('interview', 'data-ivcount')}<button class="btn sm primary" data-ivremind disabled>Send reminder</button><span class="tiny muted">Only booked, upcoming interviews get one.</span></div>`;
+    const ivBar = `<div class="card bulkbar bulk-card" data-ivbar>${BB.bulkHead('interview', 'data-ivcount')}<button class="btn sm primary" data-ivremind disabled>Send reminder</button></div>`;
     const ivFormats = () => { const fm = BB.boot.formats; const keys = fm ? Object.keys(fm).filter((k) => /interview/.test(k)) : []; return keys.length ? keys.map((k) => [k, k]) : [['bbhs_interview_reminder', 'Interview reminder']]; };
     const wireIvBar = () => {
       const bar = $('[data-ivbar]', el); if (!bar) return;
