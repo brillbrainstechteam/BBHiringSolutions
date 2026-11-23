@@ -225,9 +225,35 @@ route('POST', '/api/studio/wa/templates', T, async (ctx) => {
   if (old && old.key !== key && old.source === 'portal' && ['DRAFT', 'NOT SENT'].includes(old.status)) D.run('DELETE FROM wa_templates WHERE key=?', old.key);
   const row = { name: t.name, language: t.language, category: t.category, status: 'DRAFT', components: JSON.stringify(draftComponents(t)), source: 'portal', draft: JSON.stringify(t), error: null, by: ctx.actor.label, at: now() };
   if (was) update('wa_templates', key, row, 'key'); else insert('wa_templates', { key, ...row });
-  if (!b.submit) { D.history(ctx.actor.label, 'WhatsApp template draft', key); return { key, status: 'DRAFT' }; }
-  return submitTemplate(key, ctx.actor.label);
+  const also = (Array.isArray(b.also) ? b.also : []).filter((l) => ['en', 'hi', 'gu', 'mr'].includes(l) && l !== t.language);
+  let main;
+  if (!b.submit) { D.history(ctx.actor.label, 'WhatsApp template draft', key); main = { key, status: 'DRAFT' }; }
+  else { try { main = await submitTemplate(key, ctx.actor.label); } catch (e) { if (!also.length) throw e; main = { key, status: 'NOT SENT', error: e.message }; } }
+  // The same template in the other languages (English, Hindi, Gujarati, Marathi): same name, translated by AI,
+  // blanks and links kept, each sent to Meta (or kept as a draft) like the first.
+  if (also.length) main.also = await translatedCopies(t, also, !!b.submit, ctx.actor.label);
+  return main;
 });
+async function translatedCopies(t, langs, submit, by) {
+  const LG = require('./lang'); const out = [];
+  const tr = async (x, l) => (x ? (l === 'en' ? x : LG.translate(x, l)) : x);
+  for (const l of langs) {
+    const key = `${t.name}|${l}`;
+    try {
+      if (templateRow(key) && !EDITABLE_ST.includes(templateRow(key).status)) { out.push({ language: l, status: templateRow(key).status, note: 'already with Meta' }); continue; }
+      if (t.language !== 'en' && l === 'en') { out.push({ language: l, status: 'SKIPPED', error: 'Write the English one first' }); continue; }
+      const c = { ...t, language: l, body: await tr(t.body, l), header_text: t.header_type === 'TEXT' ? await tr(t.header_text, l) : t.header_text, footer: await tr(t.footer, l) };
+      c.buttons = [];
+      for (const x of t.buttons) { const w = await tr(x.text, l); c.buttons.push({ ...x, text: w && w.length <= 25 ? w : x.text }); }
+      if (c.body.length > 1024) throw new Error('the translation is longer than 1024 letters');
+      const row = { name: c.name, language: l, category: c.category, status: 'DRAFT', components: JSON.stringify(draftComponents(c)), source: 'portal', draft: JSON.stringify(c), error: null, by, at: now() };
+      if (templateRow(key)) update('wa_templates', key, row, 'key'); else insert('wa_templates', { key, ...row });
+      if (!submit) { out.push({ language: l, status: 'DRAFT' }); continue; }
+      try { const r = await submitTemplate(key, by); out.push({ language: l, status: r.status }); } catch (e) { out.push({ language: l, status: 'NOT SENT', error: e.message }); }
+    } catch (e) { out.push({ language: l, status: 'NOT MADE', error: e.message }); }
+  }
+  return out;
+}
 // Make a template from code (a message written in a campaign) and send it to Meta.
 async function createTemplate(input, by) {
   const t = checkTemplate(input); const key = `${t.name}|${t.language}`;

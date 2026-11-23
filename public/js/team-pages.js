@@ -657,7 +657,12 @@
   const SEG_LABEL = [['q', 'Search'], ['industry', 'Industry', (v) => (v === 'all' ? 'All industries' : v)], ['domain', 'Domain'], ['skills', 'Skills'], ['dept', 'Department'], ['job', 'Designation'], ['city', 'City'], ['state', 'State'], ['jewellery', 'Jewellery', (v) => JEW_LABEL[v] || v],
     ['from', 'Applied from'], ['to', 'Applied up to'], ['exp_min', 'Experience from', (v) => `${v} yrs`], ['exp_max', 'Experience up to', (v) => `${v} yrs`], ['sal_min', 'Expected salary from', (v) => `${inr(v)}/mo`], ['sal_max', 'Expected salary up to', (v) => `${inr(v)}/mo`],
     ['biz', 'B2B / B2C'], ['worked', 'Worked at'], ['company', 'Current company'], ['looking', 'Current job status'], ['status', 'Status'], ['source', 'Source'], ['ad', 'Ad campaign'], ['updated', 'Updated in last', (v) => `${v} days`], ['notice', 'Notice up to', (v) => `${v} days`], ['stale', 'Not updated in 90+ days', () => 'yes'], ['archived', 'Archived', () => 'yes']];
-  const segChips = (q) => SEG_LABEL.filter(([k]) => q[k]).map(([k, l, f]) => `<span class="seg-chip"><span class="seg-k">${esc(l)}:</span> <b>${esc(f ? f(q[k]) : q[k])}</b></span>`).join('') || '<span class="faint">All candidates</span>';
+  // One chip per filter; a long list (many designations) shows the first three and "+N more", which opens the rest.
+  const segChips = (q) => SEG_LABEL.filter(([k]) => q[k]).map(([k, l, f]) => {
+    const vals = f ? [f(q[k])] : String(q[k]).split(',').map((x) => x.trim()).filter(Boolean);
+    const shown = vals.slice(0, 3).map((v) => `<b>${esc(v)}</b>`).join(', '); const rest = vals.slice(3);
+    return `<span class="seg-chip"><span class="seg-k">${esc(l)}:</span> ${shown}${rest.length ? `<span hidden>, ${rest.map((v) => `<b>${esc(v)}</b>`).join(', ')}</span> <button type="button" class="seg-more" onclick="this.previousElementSibling.hidden=false;this.remove()">+${rest.length} more</button>` : ''}</span>`;
+  }).join('') || '<span class="faint">All candidates</span>';
 
   // Share / rename / delete / copy link / download buttons, the same in the segment list and on an open segment.
   const wireSegButtons = (root, find) => {
@@ -843,7 +848,7 @@
     const bulkBtn = (a, label, cls = '') => `<button class="btn sm ${cls}" data-bulk="${a}" disabled>${label}</button>`;
     const bulkMenu = (label, items) => `<details class="step-menu bulk-menu"><summary class="btn sm">${label}</summary><div class="step-pop" role="menu">${items.map(([a, l]) => `<button type="button" role="menuitem" data-bulk="${a}" disabled>${l}</button>`).join('')}</div></details>`;
     // An open segment: its name, live count and filters, with the segment's own buttons.
-    const segHead = seg ? `<section class="card cand-panel seg-head"><div class="cand-result"><div class="stack-sm" style="min-width:0"><div class="cand-count"><b>${esc(seg.name)}</b>${seg.shared ? ' <span class="badge b-primary tiny">Shared</span>' : ''} <span class="faint">· ${total} candidate${total === 1 ? '' : 's'} now${seg.mine ? '' : ` · made by ${esc(seg.owner)}`}</span></div><div class="row" style="gap:4px">${segChips(seg.query)}</div></div>
+    const segHead = seg ? `<section class="card cand-panel seg-head"><div class="cand-result"><div class="stack-sm" style="min-width:0"><div class="cand-count"><b>${esc(seg.name)}</b>${seg.shared ? ' <span class="badge b-primary tiny">Shared</span>' : ''} <span class="faint">· ${total} candidate${total === 1 ? '' : 's'} now${seg.mine ? '' : ` · made by ${esc(seg.owner)}`}</span></div><div class="seg-chips">${segChips(seg.query)}</div></div>
       <div class="row cand-seg">${segButtons(seg, seg.can_download, false)}</div></div></section>` : '';
     // Filters and saved segments in one card; the selection bar; then the table in its own scroll box.
     const head = seg ? segHead : `<section class="card cand-panel">
@@ -1204,19 +1209,23 @@
   // ---------- WhatsApp inbox (8.4) ----------
   P.whatsapp = async ({ el, actions, q, me }) => {
     const f = q.filter || 'All';
-    const d = await BB.api(`/api/wa/threads?${BB.qs({ filter: f, q: q.q })}`);
+    const d = await BB.api(`/api/wa/threads?${BB.qs({ filter: f, q: q.q, delivery: q.delivery, response: q.response })}`);
     let cur = q.t ? q.t.split(':') : d.threads[0] ? [d.threads[0].person_type, d.threads[0].person_id] : null;
-    actions.innerHTML = `<button class="btn" data-new>New message</button>${!me.accounts_only ? '<button class="btn gold" data-alert>Job alert to matches</button>' : ''}`;
+    actions.innerHTML = `<button class="btn" data-new>Send Individual Message</button>${!me.accounts_only ? '<button class="btn gold" data-alert>Ask for Interest in specific Jobs</button>' : ''}`;
     el.innerHTML = `${BB.boot.test_mode ? '<div class="notice gold small" style="margin-bottom:10px">Test mode: WhatsApp is not connected yet, so messages are saved as "would send". Use <b>Simulate reply</b> to act as the person replying (button replies update records just like the real CRM).</div>' : ''}
-      <div class="filters">${['All', 'Clients', 'Candidates', 'Team', 'Unread', 'Failed'].map((x) => `<span class="chip ${f === x ? 'on' : ''}" data-fl="${x}">${x}</span>`).join('')}<input placeholder="Search…" value="${esc(q.q || '')}" data-q></div>
+      <div class="wa-filters"><div class="seg">${['All', 'Clients', 'Candidates', 'Team', 'Unread', 'Failed'].map((x) => `<button class="${f === x ? 'on' : ''}" data-fl="${x}">${x}</button>`).join('')}</div>
+        <select data-wf="delivery" aria-label="Delivery status"><option value="">Any delivery</option>${['Read', 'Delivered', 'Sent', 'Not sent', 'Held', 'Failed'].map((x) => `<option ${q.delivery === x ? 'selected' : ''}>${x}</option>`).join('')}</select>
+        <select data-wf="response" aria-label="Response"><option value="">Any response</option>${['Replied', 'No reply yet', 'Interested', 'Not interested', 'Other reply', 'Opted out'].map((x) => `<option ${q.response === x ? 'selected' : ''}>${x}</option>`).join('')}</select>
+        <input placeholder="Search…" value="${esc(q.q || '')}" data-q></div>
       <div class="card inbox"><div class="threads">${f === 'Failed' ? d.failed.map((m) => `<div class="th"><div class="nm">${esc(m.person_id)} <span class="badge b-red tiny">failed</span></div><div class="lm">${esc(m.error || '')}</div><button class="btn sm" data-retry="${m.id}">Retry</button></div>`).join('') || '<div class="empty">No failed messages.</div>' : d.threads.map((t) => `<div class="th ${cur && cur[0] === t.person_type && cur[1] === t.person_id ? 'on' : ''}" data-th="${t.person_type}:${t.person_id}"><div class="nm"><span class="ellipsis">${esc(t.name)}</span><span class="badge b-outline tiny">${t.person_type === 'user' ? 'team' : t.person_type}</span>${t.unread ? `<span class="badge b-green tiny">${t.unread}</span>` : ''}<span class="right tiny faint">${fmtT(t.last_at)}</span></div><div class="lm">${t.last && t.last.direction === 'in' ? '↩ ' : ''}${esc(t.last ? t.last.text : '')}</div></div>`).join('') || '<div class="empty">No chats yet.</div>'}</div>
         <div class="chat-col" data-chat><div class="empty">Choose a chat.</div></div><div class="side-info" data-info></div></div>`;
     $$('[data-fl]', el).forEach((c) => (c.onclick = () => BB.setQ({ filter: c.dataset.fl, t: '' })));
+    $$('[data-wf]', el).forEach((s) => (s.onchange = () => BB.setQ({ [s.dataset.wf]: s.value, t: '' })));
     let tq; $('[data-q]', el).oninput = (e) => { clearTimeout(tq); tq = setTimeout(() => BB.setQ({ q: e.target.value }), 350); };
     $$('[data-th]', el).forEach((t) => (t.onclick = () => { $$('[data-th]', el).forEach((x) => x.classList.remove('on')); t.classList.add('on'); cur = t.dataset.th.split(':'); BB.setUrl(`team/whatsapp?${BB.qs({ ...q, t: t.dataset.th })}`); openThread(); }));
     $$('[data-retry]', el).forEach((b) => (b.onclick = async () => { await BB.post(`/api/wa/retry/${b.dataset.retry}`); BB.toast('Queued again'); BB.refreshPage(); }));
     $('[data-new]', actions).onclick = () => BB.pickCandidate((cid) => BB.wa({ ptype: 'candidate', pid: cid, after: () => BB.setQ({ t: `candidate:${cid}` }) }));
-    const al = $('[data-alert]', actions); if (al) al.onclick = () => BB.pickJob(async (jid) => { const r = await BB.post(`/api/jobs/${jid}/alert`, {}).catch(BB.fail); if (r) BB.toast(`${r.sent} job alert(s) saved${r.skipped.length ? `, ${r.skipped.length} skipped (STOP, no consent, limits)` : ''}`); });
+    const al = $('[data-alert]', actions); if (al) al.onclick = () => BB.askInterest();
     async function openThread() {
       if (!cur) return;
       const t = await BB.api(`/api/wa/thread/${cur[0]}/${cur[1]}`).catch(BB.fail); if (!t) return;
@@ -1226,7 +1235,7 @@
       BB.attachMics(chat);
       const sc = $('[data-scroll]', chat); sc.scrollTop = sc.scrollHeight;
       const typeName = { client: 'Client', candidate: 'Candidate', user: 'Team' }[p.type];
-      $('[data-info]', el).innerHTML = `<div class="stack-sm"><b>${esc(p.name)}</b><div class="small">${typeName} · <a href="#" data-open="${p.type === 'user' ? 'person' : p.type}:${p.id}" class="mono">${esc(p.id)}</a></div><div class="mono small">${esc(p.phone)}</div>${p.opted_out ? '<span class="badge b-red">Opted out (STOP)</span>' : ''}<div class="notice small ${p.window_until ? '' : 'warn'}">${p.window_until ? `Window open until ${fmtT(p.window_until)}` : 'Window closed'}</div>
+      $('[data-info]', el).innerHTML = `<div class="stack-sm"><b>${esc(p.name)}</b><div class="small">${typeName} · <a href="#" data-open="${p.type === 'user' ? 'person' : p.type}:${p.id}" class="mono">${esc(p.id)}</a></div><div class="mono small">${esc(p.phone)}</div>${p.opted_out ? '<span class="badge b-red">Opted out (STOP)</span>' : ''}<div class="notice small ${p.window_until ? '' : 'warn'}">${p.window_until ? `Chat open until ${fmtT(p.window_until)}` : p.last_in ? `Chat closed: their last message was ${fmtDT(p.last_in)}, more than 24 hours ago. Only an approved template can be sent until they write again.` : 'Chat closed: they have not written to us yet. Only an approved template can be sent until they do.'}</div>
         <b class="small" style="margin-top:8px;display:block">Quick formats</b>${t.quick.map((k) => `<button class="fmt-chip" data-quick="${k}"><span class="mono">${k}</span></button>`).join('')}
         ${BB.boot.test_mode && p.type !== 'user' ? `<hr class="sep"><b class="small">Simulate reply (test)</b><div class="row" style="margin-top:6px">${['Confirm', 'Reschedule', 'Accept offer', 'Decline', 'Interested', "I've joined", 'Need help', 'Selected', 'Not selected', 'STOP', 'START'].map((b) => `<button class="btn sm" data-sim="${esc(b)}">${esc(b)}</button>`).join('')}</div><div class="row" style="margin-top:6px"><input data-simtext placeholder="Or type their message"><button class="btn sm" data-simsend>Reply</button></div>` : ''}</div>`;
       const reload = () => openThread();
@@ -1352,11 +1361,21 @@
   const langChips = (f) => Object.keys(LCODE).filter((l) => f[l]).map((l) => { const ms = f.meta_status || {}; const st = ms[l] || (!Object.keys(ms).length && f.approved ? 'APPROVED' : ''); const [cls, word] = st === 'APPROVED' ? ['ok', 'approved'] : st === 'REJECTED' ? ['bad', 'rejected'] : st ? ['wait', 'waiting for Meta'] : ['none', 'not sent to Meta']; return `<span class="lchip ${cls}" title="${esc((BB.boot.lang_names || {})[l] || l)}: ${word}">${LCODE[l]}${cls === 'ok' ? ' ✓' : ''}</span>`; }).join('');
 
   // ---------- Reports (17) ----------
-  const REPORTS = [['funnel', 'Hiring funnel'], ['clients', 'Per client'], ['jobs', 'Per job'], ['sources', 'Source report'], ['performance', 'Recruiter / agency performance'], ['money', 'Financials'], ['replacements', 'Replacements'], ['bank', 'Resume bank']];
+  const REPORTS = [['funnel', 'Hiring funnel'], ['clients', 'Per client'], ['jobs', 'Per job'], ['sources', 'Source report'], ['performance', 'Recruiter performance'], ['agencies', 'Agency performance'], ['money', 'Financials'], ['replacements', 'Replacements'], ['bank', 'Resume bank']];
+  // Reports by who they are about: the team, the agencies, the clients, the candidates.
+  const REPORT_GROUPS = [
+    ['team', 'Team performance', 'How each recruiter is doing: work done, daily logs, resume use.', ['performance', 'logs', 'resumes']],
+    ['agency', 'Agency performance', 'Each partner agency and our own team side by side, and the money.', ['agencies', 'money']],
+    ['client', 'Client-wise', 'Each client and job: how far hiring has got, and replacements.', ['clients', 'jobs', 'funnel', 'replacements']],
+    ['candidate', 'Candidate-wise', 'Where candidates come from and what the resume bank holds.', ['sources', 'bank', 'whatsapp']],
+  ];
+  const REPORT_NOTE = { performance: 'One row per recruiter for the dates picked.', logs: 'Daily logs submitted and approved per person.', resumes: 'Who opened which resumes.', agencies: 'One row per agency: people, work done, open jobs, fees billed and received.', money: 'Every bill: fee, GST, received, balance and agency share.', clients: 'One row per client: jobs, candidates sent, offers, joinings.', jobs: 'One row per job opening and where its candidates are.', funnel: 'How many moved through each hiring step, and where they dropped.', replacements: 'Candidates who left within the replacement window.', sources: 'Which sources bring candidates, and how many get hired.', bank: 'Candidates on file by city and department, and how fresh they are.', whatsapp: 'Clicks on the WhatsApp buttons on the website.' };
   // Sub admins see only their own performance and daily logs; admins their agency; the super admin everything.
   P.reports = async ({ el, actions, q, me }) => {
     const sub = me.level === 'sub'; const list = sub ? [['performance', 'My performance']] : isSuper(me) ? [...REPORTS, ['logs', 'Daily logs'], ['whatsapp', 'WhatsApp clicks'], ['resumes', 'Resume access']] : REPORTS;
-    const name = list.some(([k]) => k === q.r) ? q.r : list[0][0];
+    const groups = REPORT_GROUPS.map(([k, l, d2, keys]) => [k, l, d2, keys.filter((r) => list.some(([x]) => x === r))]).filter(([, , , keys]) => keys.length);
+    const grp = groups.find(([k]) => k === q.g) || groups.find(([, , , keys]) => keys.includes(q.r)) || groups[0];
+    const name = grp && grp[3].includes(q.r) ? q.r : grp ? grp[3][0] : list[0][0];
     const from = q.from || new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10); const to = q.to || BB.istDay();
     const byPerson = !sub && ['performance', 'logs'].includes(name);
     const qs = BB.qs({ from, to, agency: q.agency, client: q.client, job: q.job, city: q.city, dept: q.dept, person: byPerson ? q.person : undefined });
@@ -1369,11 +1388,14 @@
     const picks = cols.filter((c) => typeof d.rows[0][c] === 'string').map((c) => [c, [...new Set(d.rows.map((x) => x[c]).filter(Boolean))].sort()]).filter(([, v]) => v.length > 1 && v.length <= 20 && v.length < d.rows.length);
     const find = String(q.find || '').toLowerCase(); let shown = d.rows.filter((x) => (!find || cols.some((c) => String(x[c] ?? '').toLowerCase().includes(find))) && picks.every(([c]) => !q[`c_${c}`] || x[c] === q[`c_${c}`]));
     if (cols.includes(q.sort)) { const dir = q.dir === 'desc' ? -1 : 1; shown = [...shown].sort((a, b) => { const x = a[q.sort]; const y = b[q.sort]; return (typeof x === 'number' && typeof y === 'number' ? x - y : String(x ?? '').localeCompare(String(y ?? ''), 'en', { sensitivity: 'base', numeric: true })) * dir; }); }
-    el.innerHTML = `<div class="filters">${list.map(([k, l]) => `<span class="chip ${name === k ? 'on' : ''}" data-r="${k}">${l}</span>`).join('')}</div>
+    const lab = (k) => (list.find(([x]) => x === k) || [k, k])[1];
+    el.innerHTML = `${groups.length > 1 ? `<div class="rep-groups">${groups.map(([k, l, d2]) => `<button type="button" class="rep-g ${grp[0] === k ? 'on' : ''}" data-g="${k}"><b>${esc(l)}</b><span>${esc(d2)}</span></button>`).join('')}</div>` : ''}
+      <div class="rep-sub"><div class="seg">${(grp ? grp[3] : list.map(([k]) => k)).map((k) => `<button type="button" class="${name === k ? 'on' : ''}" data-r="${k}">${esc(lab(k))}</button>`).join('')}</div><span class="small muted">${esc(REPORT_NOTE[name] || '')}</span></div>
       <div class="filters">${BB.rangePicker({ from: q.from || from, to: q.to || to }, { any: 'Last 30 days' })}${ags.length ? `<select data-f="agency"><option value="">All agencies</option>${ags.map((a) => `<option value="${a.id}" ${q.agency === a.id ? 'selected' : ''}>${esc(a.name)}</option>`).join('')}</select>` : ''}${people.length ? `<select data-f="person"><option value="">${isSuper(me) ? 'Everyone' : 'Me and my team'}</option>${people.map((x) => `<option value="${x.id}" ${q.person === x.id ? 'selected' : ''}>${esc(x.name)}${x.id === me.id ? ' (me)' : ''} · ${BB.levelName(x.level)}</option>`).join('')}</select>` : ''}${name === 'bank' ? `<select data-f="city"><option value="">All cities</option>${BB.boot.cities.map((c) => `<option ${q.city === c ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select>` : ''}</div>
       ${name !== 'funnel' && d.rows.length ? `<div class="filters exp-filters"><input placeholder="Search this report…" value="${esc(q.find || '')}" data-q data-rfind>${picks.map(([c, v]) => `<select data-f="c_${c}"><option value="">Any ${esc(label(c))}</option>${v.map((x) => `<option ${q[`c_${c}`] === x ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select>`).join('')}</div>` : ''}
       ${name === 'funnel' ? `<div class="card pad">${d.rows.map((r) => { const max = Math.max(1, ...d.rows.map((x) => x.count)); return `<div class="hbar"><span class="l" style="width:150px">${esc(r.step)}</span><div class="b bar gold"><i style="width:${(r.count / max) * 100}%"></i></div><span class="v">${r.count}</span><span class="small muted" style="width:70px">${r.drop ? '−' + r.drop : ''}</span></div>`; }).join('')}</div>`
         : `<div class="card rep-tbl">${BB.table(cols.map((c) => ({ t: label(c), sort: c, desc: typeof d.rows[0][c] === 'number', num: typeof d.rows[0][c] === 'number', f: (r) => (typeof r[c] === 'number' && /fee|billed|paid|total|gst|balance|received|share|tds/.test(c) ? inr(r[c]) : esc(r[c])) })), shown, { sorted: q, empty: 'No data for these filters.' })}</div>`}`;
+    $$('[data-g]', el).forEach((c) => (c.onclick = () => BB.setQ({ g: c.dataset.g, r: '', find: '', sort: '', dir: '' })));
     $$('[data-r]', el).forEach((c) => (c.onclick = () => BB.setQ({ r: c.dataset.r, find: '', sort: '', dir: '', ...Object.fromEntries(Object.keys(q).filter((k) => k.startsWith('c_')).map((k) => [k, ''])) })));
     let tf; const rf = $('[data-rfind]', el); if (rf) rf.oninput = () => { clearTimeout(tf); tf = setTimeout(() => BB.setQ({ find: rf.value }), 350); };
     BB.wireMultiSel(el); $$('[data-f]', el).forEach((i) => (i.onchange = () => BB.setQ({ [i.dataset.f]: i.value })));

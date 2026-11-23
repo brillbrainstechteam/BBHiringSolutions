@@ -1284,6 +1284,42 @@ route('POST', '/api/jobs/:id/alert', T, (ctx) => {
   const targets = ctx.body.ids && ctx.body.ids.length ? ctx.body.ids : L.bestMatches(j, 30, true).filter((m) => m.score >= D.settings().match.strong).map((m) => m.c.id);
   return askMatches(j, targets, ctx.actor);
 });
+// Ask for interest in specific jobs (WhatsApp page): pick one or more jobs, see the message and who gets it, then send.
+// Each person is asked once, for the job they match best among those picked; people who said Not interested,
+// are already on the job, were asked before, or have no WhatsApp consent are left out and counted.
+function interestPlan(jobIds, user) {
+  const fm = D.settings().formats; const strong = D.settings().match.strong;
+  const format = fm.bbhs_job_interest && fm.bbhs_job_interest.approved && !fm.bbhs_job_interest.off ? 'bbhs_job_interest' : fm.bbhs_job_alert && fm.bbhs_job_alert.approved && !fm.bbhs_job_alert.off ? 'bbhs_job_alert' : null;
+  const best = new Map(); const jobs = [];
+  for (const id of [...new Set(jobIds)].slice(0, 10)) {
+    const j = get('SELECT * FROM jobs WHERE id=?', id); if (!j || !seeJob(user, j)) continue;
+    if (!L.jdReady(j)) { jobs.push({ id: j.id, title: j.title, city: j.city, blocked: 'JD not approved yet' }); continue; }
+    const left = { asked: 0, not_interested: 0, on_job: 0, no_consent: 0 };
+    for (const m of L.bestMatches(j, 400, true).filter((x) => x.score >= strong)) {
+      const c = m.c;
+      if (!c.whatsapp || !c.consent_alerts || c.opted_out) { left.no_consent++; continue; }
+      if (get('SELECT 1 FROM notes WHERE record_id=? AND (text LIKE ? OR text LIKE ?)', c.id, `Not interested in ${j.id}%`, `Removed from ${j.id} matches%`)) { left.not_interested++; continue; }
+      if (get('SELECT 1 FROM applications WHERE candidate_id=? AND job_id=?', c.id, j.id)) { left.on_job++; continue; }
+      if (get('SELECT 1 FROM messages WHERE dedupe=?', `alert:${j.id}:${c.id}`)) { left.asked++; continue; }
+      const had = best.get(c.id); if (!had || had.score < m.score) best.set(c.id, { job: j.id, score: m.score, name: c.name, city: c.city, role: c.job_wanted });
+    }
+    jobs.push({ id: j.id, title: j.title, city: j.city, company: (get('SELECT company FROM clients WHERE id=?', j.client_id) || {}).company || '', left,
+      message: format ? L.fillFormat(format, 'en', { name: '{name}', job: j.title, city: j.city, salary: L.SAL_HIDDEN, link: L.link(`jd/${j.id}`) }) : '' });
+  }
+  for (const j of jobs) j.people = [...best.entries()].filter(([, v]) => v.job === j.id).map(([cid, v]) => ({ id: cid, name: v.name, city: v.city, role: v.role, score: v.score })).sort((a, b) => b.score - a.score);
+  return { format, strong, budget: D.settings().bulk_budget, jobs };
+}
+route('GET', '/api/jobs/interest/options', T, (ctx) => ({ jobs: all("SELECT * FROM jobs WHERE archived=0 AND status IN ('Open','Sourcing','Interviewing','Offer stage') ORDER BY created_at DESC").filter((j) => seeJob(ctx.user, j)).map((j) => ({ id: j.id, title: j.title, city: j.city, company: (get('SELECT company FROM clients WHERE id=?', j.client_id) || {}).company || '', jd_ready: L.jdReady(j), matches: L.jdReady(j) ? L.bestMatches(j, 200, true).filter((m) => m.score >= D.settings().match.strong).length : 0 })) }));
+route('POST', '/api/jobs/interest/preview', T, (ctx) => interestPlan((ctx.body || {}).jobs || [], ctx.user));
+route('POST', '/api/jobs/interest/send', T, (ctx) => {
+  const plan = Array.isArray((ctx.body || {}).plan) ? ctx.body.plan : []; const out = [];
+  for (const p of plan.slice(0, 10)) {
+    const j = get('SELECT * FROM jobs WHERE id=?', p.job); mustSee(seeJob(ctx.user, j), 'job opening'); L.jdGate(j, 'candidate');
+    const ids = (Array.isArray(p.ids) ? p.ids : []).filter(Boolean); if (!ids.length) continue;
+    const r = askMatches(j, ids, ctx.actor); out.push({ job: j.id, title: j.title, sent: r.sent, skipped: r.skipped });
+  }
+  return { jobs: out, sent: out.reduce((n, x) => n + x.sent, 0), skipped: out.reduce((n, x) => n + x.skipped.length, 0) };
+});
 // Internal DB circulation (Digital Reach, Free): every matching candidate in the database who agreed to job alerts and
 // scores at least the strong-match score gets the job. Runs by itself when the JD is approved (rule
 // internal_db_circulation), or from the channel's Send button. The channel is marked done with the count.
@@ -2126,23 +2162,41 @@ route('POST', '/api/interviews/:id/confirm', T, (ctx) => {
 });
 
 // ---------- WhatsApp (section 8) ----------
+// What happened to our last message, in plain words, and how they answered.
+function waDelivery(st) { const s = String(st || '').toLowerCase(); return s === 'read' ? 'Read' : s === 'delivered' ? 'Delivered' : s === 'failed' ? 'Failed' : s === 'sent' ? 'Sent' : s.includes('held') ? 'Held' : s.includes('would') || s === 'queued' || s === 'scheduled' ? 'Not sent' : 'Sent'; }
+function waResponse(inn, out) {
+  if (!inn) return out ? 'No reply yet' : null;
+  const t = String(inn.text || '').trim().toLowerCase();
+  if (/^(stop|unsubscribe)\b/.test(t)) return 'Opted out';
+  if (/not interested|no,? thanks|^no\b/.test(t)) return 'Not interested';
+  if (/interested|i agree|yes|send job alerts|apply/.test(t)) return 'Interested';
+  return 'Other reply';
+}
 route('GET', '/api/wa/threads', T, (ctx) => {
   const f = ctx.query.filter || 'All'; const u = ctx.user;
   const rows = all('SELECT person_type, person_id, MAX(at) last_at, SUM(CASE WHEN direction=\'in\' AND read_by_us=0 THEN 1 ELSE 0 END) unread FROM messages GROUP BY person_type, person_id ORDER BY last_at DESC')
     .filter((t) => seeThread(u, t.person_type, t.person_id))
     .filter((t) => f === 'All' || (f === 'Clients' && t.person_type === 'client') || (f === 'Candidates' && t.person_type === 'candidate') || (f === 'Team' && t.person_type === 'user') || (f === 'Unread' && t.unread > 0) || (f === 'Failed'))
-    .map((t) => { const last = get(`SELECT text, direction, status FROM messages WHERE person_type=? AND person_id=?${msgHide(u)} ORDER BY at DESC LIMIT 1`, t.person_type, t.person_id); return { ...t, name: V.threadName(t.person_type, t.person_id), last }; })
-    .filter((t) => t.last && like(ctx.query.q, t.name, t.person_id)); // a thread holding only hidden messages is left out
+    .map((t) => {
+      const last = get(`SELECT text, direction, status FROM messages WHERE person_type=? AND person_id=?${msgHide(u)} ORDER BY at DESC LIMIT 1`, t.person_type, t.person_id);
+      const out = get(`SELECT status, at FROM messages WHERE person_type=? AND person_id=? AND direction='out'${msgHide(u)} ORDER BY at DESC LIMIT 1`, t.person_type, t.person_id);
+      const inn = get("SELECT text, at FROM messages WHERE person_type=? AND person_id=? AND direction='in' ORDER BY at DESC LIMIT 1", t.person_type, t.person_id);
+      return { ...t, name: V.threadName(t.person_type, t.person_id), last, delivery: out ? waDelivery(out.status) : null, response: waResponse(inn, out) };
+    })
+    .filter((t) => t.last && like(ctx.query.q, t.name, t.person_id)) // a thread holding only hidden messages is left out
+    .filter((t) => !ctx.query.delivery || t.delivery === ctx.query.delivery)
+    .filter((t) => !ctx.query.response || t.response === ctx.query.response || (ctx.query.response === 'Replied' && !['No reply yet', null].includes(t.response)));
   const failed = f === 'Failed' ? all("SELECT * FROM messages WHERE status='failed' ORDER BY at DESC").filter((m) => seeThread(u, m.person_type, m.person_id)) : [];
   return { threads: f === 'Failed' ? [] : rows, failed };
 });
 route('GET', '/api/wa/thread/:ptype/:pid', T, (ctx) => {
   const { ptype, pid } = ctx.params; mustSee(seeThread(ctx.user, ptype, pid) || isSuper(ctx.user), 'chat');
   D.run("UPDATE messages SET read_by_us=1 WHERE person_type=? AND person_id=? AND direction='in'", ptype, pid);
-  const p = L.person(ptype, pid); const rec = p.record;
+  const p = L.person(ptype, pid) || { phone: '', opted_out: 0, lang: 'en', record: {}, gone: true }; const rec = p.record;
   const showPhone = ptype !== 'candidate' || R.phoneVisible(ctx.user, rec);
+  const lastIn = get("SELECT at FROM messages WHERE person_type=? AND person_id=? AND direction='in' ORDER BY at DESC LIMIT 1", ptype, pid);
   return {
-    person: { type: ptype, id: pid, name: V.threadName(ptype, pid), phone: showPhone ? p.phone : R.maskPhone(p.phone), opted_out: p.opted_out, lang: p.lang, window_until: L.windowOpenUntil(ptype, pid) },
+    person: { type: ptype, id: pid, name: V.threadName(ptype, pid), phone: showPhone ? p.phone : R.maskPhone(p.phone), opted_out: p.opted_out, lang: p.lang, window_until: L.windowOpenUntil(ptype, pid), last_in: lastIn ? lastIn.at : null, gone: !!p.gone },
     messages: all(`SELECT * FROM messages WHERE person_type=? AND person_id=?${msgHide(ctx.user)} ORDER BY at`, ptype, pid),
     quick: ptype === 'client' ? ['bbhs_shortlist_ready', 'bbhs_feedback_request', 'bbhs_payment_reminder'] : ptype === 'candidate' ? ['bbhs_details_request', 'bbhs_interview_reminder', 'bbhs_job_alert'] : ['bbhs_team_task_alert', 'bbhs_log_reminder', 'bbhs_day_summary'],
   };
@@ -2562,6 +2616,25 @@ const campaignAudience = (b, u) => {
   const people = (b.ids || []).map((id) => get('SELECT * FROM candidates WHERE id=? AND removed=0', id)).filter(Boolean);
   return { people, audience: `${people.length} ticked`, segments: [] };
 };
+// A list (Excel or CSV) of candidates: matched on candidate ID, WhatsApp number or email.
+route('POST', '/api/campaigns/audience/upload', T, (ctx) => {
+  const b = ctx.body || {}; let rows = F.readSpreadsheet(String(b.name || ''), b.base64 || '');
+  if (!Array.isArray(rows) || !rows.length) throw httpError(400, 'The file has no rows');
+  if (!Array.isArray(rows[0])) { const keys = Object.keys(rows[0]); rows = [keys, ...rows.map((r) => keys.map((k) => r[k]))]; }
+  const head = rows[0].map((h) => String(h || '').toLowerCase());
+  const col = (re) => head.findIndex((h) => re.test(h));
+  const ci = col(/\b(id|candidate id)\b/); const pi = col(/whats|phone|mobile|number|contact/); const ei = col(/mail/);
+  if (ci < 0 && pi < 0 && ei < 0) throw httpError(400, 'Name a column ID, WhatsApp / Phone, or Email in the first row');
+  const ids = new Set(); const missed = [];
+  for (const r of rows.slice(1)) {
+    const id = ci >= 0 ? String(r[ci] || '').trim().toUpperCase() : ''; const ph = pi >= 0 ? L.digits10(r[pi]) : ''; const em = ei >= 0 ? String(r[ei] || '').trim().toLowerCase() : '';
+    if (!id && !ph && !em) continue;
+    const c = (id && get('SELECT id FROM candidates WHERE id=? AND archived=0', id)) || (ph && ph.length === 10 && get('SELECT id FROM candidates WHERE whatsapp=? AND archived=0', ph)) || (em && get('SELECT id FROM candidates WHERE lower(email)=? AND archived=0', em));
+    const cand = c && get('SELECT * FROM candidates WHERE id=?', c.id);
+    if (cand) ids.add(cand.id); else missed.push(id || ph || em);
+  }
+  return { ids: [...ids], matched: ids.size, missed: missed.length, missed_sample: missed.slice(0, 8) };
+});
 route('GET', '/api/campaigns/audience', T, (ctx) => { const q = ctx.query || {}; let filters = null; try { filters = q.filters ? JSON.parse(q.filters) : null; } catch { /* ignore */ } const r = campaignAudience({ segments: String(q.segments || '').split(',').filter(Boolean), ids: String(q.ids || '').split(',').filter(Boolean), filters }, ctx.user); return { total: r.people.length, audience: r.audience, first: r.people[0] ? r.people[0].id : null }; });
 async function makeCampaign(ctx) {
   const M = require('./mailer'); const S = require('./studio'); const b = ctx.body || {}; const u = ctx.user; const kind = ['job', 'prefs', 'template', 'design'].includes(b.kind) ? b.kind : 'message'; let channel = CHANNELS.includes(b.channel) ? b.channel : 'preferred'; const timing = b.timing === 'preferred' ? 'preferred' : 'now';
@@ -2812,6 +2885,19 @@ const WA_STEP = { sent: 'Sent', delivered: 'Delivered', read: 'Read', failed: 'F
 const waState = (st) => WA_STEP[st] || (st === 'held' ? 'On hold' : st === 'scheduled' ? 'Scheduled' : st === 'paused' ? 'Paused' : st === 'would send' ? 'Not sent (test copy)' : 'Sending');
 const mailState = (st) => (st === 'sent' ? 'Sent' : st === 'failed' ? 'Failed' : st === 'held' ? 'On hold' : st === 'scheduled' ? 'Scheduled' : st === 'paused' ? 'Paused' : /not sent/.test(st || '') ? 'Not sent (email not set up)' : 'Sending');
 const pct = (n, d) => (d ? Math.round((n / d) * 100) : null);
+// WhatsApp spend: Meta charges each template message that goes out, by its category (₹ per message, Settings can
+// change the rates). Typed replies inside the 24-hour chat are free.
+const WA_PRICE = () => ({ marketing: 0.86, utility: 0.115, authentication: 0.115, ...(D.settings().wa_prices || {}) });
+const catCache = new Map();
+function waCategory(m) {
+  const key = m.tpl || m.format; if (!key) return null; if (catCache.has(key)) return catCache.get(key);
+  let c = null; const f = (D.settings().formats || {})[m.format]; if (f && f.type) c = String(f.type).toLowerCase();
+  if (!c && m.tpl) { const t = get('SELECT category FROM wa_templates WHERE name=? LIMIT 1', String(m.tpl).split('|')[0]); if (t) c = String(t.category || '').toLowerCase(); }
+  if (!c) { const t = get('SELECT category FROM wa_templates WHERE name=? LIMIT 1', m.format); if (t) c = String(t.category || '').toLowerCase(); }
+  c = c && c.startsWith('auth') ? 'authentication' : c && c.startsWith('util') ? 'utility' : c ? 'marketing' : null;
+  catCache.set(key, c); setTimeout(() => catCache.delete(key), 60000); return c;
+}
+function waCost(m) { if (!['sent', 'delivered', 'read'].includes(String(m.status || '').toLowerCase())) return 0; const c = waCategory(m); return c ? WA_PRICE()[c] || 0 : 0; }
 function campaignStats(x) {
   const wa = all("SELECT * FROM messages WHERE direction='out' AND dedupe LIKE ?", `camp:${x.id}:%`); const mails = all('SELECT * FROM emails WHERE dedupe LIKE ?', `camp:${x.id}:%`);
   const count = (list, f) => list.reduce((m, r) => { const k = f(r.status); m[k] = (m[k] || 0) + 1; return m; }, {});
@@ -2825,7 +2911,8 @@ function campaignStats(x) {
   // Button taps and replies to this campaign's messages, by what they said.
   const refs = wa.map((m) => m.id); const taps = {};
   if (refs.length) for (const r of all(`SELECT text FROM messages WHERE direction='in' AND reply_to IN (${refs.map(() => '?').join(',')})`, ...refs)) { const k = String(r.text || '').trim().slice(0, 40) || '(no text)'; taps[k] = (taps[k] || 0) + 1; }
-  return { taps, whatsapp: { total: wa.length, by: w, delivered_rate: pct(waReached, waTried), read_rate: pct(w.Read || 0, waTried), failed: w.Failed || 0 }, email: { total: mails.length, by: e, sent_rate: pct(e.Sent || 0, mailTried), failed: e.Failed || 0 }, reached: people.length, replied, reply_rate: pct(replied, people.length), applied, stopped };
+  const spend = Math.round(wa.reduce((t, m) => t + waCost(m), 0) * 1000) / 1000;
+  return { spend, taps, whatsapp: { total: wa.length, by: w, delivered_rate: pct(waReached, waTried), read_rate: pct(w.Read || 0, waTried), failed: w.Failed || 0 }, email: { total: mails.length, by: e, sent_rate: pct(e.Sent || 0, mailTried), failed: e.Failed || 0 }, reached: people.length, replied, reply_rate: pct(replied, people.length), applied, stopped };
 }
 const seeCampaign = (u, x) => isSuper(u) || x.user_id === u.id || (x.agency_id && x.agency_id === u.agency_id);
 const campRow = (x) => { const stats = campaignStats(x); return { ...x, skipped: JSON.parse(x.skipped || '{}'), job_title: x.job_id ? (get('SELECT title FROM jobs WHERE id=?', x.job_id) || {}).title : '', stats, status: campStatus(x, stats) }; };
@@ -2839,7 +2926,14 @@ route('GET', '/api/campaigns', T, (ctx) => {
   const draftRows = !st || st === 'Draft' ? drafts : [];
   const sum = (f) => rows.reduce((t, r) => t + (f(r) || 0), 0); const tried = (r, ks) => ks.reduce((t, k) => t + (r.stats.whatsapp.by[k] || 0), 0);
   const waTried = sum((r) => tried(r, ['Sent', 'Delivered', 'Read', 'Failed'])); const waReached = sum((r) => tried(r, ['Delivered', 'Read'])); const mailTried = sum((r) => (r.stats.email.by.Sent || 0) + (r.stats.email.by.Failed || 0));
-  return { rows: [...draftRows, ...rows], counts, statuses: CAMP_STATUSES, totals: { campaigns: rows.length, whatsapp: sum((r) => r.stats.whatsapp.total), email: sum((r) => r.stats.email.total), wa_delivered_rate: pct(waReached, waTried), wa_read_rate: pct(sum((r) => r.stats.whatsapp.by.Read), waTried), email_sent_rate: pct(sum((r) => r.stats.email.by.Sent), mailTried), replied: sum((r) => r.stats.replied), reached: sum((r) => r.stats.reached) }, segments: segVisible(ctx.user).map((x) => [x.id, x.name]) };
+  // What WhatsApp cost in the period: campaigns, and every message by who it went to.
+  const spendBy = { candidate: 0, client: 0, user: 0, other: 0 }; const spendCat = { marketing: 0, utility: 0, authentication: 0 };
+  for (const m of all("SELECT person_type, format, tpl, status, at FROM messages WHERE direction='out' AND status IN ('sent','delivered','read')").filter((m) => inPeriod(m.at))) {
+    const c = waCost(m); if (!c) continue; spendBy[spendBy[m.person_type] !== undefined ? m.person_type : 'other'] += c; spendCat[waCategory(m)] += c;
+  }
+  const r2 = (n) => Math.round(n * 1000) / 1000;
+  const spend = { campaigns: r2(sum((r) => r.stats.spend)), whatsapp: r2(Object.values(spendBy).reduce((a, b) => a + b, 0)), email: 0, by: Object.fromEntries(Object.entries(spendBy).map(([k, v]) => [k, r2(v)])), category: Object.fromEntries(Object.entries(spendCat).map(([k, v]) => [k, r2(v)])), prices: WA_PRICE() };
+  return { spend, rows: [...draftRows, ...rows], counts, statuses: CAMP_STATUSES, totals: { campaigns: rows.length, whatsapp: sum((r) => r.stats.whatsapp.total), email: sum((r) => r.stats.email.total), wa_delivered_rate: pct(waReached, waTried), wa_read_rate: pct(sum((r) => r.stats.whatsapp.by.Read), waTried), email_sent_rate: pct(sum((r) => r.stats.email.by.Sent), mailTried), replied: sum((r) => r.stats.replied), reached: sum((r) => r.stats.reached) }, segments: segVisible(ctx.user).map((x) => [x.id, x.name]) };
 });
 route('GET', '/api/campaigns/:id', T, (ctx) => {
   const x = get('SELECT * FROM campaigns WHERE id=?', ctx.params.id); if (!x || !seeCampaign(ctx.user, x)) throw httpError(404, 'Campaign not found');
@@ -3242,6 +3336,16 @@ route('GET', '/api/reports/:name', T, (ctx) => {
     rows = Object.values(m).sort((a, b) => b.candidate_leads + b.client_leads - (a.candidate_leads + a.client_leads));
   } else if (name === 'performance') {
     rows = all("SELECT * FROM users WHERE level!='super'").filter((x) => seePerson(u, x) && (!q.agency || x.agency_id === q.agency) && (!q.person || x.id === q.person)).map((x) => ({ person: `${x.id} ${x.name}`, agency: V.agencyName(x.agency_id), level: x.level, ...perfOf(x.id, from, to) }));
+  } else if (name === 'agencies') {
+    // One row per agency (and BrillBrains' own team): its people's work in the range, and the fees billed.
+    const groups = [...(isSuper(u) ? all('SELECT * FROM agencies ORDER BY name') : all('SELECT * FROM agencies WHERE id=?', u.agency_id)).filter((a) => !q.agency || a.id === q.agency).map((a) => ({ id: a.id, name: a.name, status: a.status })), ...(isSuper(u) && !q.agency ? [{ id: null, name: 'BrillBrains (own team)', status: 'Active' }] : [])];
+    rows = groups.map((g) => {
+      const people = all("SELECT * FROM users WHERE level!='super'").filter((x) => (x.agency_id || null) === g.id && seePerson(u, x));
+      const tot = {}; for (const x of people) for (const [k, v] of Object.entries(perfOf(x.id, from, to))) if (typeof v === 'number') tot[k] = (tot[k] || 0) + v;
+      const bills = all("SELECT * FROM bills WHERE status NOT IN ('Draft')").filter((b) => (b.agency_id || null) === g.id && inR(b.issued_at || b.created_at) && seeBill(u, b)).map(L.billView);
+      const open = jobs.filter((j) => (j.agency_id || null) === g.id && ['Open', 'Sourcing', 'Interviewing', 'Offer stage'].includes(j.status)).length;
+      return { agency: g.name, status: g.status, people: people.length, active_people: people.filter((x) => x.status === 'On').length, open_jobs: open, ...Object.fromEntries(Object.entries(tot).filter(([k]) => !/target|pct|rate/.test(k))), fees_billed: bills.reduce((t, b) => t + (b.fee || 0), 0), received: bills.reduce((t, b) => t + (b.paid || 0), 0) };
+    });
   } else if (name === 'money') {
     rows = all("SELECT * FROM bills WHERE status NOT IN ('Draft')").filter((b) => seeBill(u, b) && inR(b.issued_at || b.created_at) && (!q.agency || b.agency_id === q.agency) && (!q.client || b.client_id === q.client)).map(L.billView).map((b) => ({ bill: b.bill_no || b.id, client: get('SELECT company FROM clients WHERE id=?', b.client_id).company, agency: V.agencyName(b.agency_id), fee: b.fee, gst: b.gst, total: b.total, received: b.paid, tds: b.tds, balance: b.balance, status: b.view_status, agency_share: b.agency_share, payout: b.payout_status }));
   } else if (name === 'replacements') {

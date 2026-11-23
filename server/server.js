@@ -47,7 +47,7 @@ function pageHtml(page) {
     `<meta property="og:type" content="website">`, `<meta property="og:url" content="${escAttr(url)}">`,
     ...(/^https?:\/\//.test(base) ? [`<meta property="og:image" content="${escAttr(base)}/img/icon.png">`, '<meta property="og:image:width" content="192">', '<meta property="og:image:height" content="192">'] : []),
     `<meta name="twitter:card" content="summary">`, `<meta name="twitter:title" content="${escAttr(name)}">`, `<meta name="twitter:description" content="${escAttr(desc)}">`];
-  return fs.readFileSync(path.join(PUBLIC, 'index.html'), 'utf8').replace('<!--META-->', [...tags, metaPixel(page)].filter(Boolean).join('\n  '));
+  return fs.readFileSync(path.join(PUBLIC, 'index.html'), 'utf8').replace('<!--META-->', [...tags, metaPixel(page)].filter(Boolean).join('\n  ')).replace(/(src|href)="(\/(?:js|css)\/[\w.-]+\.(?:js|css))"/g, `$1="$2?v=${APP_VER}"`);
 }
 // Meta Pixel (base code, in <head> of every page people outside the team see). The live site loads Meta's code;
 // test copies get a stand-in that only records the calls (window.__fbqCalls), so testing never sends visits or
@@ -115,8 +115,9 @@ const server = http.createServer(async (req, res) => {
     const file = path.normalize(path.join(PUBLIC, p));
     if (!file.startsWith(PUBLIC) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) return send(res, 404, 'Not found', { 'Content-Type': 'text/plain' });
     const st = fs.statSync(file); const tag = `"${st.size.toString(36)}-${Math.floor(st.mtimeMs).toString(36)}"`;
-    if (req.headers['if-none-match'] === tag) return send(res, 304, '', { ETag: tag, 'Cache-Control': 'no-cache' });
-    return send(res, 200, fs.readFileSync(file), { 'Content-Type': TYPES[path.extname(file)] || 'application/octet-stream', 'Cache-Control': 'no-cache', ETag: tag });
+    const cache = url.searchParams.get('v') === APP_VER ? 'public, max-age=31536000, immutable' : 'no-cache';
+    if (req.headers['if-none-match'] === tag) return send(res, 304, '', { ETag: tag, 'Cache-Control': cache });
+    return send(res, 200, fs.readFileSync(file), { 'Content-Type': TYPES[path.extname(file)] || 'application/octet-stream', 'Cache-Control': cache, ETag: tag });
   } catch (e) {
     const code = e.status || 500;
     if (code >= 500) { console.error(e); devAlert(`Error on ${req.method} ${url.pathname}`, e.message); }

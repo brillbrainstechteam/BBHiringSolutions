@@ -32,8 +32,7 @@
         { t: 'Hired', num: 1, f: (p) => p.results.hired },
         { t: 'Cost / hire', num: 1, f: (p) => rs(p.results.per_hire) },
         { t: 'Return', num: 1, f: (p) => `${x(p.results.return_x)}${p.results.verdict ? ` <span class="badge ${VERDICT[p.results.verdict]} tiny">${p.results.verdict}</span>` : ''}` },
-      ], d.rows, { open: (p) => `portal:${p.id}`, empty: 'No portals yet.' })}</div>
-      <div class="tiny muted" style="margin-top:6px">Return = fees earned ÷ spend · Good from ${d.rating.good}× · Poor under ${d.rating.poor}×</div>`;
+      ], d.rows, { open: (p) => `portal:${p.id}`, empty: 'No portals yet.' })}</div>`;
     $$('[data-popen]', el).forEach((b) => (b.onclick = () => BB.open('portal', b.dataset.popen)));
   };
 

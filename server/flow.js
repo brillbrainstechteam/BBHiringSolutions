@@ -68,6 +68,64 @@ route('POST', '/api/agreement', T, async (ctx) => {
   if (!/\.(docx|pdf)$/i.test(ctx.body.name || '')) throw httpError(400, 'Upload the agreement as a Word or PDF file');
   return F.saveFile({ recordId: 'AGREEMENT', type: 'agreement', name: ctx.body.name, base64: ctx.body.base64, by: ctx.actor.label });
 });
+// ---------- A copy of the agreement for each client, edited here, in the original Word format ----------
+// The Word file is changed in place, paragraph by paragraph: each paragraph keeps its own fonts, numbering and layout
+// (the new words take the look of the paragraph's first run). Each client's copy can be shared by link.
+D.db.exec('CREATE TABLE IF NOT EXISTS agreement_links (code TEXT PRIMARY KEY, client_id TEXT, by TEXT, at TEXT)');
+const PARA_RE = /<w:p[ >][\s\S]*?<\/w:p>/g;
+const xmlUn = (s) => s.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, '&');
+const xmlEsc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+const paraText = (p) => xmlUn((p.match(/<w:t(?:\s[^>]*)?>[\s\S]*?<\/w:t>|<w:tab\/>|<w:br\/>/g) || []).map((x) => (x === '<w:tab/>' ? '\t' : x === '<w:br/>' ? '\n' : x.replace(/<[^>]+>/g, ''))).join(''));
+function docxParts(buf) { const z = F.unzip(buf); const xml = (z['word/document.xml'] || Buffer.alloc(0)).toString('utf8'); if (!xml) throw httpError(400, 'Only a Word (.docx) agreement can be edited here.'); return { z, xml }; }
+function agreementParas(buf) { const { xml } = docxParts(buf); return (xml.match(PARA_RE) || []).map((p, i) => ({ i, text: paraText(p) })); }
+function setParaText(p, text) {
+  const ts = p.match(/<w:t(?:\s[^>]*)?>[\s\S]*?<\/w:t>/g) || []; if (!ts.length) return p; // a paragraph with no words keeps as it is
+  const body = String(text).split('\n').map(xmlEsc).join('</w:t><w:br/><w:t xml:space="preserve">');
+  let n = 0;
+  return p.replace(/<w:t(?:\s[^>]*)?>[\s\S]*?<\/w:t>/g, () => (n++ === 0 ? `<w:t xml:space="preserve">${body}</w:t>` : '<w:t></w:t>'))
+    .replace(/<w:tab\/>/g, n > 0 ? '' : '<w:tab/>');
+}
+function editDocx(buf, changes) {
+  const { z, xml } = docxParts(buf); const want = new Map(changes.map((c) => [Number(c.i), String(c.text ?? '')]));
+  let i = -1; const out = xml.replace(PARA_RE, (p) => { i++; if (!want.has(i)) return p; return paraText(p) === want.get(i) ? p : setParaText(p, want.get(i)); });
+  return F.zipStore({ ...z, 'word/document.xml': Buffer.from(out, 'utf8') });
+}
+const clientCopy = (clientId) => editedAgreement(clientId);
+const agreementCopies = () => all("SELECT * FROM files WHERE type='agreement_client' AND replaced=0 ORDER BY id DESC").map((f) => { const c = get('SELECT id, company FROM clients WHERE id=?', f.record_id) || {}; const l = get('SELECT code FROM agreement_links WHERE client_id=?', f.record_id); return { client_id: f.record_id, company: c.company || f.record_id, name: f.name, at: f.at, by: f.by, word: /\.docx$/i.test(f.name), link: l ? L.link(`api/public/agreement/${l.code}`) : null }; });
+route('GET', '/api/agreements', T, () => { const s = agreementFile(); return { standard: s ? { name: s.name, at: s.at, word: /\.docx$/i.test(s.name) } : null, copies: agreementCopies() }; });
+route('POST', '/api/agreements/:client/copy', T, (ctx) => {
+  const c = loadClient({ ...ctx, params: { id: ctx.params.client } }); const from = String((ctx.body || {}).from || 'standard');
+  const src = from === 'standard' ? agreementFile() : agreementFile(from); if (!src) throw httpError(404, 'The agreement has not been added yet.');
+  if (!/\.docx$/i.test(src.name)) throw httpError(400, 'The agreement to copy is a PDF: upload it as a Word (.docx) file to edit copies here.');
+  let buf = src.buf;
+  // the client's company name in place of the blank lines the standard agreement leaves for it
+  if ((ctx.body || {}).fill) { const paras = agreementParas(buf); const ch = paras.filter((p) => /_{5,}/.test(p.text) && /client|company|between|party/i.test(p.text)).slice(0, 3).map((p) => ({ i: p.i, text: p.text.replace(/_{5,}/, c.company) })); if (ch.length) buf = editDocx(buf, ch); }
+  F.storeBuffer({ recordId: c.id, type: 'agreement_client', name: `Recruitment Agreement - ${c.company}.docx`.replace(/[\\/:*?"<>|]/g, ''), buf, mime: DOCX, by: ctx.actor.label });
+  D.history(ctx.actor.label, 'agreement copy made', c.id, null, null, from === 'standard' ? 'from the standard agreement' : `from ${from}'s copy`);
+  return { ok: true };
+});
+route('GET', '/api/agreements/:client/paras', T, (ctx) => { const c = loadClient({ ...ctx, params: { id: ctx.params.client } }); const f = clientCopy(c.id); if (!f) throw httpError(404, 'This client has no copy yet.'); return { company: c.company, name: f.name, at: f.at, paras: agreementParas(F.readStored(f)) }; });
+route('POST', '/api/agreements/:client/paras', T, (ctx) => {
+  const c = loadClient({ ...ctx, params: { id: ctx.params.client } }); const f = clientCopy(c.id); if (!f) throw httpError(404, 'This client has no copy yet.');
+  const changes = Array.isArray((ctx.body || {}).changes) ? ctx.body.changes : []; if (!changes.length) return { ok: true, changed: 0 };
+  const buf = editDocx(F.readStored(f), changes);
+  F.storeBuffer({ recordId: c.id, type: 'agreement_client', name: f.name, buf, mime: DOCX, by: ctx.actor.label });
+  D.history(ctx.actor.label, 'agreement edited', c.id, null, null, `${changes.length} paragraph${changes.length === 1 ? '' : 's'} changed`);
+  return { ok: true, changed: changes.length };
+});
+route('GET', '/api/agreements/:client/file', T, (ctx) => { const c = loadClient({ ...ctx, params: { id: ctx.params.client } }); return agreementDownload(c.id); });
+route('POST', '/api/agreements/:client/share', T, (ctx) => {
+  const c = loadClient({ ...ctx, params: { id: ctx.params.client } }); if (!clientCopy(c.id)) throw httpError(404, 'Make the client\'s copy first.');
+  let l = get('SELECT code FROM agreement_links WHERE client_id=?', c.id);
+  if (!l) { l = { code: require('crypto').randomBytes(12).toString('hex') }; D.insert('agreement_links', { code: l.code, client_id: c.id, by: ctx.actor.label, at: now() }); }
+  return { url: L.link(`api/public/agreement/${l.code}`), whatsapp: c.whatsapp || '', company: c.company };
+});
+route('POST', '/api/agreements/:client/remove', T, (ctx) => {
+  const c = loadClient({ ...ctx, params: { id: ctx.params.client } }); D.run("UPDATE files SET replaced=1 WHERE record_id=? AND type='agreement_client'", c.id); D.run('DELETE FROM agreement_links WHERE client_id=?', c.id);
+  D.history(ctx.actor.label, 'agreement copy removed', c.id); return { ok: true };
+});
+// The shared link: the client's copy as the Word file.
+route('GET', '/api/public/agreement/:code', {}, (ctx) => { const l = get('SELECT * FROM agreement_links WHERE code=?', String(ctx.params.code)); if (!l || !clientCopy(l.client_id)) throw httpError(404, 'This link is not valid any more.'); return agreementDownload(l.client_id); });
 // The generic offer letter, ready once the client selects someone.
 const OFFER_TEMPLATE = path.join(__dirname, '..', 'assets', 'Generic_Offer_Letter_Montserrat_Clean.docx');
 route('GET', '/api/offer-template/file', T, () => { if (!fs.existsSync(OFFER_TEMPLATE)) throw httpError(404, 'The offer letter template has not been added yet.'); return { __file: { name: 'Offer Letter Template.docx', mime: DOCX, buf: fs.readFileSync(OFFER_TEMPLATE) } }; });

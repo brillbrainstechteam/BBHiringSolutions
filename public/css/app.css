@@ -2818,3 +2818,69 @@ a.pipe-step { text-decoration: none; cursor: pointer; } a.pipe-step:hover { bord
 .seg-table .tbl thead th, .card.cand-table.seg-table .tbl thead th { position: static; }
 /* Phone card view of tables: no header row to pin. */
 @media (max-width: 640px) { .tbl-wrap, .dt-wrap { max-height: none; } .tbl thead th { position: static; } }
+
+/* segment filters: chips wrap inside the card; long lists fold into "+N more" */
+.seg-head .cand-result > .stack-sm { flex: 1 1 420px; min-width: 0; }
+.seg-head .cand-seg { flex: 0 1 auto; }
+.seg-head .seg-chips { max-width: 100%; }
+.seg-chip .seg-more { border: 0; background: none; padding: 0 2px; color: var(--violet, #5B4BDB); font: 600 12px var(--font); cursor: pointer; }
+
+/* WhatsApp: one tidy filter row; the chat scrolls to its last message */
+.wa-filters { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px; }
+.wa-filters .seg { flex: none; } .wa-filters .seg button { padding: 7px 14px; font-size: 13px; }
+.wa-filters select { width: auto; max-width: 170px; height: 36px; padding: 0 32px 0 12px; font-size: 13px; border-radius: 999px; }
+.wa-filters input[data-q] { flex: 1 1 200px; max-width: 320px; height: 36px; padding: 0 14px; font-size: 13px; border-radius: 999px; }
+.inbox .chat-col { min-height: 0; overflow: hidden; }
+.inbox .chat-col > .chat { flex: 1 1 auto; min-height: 0; }
+.inbox .chat-col > .composer { flex: none; }
+
+/* Ask for Interest in specific Jobs */
+.ai-jobs, .ai-people { display: flex; flex-direction: column; gap: 4px; max-height: 46vh; overflow: auto; }
+.ai-people { max-height: 240px; margin-top: 8px; }
+.ai-job, .ai-p { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 10px; cursor: pointer; }
+.ai-job input, .ai-p input { width: 16px; height: 16px; flex: none; margin: 0; }
+.ai-sec { border: 1px solid var(--border); border-radius: 12px; padding: 12px; margin-bottom: 12px; }
+.ai-msg { white-space: pre-wrap; background: var(--chat-bg, #EFEAE2); border-radius: 10px; padding: 10px 12px; margin-top: 8px; font-size: 13px; }
+.ai-msg .btns { display: flex; gap: 6px; margin-top: 8px; } .ai-msg .btns span { flex: 1; text-align: center; background: #fff; border-radius: 8px; padding: 5px; color: #027EB5; font-weight: 600; }
+
+/* Campaigns: filters left, period right; clear number tiles; spend; sticky table header; tidy detail view */
+.camp-top { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 14px; }
+.camp-top .period-bar { margin: 0 0 0 auto; }
+.camp-filters { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.camp-filters input[data-q] { width: 260px; max-width: 100%; height: 38px; padding: 0 14px; border-radius: 999px; font-size: 13px; }
+.camp-filters select.camp-kind { width: auto; min-width: 0; max-width: 170px; height: 38px; padding: 0 32px 0 12px; border-radius: 999px; font-size: 13px; field-sizing: content; }
+.camp-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin-bottom: 14px; }
+.camp-kpis .ck { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 14px 16px; }
+.camp-kpis .ck-l { font-size: 12.5px; color: var(--muted); font-weight: 600; }
+.camp-kpis .ck-v { font-size: 24px; font-weight: 800; color: var(--ink); margin-top: 4px; line-height: 1.1; }
+.camp-kpis .ck-s { font-size: 12px; color: var(--muted); margin-top: 4px; }
+.camp-kpis.in-panel { grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 8px; } .camp-kpis.in-panel .ck { padding: 10px 12px; } .camp-kpis.in-panel .ck-v { font-size: 20px; }
+.camp-spend { margin-bottom: 14px; }
+.camp-spend .cs-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.camp-spend .cs { display: flex; flex-direction: column; gap: 2px; padding: 8px 14px; border: 1px solid var(--border); border-radius: 10px; min-width: 120px; }
+.camp-spend .cs span { font-size: 12px; color: var(--muted); } .camp-spend .cs b { font-size: 16px; }
+.camp-spend .faint-cs { background: var(--surface-2, #F6F8FB); }
+.camp-table .tbl-wrap { max-height: 70vh; overflow: auto; }
+.camp-table thead th { position: sticky; top: 0; z-index: 2; background: var(--surface); box-shadow: 0 1px 0 var(--border); }
+.camp-more { border: 1px solid var(--border); border-radius: 12px; margin: 10px 0; background: var(--surface); }
+.camp-more > summary { cursor: pointer; padding: 10px 14px; font-weight: 700; font-size: 14px; }
+.camp-more[open] > summary { border-bottom: 1px solid var(--border); }
+.camp-more > *:not(summary) { margin: 10px 12px; }
+.aud-res { display: flex; flex-direction: column; gap: 4px; max-height: 220px; overflow: auto; margin: 8px 0; }
+.aud-p { display: flex; gap: 8px; align-items: center; padding: 6px 8px; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; }
+.aud-p input { width: 16px; height: 16px; margin: 0; flex: none; }
+
+/* Reports grouped by who they are about */
+.rep-groups { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; margin-bottom: 14px; }
+.rep-g { text-align: left; border: 1px solid var(--border); background: var(--surface); border-radius: 14px; padding: 12px 14px; cursor: pointer; display: flex; flex-direction: column; gap: 4px; font: inherit; color: var(--ink); }
+.rep-g b { font-size: 14.5px; } .rep-g span { font-size: 12px; color: var(--muted); line-height: 1.35; }
+.rep-g.on { border-color: var(--navy); box-shadow: inset 0 0 0 1px var(--navy); background: color-mix(in srgb, var(--navy) 4%, var(--surface)); }
+.rep-sub { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 12px; }
+.rep-sub .seg button { padding: 7px 14px; font-size: 13px; }
+
+/* Agreement editor: the Word file's paragraphs in order */
+.ag-paras { display: flex; flex-direction: column; gap: 6px; max-height: 62vh; overflow: auto; padding-right: 4px; }
+.ag-p { width: 100%; resize: none; overflow: hidden; border: 1px solid transparent; border-radius: 8px; padding: 6px 8px; font: 14px/1.5 var(--font); background: var(--surface-2, #F6F8FB); min-height: 0; }
+.ag-p:hover, .ag-p:focus { border-color: var(--border); background: var(--surface); }
+.ag-p.ag-h { font-weight: 700; }
+.ag-p.ag-ch { border-color: var(--mustard, #D4A017); background: color-mix(in srgb, var(--mustard, #D4A017) 8%, var(--surface)); }
