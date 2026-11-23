@@ -1208,19 +1208,20 @@
 
   // ---------- WhatsApp inbox (8.4) ----------
   P.whatsapp = async ({ el, actions, q, me }) => {
-    const f = q.filter || 'All';
-    const d = await BB.api(`/api/wa/threads?${BB.qs({ filter: f, q: q.q, delivery: q.delivery, response: q.response })}`);
+    const f = ['Unread', 'Failed'].includes(q.filter) ? 'All' : q.filter || 'All'; const dv0 = ['Unread', 'Failed'].includes(q.filter) ? q.filter : q.delivery;
+    const d = await BB.api(`/api/wa/threads?${BB.qs({ filter: f, q: q.q, delivery: dv0, response: q.response, tpl: q.tpl })}`);
     let cur = q.t ? q.t.split(':') : d.threads[0] ? [d.threads[0].person_type, d.threads[0].person_id] : null;
     actions.innerHTML = `<button class="btn" data-new>Send Individual Message</button>${!me.accounts_only ? '<button class="btn gold" data-alert>Ask for Interest in specific Jobs</button>' : ''}`;
     el.innerHTML = `${BB.boot.test_mode ? '<div class="notice gold small" style="margin-bottom:10px">Test mode: WhatsApp is not connected yet, so messages are saved as "would send". Use <b>Simulate reply</b> to act as the person replying (button replies update records just like the real CRM).</div>' : ''}
-      <div class="wa-filters"><div class="seg">${['All', 'Clients', 'Candidates', 'Team', 'Unread', 'Failed'].map((x) => `<button class="${f === x ? 'on' : ''}" data-fl="${x}">${x}</button>`).join('')}</div>
-        <select data-wf="delivery" aria-label="Delivery status"><option value="">Any delivery</option>${['Read', 'Delivered', 'Sent', 'Not sent', 'Held', 'Failed'].map((x) => `<option ${q.delivery === x ? 'selected' : ''}>${x}</option>`).join('')}</select>
+      <div class="wa-filters"><div class="seg">${['All', 'Clients', 'Candidates', 'Team'].map((x) => `<button class="${f === x ? 'on' : ''}" data-fl="${x}">${x}</button>`).join('')}</div>
+        <select data-wf="delivery" aria-label="Status"><option value="">Status</option>${['Unread', 'Read', 'Delivered', 'Sent', 'Not sent', 'Held', 'Failed'].map((x) => `<option ${d.delivery === x ? 'selected' : ''}>${x}</option>`).join('')}</select>
+        <select data-wf="tpl" aria-label="Template"><option value="">All templates</option>${(d.templates || []).map((x) => `<option value="${esc(x.name)}" ${q.tpl === x.name ? 'selected' : ''}>${esc(x.name)} (${x.n})</option>`).join('')}</select>
         <select data-wf="response" aria-label="Response"><option value="">Any response</option>${['Replied', 'No reply yet', 'Interested', 'Not interested', 'Other reply', 'Opted out'].map((x) => `<option ${q.response === x ? 'selected' : ''}>${x}</option>`).join('')}</select>
         <input placeholder="Search…" value="${esc(q.q || '')}" data-q></div>
       <div class="card inbox"><div class="threads">${f === 'Failed' ? d.failed.map((m) => `<div class="th"><div class="nm">${esc(m.person_id)} <span class="badge b-red tiny">failed</span></div><div class="lm">${esc(m.error || '')}</div><button class="btn sm" data-retry="${m.id}">Retry</button></div>`).join('') || '<div class="empty">No failed messages.</div>' : d.threads.map((t) => `<div class="th ${cur && cur[0] === t.person_type && cur[1] === t.person_id ? 'on' : ''}" data-th="${t.person_type}:${t.person_id}"><div class="nm"><span class="ellipsis">${esc(t.name)}</span><span class="badge b-outline tiny">${t.person_type === 'user' ? 'team' : t.person_type}</span>${t.unread ? `<span class="badge b-green tiny">${t.unread}</span>` : ''}<span class="right tiny faint">${fmtT(t.last_at)}</span></div><div class="lm">${t.last && t.last.direction === 'in' ? '↩ ' : ''}${esc(t.last ? t.last.text : '')}</div></div>`).join('') || '<div class="empty">No chats yet.</div>'}</div>
         <div class="chat-col" data-chat><div class="empty">Choose a chat.</div></div><div class="side-info" data-info></div></div>`;
     $$('[data-fl]', el).forEach((c) => (c.onclick = () => BB.setQ({ filter: c.dataset.fl, t: '' })));
-    $$('[data-wf]', el).forEach((s) => (s.onchange = () => BB.setQ({ [s.dataset.wf]: s.value, t: '' })));
+    $$('[data-wf]', el).forEach((s) => (s.onchange = () => BB.setQ({ [s.dataset.wf]: s.value, t: '', ...(['Unread', 'Failed'].includes(q.filter) ? { filter: '' } : {}) })));
     let tq; $('[data-q]', el).oninput = (e) => { clearTimeout(tq); tq = setTimeout(() => BB.setQ({ q: e.target.value }), 350); };
     $$('[data-th]', el).forEach((t) => (t.onclick = () => { $$('[data-th]', el).forEach((x) => x.classList.remove('on')); t.classList.add('on'); cur = t.dataset.th.split(':'); BB.setUrl(`team/whatsapp?${BB.qs({ ...q, t: t.dataset.th })}`); openThread(); }));
     $$('[data-retry]', el).forEach((b) => (b.onclick = async () => { await BB.post(`/api/wa/retry/${b.dataset.retry}`); BB.toast('Queued again'); BB.refreshPage(); }));
@@ -1230,7 +1231,7 @@
       if (!cur) return;
       const t = await BB.api(`/api/wa/thread/${cur[0]}/${cur[1]}`).catch(BB.fail); if (!t) return;
       const chat = $('[data-chat]', el); const p = t.person;
-      chat.innerHTML = `<div class="chat" data-scroll>${t.messages.map((m) => `<div class="msg ${m.direction === 'out' ? 'out' : ''}">${m.format ? `<div class="fmt">${esc(m.format)}</div>` : ''}${esc(m.text)}${BB.care.english(m)}${(m.buttons || []).length ? `<div class="btns">${m.buttons.map((b) => `<span>${esc(b)}</span>`).join('')}</div>` : ''}<div class="meta">${m.direction === 'out' ? esc(m.sent_by) + ' · ' : ''}${fmtDT(m.at)} ${m.direction === 'out' ? ticks(m.status) : ''}${m.direction === 'out' && BB.boot.test_mode && m.status !== 'read' ? ` <a href="#" class="tiny" data-tick="${m.id}" title="Test: move the tick on">tick</a>` : ''}</div></div>`).join('') || '<div class="empty">No messages.</div>'}</div>
+      chat.innerHTML = `<div class="chat" data-scroll>${t.messages.map((m) => `<div class="msg ${m.direction === 'out' ? 'out' : ''}">${m.format ? `<div class="fmt">${esc(m.format)}</div>` : ''}${esc(m.text)}${BB.care.english(m)}${(m.buttons || []).length ? `<div class="btns">${m.buttons.map((b) => `<span>${esc(b)}</span>`).join('')}</div>` : ''}<div class="meta">${m.direction === 'out' ? esc(m.sent_by) + ' · ' : ''}${fmtDT(m.at)} ${m.direction === 'out' ? ticks(m.status) : ''}${m.direction === 'out' && BB.boot.test_mode && m.status !== 'read' ? ` <a href="#" class="tiny" data-tick="${m.id}" title="Test: move the tick on">tick</a>` : ''}${m.direction === 'out' && m.status === 'failed' ? ` <span class="badge b-red tiny" title="${esc(m.error || '')}">failed</span> <a href="#" class="tiny" data-cretry="${m.id}">Send again</a>` : ''}</div></div>`).join('') || '<div class="empty">No messages.</div>'}</div>
         <div class="composer">${p.window_until ? `<div class="inp-wrap grow"><textarea data-text placeholder="Type a reply (chat open until ${fmtT(p.window_until)})" data-voice style="min-height:40px"></textarea>${BB.care.translateBar(p.lang && p.lang !== 'en' ? p.lang : '')}</div><button class="btn wa" data-reply>Send</button>` : '<span class="small muted grow">Only an approved format can be sent (no reply in the last 24 hours).</span>'}<button class="btn" data-fmt>Choose a format</button></div>`;
       BB.attachMics(chat);
       const sc = $('[data-scroll]', chat); sc.scrollTop = sc.scrollHeight;
@@ -1243,6 +1244,7 @@
       const rp = $('[data-reply]', chat); if (rp) rp.onclick = async () => { const text = $('[data-text]', chat).value.trim(); if (!text) return; try { await BB.post('/api/wa/send', { ptype: p.type, pid: p.id, text }); reload(); } catch (e) { BB.fail(e); } };
       $('[data-fmt]', chat).onclick = () => BB.wa({ ptype: p.type, pid: p.id, after: reload });
       $$('[data-quick]', el).forEach((b) => (b.onclick = () => BB.wa({ ptype: p.type, pid: p.id, format: b.dataset.quick, after: reload })));
+      $$('[data-cretry]', chat).forEach((a) => (a.onclick = async (e) => { e.preventDefault(); try { await BB.post(`/api/wa/retry/${a.dataset.cretry}`); BB.toast('Sent again'); reload(); } catch (er) { BB.fail(er); } }));
       $$('[data-tick]', chat).forEach((a) => (a.onclick = async (e) => { e.preventDefault(); await BB.post(`/api/wa/tick/${a.dataset.tick}`); reload(); }));
       const sim = async (body) => { try { const r = await BB.post('/api/wa/simulate', { ptype: p.type, pid: p.id, ...body }); BB.toast(`Reply saved · ${r.effect}`); reload(); BB.refreshCounts(); } catch (e) { BB.fail(e); } };
       $$('[data-sim]', el).forEach((b) => (b.onclick = () => sim({ button: b.dataset.sim, text: b.dataset.sim })));

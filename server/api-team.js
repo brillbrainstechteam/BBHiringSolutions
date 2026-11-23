@@ -1347,7 +1347,7 @@ function interestPlan(jobIds, user) {
   for (const j of jobs) j.people = [...best.entries()].filter(([, v]) => v.job === j.id).map(([cid, v]) => ({ id: cid, name: v.name, city: v.city, role: v.role, score: v.score })).sort((a, b) => b.score - a.score);
   return { format, strong, budget: D.settings().bulk_budget, jobs };
 }
-route('GET', '/api/jobs/interest/options', T, (ctx) => ({ jobs: all("SELECT * FROM jobs WHERE archived=0 AND status IN ('Open','Sourcing','Interviewing','Offer stage') ORDER BY created_at DESC").filter((j) => seeJob(ctx.user, j)).map((j) => ({ id: j.id, title: j.title, city: j.city, company: (get('SELECT company FROM clients WHERE id=?', j.client_id) || {}).company || '', jd_ready: L.jdReady(j), matches: L.jdReady(j) ? L.bestMatches(j, 200, true).filter((m) => m.score >= D.settings().match.strong).length : 0 })) }));
+route('GET', '/api/jobs/interest/options', T, (ctx) => ({ jobs: all("SELECT * FROM jobs WHERE archived=0 AND COALESCE(status,'') NOT IN ('Filled','Closed','On hold') ORDER BY created_at DESC").filter((j) => seeJob(ctx.user, j)).map((j) => ({ status: j.status, id: j.id, title: j.title, city: j.city, company: (get('SELECT company FROM clients WHERE id=?', j.client_id) || {}).company || '', jd_ready: L.jdReady(j), matches: L.jdReady(j) ? L.bestMatches(j, 200, true).filter((m) => m.score >= D.settings().match.strong).length : 0 })) }));
 route('POST', '/api/jobs/interest/preview', T, (ctx) => interestPlan((ctx.body || {}).jobs || [], ctx.user));
 route('POST', '/api/jobs/interest/send', T, (ctx) => {
   const plan = Array.isArray((ctx.body || {}).plan) ? ctx.body.plan : []; const out = [];
@@ -2211,10 +2211,14 @@ function waResponse(inn, out) {
   return 'Other reply';
 }
 route('GET', '/api/wa/threads', T, (ctx) => {
-  const f = ctx.query.filter || 'All'; const u = ctx.user;
+  const u = ctx.user; let f = ctx.query.filter || 'All'; let dv = ctx.query.delivery || '';
+  if (f === 'Unread' || f === 'Failed') { dv = dv || f; f = 'All'; } // old links
+  const tpl = String(ctx.query.tpl || '');
+  const withTpl = tpl ? new Set(all("SELECT DISTINCT person_type || ':' || person_id k FROM messages WHERE direction='out' AND (format=? OR tpl=? OR tpl LIKE ?)", tpl, tpl, `${tpl}|%`).map((r) => r.k)) : null;
   const rows = all('SELECT person_type, person_id, MAX(at) last_at, SUM(CASE WHEN direction=\'in\' AND read_by_us=0 THEN 1 ELSE 0 END) unread FROM messages GROUP BY person_type, person_id ORDER BY last_at DESC')
     .filter((t) => seeThread(u, t.person_type, t.person_id))
-    .filter((t) => f === 'All' || (f === 'Clients' && t.person_type === 'client') || (f === 'Candidates' && t.person_type === 'candidate') || (f === 'Team' && t.person_type === 'user') || (f === 'Unread' && t.unread > 0) || (f === 'Failed'))
+    .filter((t) => f === 'All' || (f === 'Clients' && t.person_type === 'client') || (f === 'Candidates' && t.person_type === 'candidate') || (f === 'Team' && t.person_type === 'user'))
+    .filter((t) => !withTpl || withTpl.has(`${t.person_type}:${t.person_id}`))
     .map((t) => {
       const last = get(`SELECT text, direction, status FROM messages WHERE person_type=? AND person_id=?${msgHide(u)} ORDER BY at DESC LIMIT 1`, t.person_type, t.person_id);
       const out = get(`SELECT status, at FROM messages WHERE person_type=? AND person_id=? AND direction='out'${msgHide(u)} ORDER BY at DESC LIMIT 1`, t.person_type, t.person_id);
@@ -2222,10 +2226,11 @@ route('GET', '/api/wa/threads', T, (ctx) => {
       return { ...t, name: V.threadName(t.person_type, t.person_id), last, delivery: out ? waDelivery(out.status) : null, response: waResponse(inn, out) };
     })
     .filter((t) => t.last && like(ctx.query.q, t.name, t.person_id)) // a thread holding only hidden messages is left out
-    .filter((t) => !ctx.query.delivery || t.delivery === ctx.query.delivery)
+    .filter((t) => !dv || (dv === 'Unread' ? t.unread > 0 : t.delivery === dv))
     .filter((t) => !ctx.query.response || t.response === ctx.query.response || (ctx.query.response === 'Replied' && !['No reply yet', null].includes(t.response)));
-  const failed = f === 'Failed' ? all("SELECT * FROM messages WHERE status='failed' ORDER BY at DESC").filter((m) => seeThread(u, m.person_type, m.person_id)) : [];
-  return { threads: f === 'Failed' ? [] : rows, failed };
+  // the templates (message formats) sent so far, for the filter, most used first
+  const templates = all("SELECT COALESCE(NULLIF(format,''), tpl) name, COUNT(*) n FROM messages WHERE direction='out' AND COALESCE(NULLIF(format,''), tpl) IS NOT NULL GROUP BY 1 ORDER BY n DESC LIMIT 80").map((r) => ({ name: String(r.name).split('|')[0], n: r.n }));
+  return { threads: rows, failed: [], templates, delivery: dv };
 });
 route('GET', '/api/wa/thread/:ptype/:pid', T, (ctx) => {
   const { ptype, pid } = ctx.params; mustSee(seeThread(ctx.user, ptype, pid) || isSuper(ctx.user), 'chat');

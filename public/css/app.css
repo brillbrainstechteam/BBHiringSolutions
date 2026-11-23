@@ -2924,3 +2924,6 @@ a.pipe-step { text-decoration: none; cursor: pointer; } a.pipe-step:hover { bord
 .ai-card { border: 1px solid var(--border); border-radius: 12px; padding: 8px; display: flex; flex-direction: column; gap: 6px; background: var(--surface); }
 .ai-card img { width: 100%; border-radius: 8px; object-fit: cover; background: #f3f4f6; }
 .ai-card img.ai-square { aspect-ratio: 1 / 1; } .ai-card img.ai-portrait { aspect-ratio: 4 / 5; } .ai-card img.ai-story { aspect-ratio: 9 / 16; }
+
+/* the find box hides rows: a hidden row stays hidden */
+.ai-job[hidden], .ai-p[hidden], .aud-p[hidden] { display: none; }
