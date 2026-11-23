@@ -239,7 +239,9 @@
     const d = await BB.api('/api/studio/designs');
     actions.innerHTML = '<button class="btn primary" data-dnew>+ New design</button>';
     $('[data-dnew]', actions).onclick = () => S.designer(null);
-    el.innerHTML = `<div class="card">${BB.table([{ t: 'Design', f: (x) => `<b>${esc(x.name)}</b><div class="tiny muted">${esc(x.subject || 'No subject yet')}</div>` }, { t: 'Blocks', num: 1, f: (x) => x.blocks.length }, { t: 'Updated', f: (x) => `${fmtD(x.updated_at || x.at)}<div class="tiny muted">${esc(x.updated_by || x.by)}</div>` }, { t: '', f: (x) => `<span class="nowrap"><button class="btn sm" data-dedit="${x.id}">Edit</button> <button class="btn sm primary" data-dsend="${x.id}">Send</button></span>` }], d.rows, { empty: '' })}</div>`;
+    if (!d.rows.length) { el.innerHTML = '<div class="card pad empty-cta"><h3 style="margin:0 0 6px">No email designs yet</h3><p class="small muted" style="margin:0 0 12px">Make a designed email once, then send it to any segment from a campaign.</p><button class="btn primary" data-dnew2>+ New design</button></div>'; $('[data-dnew2]', el).onclick = () => S.designer(null); return; }
+    const used = (x) => (d.used || {})[x.id] || 0;
+    el.innerHTML = `<div class="card">${BB.table([{ t: 'Design', f: (x) => `<b>${esc(x.name)}</b>` }, { t: 'Subject', f: (x) => (x.subject ? esc(x.subject) : '<span class="faint">No subject yet</span>') }, { t: 'Sent in', num: 1, f: (x) => (used(x) ? `${used(x)} campaign${used(x) === 1 ? '' : 's'}` : '<span class="faint">Not sent yet</span>') }, { t: 'Last changed', f: (x) => `${fmtD(x.updated_at || x.at)}<div class="tiny muted">${esc(x.updated_by || x.by)}</div>` }, { t: '', f: (x) => `<span class="nowrap"><button class="btn sm" data-dedit="${x.id}">Edit</button> <button class="btn sm primary" data-dsend="${x.id}">Send</button></span>` }], d.rows, { empty: '' })}</div>`;
     $$('[data-dedit]', el).forEach((b) => (b.onclick = () => S.designer(d.rows.find((x) => String(x.id) === b.dataset.dedit))));
     $$('[data-dsend]', el).forEach((b) => (b.onclick = () => S.start({ what: 'design', designId: b.dataset.dsend })));
   };

@@ -3379,6 +3379,36 @@ route('GET', '/api/reports/:name', T, (ctx) => {
     rows = Object.values(m).sort((a, b) => b.candidate_leads + b.client_leads - (a.candidate_leads + a.client_leads));
   } else if (name === 'performance') {
     rows = all("SELECT * FROM users WHERE level!='super'").filter((x) => seePerson(u, x) && (!q.agency || x.agency_id === q.agency) && (!q.person || x.id === q.person)).map((x) => ({ person: `${x.id} ${x.name}`, agency: V.agencyName(x.agency_id), level: x.level, ...perfOf(x.id, from, to) }));
+  } else if (name === 'channels') {
+    // Return per channel: where candidates came from (Facebook, Instagram, LinkedIn, each job portal, the website …),
+    // what it cost, how far they got, and the revenue: 8.33% of the yearly CTC of everyone who joined.
+    const portals = all('SELECT * FROM portals'); const pct = Number(D.settings().revenue_pct || 8.33);
+    const chanOf = (src) => { const s = String(src || '').trim(); const l = s.toLowerCase(); if (!s) return 'Not given';
+      const p = portals.find((x) => [x.source_name, x.name].filter(Boolean).some((n) => l === n.toLowerCase() || l.includes(n.toLowerCase()))); if (p) return p.name;
+      if (/instagram|\big\b|insta/.test(l)) return 'Instagram'; if (/facebook|\bfb\b|meta/.test(l)) return 'Facebook'; if (/linkedin|\bli\b/.test(l)) return 'LinkedIn'; return s; };
+    const cands = all('SELECT id, source, created_at FROM candidates WHERE merged_into IS NULL AND removed=0').filter((c) => inR(c.created_at));
+    const byC = {}; for (const c of cands) (byC[chanOf(c.source)] = byC[chanOf(c.source)] || []).push(c.id);
+    const appsAll = all('SELECT * FROM applications'); const ivApps = new Set(all('SELECT DISTINCT app_id FROM interviews').map((x) => x.app_id));
+    const at = (a, s) => L.stepIdx(a.step) >= L.stepIdx(s) || (s !== 'Joined' && a.result === 'Hired');
+    // spend in the period: Meta ads (split between Facebook and Instagram by the candidates each brought), LinkedIn ads, portals
+    const sp = (() => { try { return require('./adspend').spendRows(); } catch { return []; } })().filter((r) => !r.day_from || (r.day_from >= from.slice(0, 10) && r.day_from <= to.slice(0, 10)));
+    const meta = sp.filter((r) => r.platform === 'Meta').reduce((t, r) => t + (r.spend || 0), 0); const li = sp.filter((r) => r.platform === 'LinkedIn').reduce((t, r) => t + (r.spend || 0), 0);
+    const fb = (byC.Facebook || []).length; const ig = (byC.Instagram || []).length; const spend = { Facebook: fb + ig ? meta * (fb / (fb + ig)) : meta, Instagram: fb + ig ? meta * (ig / (fb + ig)) : 0, LinkedIn: li };
+    for (const p of portals) spend[p.name] = (spend[p.name] || 0) + all('SELECT amount, date FROM portal_payments WHERE portal_id=?', p.id).filter((x) => x.date >= from.slice(0, 10) && x.date <= to.slice(0, 10)).reduce((t, x) => t + (x.amount || 0), 0);
+    const names = [...new Set([...Object.keys(byC), ...Object.keys(spend).filter((k) => spend[k] > 0)])];
+    rows = names.map((ch) => {
+      const ids = new Set(byC[ch] || []); const as = appsAll.filter((a) => ids.has(a.candidate_id)); const per = (fn) => new Set(as.filter(fn).map((a) => a.candidate_id)).size;
+      const joined = as.filter((a) => a.step === 'Joined' || a.joined_at); const ctc = joined.reduce((t, a) => t + (a.offer_ctc || 0), 0); const revenue = Math.round((ctc * pct) / 100); const cost = Math.round(spend[ch] || 0);
+      return { channel: ch, spent: cost, sourced: ids.size, screened: per((a) => at(a, 'Our interview') || !!a.screen), interview_round_1: per((a) => at(a, 'Sent to client') || ivApps.has(a.id)), client_interviewed: per((a) => at(a, 'Client interview')), offered: per((a) => at(a, 'Offer made')), joined: new Set(joined.map((a) => a.candidate_id)).size, revenue: revenue, cost_per_joining: joined.length && cost ? Math.round(cost / joined.length) : '', roi: cost ? `${Math.round((revenue / cost) * 10) / 10}×` : '' };
+    }).sort((a, b) => b.spent - a.spent || b.sourced - a.sourced);
+  } else if (name === 'consent') {
+    // Resumes on file by designation, and how many agreed to WhatsApp job messages.
+    const m = {};
+    for (const c of all('SELECT job_wanted, cv_file, consent_alerts, opted_out, whatsapp, looking FROM candidates WHERE merged_into IS NULL AND removed=0 AND junk=0')) {
+      const k = c.job_wanted || 'Not given'; const r = (m[k] = m[k] || { designation: k, candidates: 0, with_resume: 0, consent_given: 0, resume_and_consent: 0, looking_now: 0 });
+      const ok = c.consent_alerts && !c.opted_out && c.whatsapp; r.candidates++; if (c.cv_file) r.with_resume++; if (ok) r.consent_given++; if (ok && c.cv_file) r.resume_and_consent++; if (['Actively looking', 'Open to offers'].includes(c.looking)) r.looking_now++;
+    }
+    rows = Object.values(m).sort((a, b) => b.resume_and_consent - a.resume_and_consent || b.candidates - a.candidates);
   } else if (name === 'agencies') {
     // One row per agency (and BrillBrains' own team): its people's work in the range, and the fees billed.
     const groups = [...(isSuper(u) ? all('SELECT * FROM agencies ORDER BY name') : all('SELECT * FROM agencies WHERE id=?', u.agency_id)).filter((a) => !q.agency || a.id === q.agency).map((a) => ({ id: a.id, name: a.name, status: a.status })), ...(isSuper(u) && !q.agency ? [{ id: null, name: 'BrillBrains (own team)', status: 'Active' }] : [])];

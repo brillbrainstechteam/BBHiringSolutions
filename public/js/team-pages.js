@@ -1363,44 +1363,36 @@
   const langChips = (f) => Object.keys(LCODE).filter((l) => f[l]).map((l) => { const ms = f.meta_status || {}; const st = ms[l] || (!Object.keys(ms).length && f.approved ? 'APPROVED' : ''); const [cls, word] = st === 'APPROVED' ? ['ok', 'approved'] : st === 'REJECTED' ? ['bad', 'rejected'] : st ? ['wait', 'waiting for Meta'] : ['none', 'not sent to Meta']; return `<span class="lchip ${cls}" title="${esc((BB.boot.lang_names || {})[l] || l)}: ${word}">${LCODE[l]}${cls === 'ok' ? ' ✓' : ''}</span>`; }).join('');
 
   // ---------- Reports (17) ----------
-  const REPORTS = [['funnel', 'Hiring funnel'], ['clients', 'Per client'], ['jobs', 'Per job'], ['sources', 'Source report'], ['performance', 'Recruiter performance'], ['agencies', 'Agency performance'], ['money', 'Financials'], ['replacements', 'Replacements'], ['bank', 'Resume bank']];
-  // Reports by who they are about: the team, the agencies, the clients, the candidates.
+  // Reports: three groups, each one table (candidate-wise two). Team numbers live on the Performance page.
   const REPORT_GROUPS = [
-    ['team', 'Team performance', 'How each recruiter is doing: work done, daily logs, resume use.', ['performance', 'logs', 'resumes']],
-    ['agency', 'Agency performance', 'Each partner agency and our own team side by side, and the money.', ['agencies', 'money']],
-    ['client', 'Client-wise', 'Each client and job: how far hiring has got, and replacements.', ['clients', 'jobs', 'funnel', 'replacements']],
-    ['candidate', 'Candidate-wise', 'Where candidates come from and what the resume bank holds.', ['sources', 'bank', 'whatsapp']],
+    ['agency', 'Agency performance', [['agencies', '']]],
+    ['client', 'Client-wise', [['clients', '']]],
+    ['candidate', 'Candidate-wise', [['channels', 'Return per channel'], ['consent', 'Resumes with consent, by designation']]],
   ];
-  const REPORT_NOTE = { performance: 'One row per recruiter for the dates picked.', logs: 'Daily logs submitted and approved per person.', resumes: 'Who opened which resumes.', agencies: 'One row per agency: people, work done, open jobs, fees billed and received.', money: 'Every bill: fee, GST, received, balance and agency share.', clients: 'One row per client: jobs, candidates sent, offers, joinings.', jobs: 'One row per job opening and where its candidates are.', funnel: 'How many moved through each hiring step, and where they dropped.', replacements: 'Candidates who left within the replacement window.', sources: 'Which sources bring candidates, and how many get hired.', bank: 'Candidates on file by city and department, and how fresh they are.', whatsapp: 'Clicks on the WhatsApp buttons on the website.' };
-  // Sub admins see only their own performance and daily logs; admins their agency; the super admin everything.
+  const MONEY_COL = /fee|billed|paid|total|gst|balance|received|share|tds|spent|revenue|cost_per/;
   P.reports = async ({ el, actions, q, me }) => {
-    const sub = me.level === 'sub'; const list = sub ? [['performance', 'My performance']] : isSuper(me) ? [...REPORTS, ['logs', 'Daily logs'], ['whatsapp', 'WhatsApp clicks'], ['resumes', 'Resume access']] : REPORTS;
-    const groups = REPORT_GROUPS.map(([k, l, d2, keys]) => [k, l, d2, keys.filter((r) => list.some(([x]) => x === r))]).filter(([, , , keys]) => keys.length);
-    const grp = groups.find(([k]) => k === q.g) || groups.find(([, , , keys]) => keys.includes(q.r)) || groups[0];
-    const name = grp && grp[3].includes(q.r) ? q.r : grp ? grp[3][0] : list[0][0];
+    if (me.level === 'sub') { actions.innerHTML = ''; el.innerHTML = '<div class="card pad">Your numbers are on the <a href="/team/performance" data-tlink>Performance</a> page.</div>'; return; }
+    const grp = REPORT_GROUPS.find(([k]) => k === q.g) || REPORT_GROUPS[0];
     const from = q.from || new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10); const to = q.to || BB.istDay();
-    const byPerson = !sub && ['performance', 'logs'].includes(name);
-    const qs = BB.qs({ from, to, agency: q.agency, client: q.client, job: q.job, city: q.city, dept: q.dept, person: byPerson ? q.person : undefined });
-    const [d, users] = await Promise.all([BB.api(`/api/reports/${name}?${qs}`), sub ? null : BB.api('/api/users')]);
+    const qs = BB.qs({ from, to, agency: q.agency });
+    const [users, ...datas] = await Promise.all([BB.api('/api/users'), ...grp[2].map(([n]) => BB.api(`/api/reports/${n}?${qs}`))]);
     const ags = isSuper(me) ? users.agencies : [];
-    const people = byPerson ? users.users.filter((x) => x.level !== 'super' && (!q.agency || x.agency_id === q.agency)) : [];
-    actions.innerHTML = dl(`/api/reports/${name}?${qs}&format=xlsx`); wireDl(actions);
-    const cols = Object.keys(d.rows[0] || {}); const label = (c) => c.replace(/_/g, ' ');
-    // Sorting and filters work on what the server sent: a column with a few repeating values gets a dropdown.
-    const picks = cols.filter((c) => typeof d.rows[0][c] === 'string').map((c) => [c, [...new Set(d.rows.map((x) => x[c]).filter(Boolean))].sort()]).filter(([, v]) => v.length > 1 && v.length <= 20 && v.length < d.rows.length);
-    const find = String(q.find || '').toLowerCase(); let shown = d.rows.filter((x) => (!find || cols.some((c) => String(x[c] ?? '').toLowerCase().includes(find))) && picks.every(([c]) => !q[`c_${c}`] || x[c] === q[`c_${c}`]));
-    if (cols.includes(q.sort)) { const dir = q.dir === 'desc' ? -1 : 1; shown = [...shown].sort((a, b) => { const x = a[q.sort]; const y = b[q.sort]; return (typeof x === 'number' && typeof y === 'number' ? x - y : String(x ?? '').localeCompare(String(y ?? ''), 'en', { sensitivity: 'base', numeric: true })) * dir; }); }
-    const lab = (k) => (list.find(([x]) => x === k) || [k, k])[1];
-    el.innerHTML = `${groups.length > 1 ? `<div class="rep-groups">${groups.map(([k, l, d2]) => `<button type="button" class="rep-g ${grp[0] === k ? 'on' : ''}" data-g="${k}"><b>${esc(l)}</b><span>${esc(d2)}</span></button>`).join('')}</div>` : ''}
-      <div class="rep-sub"><div class="seg">${(grp ? grp[3] : list.map(([k]) => k)).map((k) => `<button type="button" class="${name === k ? 'on' : ''}" data-r="${k}">${esc(lab(k))}</button>`).join('')}</div><span class="small muted">${esc(REPORT_NOTE[name] || '')}</span></div>
-      <div class="filters">${BB.rangePicker({ from: q.from || from, to: q.to || to }, { any: 'Last 30 days' })}${ags.length ? `<select data-f="agency"><option value="">All agencies</option>${ags.map((a) => `<option value="${a.id}" ${q.agency === a.id ? 'selected' : ''}>${esc(a.name)}</option>`).join('')}</select>` : ''}${people.length ? `<select data-f="person"><option value="">${isSuper(me) ? 'Everyone' : 'Me and my team'}</option>${people.map((x) => `<option value="${x.id}" ${q.person === x.id ? 'selected' : ''}>${esc(x.name)}${x.id === me.id ? ' (me)' : ''} · ${BB.levelName(x.level)}</option>`).join('')}</select>` : ''}${name === 'bank' ? `<select data-f="city"><option value="">All cities</option>${BB.boot.cities.map((c) => `<option ${q.city === c ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select>` : ''}</div>
-      ${name !== 'funnel' && d.rows.length ? `<div class="filters exp-filters"><input placeholder="Search this report…" value="${esc(q.find || '')}" data-q data-rfind>${picks.map(([c, v]) => `<select data-f="c_${c}"><option value="">Any ${esc(label(c))}</option>${v.map((x) => `<option ${q[`c_${c}`] === x ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select>`).join('')}</div>` : ''}
-      ${name === 'funnel' ? `<div class="card pad">${d.rows.map((r) => { const max = Math.max(1, ...d.rows.map((x) => x.count)); return `<div class="hbar"><span class="l" style="width:150px">${esc(r.step)}</span><div class="b bar gold"><i style="width:${(r.count / max) * 100}%"></i></div><span class="v">${r.count}</span><span class="small muted" style="width:70px">${r.drop ? '−' + r.drop : ''}</span></div>`; }).join('')}</div>`
-        : `<div class="card rep-tbl">${BB.table(cols.map((c) => ({ t: label(c), sort: c, desc: typeof d.rows[0][c] === 'number', num: typeof d.rows[0][c] === 'number', f: (r) => (typeof r[c] === 'number' && /fee|billed|paid|total|gst|balance|received|share|tds/.test(c) ? inr(r[c]) : esc(r[c])) })), shown, { sorted: q, empty: 'No data for these filters.' })}</div>`}`;
-    $$('[data-g]', el).forEach((c) => (c.onclick = () => BB.setQ({ g: c.dataset.g, r: '', find: '', sort: '', dir: '' })));
-    $$('[data-r]', el).forEach((c) => (c.onclick = () => BB.setQ({ r: c.dataset.r, find: '', sort: '', dir: '', ...Object.fromEntries(Object.keys(q).filter((k) => k.startsWith('c_')).map((k) => [k, ''])) })));
+    actions.innerHTML = '';
+    const label = (c) => c.replace(/_/g, ' ');
+    const find = String(q.find || '').toLowerCase();
+    const tableOf = (name, d) => {
+      const cols = Object.keys(d.rows[0] || {});
+      let shown = d.rows.filter((x) => !find || cols.some((c) => String(x[c] ?? '').toLowerCase().includes(find)));
+      if (cols.includes(q.sort)) { const dir = q.dir === 'desc' ? -1 : 1; shown = [...shown].sort((a, b) => { const x = a[q.sort]; const y = b[q.sort]; return (typeof x === 'number' && typeof y === 'number' ? x - y : String(x ?? '').localeCompare(String(y ?? ''), 'en', { sensitivity: 'base', numeric: true })) * dir; }); }
+      return BB.table(cols.map((c) => ({ t: label(c), sort: c, desc: typeof d.rows[0][c] === 'number', num: typeof d.rows[0][c] === 'number', f: (r) => (typeof r[c] === 'number' && MONEY_COL.test(c) ? inr(r[c]) : esc(r[c])) })), shown, { sorted: q, empty: 'No data for these filters.' });
+    };
+    el.innerHTML = `<div class="rep-groups">${REPORT_GROUPS.map(([k, l]) => `<button type="button" class="rep-g ${grp[0] === k ? 'on' : ''}" data-g="${k}"><b>${esc(l)}</b></button>`).join('')}</div>
+      <div class="filters rep-filters">${BB.rangePicker({ from: q.from || from, to: q.to || to }, { any: 'Last 30 days' })}${ags.length ? `<select data-f="agency"><option value="">All agencies</option>${ags.map((a) => `<option value="${a.id}" ${q.agency === a.id ? 'selected' : ''}>${esc(a.name)}</option>`).join('')}</select>` : ''}<input placeholder="Search…" value="${esc(q.find || '')}" data-q data-rfind></div>
+      ${grp[2].map(([n, title], i) => `<div class="card rep-tbl" style="margin-bottom:14px"><div class="card-h"><h3>${esc(title || grp[1])}</h3><span class="right">${dl(`/api/reports/${n}?${qs}&format=xlsx`)}</span></div>${tableOf(n, datas[i])}</div>`).join('')}`;
+    wireDl(el);
+    $$('[data-g]', el).forEach((c) => (c.onclick = () => BB.setQ({ g: c.dataset.g, find: '', sort: '', dir: '' })));
     let tf; const rf = $('[data-rfind]', el); if (rf) rf.oninput = () => { clearTimeout(tf); tf = setTimeout(() => BB.setQ({ find: rf.value }), 350); };
-    BB.wireMultiSel(el); $$('[data-f]', el).forEach((i) => (i.onchange = () => BB.setQ({ [i.dataset.f]: i.value })));
+    $$('[data-f]', el).forEach((i) => (i.onchange = () => BB.setQ({ [i.dataset.f]: i.value })));
   };
 
   // ---------- Logins & team ----------

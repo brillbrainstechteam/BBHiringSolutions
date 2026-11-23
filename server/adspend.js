@@ -153,6 +153,13 @@ route('POST', '/api/adspend/meta/fetch', { ...SUPER, rate: { key: 'metaspend', m
   return r;
 });
 // The report: per job (spend, applications from ads, hires, cost per application and per hire) and per ad set.
+// Spend rows with an uploaded Meta export left out for any ad set and day the API already fetched (no double count).
+function spendRows() {
+  const fetched = new Set(); for (const r of all('SELECT adset, day_from FROM ad_spend WHERE upload_id=?', API)) fetched.add(`${norm(r.adset)}|${r.day_from}`);
+  const covered = (r) => { if (r.upload_id === API || r.platform !== 'Meta' || !fetched.size || !isoDay(r.day_from) || !isoDay(r.day_to)) return false; for (let d = new Date(`${r.day_from}T00:00:00Z`), k = 0; d.toISOString().slice(0, 10) <= r.day_to && k < 400; d.setUTCDate(d.getUTCDate() + 1), k++) if (fetched.has(`${norm(r.adset)}|${d.toISOString().slice(0, 10)}`)) return true; return false; };
+  return all('SELECT * FROM ad_spend').filter((r) => !covered(r));
+}
+module.exports.spendRows = spendRows;
 route('GET', '/api/adspend/report', SUPER, () => {
   // An uploaded Meta export is left out for any ad set and day the API already fetched.
   const fetched = new Set(); for (const r of all('SELECT adset, day_from FROM ad_spend WHERE upload_id=?', API)) fetched.add(`${norm(r.adset)}|${r.day_from}`);
@@ -183,4 +190,4 @@ route('GET', '/api/adspend/report', SUPER, () => {
     uploads: all('SELECT * FROM ad_spend_uploads ORDER BY at DESC'),
   };
 });
-module.exports = { parse, allocate, fetchMeta, daily };
+module.exports = { parse, allocate, fetchMeta, daily, spendRows };

@@ -39,7 +39,7 @@ function due(count) {
           : L.sendWA({ ptype: 'client', pid: cl.id, format: 'bbhs_client_hire_checkin', vars: { candidate: cand.name, job: job.title, days: day }, ap: a.id, auto: true, rule: 'client_hire_checkin', dedupe: `hirecheck:${a.id}:${day}` });
         insert('care_checks', { app_id: a.id, day, party, status: r && !r.skipped && r.status !== 'held' ? 'Sent' : 'Due', at: now() });
       }
-      if (day === 14) L.sendWA({ ptype: 'candidate', pid: a.candidate_id, format: 'bbhs_review_request', vars: { link: L.link('my-profile/review') }, ap: a.id, auto: true, rule: 'review_request', dedupe: `review:${a.id}` });
+      if (day === 14) L.sendWA({ ptype: 'candidate', pid: a.candidate_id, format: 'bbhs_review_request', vars: { link: candFeedbackLink(a.candidate_id) }, ap: a.id, auto: true, rule: 'review_request', dedupe: `review:${a.id}` });
       const o = ownerOf(a);
       if (o) insert('followups', { record_id: a.id, at: now(), note: `Day ${day} check-in: ${cand.name} at ${cl.company}. Speak to them and log how it is going.`, for_user: o, done: 0, created_by: o });
       if (count) count('aftercare');
@@ -189,10 +189,71 @@ route('GET', '/api/reviews', { auth: 'team', levels: ['super'] }, (ctx) => {
   const rows = all('SELECT r.*, c.name candidate_name, u.name user_name, u.level FROM reviews r JOIN candidates c ON c.id=r.candidate_id JOIN users u ON u.id=r.user_id ORDER BY r.at DESC');
   const per = {};
   for (const r of rows) { const p = (per[r.user_id] = per[r.user_id] || { id: r.user_id, name: r.user_name, level: r.level, count: 0, sum: 0, low: 0, google: 0 }); p.count += 1; p.sum += r.stars; if (r.stars <= 2) p.low += 1; if (r.google) p.google += 1; }
-  return { recruiters: Object.values(per).map((p) => ({ ...p, avg: Math.round((p.sum / p.count) * 10) / 10 })).sort((x, y) => y.avg - x.avg), reviews: rows.filter((r) => !ctx.query.user || r.user_id === ctx.query.user), google_url: googleUrl(),
+  const fb = all('SELECT f.*, c.name candidate_name, u.name user_name FROM cand_feedback f LEFT JOIN candidates c ON c.id=f.candidate_id LEFT JOIN users u ON u.id=f.user_id WHERE f.done_at IS NOT NULL ORDER BY f.done_at DESC').map((f) => ({ kind: 'link', at: f.done_at, candidate_id: f.candidate_id, candidate_name: f.candidate_name, user_id: f.user_id, user_name: f.user_name || '', stars: f.stars, scores: typeof f.scores === 'string' ? JSON.parse(f.scores || '{}') : f.scores || {}, text: f.text }));
+  const candRows = [...fb, ...rows.map((r) => ({ kind: 'profile', at: r.at, candidate_id: r.candidate_id, candidate_name: r.candidate_name, user_id: r.user_id, user_name: r.user_name, stars: r.stars, scores: { overall: r.stars }, text: r.text }))].filter((r) => !ctx.query.user || r.user_id === ctx.query.user).sort((a, b) => String(b.at).localeCompare(String(a.at)));
+  const waiting = get('SELECT COUNT(*) n FROM cand_feedback WHERE done_at IS NULL').n;
+  // who can be asked: candidates who have had an interview with us or later, newest first
+  const askable = all("SELECT DISTINCT c.id, c.name, c.job_wanted, a.step FROM applications a JOIN candidates c ON c.id=a.candidate_id WHERE a.step IN ('Our interview','Sent to client','Client interview','Offer made','Offer accepted','Joined') ORDER BY a.created_at DESC LIMIT 300").map((x) => ({ ...x, asked: !!get('SELECT 1 FROM cand_feedback WHERE candidate_id=?', x.id) }));
+  return { points: FB_POINTS.map(([k, l]) => ({ key: k, label: l })), cand_rows: candRows, waiting, cand_askable: askable, recruiters: Object.values(per).map((p) => ({ ...p, avg: Math.round((p.sum / p.count) * 10) / 10 })).sort((x, y) => y.avg - x.avg), people: all(`SELECT id, name FROM users WHERE ${STAFF} ORDER BY name`), reviews: rows.filter((r) => !ctx.query.user || r.user_id === ctx.query.user), google_url: googleUrl(),
     client_reviews: all('SELECT r.*, u.name user_name, c.company, j.title job_title FROM client_reviews r JOIN users u ON u.id=r.user_id LEFT JOIN clients c ON c.id=r.client_id LEFT JOIN jobs j ON j.id=r.job_id ORDER BY r.at DESC').filter((r) => !ctx.query.user || r.user_id === ctx.query.user),
     askable: all("SELECT DISTINCT j.id, j.title, c.company, (SELECT MAX(sent_at) FROM client_review_asks k WHERE k.job_id=j.id) asked, (SELECT MAX(done_at) FROM client_review_asks k WHERE k.job_id=j.id) answered FROM interviews i JOIN applications a ON a.id=i.app_id JOIN jobs j ON j.id=a.job_id JOIN clients c ON c.id=j.client_id WHERE i.round != 'ours' AND i.status='Completed' ORDER BY j.id DESC") };
 });
+
+// ---------- candidate feedback: a short rating link (no login), four points ----------
+// Asked by hand from Recruiter reviews, or by itself 14 days after joining. Four 1-5 ratings and a comment.
+D.db.exec(`CREATE TABLE IF NOT EXISTS cand_feedback (token TEXT PRIMARY KEY, candidate_id TEXT, user_id TEXT, scores TEXT, stars REAL, text TEXT, sent_at TEXT, done_at TEXT, by TEXT);`);
+const FB_POINTS = [['communication', 'Communication', 'Was the recruiter clear, polite and easy to reach?'], ['match', 'Job match', 'Did the jobs suit your profile and what you wanted?'], ['support', 'Support and follow-up', 'Did we keep you updated and help with interviews and the offer?'], ['overall', 'Overall experience', 'How was BrillBrains overall?']];
+function candFeedbackLink(candId, by) {
+  let f = get('SELECT * FROM cand_feedback WHERE candidate_id=? AND done_at IS NULL', candId);
+  if (!f) { const r = recruitersOf(candId)[0]; f = { token: require('crypto').randomBytes(12).toString('base64url'), candidate_id: candId, user_id: r ? r.id : null, sent_at: now(), by: by || 'Auto' }; insert('cand_feedback', f); }
+  return L.link(`feedback/${f.token}`);
+}
+function askCandidates(ids, by) {
+  const out = { sent: 0, links: [] };
+  for (const id of [...new Set(ids)].slice(0, 200)) {
+    const c = get('SELECT id, name, whatsapp FROM candidates WHERE id=?', id); if (!c) continue;
+    const link = candFeedbackLink(c.id, by.label); let r;
+    try { r = L.sendWA({ ptype: 'candidate', pid: c.id, format: 'bbhs_review_request', vars: { link }, by, dedupe: `cfb:${c.id}:${L.istDay()}` }); } catch (e) { r = { skipped: e.message }; }
+    if (r && !r.skipped && !['held', 'failed', 'would send'].includes(r.status)) out.sent++; else out.links.push({ id: c.id, name: c.name, whatsapp: c.whatsapp || '', link, why: (r && (r.skipped || r.error || r.status)) || '' });
+  }
+  return out;
+}
+route('POST', '/api/reviews/ask-candidates', { auth: 'team', levels: ['super'] }, (ctx) => askCandidates([].concat((ctx.body || {}).ids || []), ctx.actor));
+const fbOf = (t) => { const f = get('SELECT * FROM cand_feedback WHERE token=?', String(t || '')); if (!f) throw httpError(404, 'This link is not valid any more.'); return f; };
+route('POST', '/api/pub/feedback/:token', { rate: { key: 'cfb', max: 20, minutes: 60 } }, (ctx) => {
+  const f = fbOf(ctx.params.token); const b = ctx.body || {}; const scores = {};
+  for (const [k] of FB_POINTS) { const n = Math.round(Number((b.scores || {})[k])); if (n >= 1 && n <= 5) scores[k] = n; }
+  if (!Object.keys(scores).length) throw httpError(400, 'Please tap the stars for at least one point.');
+  const vals = Object.values(scores); const avg = Math.round((vals.reduce((a, x) => a + x, 0) / vals.length) * 10) / 10;
+  update('cand_feedback', f.token, { scores: JSON.stringify(scores), stars: avg, text: String(b.text || '').trim().slice(0, 1500), done_at: now() }, 'token');
+  const c = get('SELECT name FROM candidates WHERE id=?', f.candidate_id) || {};
+  for (const s of L.superAdmins()) insert('alerts', { user_id: s.id, text: `Candidate feedback from ${c.name || f.candidate_id}: ${avg}★`, record_id: 'reviews', read: 0, at: now() });
+  return { ok: true };
+});
+function feedbackHtml(token) {
+  const f = get('SELECT * FROM cand_feedback WHERE token=?', String(token || '')); if (!f) return null;
+  const e = (x) => String(x == null ? '' : x).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const b = D.settings().business; const c = get('SELECT name FROM candidates WHERE id=?', f.candidate_id) || {}; const r = f.user_id ? get('SELECT name FROM users WHERE id=?', f.user_id) : null;
+  const rows = FB_POINTS.map(([k, l, h]) => `<fieldset data-k="${k}"><legend>${e(l)}</legend><div class="hint">${e(h)}</div><div class="stars">${[1, 2, 3, 4, 5].map((n) => `<label><input type="radio" name="${k}" value="${n}"><span>★</span></label>`).join('')}</div></fieldset>`).join('');
+  const body = f.done_at ? '<div class="done">Thank you! Your feedback has reached our senior team.</div>'
+    : `<form id="f"><p>Hello ${e(String(c.name || '').split(' ')[0])}, how was your experience with BrillBrains${r ? ` and ${e(r.name.split(' ')[0])}, your recruiter` : ''}? It takes 30 seconds. Only our senior team reads it.</p>${rows}<label class="nm">Anything else to tell us? (optional)<textarea name="text" maxlength="1500"></textarea></label><button>Send</button><div id="err"></div></form>`;
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>Your feedback · ${e(b.name)}</title>
+<style>:root{--navy:#101a3a;--gold:#d4a017;--ink:#1d2433;--muted:#5d6577;--line:#e6e8ef;--bg:#f6f7fb}*{box-sizing:border-box}body{margin:0;font:16px/1.55 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:var(--ink);background:var(--bg)}
+header{background:var(--navy);color:#fff;padding:18px 16px}header .in,main{max-width:560px;margin:0 auto}main{padding:20px 16px 40px}
+fieldset{border:1px solid var(--line);background:#fff;border-radius:12px;padding:12px 14px;margin:0 0 12px}legend{font-weight:600;padding:0 4px}.hint{font-size:13px;color:var(--muted)}
+.stars{display:flex;gap:6px;margin:6px 0 2px}.stars input{position:absolute;opacity:0}.stars span{font-size:32px;color:#d5d8e0;cursor:pointer;line-height:1}.stars label.on span{color:var(--gold)}
+textarea{width:100%;border:1px solid var(--line);border-radius:8px;padding:10px;font:inherit;background:#fff;min-height:70px;margin-top:6px}.nm{display:block;font-size:14px;color:var(--muted);margin:4px 0 14px}
+button{width:100%;background:var(--navy);color:#fff;border:0;border-radius:10px;padding:13px;font:600 16px system-ui;cursor:pointer}button:disabled{opacity:.6}#err{color:#b42318;margin-top:10px;font-size:14px}
+.done{background:#fff;border:1px solid var(--line);border-radius:12px;padding:22px;text-align:center}</style></head>
+<body><header><div class="in"><b>${e(b.name)}</b></div></header><main>${body}</main>
+<script>(function(){var f=document.getElementById('f');if(!f)return;
+f.querySelectorAll('.stars').forEach(function(g){var ls=g.querySelectorAll('label');ls.forEach(function(l,i){l.addEventListener('click',function(){ls.forEach(function(x,k){x.classList.toggle('on',k<=i)})})})});
+f.addEventListener('submit',function(ev){ev.preventDefault();var btn=f.querySelector('button'),err=document.getElementById('err');err.textContent='';var s={};
+f.querySelectorAll('fieldset').forEach(function(fs){var c=fs.querySelector('input:checked');if(c)s[fs.dataset.k]=Number(c.value)});
+if(!Object.keys(s).length){err.textContent='Please tap the stars for at least one point.';return}btn.disabled=true;
+fetch('/api/pub/feedback/${e(f.token)}',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({scores:s,text:f.text.value})}).then(function(r){return r.json().then(function(d){if(!r.ok)throw new Error(d.error||'Could not send');f.outerHTML='<div class="done">Thank you! Your feedback has reached our senior team.</div>'})}).catch(function(x){err.textContent=x.message;btn.disabled=false})})})();</script></body></html>`;
+}
+module.exports.feedbackHtml = feedbackHtml;
 
 // ---------- reviews of recruiters by clients: kept for the super admin only ----------
 // Once the client has interviewed our candidates for a job, the client gets a WhatsApp with a link to a short form
@@ -308,4 +369,4 @@ route('POST', '/api/aftercare/:id/ctc', T, (ctx) => {
   update('applications', a.id, { offer_ctc: ctc }); D.history(ctx.actor.label, 'joining CTC', a.id, 'offer_ctc', a.offer_ctc, ctc); return { ok: true };
 });
 
-module.exports = { due, reply, record, forApp, recruitersOf, askClientReview, rateHtml, OUTCOMES };
+module.exports = { due, reply, record, forApp, recruitersOf, askClientReview, rateHtml, feedbackHtml, OUTCOMES };

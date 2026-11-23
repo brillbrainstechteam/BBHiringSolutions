@@ -332,7 +332,7 @@ function renderDesign(design, vars, subject, preview) {
 const designRow = (id) => get('SELECT * FROM email_designs WHERE id=? AND removed=0', Number(id) || 0);
 const designOut = (r) => ({ ...r, blocks: cleanBlocks(JSON.parse(r.blocks || '[]')) });
 const sampleCand = (id) => (id && get('SELECT * FROM candidates WHERE id=?', String(id))) || { name: 'Priya Sharma', city: 'Mumbai', job_wanted: 'Sales Executive' };
-route('GET', '/api/studio/designs', T, () => ({ rows: all('SELECT * FROM email_designs WHERE removed=0 ORDER BY COALESCE(updated_at, at) DESC').map(designOut), fields: FIELDS, jobs: all("SELECT id, title, city FROM jobs WHERE status IN ('Open','Sourcing','Interviewing') ORDER BY id DESC").map((j) => [j.id, `${j.title}, ${j.city || ''} · ${j.id}`]) }));
+route('GET', '/api/studio/designs', T, () => ({ used: Object.fromEntries(all("SELECT design_id, COUNT(*) n FROM campaigns WHERE design_id IS NOT NULL GROUP BY design_id").map((r) => [r.design_id, r.n])), rows: all('SELECT * FROM email_designs WHERE removed=0 ORDER BY COALESCE(updated_at, at) DESC').map(designOut), fields: FIELDS, jobs: all("SELECT id, title, city FROM jobs WHERE status IN ('Open','Sourcing','Interviewing') ORDER BY id DESC").map((j) => [j.id, `${j.title}, ${j.city || ''} · ${j.id}`]) }));
 route('GET', '/api/studio/designs/:id', T, (ctx) => { const r = designRow(ctx.params.id); if (!r) throw httpError(404, 'Design not found'); return designOut(r); });
 route('POST', '/api/studio/designs', T, (ctx) => {
   const b = ctx.body || {}; const name = String(b.name || '').trim().slice(0, 80); if (!name) throw httpError(400, 'Name the design', 'name');
