@@ -31,19 +31,28 @@ const NEEDED = [
   ['pages_read_engagement', 'read the Page for the ad'],
 ];
 const OPTIONAL = [['pages_manage_ads', 'run ads from the Page if Meta refuses the Page without it'], ['instagram_basic', 'pick the Instagram account (without it Instagram ads use the Page)'], ['business_management', 'read the Business assets']];
-route('GET', '/api/ads/meta/status', SUPER, async () => {
+// Meta answers slowly, so the connection check is kept for 10 minutes and each ad's numbers for 15 minutes,
+// refreshed in the background; the page shows what is kept at once.
+let statusCache = null;
+route('GET', '/api/ads/meta/status', SUPER, async (ctx) => {
+  if (!ctx.query.fresh && statusCache && Date.now() - statusCache.t < 10 * 60000) return statusCache.v;
+  const v = await metaStatus(); statusCache = { t: Date.now(), v }; return v;
+});
+async function metaStatus() {
   const c = cfg(); if (!c) return { connected: false, note: 'Add META_ADS_TOKEN and META_AD_ACCOUNT to the server .env.' };
   const out = { connected: true, account_id: c.account };
   try { const d = await graph('debug_token', { params: { input_token: c.token } }); out.scopes = (d.data && d.data.scopes) || []; out.token_type = d.data && d.data.type; } catch (e) { out.scopes = []; out.scope_error = e.message; }
   if (!out.scopes.length) { try { out.scopes = ((await graph('me/permissions')).data || []).filter((x) => x.status === 'granted').map((x) => x.permission); } catch { /* keep empty */ } }
   out.missing = NEEDED.filter(([k]) => !out.scopes.includes(k)).map(([k, why]) => ({ scope: k, why }));
   out.optional_missing = OPTIONAL.filter(([k]) => !out.scopes.includes(k)).map(([k, why]) => ({ scope: k, why }));
-  try { const a = await graph(c.account, { params: { fields: 'name,currency,account_status,timezone_name' } }); out.account = { name: a.name, currency: a.currency, active: a.account_status === 1 }; } catch (e) { out.account_error = e.message; }
-  try { out.pages = ((await graph(`${c.account}/promote_pages`, { params: { fields: 'id,name' } })).data || []).map((p) => ({ id: p.id, name: p.name })); } catch (e) { out.pages = []; out.pages_error = e.message; }
-  try { out.instagram = ((await graph(`${c.account}/instagram_accounts`, { params: { fields: 'id,username' } })).data || []).map((x) => ({ id: x.id, name: x.username })); } catch { out.instagram = []; }
+  await Promise.all([
+    (async () => { try { const a = await graph(c.account, { params: { fields: 'name,currency,account_status,timezone_name' } }); out.account = { name: a.name, currency: a.currency, active: a.account_status === 1 }; } catch (e) { out.account_error = e.message; } })(),
+    (async () => { try { out.pages = ((await graph(`${c.account}/promote_pages`, { params: { fields: 'id,name' } })).data || []).map((p) => ({ id: p.id, name: p.name })); } catch (e) { out.pages = []; out.pages_error = e.message; } })(),
+    (async () => { try { out.instagram = ((await graph(`${c.account}/instagram_accounts`, { params: { fields: 'id,username' } })).data || []).map((x) => ({ id: x.id, name: x.username })); } catch { out.instagram = []; } })(),
+  ]);
   out.ready = !out.missing.length && out.pages.length > 0 && !!out.account;
   return out;
-});
+}
 route('GET', '/api/ads/meta/geo', SUPER, async (ctx) => {
   const q = String(ctx.query.q || '').trim(); if (q.length < 2) return { rows: [] };
   const r = await graph('search', { params: { type: 'adgeolocation', location_types: ['city'], country_code: 'IN', q, limit: 10 } });
@@ -113,15 +122,31 @@ route('POST', '/api/ads/meta/:id/status', SUPER, async (ctx) => {
   update('meta_ads', r.id, { status: st, updated_at: now() }); D.history(ctx.actor.label, st === 'ACTIVE' ? 'Meta ad turned on' : 'Meta ad paused', `MA-${r.id}`, null, null, r.name);
   return { status: st };
 });
-route('GET', '/api/ads/meta', SUPER, async () => {
+const liveCache = new Map(); let refreshing = false;
+async function liveOf(r) {
+  try {
+    const [st, ins] = await Promise.all([graph(r.campaign_id, { params: { fields: 'effective_status' } }), graph(`${r.campaign_id}/insights`, { params: { fields: 'spend,impressions,clicks,actions', date_preset: 'maximum' } })]);
+    const x = (ins.data || [])[0] || {}; const acts = Object.fromEntries((x.actions || []).map((a) => [a.action_type, Number(a.value) || 0]));
+    return { effective: st.effective_status, spend: Number(x.spend) || 0, impressions: Number(x.impressions) || 0, clicks: Number(x.clicks) || 0, chats: acts['onsite_conversion.messaging_conversation_started_7d'] || 0 };
+  } catch (e) { return { live_error: e.message }; }
+}
+async function refreshLive(rows, maxAgeMs) {
+  if (refreshing || !cfg()) return; refreshing = true;
+  try {
+    const todo = rows.filter((r) => r.campaign_id && r.status !== 'FAILED' && (!liveCache.has(r.campaign_id) || Date.now() - liveCache.get(r.campaign_id).t > maxAgeMs));
+    for (let i = 0; i < todo.length; i += 6) await Promise.all(todo.slice(i, i + 6).map(async (r) => liveCache.set(r.campaign_id, { t: Date.now(), v: await liveOf(r) })));
+  } finally { refreshing = false; }
+}
+// warm at start and every 15 minutes, so opening Meta ads never waits on Meta
+setTimeout(() => metaStatus().then((v) => { statusCache = { t: Date.now(), v }; }).catch(() => {}), 20000);
+setInterval(() => metaStatus().then((v) => { statusCache = { t: Date.now(), v }; }).catch(() => {}), 9 * 60000);
+setTimeout(() => refreshLive(all('SELECT * FROM meta_ads ORDER BY id DESC LIMIT 100'), 0).catch(() => {}), 30000);
+setInterval(() => refreshLive(all('SELECT * FROM meta_ads ORDER BY id DESC LIMIT 100'), 14 * 60000).catch(() => {}), 15 * 60000);
+route('GET', '/api/ads/meta', SUPER, async (ctx) => {
   const rows = all('SELECT * FROM meta_ads ORDER BY id DESC LIMIT 100');
-  const live = cfg() ? await Promise.all(rows.map(async (r) => {
-    if (!r.campaign_id || r.status === 'FAILED') return {};
-    try {
-      const [st, ins] = await Promise.all([graph(r.campaign_id, { params: { fields: 'effective_status' } }), graph(`${r.campaign_id}/insights`, { params: { fields: 'spend,impressions,clicks,actions', date_preset: 'maximum' } })]);
-      const x = (ins.data || [])[0] || {}; const acts = Object.fromEntries((x.actions || []).map((a) => [a.action_type, Number(a.value) || 0]));
-      return { effective: st.effective_status, spend: Number(x.spend) || 0, impressions: Number(x.impressions) || 0, clicks: Number(x.clicks) || 0, chats: acts['onsite_conversion.messaging_conversation_started_7d'] || 0 };
-    } catch (e) { return { live_error: e.message }; }
-  })) : rows.map(() => ({}));
-  return { rows: rows.map((r, i) => ({ ...r, platforms: JSON.parse(r.platforms || '[]'), spec: undefined, ...live[i], applied: r.job_id ? (get("SELECT COUNT(*) n FROM applications WHERE job_id=? AND ad_set=?", r.job_id, r.name) || {}).n : null })), jobs: all("SELECT id, title, city FROM jobs WHERE status IN ('Open','Sourcing','Interviewing') ORDER BY id DESC").map((j) => [j.id, `${j.title}, ${j.city || ''} · ${j.id}`]), apply_base: L.link('apply') };
+  if (ctx.query.fresh) await refreshLive(rows, 0);
+  else if (rows.some((r) => r.campaign_id && r.status !== 'FAILED' && !liveCache.has(r.campaign_id)) && !liveCache.size) await refreshLive(rows.slice(0, 12), 0); // the very first look: the newest ones now, the rest after
+  setImmediate(() => refreshLive(rows, 15 * 60000).catch(() => {}));
+  const live = rows.map((r) => (liveCache.get(r.campaign_id) || {}).v || {}); const at = Math.min(...rows.map((r) => (liveCache.get(r.campaign_id) || {}).t || Date.now()));
+  return { live_at: rows.length ? new Date(at).toISOString() : null, rows: rows.map((r, i) => ({ ...r, platforms: JSON.parse(r.platforms || '[]'), spec: undefined, ...live[i], applied: r.job_id ? (get("SELECT COUNT(*) n FROM applications WHERE job_id=? AND ad_set=?", r.job_id, r.name) || {}).n : null })), jobs: all("SELECT id, title, city FROM jobs WHERE status IN ('Open','Sourcing','Interviewing') ORDER BY id DESC").map((j) => [j.id, `${j.title}, ${j.city || ''} · ${j.id}`]), apply_base: L.link('apply') };
 });
