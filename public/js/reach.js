@@ -52,7 +52,7 @@
     let fmt = 'post'; let useVideo = !!d.video;
     // what each kind needs: a post (text, image for Instagram), a story (image or video, no text), a reel (video and text)
     const FMT = { post: ['Post', 'A normal feed post with the text and image.'], story: ['Story', 'Shows for 24 hours. No text goes with it, so put the job, city and "Apply: link" on the image or video.'], reel: ['Reel', 'A vertical video (MP4, 9:16, 3 to 90 seconds) with the text as its caption.'] };
-    const needWhy = (k) => { if (fmt !== 'post' && k === 'linkedin') return 'LinkedIn has no stories or reels'; if (fmt === 'reel' && !d.video) return 'Upload the video first'; if (fmt === 'story' && !d.image && !d.video) return 'Upload an image or a video first'; if (fmt === 'post' && k === 'instagram' && !d.image) return 'Instagram needs an image'; return ''; };
+    const needWhy = (k) => { if (fmt !== 'post' && k === 'linkedin') return 'LinkedIn has no stories or reels'; if (fmt === 'reel' && !d.video) return 'Upload the video first'; if (fmt === 'story' && !d.image && !d.video && !d.story) return 'Upload an image or a video first'; if (fmt === 'post' && k === 'instagram' && !d.image) return 'Instagram needs an image'; return ''; };
     const draw = (text) => {
       const plat = SOC.map(([k, l]) => { const x = st[k] || {}; const need = needWhy(k); const off = !x.ready || !!need; const why = !x.ready ? x.why : need; return `<label class="soc-plat ${off ? 'off' : ''}" title="${esc(why || '')}"><input type="checkbox" data-splat="${k}" ${off ? 'disabled' : 'checked'}> ${l}${why ? `<span class="tiny muted"> · ${esc(why.length > 60 ? 'not connected' : why)}</span>` : ''}</label>`; }).join('');
       box.innerHTML = `${connChips(st)}
@@ -98,6 +98,7 @@
       head: `<div class="row"><h2>${esc(j.title)}</h2></div><div class="small muted">${[j.client, j.city, `${j.openings} opening${j.openings === 1 ? '' : 's'}`].filter(Boolean).map(esc).join(' · ')}</div>`,
       body: `<div class="sec"><h3><span>Creative development</span>${cr.at ? `<span class="sec-act small muted">${esc(cr.by || '')}, ${fmtD(cr.at)}</span>` : ''}</h3>${stepper(cr.steps, cr.status, true)}
           <div class="rs-next">Next: <b>${esc(nextStep(cr.status ? cr : null, all.left))}</b></div>
+          <div class="row" style="margin:8px 0"><button type="button" class="btn sm primary" data-aimake>✦ Make creatives with AI</button><span class="tiny muted">Square, portrait and story sizes, in the style of earlier creatives</span></div><div data-aigal></div>
           <div class="rs-link"><input data-rclink value="${esc(cr.link || '')}" placeholder="Paste the link to the creative" aria-label="Link to the creative"><button type="button" class="btn sm" data-rcsave>Save link</button>${/^https?:\/\//i.test(cr.link || '') ? `<a class="btn sm" href="${esc(cr.link)}" target="_blank" rel="noopener">Open ↗</a>` : ''}</div>
           <details class="rs-brief" open><summary>Creative brief — details pulled from this job</summary><textarea data-rbrief rows="10">${esc(cr.brief || '')}</textarea><div class="row"><button type="button" class="btn sm" data-rbsave>Save brief</button><button type="button" class="btn sm" data-rbcopy>Copy brief</button></div></details></div>
         <div class="sec"><h3><span>Post automatically</span><span class="sec-act small muted">Facebook · Instagram · LinkedIn</span></h3><div data-social><div class="faint small">Checking what is connected…</div></div></div>
@@ -117,6 +118,8 @@
         wireOwners(el);
         const ci = $('[data-rcirc]', el); if (ci) ci.onclick = () => BB.circulate(id, ci);
         socialBlock($('[data-social]', el), id);
+        BB.aiGallery($('[data-aigal]', el), id);
+        $('[data-aimake]', el).onclick = () => BB.aiCreatives(id, () => { BB.aiGallery($('[data-aigal]', el), id); socialBlock($('[data-social]', el), id); });
       },
     };
   };
@@ -181,5 +184,71 @@
           $$('[data-mj]', m).forEach((x) => (x.onclick = async () => { const j = d.jobs.find((y) => y.id === x.dataset.mj); const st = cell(j, c).status === x.dataset.v ? '' : x.dataset.v; try { await setStatus(j.id, c.key, st); (d.cells[j.id] = d.cells[j.id] || {})[c.key] = { status: st }; $$(`[data-mj="${j.id}"]`, m).forEach((y) => { y.className = y.dataset.v === st ? `on s-${st === 'Not needed' ? 'na' : st.toLowerCase()}` : ''; }); } catch (e) { BB.fail(e); } }));
         } });
     }));
+  };
+})();
+
+// ---------- AI creatives ----------
+// A tuned prompt (saved as the standard one if wanted), up to 4 earlier creatives as the style to follow, and the sizes.
+// Each picture comes back from OpenAI and is fitted here to the exact size: 1080×1080, 1080×1350 or 1080×1920.
+(() => {
+  const { $, $$, esc } = BB;
+  const OUT = { square: [1080, 1080], portrait: [1080, 1350], story: [1080, 1920] };
+  const fitJpg = (url, size) => new Promise((resolve, reject) => {
+    const img = new Image(); img.onload = () => { const [W, H] = OUT[size]; const c = document.createElement('canvas'); c.width = W; c.height = H; const g = c.getContext('2d');
+      const sw = img.naturalWidth; const sh = img.naturalHeight; const k = Math.max(W / sw, H / sh); const dw = sw * k; const dh = sh * k; g.fillStyle = '#fff'; g.fillRect(0, 0, W, H); g.drawImage(img, (W - dw) / 2, (H - dh) / 2, dw, dh); resolve(c.toDataURL('image/jpeg', 0.92)); };
+    img.onerror = () => reject(new Error('The picture could not be opened.')); img.src = url; });
+  const toJpg = (file) => new Promise((resolve, reject) => { const u = URL.createObjectURL(file); const img = new Image(); img.onload = () => { const k = Math.min(1, 1600 / Math.max(img.naturalWidth, img.naturalHeight)); const c = document.createElement('canvas'); c.width = Math.round(img.naturalWidth * k); c.height = Math.round(img.naturalHeight * k); const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height); g.drawImage(img, 0, 0, c.width, c.height); URL.revokeObjectURL(u); resolve(c.toDataURL('image/jpeg', 0.9)); }; img.onerror = () => reject(new Error('Use a JPG or PNG.')); img.src = u; });
+  const use = async (jobId, c, where) => {
+    try {
+      if (where === 'story') { const base64 = await fitJpg(c.url, 'story'); await BB.post('/api/social/story-image', { job_id: jobId, base64 }); BB.toast('Set as the story picture'); }
+      else { const base64 = await fitJpg(c.url, c.size === 'portrait' ? 'portrait' : 'square'); await BB.post('/api/social/image', { job_id: jobId, base64 }); BB.toast('Set as the post image'); }
+      return true;
+    } catch (e) { BB.fail(e); return false; }
+  };
+  const download = async (c) => { const base64 = await fitJpg(c.url, c.size); const a = document.createElement('a'); a.href = base64; a.download = `${c.job_id || 'creative'}-${c.size}.jpg`; a.click(); };
+  const card = (c, jobId) => `<div class="ai-card"><img src="${esc(c.url)}" alt="${esc(c.label)}" class="ai-${esc(c.size)}"><div class="tiny muted">${esc(c.label)}</div><div class="row" style="gap:4px;flex-wrap:wrap">${c.size === 'story' ? `<button type="button" class="btn sm" data-aiuse="story" data-k="${esc(c.media_key || c.key)}">Use for story</button>` : `<button type="button" class="btn sm" data-aiuse="post" data-k="${esc(c.media_key || c.key)}">Use for posts</button>`}<button type="button" class="btn sm ghost" data-aidl="${esc(c.media_key || c.key)}">Download</button></div></div>`;
+  const wireCards = (root, list, jobId, after) => {
+    const find = (k) => list.find((c) => (c.media_key || c.key) === k);
+    $$('[data-aiuse]', root).forEach((b) => (b.onclick = async () => { b.disabled = true; const ok = await use(jobId, { ...find(b.dataset.k), job_id: jobId }, b.dataset.aiuse); b.disabled = false; if (ok && after) after(); }));
+    $$('[data-aidl]', root).forEach((b) => (b.onclick = () => download({ ...find(b.dataset.aidl), job_id: jobId })));
+  };
+  BB.aiGallery = async (box, jobId, after) => {
+    if (!box) return; let d; try { d = await BB.api(`/api/social/ai/${jobId}`); } catch { box.innerHTML = ''; return; }
+    box.innerHTML = d.made.length ? `<div class="small" style="margin:6px 0"><b>AI creatives</b></div><div class="ai-gal">${d.made.slice(0, 9).map((c) => card(c, jobId)).join('')}</div>` : '';
+    wireCards(box, d.made, jobId, after);
+  };
+  BB.aiCreatives = async (jobId, after) => {
+    const d = await BB.api(`/api/social/ai/${jobId}`).catch(BB.fail); if (!d) return;
+    if (!d.ready) return BB.modal({ title: 'Make creatives with AI', body: '<p>This needs the OpenAI key on the server (OPENAI_API_KEY in .env).</p>' });
+    const picked = new Set();
+    const mm = BB.modal({ title: 'Make creatives with AI', wide: true, foot: '<span class="grow small muted" data-aist>About a minute. Each size is one picture.</span><button class="btn primary" data-aigo>Make creatives</button>',
+      body: `<div class="stack">
+        <div class="field"><span class="lab">Sizes</span><div class="row" style="gap:14px">${d.sizes.map((s2) => `<label class="row small" style="gap:6px"><input type="checkbox" data-aisz="${s2.key}" checked> ${esc(s2.label)}</label>`).join('')}</div></div>
+        <div class="field"><span class="lab">Style to follow <span class="opt">(tick up to 4 earlier creatives)</span></span><div class="ai-refs">${d.refs.map((r) => `<label class="ai-ref" title="${esc(r.kind)}"><input type="checkbox" data-airef="${esc(r.key)}"><img src="${esc(r.url)}" alt=""></label>`).join('') || '<span class="small muted">No earlier creatives yet.</span>'}<button type="button" class="btn sm" data-airefup>+ Add a reference</button></div></div>
+        <label class="field"><span class="lab">Prompt <span class="opt">· {job}, {city}, {experience}, {salary}, {apply} and {format} fill in for each job and size</span></span><textarea data-aiprompt rows="9">${esc(d.prompt)}</textarea></label>
+        <div class="row" style="gap:14px"><label class="row small" style="gap:6px"><input type="checkbox" data-aisave> Save this as the standard prompt</label><button type="button" class="btn-link tiny" data-aireset>Use the original prompt</button></div>
+        <label class="field"><span class="lab">Anything else for this job <span class="opt">(optional)</span></span><input data-aiextra placeholder="e.g. show a diamond ring, mention walk-in on Saturday"></label>
+        <div data-aires></div></div>` });
+    const m = mm.el; const st = $('[data-aist]', m);
+    const wireRefs = () => $$('[data-airef]', m).forEach((x) => (x.onchange = () => { if (x.checked && picked.size >= 4) { x.checked = false; return BB.toast('Up to 4 references', true); } if (x.checked) picked.add(x.dataset.airef); else picked.delete(x.dataset.airef); }));
+    wireRefs();
+    $('[data-aireset]', m).onclick = () => { $('[data-aiprompt]', m).value = d.standard; };
+    $('[data-airefup]', m).onclick = () => { const i = document.createElement('input'); i.type = 'file'; i.accept = 'image/*'; i.onchange = async () => { if (!i.files[0]) return; try { const base64 = await toJpg(i.files[0]); const r = await BB.post('/api/social/ai/refs', { base64 }); const lab = document.createElement('label'); lab.className = 'ai-ref'; lab.innerHTML = `<input type="checkbox" data-airef="${esc(r.key)}"><img src="/api/public/studio-media/${esc(r.key)}" alt="">`; $('[data-airefup]', m).before(lab); wireRefs(); const cb = $('input', lab); if (picked.size < 4) { cb.checked = true; picked.add(r.key); } } catch (e) { BB.fail(e); } }; i.click(); };
+    $('[data-aigo]', m).onclick = async (e) => {
+      const btn = e.currentTarget; const sizes = $$('[data-aisz]:checked', m).map((x) => x.dataset.aisz); if (!sizes.length) return BB.toast('Tick a size', true);
+      btn.disabled = true; st.textContent = 'Making the creatives… (about a minute)';
+      let run; try { run = await BB.post('/api/social/ai/run', { job_id: jobId, sizes, refs: [...picked], prompt: $('[data-aiprompt]', m).value, save_prompt: $('[data-aisave]', m).checked, extra: $('[data-aiextra]', m).value }); } catch (er) { BB.fail(er); btn.disabled = false; st.textContent = ''; return; }
+      const res = $('[data-aires]', m);
+      for (let i = 0; i < 80; i++) {
+        await new Promise((r) => setTimeout(r, 4000)); if (!document.body.contains(m)) return;
+        let r; try { r = await BB.api(`/api/social/ai/run/${run.id}`); } catch { continue; }
+        const ok = r.out.filter((x) => x.key); const bad = r.out.filter((x) => x.error);
+        res.innerHTML = `${ok.length ? `<div class="ai-gal">${ok.map((c) => card({ ...c, media_key: c.key }, jobId)).join('')}</div>` : ''}${bad.map((x) => `<div class="notice warn small">${esc(x.label)}: ${esc(x.error)}</div>`).join('')}`;
+        wireCards(res, ok.map((c) => ({ ...c, media_key: c.key })), jobId, after);
+        st.textContent = r.status === 'Making' ? `Made ${ok.length} of ${sizes.length}…` : r.status === 'Done' ? `Done: ${ok.length} made. Use them for posts and stories, or download.` : `Not made: ${r.error || ''}`;
+        if (r.status !== 'Making') { btn.disabled = false; btn.textContent = 'Make again'; if (after) after(); return; }
+      }
+      st.textContent = 'Still making: close this and open the job again in a minute.'; btn.disabled = false;
+    };
   };
 })();

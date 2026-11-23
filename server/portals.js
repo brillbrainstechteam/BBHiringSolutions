@@ -13,7 +13,20 @@ CREATE TABLE IF NOT EXISTS portal_payments (id INTEGER PRIMARY KEY AUTOINCREMENT
 CREATE TABLE IF NOT EXISTS portal_usage (id INTEGER PRIMARY KEY AUTOINCREMENT, portal_id INTEGER, sub_id INTEGER, date TEXT, credits INTEGER, note TEXT, by TEXT, at TEXT);
 `);
 
-const STATUSES = ['Evaluating', 'Quote received', 'Active', 'Paused', 'Ended'];
+// A portal is recorded once it is paid for: Active, then Paused or Ended.
+const STATUSES = ['Active', 'Paused', 'Ended'];
+for (const col of [['portal_subs', 'postings INTEGER'], ['portal_quotes', 'postings INTEGER'], ['portal_usage', "kind TEXT DEFAULT 'credits'"]]) { try { D.db.exec(`ALTER TABLE ${col[0]} ADD COLUMN ${col[1]}`); } catch { /* there */ } }
+D.db.exec("UPDATE portals SET status='Active' WHERE status IN ('Evaluating','Quote received')");
+// The level of a role from its name, for the portal filters.
+const LEVELS = ['Entry', 'Executive', 'Senior', 'Manager', 'Leadership'];
+function levelOf(title) {
+  const t = String(title || '').toLowerCase(); if (!t) return '';
+  if (/\b(head|director|vp|vice president|general manager|gm|chief|ceo|coo|cfo)\b/.test(t)) return 'Leadership';
+  if (/\b(manager|lead|supervisor|in-?charge|incharge)\b/.test(t)) return 'Manager';
+  if (/\b(senior|sr\.?)\b/.test(t)) return 'Senior';
+  if (/\b(trainee|fresher|intern|helper|assistant|junior|jr\.?|apprentice|peon|boy)\b/.test(t)) return 'Entry';
+  return 'Executive';
+}
 const KINDS = ['Resume database', 'Job postings', 'Both'];
 const FREQ = ['One-time', 'Monthly', 'Quarterly', 'Half-yearly', 'Yearly'];
 const ADMIN = { auth: 'team', levels: ['super', 'admin'] };
@@ -27,10 +40,10 @@ const addMonths = (d, m) => { const x = new Date(`${d}T00:00:00Z`); x.setUTCMont
 
 function current(pid) { return get('SELECT * FROM portal_subs WHERE portal_id=? ORDER BY start DESC, id DESC LIMIT 1', pid) || null; }
 // What a portal brought in a window: candidates from it, how far they got, and the money.
-function results(p, from, to) {
+function results(p, from, to, f = {}) {
   const src = String(p.source_name || p.name).trim().toLowerCase();
   const inWin = (d) => (!from || L().istDay(d) >= from) && (!to || L().istDay(d) <= to);
-  const cands = all('SELECT id, created_at FROM candidates WHERE merged_into IS NULL AND removed=0 AND lower(trim(source))=?', src).filter((c) => inWin(c.created_at));
+  const cands = all('SELECT id, created_at, job_wanted FROM candidates WHERE merged_into IS NULL AND removed=0 AND lower(trim(source))=?', src).filter((c) => inWin(c.created_at) && (!f.designation || c.job_wanted === f.designation) && (!f.level || levelOf(c.job_wanted) === f.level));
   const ids = new Set(cands.map((c) => c.id));
   const apps = ids.size ? all('SELECT * FROM applications').filter((a) => ids.has(a.candidate_id)) : [];
   const appIds = new Set(apps.map((a) => a.id));
@@ -43,7 +56,14 @@ function results(p, from, to) {
   const r = rating(); const ret = spend ? fees / spend : null;
   const verdict = !spend ? null : ret >= r.good ? 'Good' : ret < r.poor ? 'Poor' : 'Average';
   const div = (a, b) => (b ? Math.round(a / b) : null);
-  return { found: cands.length, relevant: per(() => true), sent: per((a) => L().stepIdx(a.step) >= 3), interviewed: per((a) => hasIv.has(a.id)), hired: new Set(hired.map((a) => a.candidate_id)).size, fees: Math.round(fees), spend: Math.round(spend),
+  // The funnel: sourced, screened (past screening), interview round 1 (our interview or later), client interviews,
+  // hired (offer accepted or hired), joined.
+  const at = (a, step) => L().stepIdx(a.step) >= L().stepIdx(step) || (step !== 'Joined' && a.result === 'Hired');
+  const funnel = { sourced: cands.length, screened: per((a) => at(a, 'Our interview') || !!a.screen), round1: per((a) => at(a, 'Sent to client') || hasIv.has(a.id)), client: per((a) => at(a, 'Client interview')), hired: per((a) => a.result === 'Hired' || at(a, 'Offer accepted')), joined: per((a) => a.step === 'Joined' || !!a.joined_at) };
+  // Revenue opportunity: our fee on every application from this portal still in progress (offer CTC, else the job's salary).
+  let opportunity = 0;
+  for (const a of apps.filter((x) => x.result === 'open')) { const j = get('SELECT * FROM jobs WHERE id=?', a.job_id); if (!j) continue; const c = get('SELECT * FROM clients WHERE id=?', j.client_id); if (!c || c.internal) continue; const ctc = a.offer_ctc || j.sal_to || j.sal_from || 0; if (ctc) opportunity += L().feeFor(c, j.agency_id, ctc).fee; }
+  return { funnel, opportunity: Math.round(opportunity), found: cands.length, relevant: per(() => true), sent: per((a) => L().stepIdx(a.step) >= 3), interviewed: per((a) => hasIv.has(a.id)), hired: new Set(hired.map((a) => a.candidate_id)).size, fees: Math.round(fees), spend: Math.round(spend),
     per_candidate: div(spend, cands.length), per_interview: div(spend, per((a) => hasIv.has(a.id))), per_hire: div(spend, hired.length), return_x: ret === null ? null : Math.round(ret * 10) / 10, verdict,
     last30: all('SELECT created_at FROM candidates WHERE merged_into IS NULL AND removed=0 AND lower(trim(source))=?', src).filter((c) => c.created_at >= new Date(Date.now() - 30 * 86400000).toISOString()).length };
 }
@@ -53,8 +73,9 @@ function view(p) {
   const yearStart = `${new Date().getMonth() >= 3 ? new Date().getFullYear() : new Date().getFullYear() - 1}-04-01`;
   const paidYear = get('SELECT COALESCE(SUM(amount),0) n FROM portal_payments WHERE portal_id=? AND date>=?', p.id, yearStart).n;
   const all1 = results(p); const live = s && s.start <= t && (!s.end || s.end >= t);
-  const used = s ? get('SELECT COALESCE(SUM(credits),0) n FROM portal_usage WHERE sub_id=?', s.id).n : 0;
-  return { ...p, sub: s ? { ...s, days_left: daysLeft, live: !!live, credits_used: used } : null, paid_year: Math.round(paidYear), results: all1,
+  const used = s ? get("SELECT COALESCE(SUM(credits),0) n FROM portal_usage WHERE sub_id=? AND COALESCE(kind,'credits')='credits'", s.id).n : 0;
+  const postsUsed = s ? get("SELECT COALESCE(SUM(credits),0) n FROM portal_usage WHERE sub_id=? AND kind='postings'", s.id).n : 0;
+  return { ...p, sub: s ? { ...s, days_left: daysLeft, live: !!live, credits_used: used, postings_used: postsUsed } : null, paid_year: Math.round(paidYear), results: all1,
     idle: !!(live && all1.last30 < 3) }; // paid for, but almost nothing came in the last 30 days
 }
 const one = (id) => { const p = get('SELECT * FROM portals WHERE id=?', id); if (!p) throw httpError(404, 'Portal not found'); return p; };
@@ -69,13 +90,14 @@ route('GET', '/api/portals', ADMIN, () => {
 route('GET', '/api/portals/:id', ADMIN, (ctx) => {
   const p = one(ctx.params.id); const q = ctx.query; const s = current(p.id);
   const win = q.period === 'all' || !s ? {} : { from: s.start, to: s.end };
-  return { ...view(p), period: q.period === 'all' || !s ? 'all' : 'sub', window: win, res: results(p, win.from, win.to),
+  const src = String(p.source_name || p.name).trim().toLowerCase(); const roles = [...new Set(all('SELECT job_wanted FROM candidates WHERE merged_into IS NULL AND removed=0 AND lower(trim(source))=?', src).map((c) => c.job_wanted).filter(Boolean))].sort();
+  return { ...view(p), designations: roles, levels: LEVELS, filter: { designation: q.designation || '', level: q.level || '' }, period: q.period === 'all' || !s ? 'all' : 'sub', window: win, res: results(p, win.from, win.to, { designation: q.designation, level: q.level }),
     quotes: all('SELECT * FROM portal_quotes WHERE portal_id=? ORDER BY date DESC, id DESC', p.id), subs: all('SELECT * FROM portal_subs WHERE portal_id=? ORDER BY start DESC', p.id),
     payments: all('SELECT * FROM portal_payments WHERE portal_id=? ORDER BY date DESC, id DESC', p.id), usage: all('SELECT * FROM portal_usage WHERE portal_id=? ORDER BY date DESC, id DESC LIMIT 50', p.id), freq: FREQ, statuses: STATUSES, kinds: KINDS };
 });
 route('POST', '/api/portals', ADMIN, (ctx) => {
   const b = ctx.body || {}; const name = String(b.name || '').trim(); if (!name) throw httpError(400, 'Enter the portal name', 'name');
-  const rec = { name, website: String(b.website || '').trim(), kind: KINDS.includes(b.kind) ? b.kind : 'Resume database', good_for: String(b.good_for || '').trim(), source_name: String(b.source_name || name).trim(), status: STATUSES.includes(b.status) ? b.status : 'Evaluating', login_holder: String(b.login_holder || '').trim(), note: String(b.note || '').trim() };
+  const rec = { name, website: String(b.website || '').trim(), kind: KINDS.includes(b.kind) ? b.kind : 'Resume database', good_for: String(b.good_for || '').trim(), source_name: String(b.source_name || name).trim(), status: STATUSES.includes(b.status) ? b.status : 'Active', login_holder: String(b.login_holder || '').trim(), note: String(b.note || '').trim() };
   if (b.id) { one(b.id); update('portals', b.id, rec); learnSource(rec.source_name); D.history(ctx.actor.label, 'edit portal', `PT-${b.id}`, null, null, name); return { id: Number(b.id) }; }
   if (get('SELECT 1 FROM portals WHERE lower(name)=lower(?)', name)) throw httpError(409, `${name} is already added`, 'name');
   insert('portals', { ...rec, by: ctx.actor.label, at: now() }); const id = lastId(); learnSource(rec.source_name);
@@ -84,9 +106,8 @@ route('POST', '/api/portals', ADMIN, (ctx) => {
 route('POST', '/api/portals/:id/quotes', ADMIN, (ctx) => {
   const p = one(ctx.params.id); const b = ctx.body || {};
   if (!String(b.plan || '').trim()) throw httpError(400, 'Enter the plan', 'plan');
-  const rec = { portal_id: p.id, date: day(b.date) || today(), plan: String(b.plan).trim(), price: money(b.price, 'price', true), gst: money(b.gst, 'gst'), includes: String(b.includes || '').trim(), credits: b.credits ? Math.round(Number(b.credits)) : null, months: b.months ? Math.round(Number(b.months)) : null, valid_till: day(b.valid_till), by: ctx.actor.label, at: now() };
+  const rec = { portal_id: p.id, date: day(b.date) || today(), plan: String(b.plan).trim(), price: money(b.price, 'price', true), gst: money(b.gst, 'gst'), includes: String(b.includes || '').trim(), credits: b.credits ? Math.round(Number(b.credits)) : null, postings: b.postings ? Math.round(Number(b.postings)) : null, months: b.months ? Math.round(Number(b.months)) : null, valid_till: day(b.valid_till), by: ctx.actor.label, at: now() };
   insert('portal_quotes', rec); const id = lastId(); const f = fileFrom(b, p.id, `quote-${id}`, ctx.actor.label); if (f) update('portal_quotes', id, { file_id: f });
-  if (p.status === 'Evaluating') update('portals', p.id, { status: 'Quote received' });
   return { id };
 });
 // Take a quote: the subscription is made from it (and the quote is marked taken).
@@ -94,7 +115,7 @@ route('POST', '/api/portals/:id/subs', ADMIN, (ctx) => {
   const p = one(ctx.params.id); const b = ctx.body || {};
   const start = day(b.start); if (!start) throw httpError(400, 'Enter the start date', 'start');
   const end = day(b.end) || (b.months ? addMonths(start, Number(b.months)) : null); if (!end) throw httpError(400, 'Enter the end date', 'end'); if (end < start) throw httpError(400, 'The end date is before the start', 'end');
-  const rec = { plan: String(b.plan || '').trim() || 'Plan', start, end, amount: money(b.amount, 'amount', true), frequency: FREQ.includes(b.frequency) ? b.frequency : 'Yearly', auto_renew: b.auto_renew ? 1 : 0, credits: b.credits ? Math.round(Number(b.credits)) : null };
+  const rec = { plan: String(b.plan || '').trim() || 'Plan', start, end, amount: money(b.amount, 'amount', true), frequency: FREQ.includes(b.frequency) ? b.frequency : 'Yearly', auto_renew: b.auto_renew === true || b.auto_renew === 1 || b.auto_renew === '1' || b.auto_renew === 'true' ? 1 : 0, credits: b.credits ? Math.round(Number(b.credits)) : null, postings: b.postings ? Math.round(Number(b.postings)) : null };
   if (b.id) { update('portal_subs', b.id, rec); return { id: Number(b.id) }; }
   insert('portal_subs', { ...rec, portal_id: p.id, quote_id: b.quote_id || null, by: ctx.actor.label, at: now() }); const id = lastId();
   if (b.quote_id) D.run('UPDATE portal_quotes SET taken=(id=?) WHERE portal_id=?', b.quote_id, p.id);
@@ -108,9 +129,9 @@ route('POST', '/api/portals/:id/payments', ADMIN, (ctx) => {
   return { id };
 });
 route('POST', '/api/portals/:id/usage', ADMIN, (ctx) => {
-  const p = one(ctx.params.id); const b = ctx.body || {}; const s = current(p.id); const n = Math.round(Number(b.credits));
-  if (!(n > 0)) throw httpError(400, 'Enter how many credits were used', 'credits');
-  insert('portal_usage', { portal_id: p.id, sub_id: s ? s.id : null, date: day(b.date) || today(), credits: n, note: String(b.note || '').trim(), by: ctx.actor.label, at: now() }); return { id: lastId() };
+  const p = one(ctx.params.id); const b = ctx.body || {}; const s = current(p.id); const n = Math.round(Number(b.credits)); const kind = b.kind === 'postings' ? 'postings' : 'credits';
+  if (!(n > 0)) throw httpError(400, kind === 'postings' ? 'Enter how many job postings were used' : 'Enter how many credits were used', 'credits');
+  insert('portal_usage', { portal_id: p.id, sub_id: s ? s.id : null, date: day(b.date) || today(), credits: n, kind, note: String(b.note || '').trim(), by: ctx.actor.label, at: now() }); return { id: lastId() };
 });
 route('POST', '/api/portals/:id/remove-row', ADMIN, (ctx) => {
   const p = one(ctx.params.id); const b = ctx.body || {}; const T = { quote: 'portal_quotes', payment: 'portal_payments', usage: 'portal_usage', sub: 'portal_subs' }[b.kind]; if (!T) throw httpError(400, 'Unknown row');

@@ -101,6 +101,7 @@
       <div class="filters v-filters"><input placeholder="Search name, course, city, contact…" value="${esc(q.pq || '')}" data-pq>
         <select data-f="city"><option value="">All cities</option>${d.cities.map((c) => `<option ${q.city === c ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select>
         <select data-f="type"><option value="">All types</option>${d.types_in.map((c) => `<option ${q.type === c ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select>
+        <select data-f="status" aria-label="Status"><option value="">All statuses</option>${d.statuses.map((c) => `<option ${q.status === c ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select>
         <select data-f="seq"><option value="">Follow-ups: any</option><option value="on" ${q.seq === 'on' ? 'selected' : ''}>Follow-ups running</option><option value="off" ${q.seq === 'off' ? 'selected' : ''}>Not running</option></select></div></div>
       <div class="card bulkbar bulk-card" data-vbar>${BB.bulkHead('vendor', 'data-selcount')}
         <button class="btn sm" data-vb="sequence">${waIcon()} Start follow-ups</button><button class="btn sm" data-vb="stop">Stop follow-ups</button>

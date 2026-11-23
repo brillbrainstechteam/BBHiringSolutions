@@ -2898,3 +2898,29 @@ a.pipe-step { text-decoration: none; cursor: pointer; } a.pipe-step:hover { bord
 .soc-vid video { width: 100%; max-height: 260px; border-radius: 10px; background: #000; }
 .soc-use { display: flex; gap: 10px; align-items: center; margin-top: 8px; } .soc-use label { display: flex; gap: 4px; align-items: center; }
 .soc-storynote { padding: 10px 12px; border: 1px dashed var(--border); border-radius: 10px; background: var(--surface-2, #F6F8FB); margin-bottom: 8px; }
+
+/* Vendors › Partners: status chips in one even row; filters in one row */
+.v-bar { flex-direction: column; align-items: stretch; }
+.v-bar .v-chips { flex-wrap: nowrap; overflow-x: auto; gap: 6px; padding-bottom: 2px; scrollbar-width: thin; }
+.v-bar .v-chips .chip { flex: none; height: 34px; padding: 0 12px; font-size: 12.5px; font-weight: 600; border-width: 1px; border-radius: 999px; white-space: nowrap; display: inline-flex; align-items: center; gap: 5px; line-height: 1; }
+.v-bar .v-filters { display: flex; flex-wrap: nowrap; gap: 8px; align-items: center; flex: 1 1 auto; }
+.v-bar .v-filters > input[data-pq] { flex: 1 1 220px; min-width: 160px; width: auto; }
+.v-bar .v-filters > select { flex: 0 1 190px; width: auto; min-width: 130px; }
+@media (max-width: 900px) { .v-bar .v-filters { flex-wrap: wrap; } }
+/* Job portal results */
+.pt-filters { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; } .pt-filters select { width: auto; max-width: 220px; height: 34px; padding: 0 30px 0 12px; font-size: 13px; border-radius: 999px; }
+.pt-money { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin: 14px 0; }
+.pt-money > div { border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; display: flex; flex-direction: column; gap: 2px; }
+.pt-money span { font-size: 12px; color: var(--muted); } .pt-money b { font-size: 17px; }
+@media (max-width: 640px) { .pt-money { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+/* AI creatives */
+.ai-refs { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.ai-ref { position: relative; width: 74px; height: 74px; border: 2px solid var(--border); border-radius: 10px; overflow: hidden; cursor: pointer; }
+.ai-ref img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.ai-ref input { position: absolute; top: 4px; left: 4px; width: 16px; height: 16px; margin: 0; z-index: 1; }
+.ai-ref:has(input:checked) { border-color: var(--mustard, #D4A017); box-shadow: 0 0 0 2px color-mix(in srgb, var(--mustard, #D4A017) 35%, transparent); }
+.ai-gal { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; margin: 8px 0; }
+.ai-card { border: 1px solid var(--border); border-radius: 12px; padding: 8px; display: flex; flex-direction: column; gap: 6px; background: var(--surface); }
+.ai-card img { width: 100%; border-radius: 8px; object-fit: cover; background: #f3f4f6; }
+.ai-card img.ai-square { aspect-ratio: 1 / 1; } .ai-card img.ai-portrait { aspect-ratio: 4 / 5; } .ai-card img.ai-story { aspect-ratio: 9 / 16; }

@@ -220,7 +220,8 @@ const postRow = (p) => ({ ...p, format: p.format || 'post', label: `${PLATFORMS[
 route('GET', '/api/social/status', CH, async (ctx) => status(!!ctx.query.fresh));
 route('GET', '/api/social/job/:id', CH, (ctx) => {
   const j = loadJob(ctx.params.id); const im = get('SELECT * FROM social_job_image WHERE job_id=?', j.id); const vd = get('SELECT * FROM social_job_video WHERE job_id=?', j.id);
-  return { video: vd ? { key: vd.media_key, url: `/api/public/studio-media/${vd.media_key}`, name: vd.name, size: vd.size, by: vd.by, at: vd.at } : null, text: draftText(j), image: im ? { key: im.media_key, url: `/api/public/studio-media/${im.media_key}`, by: im.by, at: im.at } : null, posts: all('SELECT * FROM social_posts WHERE job_id=? ORDER BY COALESCE(posted_at, run_at) DESC LIMIT 50', j.id).map(postRow) };
+  const sp = get('SELECT * FROM social_job_story WHERE job_id=?', j.id);
+  return { story: sp ? { key: sp.media_key, url: `/api/public/studio-media/${sp.media_key}` } : null, video: vd ? { key: vd.media_key, url: `/api/public/studio-media/${vd.media_key}`, name: vd.name, size: vd.size, by: vd.by, at: vd.at } : null, text: draftText(j), image: im ? { key: im.media_key, url: `/api/public/studio-media/${im.media_key}`, by: im.by, at: im.at } : null, posts: all('SELECT * FROM social_posts WHERE job_id=? ORDER BY COALESCE(posted_at, run_at) DESC LIMIT 50', j.id).map(postRow) };
 });
 // The creative for the posts: sent as a JPG from the browser (fitted to Instagram's shape there).
 route('POST', '/api/social/image', CH, (ctx) => {
@@ -252,8 +253,9 @@ route('POST', '/api/social/posts', CH, async (ctx) => {
   const b = ctx.body || {}; const j = loadJob(b.job_id);
   const plats = [...new Set([].concat(b.platforms || []))].filter((p) => PLATFORMS[p]); if (!plats.length) throw httpError(400, 'Tick Facebook, Instagram or LinkedIn.');
   const text = String(b.text || '').trim(); if (!text && b.format !== 'story') throw httpError(400, 'Write the post.');
-  const im = get('SELECT media_key FROM social_job_image WHERE job_id=?', j.id); const media = b.no_image ? null : im && im.media_key;
+  const im = get('SELECT media_key FROM social_job_image WHERE job_id=?', j.id); let media = b.no_image ? null : im && im.media_key;
   const fmt = FORMATS[b.format] ? b.format : 'post'; const vd = get('SELECT media_key FROM social_job_video WHERE job_id=?', j.id);
+  const sp = fmt === 'story' ? get('SELECT media_key FROM social_job_story WHERE job_id=?', j.id) : null; const media0 = media; if (sp) media = sp.media_key;
   // a story uses the video when one is uploaded and picked, else the image; a reel always needs the video
   const video = fmt === 'reel' || (fmt === 'story' && b.use_video) ? vd && vd.media_key : null;
   if (fmt !== 'post' && plats.includes('linkedin')) throw httpError(400, 'LinkedIn has no stories or reels: untick LinkedIn, or post it as a Post.');
@@ -310,5 +312,110 @@ route('GET', '/api/social/linkedin/callback', {}, async (ctx) => {
   } catch (e) { return back(e.message); }
 });
 route('POST', '/api/social/linkedin/disconnect', CH, (ctx) => { if (!isAdmin(ctx.user)) throw httpError(403, 'An admin does this.'); D.run("DELETE FROM social_auth WHERE provider='linkedin'"); return { ok: true }; });
+
+// ---------- AI creatives: three sizes from a tuned prompt, in the style of earlier creatives (OpenAI images) ----------
+D.db.exec(`CREATE TABLE IF NOT EXISTS social_creatives (id INTEGER PRIMARY KEY AUTOINCREMENT, job_id TEXT, size TEXT, media_key TEXT, prompt TEXT, by TEXT, at TEXT);
+CREATE TABLE IF NOT EXISTS creative_runs (id TEXT PRIMARY KEY, job_id TEXT, status TEXT, sizes TEXT, out TEXT, error TEXT, by TEXT, at TEXT);
+CREATE TABLE IF NOT EXISTS creative_refs (media_key TEXT PRIMARY KEY, by TEXT, at TEXT);
+CREATE TABLE IF NOT EXISTS social_job_story (job_id TEXT PRIMARY KEY, media_key TEXT, by TEXT, at TEXT);`);
+const SIZES = { square: { label: 'Square 1:1', ai: '1024x1024', what: 'a square 1:1 Instagram and Facebook feed post' }, portrait: { label: 'Portrait 4:5', ai: '1024x1536', what: 'a portrait Instagram feed post (it will be trimmed to 4:5, so keep about 9% empty at the top and bottom)' }, story: { label: 'Story 9:16', ai: '1024x1536', what: 'a vertical 9:16 Instagram, Facebook and WhatsApp story (the sides will be trimmed, so keep everything in the middle 80% of the width, and the top and bottom 12% free of text)' } };
+const DEFAULT_PROMPT = `Design {format} for a job opening, for BrillBrains Hiring Solutions (recruitment for India's jewellery industry).
+Big headline: "We're Hiring". Role: "{job}". Location: "{city}".{experience}{salary}
+Call to action: "Apply now" and the line "{apply}".
+Look: premium and clean, deep navy with gold accents, subtle jewellery motifs, bold modern type, strong contrast, easy to read on a phone. No people's faces, no made-up logos, no extra text.
+Spell every word exactly as given above. Keep all text inside a 10% margin from every edge.`;
+const creativePrompt = () => D.settings().creative_ai_prompt || DEFAULT_PROMPT;
+const aiReady = () => !!process.env.OPENAI_API_KEY;
+function fillPrompt(tpl, j, size, refs, extra) {
+  const v = V.jobView(j); const sal = v.salary_text && !/hidden|not shown/i.test(v.salary_text) ? v.salary_text : '';
+  const exp = j.exp_from !== null && j.exp_from !== undefined ? `${j.exp_from}${j.exp_to !== null && j.exp_to !== undefined ? `–${j.exp_to}` : '+'} years` : '';
+  const site = String(D.settings().business.base_url || 'hire.brillbrainsconsultants.com').replace(/^https?:\/\//, '').replace(/\/$/, '');
+  const vars = { format: SIZES[size].what, job: j.title, city: j.city || 'India', experience: exp ? ` Experience: "${exp}".` : '', salary: sal ? ` Salary: "${sal}".` : '', apply: `${site}/apply · Job ${j.id}`, company: 'BrillBrains Hiring Solutions' };
+  let p = String(tpl).replace(/\{(\w+)\}/g, (m, k) => (vars[k] !== undefined ? vars[k] : m));
+  if (refs) p += '\nMatch the style of the reference creatives: their colours, layout, type and overall feel. Do not copy their wording; use the text above.';
+  if (extra) p += `\nAlso: ${String(extra).slice(0, 600)}`;
+  return p.slice(0, 3800);
+}
+// The image model: OPENAI_IMAGE_MODEL if set, else the newest full gpt-image model this key can use (asked once a day).
+let imgModel = null;
+async function imageModel() {
+  if (process.env.OPENAI_IMAGE_MODEL) return process.env.OPENAI_IMAGE_MODEL;
+  if (imgModel && Date.now() - imgModel.t < 86400000) return imgModel.id;
+  let ids = [];
+  try { const r = await fetch('https://api.openai.com/v1/models', { headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}` }, signal: AbortSignal.timeout(20000) }); const j = await r.json(); ids = (j.data || []).map((m) => m.id).filter((id) => /^gpt-image/.test(id)); } catch { /* fall back below */ }
+  const score = (id) => { const v = (/gpt-image-(\d+(?:\.\d+)?)/.exec(id) || [])[1]; return (v ? Number(v) * 100 : 0) - (/mini/.test(id) ? 50 : 0) - (/\d{4}-\d{2}-\d{2}/.test(id) ? 1 : 0); };
+  const id = ids.sort((x, y) => score(y) - score(x))[0] || 'gpt-image-1';
+  imgModel = { id, t: Date.now() }; return id;
+}
+async function openaiImage(prompt, size, refKeys) {
+  const key = process.env.OPENAI_API_KEY; const model = await imageModel();
+  let res;
+  try {
+    if (refKeys.length) {
+      const fd = new FormData(); fd.append('model', model); fd.append('prompt', prompt); fd.append('size', SIZES[size].ai); fd.append('quality', process.env.OPENAI_IMAGE_QUALITY || 'high'); fd.append('n', '1');
+      for (const k of refKeys) { const m = get('SELECT * FROM studio_media WHERE key=?', k); const f = m && get('SELECT * FROM files WHERE id=?', m.file_id); if (f) fd.append('image[]', new Blob([F.readStored(f)], { type: m.mime || 'image/jpeg' }), m.name || `${k}.jpg`); }
+      res = await fetch('https://api.openai.com/v1/images/edits', { method: 'POST', headers: { Authorization: `Bearer ${key}` }, body: fd, signal: AbortSignal.timeout(240000) });
+    } else {
+      res = await fetch('https://api.openai.com/v1/images/generations', { method: 'POST', headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ model, prompt, size: SIZES[size].ai, quality: process.env.OPENAI_IMAGE_QUALITY || 'high', n: 1 }), signal: AbortSignal.timeout(240000) });
+    }
+  } catch (e) { throw new Error(`OpenAI could not be reached: ${e.message}`); }
+  const j = await res.json().catch(() => ({}));
+  if (!res.ok || !j.data || !j.data[0] || !j.data[0].b64_json) { imgModel = null; throw new Error(`OpenAI said (${model}): ${(j.error && j.error.message) || `error ${res.status}`}`); }
+  return Buffer.from(j.data[0].b64_json, 'base64');
+}
+const keepImage = (buf, name, by, recordId) => { const key = crypto.randomBytes(12).toString('hex'); const f = F.storeBuffer({ recordId, type: 'studio', name, buf, mime: 'image/png', by }); insert('studio_media', { key, file_id: f.id, kind: 'image', name, mime: 'image/png', size: buf.length, by, at: now() }); return key; };
+async function makeCreatives(runId) {
+  const r = get('SELECT * FROM creative_runs WHERE id=?', runId); const j = get('SELECT * FROM jobs WHERE id=?', r.job_id); const o = JSON.parse(r.sizes || '{}'); const out = [];
+  await Promise.all(o.sizes.map(async (size) => {
+    try {
+      const prompt = fillPrompt(o.prompt, j, size, o.refs.length, o.extra); const buf = await openaiImage(prompt, size, o.refs);
+      const key = keepImage(buf, `${j.id}-${size}.png`, r.by, j.id);
+      insert('social_creatives', { job_id: j.id, size, media_key: key, prompt, by: r.by, at: now() }); out.push({ size, key });
+    } catch (e) { out.push({ size, error: e.message }); }
+    update('creative_runs', runId, { out: JSON.stringify(out) });
+  }));
+  update('creative_runs', runId, { status: out.every((x) => x.error) ? 'Failed' : 'Done', out: JSON.stringify(out), error: out.every((x) => x.error) ? out[0].error : null });
+  D.history(r.by, 'AI creatives', j.id, null, null, `${out.filter((x) => !x.error).length} made`);
+}
+const creativeRow = (c) => ({ ...c, label: (SIZES[c.size] || {}).label || c.size, url: `/api/public/studio-media/${c.media_key}` });
+route('GET', '/api/social/ai/:job', CH, (ctx) => {
+  const j = loadJob(ctx.params.job);
+  const refs = all('SELECT media_key FROM creative_refs ORDER BY at DESC LIMIT 30').map((x) => ({ key: x.media_key, url: `/api/public/studio-media/${x.media_key}`, kind: 'reference' }));
+  const past = all("SELECT media_key, job_id FROM social_job_image WHERE job_id != ? ORDER BY at DESC LIMIT 12", j.id).map((x) => ({ key: x.media_key, url: `/api/public/studio-media/${x.media_key}`, kind: `used for ${x.job_id}` }));
+  const st = get('SELECT * FROM social_job_story WHERE job_id=?', j.id);
+  return { ready: aiReady(), sizes: Object.entries(SIZES).map(([k, v]) => ({ key: k, label: v.label })), prompt: creativePrompt(), standard: DEFAULT_PROMPT, refs: [...refs, ...past], made: all('SELECT * FROM social_creatives WHERE job_id=? ORDER BY id DESC LIMIT 24', j.id).map(creativeRow), story_key: st ? st.media_key : null };
+});
+route('POST', '/api/social/ai/run', CH, (ctx) => {
+  const b = ctx.body || {}; const j = loadJob(b.job_id);
+  if (!aiReady()) throw httpError(424, 'Making creatives needs OPENAI_API_KEY in the server .env.');
+  const sizes = [...new Set([].concat(b.sizes || []))].filter((x) => SIZES[x]); if (!sizes.length) throw httpError(400, 'Tick at least one size.');
+  const refs = [...new Set([].concat(b.refs || []))].filter((k) => get('SELECT 1 FROM studio_media WHERE key=?', k)).slice(0, 4);
+  const prompt = String(b.prompt || '').trim() || creativePrompt(); if (b.save_prompt) D.setSetting('creative_ai_prompt', prompt);
+  if (get("SELECT 1 FROM creative_runs WHERE job_id=? AND status='Making' AND at > ?", j.id, new Date(Date.now() - 6 * 60000).toISOString())) throw httpError(409, 'Creatives for this job are being made already. Wait a minute.');
+  const id = crypto.randomBytes(8).toString('hex');
+  insert('creative_runs', { id, job_id: j.id, status: 'Making', sizes: JSON.stringify({ sizes, refs, prompt, extra: String(b.extra || '').trim() }), out: '[]', by: ctx.actor.label, at: now() });
+  setImmediate(() => makeCreatives(id).catch((e) => update('creative_runs', id, { status: 'Failed', error: e.message })));
+  return { id, sizes };
+});
+route('GET', '/api/social/ai/run/:id', CH, (ctx) => { const r = get('SELECT * FROM creative_runs WHERE id=?', ctx.params.id); if (!r) throw httpError(404, 'Not found'); return { status: r.status, error: r.error, out: JSON.parse(r.out || '[]').map((x) => (x.key ? { ...x, url: `/api/public/studio-media/${x.key}`, label: SIZES[x.size].label } : { ...x, label: SIZES[x.size].label })) }; });
+// An earlier creative kept as a style reference (any job's creative, or one uploaded here).
+route('POST', '/api/social/ai/refs', CH, (ctx) => {
+  const b = ctx.body || {};
+  if (b.remove) { D.run('DELETE FROM creative_refs WHERE media_key=?', String(b.remove)); return { ok: true }; }
+  const buf = Buffer.from(String(b.base64 || '').replace(/^data:[^,]*,/, ''), 'base64'); if (!buf.length) throw httpError(400, 'The image is empty.'); if (buf.length > 8 * 1024 * 1024) throw httpError(400, 'Use an image up to 8 MB.');
+  if (buf.slice(0, 2).toString('hex') !== 'ffd8') throw httpError(400, 'Send the image as a JPG.');
+  const key = crypto.randomBytes(12).toString('hex'); const f = F.storeBuffer({ recordId: 'CREATIVE-REFS', type: 'studio', name: `reference-${key.slice(0, 6)}.jpg`, buf, mime: 'image/jpeg', by: ctx.actor.label });
+  insert('studio_media', { key, file_id: f.id, kind: 'image', name: `reference-${key.slice(0, 6)}.jpg`, mime: 'image/jpeg', size: buf.length, by: ctx.actor.label, at: now() });
+  insert('creative_refs', { media_key: key, by: ctx.actor.label, at: now() }); return { key };
+});
+// The story picture for a job (a 9:16 creative): stories use it before the post image.
+route('POST', '/api/social/story-image', CH, (ctx) => {
+  const b = ctx.body || {}; const j = loadJob(b.job_id);
+  const buf = Buffer.from(String(b.base64 || '').replace(/^data:[^,]*,/, ''), 'base64'); if (!buf.length || buf.slice(0, 2).toString('hex') !== 'ffd8') throw httpError(400, 'Send the image as a JPG.');
+  const key = crypto.randomBytes(12).toString('hex'); const name = `${j.id}-story.jpg`; const f = F.storeBuffer({ recordId: j.id, type: 'studio', name, buf, mime: 'image/jpeg', by: ctx.actor.label });
+  insert('studio_media', { key, file_id: f.id, kind: 'image', name, mime: 'image/jpeg', size: buf.length, by: ctx.actor.label, at: now() });
+  D.run('INSERT INTO social_job_story (job_id, media_key, by, at) VALUES (?,?,?,?) ON CONFLICT(job_id) DO UPDATE SET media_key=excluded.media_key, by=excluded.by, at=excluded.at', j.id, key, ctx.actor.label, now());
+  return { key, url: `/api/public/studio-media/${key}` };
+});
 
 module.exports = { start, runDue, status, draftText, liText };
