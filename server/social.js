@@ -17,8 +17,11 @@ const PLATFORMS = { facebook: { label: 'Facebook', ckey: 'fb' }, instagram: { la
 D.db.exec(`CREATE TABLE IF NOT EXISTS social_posts (id INTEGER PRIMARY KEY AUTOINCREMENT, job_id TEXT, platform TEXT, text TEXT, media_key TEXT, run_at TEXT, status TEXT, remote_id TEXT, url TEXT, error TEXT, by TEXT, by_id TEXT, created_at TEXT, posted_at TEXT);
 CREATE INDEX IF NOT EXISTS social_posts_due ON social_posts(status, run_at);
 CREATE TABLE IF NOT EXISTS social_job_image (job_id TEXT PRIMARY KEY, media_key TEXT, by TEXT, at TEXT);
+CREATE TABLE IF NOT EXISTS social_job_video (job_id TEXT PRIMARY KEY, media_key TEXT, name TEXT, size INTEGER, by TEXT, at TEXT);
 CREATE TABLE IF NOT EXISTS social_auth (provider TEXT PRIMARY KEY, access_token TEXT, refresh_token TEXT, expires_at TEXT, refresh_expires_at TEXT, org_id TEXT, org_name TEXT, by TEXT, at TEXT, state TEXT, state_at TEXT);`);
 
+for (const col of ['format TEXT', 'video_key TEXT']) { try { D.db.exec(`ALTER TABLE social_posts ADD COLUMN ${col}`); } catch { /* already there */ } }
+const FORMATS = { post: 'Post', story: 'Story', reel: 'Reel' };
 const loadJob = (id) => { const j = get('SELECT * FROM jobs WHERE id=?', id); if (!j) throw httpError(404, 'Job not found'); return j; };
 const mediaUrl = (key) => L.link(`api/public/studio-media/${key}`);
 const isAdmin = (u) => ['super', 'admin'].includes(u.level);
@@ -60,6 +63,45 @@ async function postFacebook(text, media) {
   return { id: r.id, url: `https://www.facebook.com/${r.id}` };
 }
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+// Meta's upload for Page reels and video stories: Meta fetches the video from its link.
+async function rupload(uploadUrl, token, fileUrl) {
+  let res; try { res = await fetch(uploadUrl, { method: 'POST', headers: { Authorization: `OAuth ${token}`, file_url: fileUrl }, signal: AbortSignal.timeout(120000) }); } catch (e) { throw httpError(424, `Meta could not take the video: ${e.message}`); }
+  const j = await res.json().catch(() => ({})); if (!res.ok || j.success === false || j.error) throw httpError(424, `Meta could not take the video: ${(j.error && (j.error.message || j.error.error_user_msg)) || j.debug_info && j.debug_info.message || `error ${res.status}`}`);
+  return j;
+}
+// Facebook Page story: an image (photo story) or a video (video story). Stories take no text.
+async function storyFacebook(text, media, video) {
+  const pg = await metaPage(); if (!pg.page_id) throw httpError(424, pg.why);
+  if (video) {
+    const s = await graph(`${pg.page_id}/video_stories`, { method: 'POST', token: pg.page_token, params: { upload_phase: 'start' } });
+    await rupload(s.upload_url, pg.page_token, mediaUrl(video));
+    const r = await graph(`${pg.page_id}/video_stories`, { method: 'POST', token: pg.page_token, params: { upload_phase: 'finish', video_id: s.video_id } });
+    return { id: r.post_id || s.video_id, url: `https://www.facebook.com/stories/${pg.page_id}` };
+  }
+  if (!media) throw httpError(400, 'A story needs an image or a video.');
+  const ph = await graph(`${pg.page_id}/photos`, { method: 'POST', token: pg.page_token, params: { url: mediaUrl(media), published: false } });
+  const r = await graph(`${pg.page_id}/photo_stories`, { method: 'POST', token: pg.page_token, params: { photo_id: ph.id } });
+  return { id: r.post_id || ph.id, url: `https://www.facebook.com/stories/${pg.page_id}` };
+}
+// Facebook Page reel: a vertical video with the text as its description.
+async function reelFacebook(text, media, video) {
+  const pg = await metaPage(); if (!pg.page_id) throw httpError(424, pg.why); if (!video) throw httpError(400, 'A reel needs a video. Upload the video first.');
+  const s = await graph(`${pg.page_id}/video_reels`, { method: 'POST', token: pg.page_token, params: { upload_phase: 'start' } });
+  await rupload(s.upload_url, pg.page_token, mediaUrl(video));
+  await graph(`${pg.page_id}/video_reels`, { method: 'POST', token: pg.page_token, params: { upload_phase: 'finish', video_id: s.video_id, video_state: 'PUBLISHED', description: text.slice(0, 2200) } });
+  return { id: s.video_id, url: `https://www.facebook.com/reel/${s.video_id}` };
+}
+// Instagram story or reel: a container, wait until Instagram has processed it, then publish.
+async function igPublish(params, slow) {
+  const pg = await metaPage(); if (!pg.ig_id) throw httpError(424, pg.page_id ? 'No Instagram account is linked to the Facebook Page. Switch Instagram to a Business account and link it to the Page.' : pg.why);
+  const c = await graph(`${pg.ig_id}/media`, { method: 'POST', token: pg.page_token, params });
+  for (let i = 0; i < (slow ? 60 : 20); i++) { const s = await graph(c.id, { token: pg.page_token, params: { fields: 'status_code,status' } }); if (s.status_code === 'FINISHED') break; if (s.status_code === 'ERROR') throw httpError(424, `Instagram could not use the ${slow ? 'video: use an MP4 (H.264), 9:16, 3 to 90 seconds' : 'image'}${s.status ? ` (${s.status})` : ''}.`); if (i === (slow ? 59 : 19)) throw httpError(424, 'Instagram is still processing it. Try again in a few minutes.'); await wait(slow ? 5000 : 3000); }
+  const r = await graph(`${pg.ig_id}/media_publish`, { method: 'POST', token: pg.page_token, params: { creation_id: c.id } });
+  let url = ''; try { url = (await graph(r.id, { token: pg.page_token, params: { fields: 'permalink' } })).permalink || ''; } catch { /* up all the same */ }
+  return { id: r.id, url };
+}
+const storyInstagram = (text, media, video) => { if (!media && !video) throw httpError(400, 'A story needs an image or a video.'); return igPublish(video ? { media_type: 'STORIES', video_url: mediaUrl(video) } : { media_type: 'STORIES', image_url: mediaUrl(media) }, !!video); };
+const reelInstagram = (text, media, video) => { if (!video) throw httpError(400, 'A reel needs a video. Upload the video first.'); return igPublish({ media_type: 'REELS', video_url: mediaUrl(video), caption: text.slice(0, 2200), share_to_feed: true }, true); };
 async function postInstagram(text, media) {
   const pg = await metaPage(); if (!pg.ig_id) throw httpError(424, pg.page_id ? 'No Instagram account is linked to the Facebook Page. Switch Instagram to a Business account and link it to the Page.' : pg.why);
   if (!media) throw httpError(400, 'Instagram needs an image. Upload the creative first.');
@@ -141,13 +183,16 @@ const applyLink = (j, platform) => { const c = (D.settings().hiring_channels || 
 
 // ---------- posting one row ----------
 const SENDERS = { facebook: postFacebook, instagram: postInstagram, linkedin: postLinkedIn };
+const SENDERS_BY = { story: { facebook: storyFacebook, instagram: storyInstagram }, reel: { facebook: reelFacebook, instagram: reelInstagram } };
 async function runPost(id) {
   if (D.run("UPDATE social_posts SET status='Posting' WHERE id=? AND status='Scheduled'", id).changes !== 1) return get('SELECT * FROM social_posts WHERE id=?', id);
   const p = get('SELECT * FROM social_posts WHERE id=?', id); const j = get('SELECT * FROM jobs WHERE id=?', p.job_id);
   try {
     if (!j) throw httpError(404, 'The job was removed.');
     const text = String(p.text || '').split('{link}').join(applyLink(j, p.platform));
-    const r = await SENDERS[p.platform](text, p.media_key);
+    const fmt = FORMATS[p.format] ? p.format : 'post'; const send = fmt === 'post' ? SENDERS[p.platform] : (SENDERS_BY[fmt] || {})[p.platform];
+    if (!send) throw httpError(400, `${PLATFORMS[p.platform].label} does not take a ${fmt} from here.`);
+    const r = await send(text, p.media_key, p.video_key);
     update('social_posts', p.id, { status: 'Posted', remote_id: r.id || null, url: r.url || null, error: null, posted_at: now() });
     const row = get('SELECT * FROM postings WHERE job_id=? AND ckey=?', p.job_id, PLATFORMS[p.platform].ckey);
     if (row) { update('postings', row.id, { status: 'Done', done_date: row.done_date || now(), done_by: p.by, post_link: r.url || row.post_link, updated_by: `${p.by} (auto post)`, updated_at: now() }); D.history(p.by, 'posting', p.job_id, row.channel, row.status || 'not started', 'Done (auto post)'); }
@@ -169,13 +214,13 @@ async function runDue() {
 }
 function start() { setInterval(runDue, 60 * 1000); setTimeout(runDue, 20 * 1000); }
 
-const postRow = (p) => ({ ...p, label: PLATFORMS[p.platform] ? PLATFORMS[p.platform].label : p.platform, image: p.media_key ? `/api/public/studio-media/${p.media_key}` : null });
+const postRow = (p) => ({ ...p, format: p.format || 'post', label: `${PLATFORMS[p.platform] ? PLATFORMS[p.platform].label : p.platform}${p.format && p.format !== 'post' ? ` ${FORMATS[p.format].toLowerCase()}` : ''}`, image: p.media_key ? `/api/public/studio-media/${p.media_key}` : null });
 
 // ---------- routes ----------
 route('GET', '/api/social/status', CH, async (ctx) => status(!!ctx.query.fresh));
 route('GET', '/api/social/job/:id', CH, (ctx) => {
-  const j = loadJob(ctx.params.id); const im = get('SELECT * FROM social_job_image WHERE job_id=?', j.id);
-  return { text: draftText(j), image: im ? { key: im.media_key, url: `/api/public/studio-media/${im.media_key}`, by: im.by, at: im.at } : null, posts: all('SELECT * FROM social_posts WHERE job_id=? ORDER BY COALESCE(posted_at, run_at) DESC LIMIT 50', j.id).map(postRow) };
+  const j = loadJob(ctx.params.id); const im = get('SELECT * FROM social_job_image WHERE job_id=?', j.id); const vd = get('SELECT * FROM social_job_video WHERE job_id=?', j.id);
+  return { video: vd ? { key: vd.media_key, url: `/api/public/studio-media/${vd.media_key}`, name: vd.name, size: vd.size, by: vd.by, at: vd.at } : null, text: draftText(j), image: im ? { key: im.media_key, url: `/api/public/studio-media/${im.media_key}`, by: im.by, at: im.at } : null, posts: all('SELECT * FROM social_posts WHERE job_id=? ORDER BY COALESCE(posted_at, run_at) DESC LIMIT 50', j.id).map(postRow) };
 });
 // The creative for the posts: sent as a JPG from the browser (fitted to Instagram's shape there).
 route('POST', '/api/social/image', CH, (ctx) => {
@@ -190,16 +235,35 @@ route('POST', '/api/social/image', CH, (ctx) => {
   D.history(ctx.actor.label, 'creative image', j.id, null, null, 'uploaded for posts');
   return { key, url: `/api/public/studio-media/${key}` };
 });
+// The video for stories and reels: an MP4, kept for the job (the link Meta fetches it from).
+route('POST', '/api/social/video', CH, (ctx) => {
+  const b = ctx.body || {}; const j = loadJob(b.job_id);
+  const buf = Buffer.from(String(b.base64 || '').replace(/^data:[^,]*,/, ''), 'base64');
+  if (!buf.length) throw httpError(400, 'The video is empty.'); if (buf.length > 28 * 1024 * 1024) throw httpError(400, 'Use a video up to 28 MB (a 60-second 1080p reel is usually 15 to 25 MB).');
+  if (buf.slice(4, 8).toString('latin1') !== 'ftyp') throw httpError(400, 'Send the video as an MP4.');
+  const key = crypto.randomBytes(12).toString('hex'); const name = `${j.id}-video.mp4`;
+  const f = F.storeBuffer({ recordId: j.id, type: 'studio', name, buf, mime: 'video/mp4', by: ctx.actor.label });
+  insert('studio_media', { key, file_id: f.id, kind: 'video', name, mime: 'video/mp4', size: buf.length, by: ctx.actor.label, at: now() });
+  D.run('INSERT INTO social_job_video (job_id, media_key, name, size, by, at) VALUES (?,?,?,?,?,?) ON CONFLICT(job_id) DO UPDATE SET media_key=excluded.media_key, name=excluded.name, size=excluded.size, by=excluded.by, at=excluded.at', j.id, key, String(b.name || name).slice(0, 120), buf.length, ctx.actor.label, now());
+  D.history(ctx.actor.label, 'creative video', j.id, null, null, 'uploaded for stories and reels');
+  return { key, url: `/api/public/studio-media/${key}` };
+});
 route('POST', '/api/social/posts', CH, async (ctx) => {
   const b = ctx.body || {}; const j = loadJob(b.job_id);
   const plats = [...new Set([].concat(b.platforms || []))].filter((p) => PLATFORMS[p]); if (!plats.length) throw httpError(400, 'Tick Facebook, Instagram or LinkedIn.');
-  const text = String(b.text || '').trim(); if (!text) throw httpError(400, 'Write the post.');
+  const text = String(b.text || '').trim(); if (!text && b.format !== 'story') throw httpError(400, 'Write the post.');
   const im = get('SELECT media_key FROM social_job_image WHERE job_id=?', j.id); const media = b.no_image ? null : im && im.media_key;
-  if (plats.includes('instagram') && !media) throw httpError(400, 'Instagram needs an image. Upload the creative first.');
+  const fmt = FORMATS[b.format] ? b.format : 'post'; const vd = get('SELECT media_key FROM social_job_video WHERE job_id=?', j.id);
+  // a story uses the video when one is uploaded and picked, else the image; a reel always needs the video
+  const video = fmt === 'reel' || (fmt === 'story' && b.use_video) ? vd && vd.media_key : null;
+  if (fmt !== 'post' && plats.includes('linkedin')) throw httpError(400, 'LinkedIn has no stories or reels: untick LinkedIn, or post it as a Post.');
+  if (fmt === 'reel' && !video) throw httpError(400, 'A reel needs a video. Upload the video first.');
+  if (fmt === 'story' && !video && !media) throw httpError(400, 'A story needs an image or a video. Upload one first.');
+  if (fmt === 'post' && plats.includes('instagram') && !media) throw httpError(400, 'Instagram needs an image. Upload the creative first.');
   let at = new Date(); if (b.at) { at = new Date(b.at); if (Number.isNaN(at.getTime())) throw httpError(400, 'Pick a date and time.'); if (at.getTime() < Date.now() - 60000) throw httpError(400, 'Pick a time in the future.'); if (at.getTime() > Date.now() + 90 * 864e5) throw httpError(400, 'Schedule up to 90 days ahead.'); }
   const st = await status(); const notReady = plats.filter((p) => !st[p].ready);
   if (notReady.length && !b.at) throw httpError(424, `${notReady.map((p) => PLATFORMS[p].label).join(', ')} not connected: ${st[notReady[0]].why}`);
-  const ids = plats.map((p) => Number(D.run('INSERT INTO social_posts (job_id, platform, text, media_key, run_at, status, by, by_id, created_at) VALUES (?,?,?,?,?,?,?,?,?)', j.id, p, text.slice(0, 5000), media || null, at.toISOString(), 'Scheduled', ctx.actor.label, ctx.user.id, now()).lastInsertRowid));
+  const ids = plats.map((p) => Number(D.run('INSERT INTO social_posts (job_id, platform, text, media_key, video_key, format, run_at, status, by, by_id, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)', j.id, p, text.slice(0, 5000), video ? null : media || null, video || null, fmt, at.toISOString(), 'Scheduled', ctx.actor.label, ctx.user.id, now()).lastInsertRowid));
   if (!b.at) { const out = []; for (const id of ids) out.push(postRow(await runPost(id))); return { posted: out }; }
   return { scheduled: ids.length, at: at.toISOString(), warn: notReady.length ? `${notReady.map((p) => PLATFORMS[p].label).join(', ')} is not connected yet; connect it before ${L.istFmt(at.toISOString())} or that post fails.` : null };
 });
