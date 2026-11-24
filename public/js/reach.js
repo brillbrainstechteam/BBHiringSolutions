@@ -217,38 +217,91 @@
     box.innerHTML = d.made.length ? `<div class="small" style="margin:6px 0"><b>AI creatives</b></div><div class="ai-gal">${d.made.slice(0, 9).map((c) => card(c, jobId)).join('')}</div>` : '';
     wireCards(box, d.made, jobId, after);
   };
+  // Three steps in one window: 1 What goes on it (from the job, and the JD if given) → 2 Look (sizes, style references,
+  // advanced prompt) → 3 Results (retry any size with a note, use for posts or story, download). Back and forth keeps everything.
   BB.aiCreatives = async (jobId, after) => {
     const d = await BB.api(`/api/social/ai/${jobId}`).catch(BB.fail); if (!d) return;
     if (!d.ready) return BB.modal({ title: 'Make creatives with AI', body: '<p>This needs the OpenAI key on the server (OPENAI_API_KEY in .env).</p>' });
-    const picked = new Set();
-    const mm = BB.modal({ title: 'Make creatives with AI', wide: true, foot: '<span class="grow small muted" data-aist>About a minute. Each size is one picture.</span><button class="btn primary" data-aigo>Make creatives</button>',
-      body: `<div class="stack">
-        <div class="field"><span class="lab">Sizes</span><div class="row" style="gap:14px">${d.sizes.map((s2) => `<label class="row small" style="gap:6px"><input type="checkbox" data-aisz="${s2.key}" checked> ${esc(s2.label)}</label>`).join('')}</div></div>
-        <div class="field"><span class="lab">Style to follow <span class="opt">(tick up to 4 earlier creatives)</span></span><div class="ai-refs">${d.refs.map((r) => `<label class="ai-ref" title="${esc(r.kind)}"><input type="checkbox" data-airef="${esc(r.key)}"><img src="${esc(r.url)}" alt=""></label>`).join('') || '<span class="small muted">No earlier creatives yet.</span>'}<button type="button" class="btn sm" data-airefup>+ Add a reference</button></div></div>
-        <label class="field"><span class="lab">Prompt <span class="opt">· {job}, {city}, {experience}, {salary}, {apply} and {format} fill in for each job and size</span></span><textarea data-aiprompt rows="9">${esc(d.prompt)}</textarea></label>
-        <div class="row" style="gap:14px"><label class="row small" style="gap:6px"><input type="checkbox" data-aisave> Save this as the standard prompt</label><button type="button" class="btn-link tiny" data-aireset>Use the original prompt</button></div>
-        <label class="field"><span class="lab">Anything else for this job <span class="opt">(optional)</span></span><input data-aiextra placeholder="e.g. show a diamond ring, mention walk-in on Saturday"></label>
-        <div data-aires></div></div>` });
-    const m = mm.el; const st = $('[data-aist]', m);
+    const picked = new Set(); let step = 1; const made = [];
+    const brief = { ...(d.last_brief || d.facts), highlights: [...((d.last_brief || d.facts).highlights || [])] };
+    const STEPS = ['What goes on it', 'Look', 'Creatives'];
+    const mm = BB.modal({ title: 'Make creatives with AI', wide: true,
+      foot: '<span class="grow small muted" data-aist></span><button class="btn" data-aiback>Back</button><button class="btn primary" data-aigo>Next</button>',
+      body: `<div class="ai-steps" role="tablist">${STEPS.map((l, i) => `<button type="button" class="ai-step" data-aistep="${i + 1}"><span>${i + 1}</span>${l}</button>`).join('')}</div>
+        <section data-aipane="1" class="stack">
+          <div class="grid g2"><label class="field"><span class="lab">Role</span><input data-bf="job"></label><label class="field"><span class="lab">Location</span><input data-bf="city"></label></div>
+          <div class="grid g2"><label class="field"><span class="lab">Experience <span class="opt">(leave empty to leave it off)</span></span><input data-bf="experience" placeholder="e.g. 2–4 years"></label><label class="field"><span class="lab">Salary <span class="opt">(leave empty to leave it off)</span></span><input data-bf="salary" placeholder="e.g. ₹25,000–₹30,000 a month"></label></div>
+          <div class="field"><span class="lab">Requirements to show <span class="opt">(up to 5: software, skills, gender, language, qualification…)</span></span><div class="ai-hl" data-aihl></div><div class="row" style="gap:6px"><input data-aihlnew placeholder="Add one, e.g. Matrix & Rhino 3D" style="flex:1"><button type="button" class="btn sm" data-aihladd>Add</button></div></div>
+          <details class="ai-jd" ${d.has_jd ? '' : 'open'}><summary><b>Read a job description</b> <span class="opt small">(optional: picks up experience, salary and must-haves)</span></summary>
+            <textarea data-aijd rows="6" placeholder="${d.has_jd ? 'Empty: the job\'s own JD is read. Or paste a different one here.' : 'Paste the job description here'}"></textarea>
+            <button type="button" class="btn sm" data-aijdgo>${d.has_jd ? 'Read the JD' : 'Read this JD'}</button></details>
+        </section>
+        <section data-aipane="2" class="stack" hidden>
+          <div class="field"><span class="lab">Sizes</span><div class="row" style="gap:14px">${d.sizes.map((s2) => `<label class="row small" style="gap:6px"><input type="checkbox" data-aisz="${s2.key}" checked> ${esc(s2.label)}</label>`).join('')}</div></div>
+          <div class="field"><span class="lab">Style to follow <span class="opt">(tick up to 4)</span></span><div class="ai-refs">${d.refs.map((r) => `<label class="ai-ref" title="${esc(r.kind)}"><input type="checkbox" data-airef="${esc(r.key)}"><img src="${esc(r.url)}" alt=""></label>`).join('')}<button type="button" class="btn sm" data-airefup>+ Add a reference</button></div></div>
+          <label class="field"><span class="lab">Anything else for this job <span class="opt">(optional)</span></span><input data-aiextra placeholder="e.g. show a diamond ring, mention walk-in on Saturday"></label>
+          <details><summary class="small"><b>Advanced: the prompt</b></summary>
+            <p class="tiny muted">{job}, {city}, {details} (experience, salary and requirements from step 1), {apply} and {format} fill in for each size.</p>
+            <textarea data-aiprompt rows="9">${esc(d.prompt)}</textarea>
+            <div class="row" style="gap:14px"><label class="row small" style="gap:6px"><input type="checkbox" data-aisave> Save as the standard prompt</label><button type="button" class="btn-link tiny" data-aireset>Use the original prompt</button></div></details>
+        </section>
+        <section data-aipane="3" hidden><div data-aires></div>${d.made.length ? `<details class="ai-old"><summary class="small"><b>Earlier creatives for this job</b> (${d.made.length})</summary><div class="ai-gal" data-aiold>${d.made.slice(0, 12).map((c) => card(c, jobId)).join('')}</div></details>` : ''}</section>` });
+    const m = mm.el; const st = $('[data-aist]', m); const go = $('[data-aigo]', m); const back = $('[data-aiback]', m);
+    // step 1: the brief
+    $$('[data-bf]', m).forEach((x) => { x.value = brief[x.dataset.bf] || ''; x.oninput = () => { brief[x.dataset.bf] = x.value; }; });
+    const drawHl = () => { $('[data-aihl]', m).innerHTML = brief.highlights.map((h, i) => `<span class="fchip">${esc(h)}<button type="button" data-aihlx="${i}" aria-label="Remove ${esc(h)}">✕</button></span>`).join('') || '<span class="small muted">None yet. Read the JD below, or add them here.</span>'; $$('[data-aihlx]', m).forEach((b) => (b.onclick = () => { brief.highlights.splice(Number(b.dataset.aihlx), 1); drawHl(); })); };
+    drawHl();
+    const addHl = () => { const v = $('[data-aihlnew]', m).value.trim(); if (!v) return; if (brief.highlights.length >= 5) return BB.toast('Up to 5 requirements', true); brief.highlights.push(v); $('[data-aihlnew]', m).value = ''; drawHl(); };
+    $('[data-aihladd]', m).onclick = addHl; $('[data-aihlnew]', m).onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); addHl(); } };
+    $('[data-aijdgo]', m).onclick = async (e) => {
+      const b = e.currentTarget; b.disabled = true; b.textContent = 'Reading…';
+      try { const r = await BB.post('/api/social/ai/brief', { job_id: jobId, jd: $('[data-aijd]', m).value }); for (const k of ['experience', 'salary']) if (r[k] && !brief[k]) brief[k] = r[k]; brief.highlights = [...new Set([...(r.highlights || []), ...brief.highlights])].slice(0, 5); // what the JD asks for first $$('[data-bf]', m).forEach((x) => { x.value = brief[x.dataset.bf] || ''; }); drawHl(); BB.toast(r.from_jd ? 'Read the JD: check the lines above' : 'No JD to read: filled in from the job'); } catch (er) { BB.fail(er); }
+      b.disabled = false; b.textContent = 'Read again';
+    };
+    // step 2: look
     const wireRefs = () => $$('[data-airef]', m).forEach((x) => (x.onchange = () => { if (x.checked && picked.size >= 4) { x.checked = false; return BB.toast('Up to 4 references', true); } if (x.checked) picked.add(x.dataset.airef); else picked.delete(x.dataset.airef); }));
     wireRefs();
     $('[data-aireset]', m).onclick = () => { $('[data-aiprompt]', m).value = d.standard; };
-    $('[data-airefup]', m).onclick = () => { const i = document.createElement('input'); i.type = 'file'; i.accept = 'image/*'; i.onchange = async () => { if (!i.files[0]) return; try { const base64 = await toJpg(i.files[0]); const r = await BB.post('/api/social/ai/refs', { base64 }); const lab = document.createElement('label'); lab.className = 'ai-ref'; lab.innerHTML = `<input type="checkbox" data-airef="${esc(r.key)}"><img src="/api/public/studio-media/${esc(r.key)}" alt="">`; $('[data-airefup]', m).before(lab); wireRefs(); const cb = $('input', lab); if (picked.size < 4) { cb.checked = true; picked.add(r.key); } } catch (e) { BB.fail(e); } }; i.click(); };
-    $('[data-aigo]', m).onclick = async (e) => {
-      const btn = e.currentTarget; const sizes = $$('[data-aisz]:checked', m).map((x) => x.dataset.aisz); if (!sizes.length) return BB.toast('Tick a size', true);
-      btn.disabled = true; st.textContent = 'Making the creatives… (about a minute)';
-      let run; try { run = await BB.post('/api/social/ai/run', { job_id: jobId, sizes, refs: [...picked], prompt: $('[data-aiprompt]', m).value, save_prompt: $('[data-aisave]', m).checked, extra: $('[data-aiextra]', m).value }); } catch (er) { BB.fail(er); btn.disabled = false; st.textContent = ''; return; }
-      const res = $('[data-aires]', m);
+    $('[data-airefup]', m).onclick = () => { const i = document.createElement('input'); i.type = 'file'; i.accept = 'image/*'; i.onchange = async () => { if (!i.files[0]) return; try { const base64 = await toJpg(i.files[0]); const r = await BB.post('/api/social/ai/refs', { base64 }); const lab = document.createElement('label'); lab.className = 'ai-ref'; lab.innerHTML = `<input type="checkbox" data-airef="${esc(r.key)}"><img src="/api/public/studio-media/${esc(r.key)}" alt="">`; $('[data-airefup]', m).before(lab); wireRefs(); const cb = $('input', lab); if (picked.size < 4) { cb.checked = true; picked.add(r.key); } } catch (er) { BB.fail(er); } }; i.click(); };
+    const oldBox = $('[data-aiold]', m); if (oldBox) wireCards(oldBox, d.made, jobId, after);
+    // moving between steps
+    const show = (n) => {
+      step = n; $$('[data-aipane]', m).forEach((p) => { p.hidden = Number(p.dataset.aipane) !== n; });
+      $$('[data-aistep]', m).forEach((b) => { const k = Number(b.dataset.aistep); b.classList.toggle('on', k === n); b.classList.toggle('done', k < n); });
+      back.style.display = n === 1 ? 'none' : ''; go.textContent = n === 1 ? 'Next: look' : n === 2 ? 'Make creatives' : 'Make all again'; go.style.display = n === 3 && !made.length ? 'none' : '';
+      st.textContent = n === 1 ? 'Check what goes on the creative.' : n === 2 ? 'About a minute. Each size is one picture.' : st.textContent;
+    };
+    $$('[data-aistep]', m).forEach((b) => (b.onclick = () => { const k = Number(b.dataset.aistep); if (k < 3 || made.length) show(k); }));
+    back.onclick = () => show(Math.max(1, step - 1));
+    // step 3: make, show, retry
+    const res = $('[data-aires]', m);
+    const drawMade = () => {
+      res.innerHTML = made.length ? `<div class="ai-gal">${made.map((c) => (c.error ? `<div class="ai-card ai-fail"><div class="notice warn small">${esc(c.label)}: ${esc(c.error)}</div><button type="button" class="btn sm" data-airetry="${esc(c.size)}">Try again</button></div>` : c.making ? `<div class="ai-card ai-wait"><div class="ai-spin"></div><div class="tiny muted">${esc(c.label)}: making…</div></div>` : `<div class="ai-card-wrap">${card(c, jobId)}<button type="button" class="btn-link tiny" data-airetry="${esc(c.size)}">↻ Make this size again</button></div>`)).join('')}</div>` : '';
+      wireCards(res, made.filter((c) => c.key || c.media_key), jobId, after);
+      $$('[data-airetry]', res).forEach((b) => (b.onclick = async () => { const v = await BB.ask({ title: 'Make this size again', fields: [{ name: 'note', label: 'What should change? (optional)', opt: true, placeholder: 'e.g. bigger role name, less gold, add a ring' }], ok: 'Make again' }); if (v) run([b.dataset.airetry], v.note); }));
+    };
+    const run = async (sizes, note) => {
+      const lab = Object.fromEntries(d.sizes.map((x) => [x.key, x.label]));
+      for (const sz of sizes) { const i = made.findIndex((c) => c.size === sz); const row = { size: sz, label: lab[sz], making: true }; if (i >= 0) made[i] = row; else made.push(row); }
+      show(3); drawMade(); go.disabled = true; st.textContent = 'Making the creatives… (about a minute)';
+      const extra = [$('[data-aiextra]', m).value.trim(), note].filter(Boolean).join('. ');
+      let r0; try { r0 = await BB.post('/api/social/ai/run', { job_id: jobId, sizes, refs: [...picked], prompt: $('[data-aiprompt]', m).value, save_prompt: $('[data-aisave]', m).checked, extra, brief }); } catch (er) { BB.fail(er); for (const sz of sizes) { const i = made.findIndex((c) => c.size === sz); made[i] = { ...made[i], making: false, error: er.message || 'Not made' }; } drawMade(); go.disabled = false; return; }
       for (let i = 0; i < 80; i++) {
         await new Promise((r) => setTimeout(r, 4000)); if (!document.body.contains(m)) return;
-        let r; try { r = await BB.api(`/api/social/ai/run/${run.id}`); } catch { continue; }
-        const ok = r.out.filter((x) => x.key); const bad = r.out.filter((x) => x.error);
-        res.innerHTML = `${ok.length ? `<div class="ai-gal">${ok.map((c) => card({ ...c, media_key: c.key }, jobId)).join('')}</div>` : ''}${bad.map((x) => `<div class="notice warn small">${esc(x.label)}: ${esc(x.error)}</div>`).join('')}`;
-        wireCards(res, ok.map((c) => ({ ...c, media_key: c.key })), jobId, after);
-        st.textContent = r.status === 'Making' ? `Made ${ok.length} of ${sizes.length}…` : r.status === 'Done' ? `Done: ${ok.length} made. Use them for posts and stories, or download.` : `Not made: ${r.error || ''}`;
-        if (r.status !== 'Making') { btn.disabled = false; btn.textContent = 'Make again'; if (after) after(); return; }
+        let r; try { r = await BB.api(`/api/social/ai/run/${r0.id}`); } catch { continue; }
+        for (const x of r.out) { const k = made.findIndex((c) => c.size === x.size); if (k >= 0) made[k] = x.key ? { ...x, media_key: x.key } : { ...x, making: false }; }
+        drawMade();
+        const ok = r.out.filter((x) => x.key).length;
+        st.textContent = r.status === 'Making' ? `Made ${ok} of ${sizes.length}…` : r.status === 'Done' ? 'Done. Use them for posts and the story, download, or make any size again.' : `Not made: ${r.error || ''}`;
+        if (r.status !== 'Making') { go.disabled = false; show(3); if (after) after(); return; }
       }
-      st.textContent = 'Still making: close this and open the job again in a minute.'; btn.disabled = false;
+      st.textContent = 'Still making: close this and open the job again in a minute.'; go.disabled = false;
     };
+    go.onclick = () => {
+      if (step === 1) { if (!String(brief.job || '').trim()) return BB.toast('Enter the role', true); return show(2); }
+      const sizes = $$('[data-aisz]:checked', m).map((x) => x.dataset.aisz); if (!sizes.length) { show(2); return BB.toast('Tick a size', true); }
+      run(sizes);
+    };
+    show(1);
   };
 })();

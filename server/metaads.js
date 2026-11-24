@@ -34,7 +34,7 @@ const OPTIONAL = [['pages_manage_ads', 'run ads from the Page if Meta refuses th
 // Meta answers slowly, so the connection check is kept for 10 minutes and each ad's numbers for 15 minutes,
 // refreshed in the background; the page shows what is kept at once.
 let statusCache = null;
-route('GET', '/api/ads/meta/status', SUPER, async (ctx) => {
+route('GET', '/api/ads/meta/status', { auth: 'team' }, async (ctx) => {
   if (!ctx.query.fresh && statusCache && Date.now() - statusCache.t < 10 * 60000) return statusCache.v;
   const v = await metaStatus(); statusCache = { t: Date.now(), v }; return v;
 });
@@ -53,7 +53,7 @@ async function metaStatus() {
   out.ready = !out.missing.length && out.pages.length > 0 && !!out.account;
   return out;
 }
-route('GET', '/api/ads/meta/geo', SUPER, async (ctx) => {
+route('GET', '/api/ads/meta/geo', { auth: 'team' }, async (ctx) => {
   const q = String(ctx.query.q || '').trim(); if (q.length < 2) return { rows: [] };
   const r = await graph('search', { params: { type: 'adgeolocation', location_types: ['city'], country_code: 'IN', q, limit: 10 } });
   return { rows: (r.data || []).map((x) => ({ key: x.key, name: x.name, region: x.region || '' })) };
@@ -142,7 +142,7 @@ setTimeout(() => metaStatus().then((v) => { statusCache = { t: Date.now(), v }; 
 setInterval(() => metaStatus().then((v) => { statusCache = { t: Date.now(), v }; }).catch(() => {}), 9 * 60000);
 setTimeout(() => refreshLive(all('SELECT * FROM meta_ads ORDER BY id DESC LIMIT 100'), 0).catch(() => {}), 30000);
 setInterval(() => refreshLive(all('SELECT * FROM meta_ads ORDER BY id DESC LIMIT 100'), 14 * 60000).catch(() => {}), 15 * 60000);
-route('GET', '/api/ads/meta', SUPER, async (ctx) => {
+route('GET', '/api/ads/meta', { auth: 'team' }, async (ctx) => {
   const rows = all('SELECT * FROM meta_ads ORDER BY id DESC LIMIT 100');
   if (ctx.query.fresh) await refreshLive(rows, 0);
   else if (rows.some((r) => r.campaign_id && r.status !== 'FAILED' && !liveCache.has(r.campaign_id)) && !liveCache.size) await refreshLive(rows.slice(0, 12), 0); // the very first look: the newest ones now, the rest after

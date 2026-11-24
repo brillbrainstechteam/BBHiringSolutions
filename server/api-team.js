@@ -2462,7 +2462,7 @@ route('GET', '/api/earnings', T, (ctx) => {
 // ---------- logins & team ----------
 route('GET', '/api/users', T, (ctx) => {
   const u = ctx.user;
-  const users = all('SELECT * FROM users ORDER BY id').filter((x) => isSuper(u) || x.agency_id === u.agency_id).map((x) => ({ id: x.id, name: x.name, whatsapp: x.whatsapp, email: x.email || '', level: x.level, team: x.team || 'Recruitment', agency_id: x.agency_id, agency_name: V.agencyName(x.agency_id), role: x.role, username: x.username, reports_to: x.reports_to || null, status: x.status, last_login: x.last_login, locked: x.locked_until && x.locked_until > now(), created_by: x.created_by, view_status: personStatus(x) }));
+  const users = all('SELECT * FROM users ORDER BY id').filter((x) => isSuper(u) || x.id === u.id || (u.level === 'admin' && x.agency_id === u.agency_id && x.level === 'sub')).map((x) => ({ id: x.id, name: x.name, whatsapp: x.whatsapp, email: x.email || '', level: x.level, team: x.team || 'Recruitment', agency_id: x.agency_id, agency_name: V.agencyName(x.agency_id), role: x.role, username: x.username, reports_to: x.reports_to || null, status: x.status, last_login: x.last_login, locked: x.locked_until && x.locked_until > now(), created_by: x.created_by, view_status: personStatus(x) }));
   if (ctx.query.format) return page(ctx, users, 'logins', ['id', 'name', 'username', 'level', 'team', 'agency_name', 'role', 'status', 'view_status', 'last_login', 'created_by']);
   return { users, agencies: isSuper(u) ? all('SELECT * FROM agencies ORDER BY id').map((a) => ({ ...a, view_status: agencyStatus(a), people: all('SELECT 1 FROM users WHERE agency_id=?', a.id).length })) : [] };
 });
@@ -2531,6 +2531,12 @@ route('PATCH', '/api/users/:id', ADMINS, (ctx) => {
   if (ctx.body.reports_to !== undefined && isSuper(ctx.user) && !self && t.level === 'sub') {
     if (!ctx.body.reports_to) patch.reports_to = null;
     else { const boss = get("SELECT * FROM users WHERE id=? AND level='admin'", ctx.body.reports_to); if (!boss) throw httpError(400, 'Pick the admin', 'reports_to'); patch.reports_to = boss.id; if ((ctx.body.team || t.team) === 'Recruitment') patch.agency_id = boss.agency_id; }
+  }
+  if (ctx.body.username !== undefined && !self && String(ctx.body.username).trim().toLowerCase() !== t.username) { // the person who manages this login can change its username
+    const un = String(ctx.body.username).trim().toLowerCase();
+    if (!/^[a-z0-9._-]{3,}$/.test(un)) throw httpError(400, 'Username: at least 3 letters, numbers or dots', 'username');
+    if (get('SELECT 1 FROM users WHERE username=? AND id<>?', un, t.id)) throw httpError(400, 'This username is already used', 'username');
+    patch.username = un;
   }
   const pw = String(ctx.body.password || '');
   if (pw && !self) { // the admin types the new password: it works at once, they are logged out everywhere

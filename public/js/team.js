@@ -40,13 +40,14 @@
 
   // Social media and tech logins see only their hiring channels and their own login page.
   const ACCOUNTS_MENU = ['accounts', 'acclients', 'accandidates', 'bills', 'logins'];
-  const menuFor = (u) => (u.accounts_only ? MENU.filter((m) => ACCOUNTS_MENU.includes(m[0])) : u.channel_only ? MENU.filter((m) => ['channels', 'agreement', 'logins'].includes(m[0])) : MENU.filter((m) => m[0] !== 'channels' && !['acclients', 'accandidates'].includes(m[0]) && (m[0] !== 'leads' || u.leads) && (!m[3] || m[3].includes(u.level))));
+  const menuFor = (u) => menuFor0(u).map((m) => (m[0] === 'bills' && u.level !== 'super' ? [m[0], 'Earnings', ...m.slice(2)] : m));
+  const menuFor0 = (u) => (u.accounts_only ? MENU.filter((m) => ACCOUNTS_MENU.includes(m[0])) : u.channel_only ? MENU.filter((m) => ['channels', 'agreement', 'logins'].includes(m[0])) : MENU.filter((m) => m[0] !== 'channels' && !['acclients', 'accandidates'].includes(m[0]) && (m[0] !== 'leads' || u.leads) && (!m[3] || m[3].includes(u.level))));
   const MENU = [
     ['myday', 'My day', 'sun', ['sub']], ['dashboard', 'Dashboard', 'grid'], ['leads', 'Leads', 'inbox', null, 'leads'],
     ['clients', 'Clients', 'building'], ['vendors', 'Vendors', 'brief'], ['candidates', 'Candidates', 'users', null, 'cand_new'], ['jobs', 'Job openings', 'brief'], ['channels', 'Digital Reach', 'flow'], ['applications', 'Applications', 'flow'],
     ['interviews', 'Interviews', 'cal', null, 'pending'], ['aftercare', 'Offer', 'check'], ['whatsapp', 'WhatsApp', 'chat', null, 'unread'], ['campaigns', 'Campaigns', 'flow'],
     ['performance', 'Performance', 'chart'], ['tasks', 'Tasks', 'note'], ['reviews', 'Recruiter reviews', 'star', ['super']], ['logs', 'Daily logs', 'note', ['super']], ['accounts', 'Invoicing', 'note'], ['acclients', 'Clients', 'building'], ['accandidates', 'Offers & joinings', 'users'], ['bills', 'Profit & Loss', 'rupee'],
-    ['reports', 'Reports', 'report'], ['agreement', 'Recruitment Agreement', 'note'], ['logins', 'Logins & team', 'key'], ['settings', 'Settings', 'cog'],
+    ['reports', 'Reports', 'report'], ['agreement', 'Recruitment Agreement', 'note'], ['logins', 'Logins & team', 'key', ['super', 'admin']], ['settings', 'Settings', 'cog'],
   ];
   const GROUP = { agreement: 'Admin', channels: 'Hiring', myday: 'Overview', dashboard: 'Overview', leads: 'Hiring', clients: 'Hiring', vendors: 'Hiring', jobs: 'Hiring', candidates: 'Hiring', applications: 'Hiring', interviews: 'Hiring', aftercare: 'Hiring', reviews: 'Team', whatsapp: 'Messages', campaigns: 'Messages', performance: 'Team', tasks: 'Team', logs: 'Team', accounts: 'Financials', acclients: 'Financials', accandidates: 'Financials', bills: 'Financials', reports: 'Financials', logins: 'Admin', settings: 'Admin' };
   const HELP = {
@@ -116,7 +117,7 @@
 
   async function renderPage() {
     const el = $('[data-page]'); const page = BB.pages[pageName]; el.dataset.view = pageName; // lets a page's lists keep their header in view
-    const m = MENU.find((x) => x[0] === pageName);
+    const m = menuFor(BB.me.user).find((x) => x[0] === pageName) || MENU.find((x) => x[0] === pageName);
     el.innerHTML = `<div class="page-h ${pageName === 'jobs' ? 'stacked' : ''}"><div class="grow">${pageName === 'jobs' ? `<div class="ph-row"><span class="ph-ico" aria-hidden="true">${BB.icon('brief')}</span><div><h1>${m[1]}</h1><div class="ph-sub">Track and manage all job requirements, from opening to offer.</div></div></div>` : ''}${GROUP[pageName] === 'Financials' || pageName === 'jobs' ? '' : `<span class="eyebrow">${GROUP[pageName]}</span>`}<div class="row" ${pageName === 'jobs' ? 'hidden' : ''}><h1>${m[1]}</h1></div><div class="help hidden" data-help-t>${HELP[pageName] || ''}</div></div><div class="row" data-actions></div></div><div data-content><div class="empty">Loading…</div></div>`;
     if ($('[data-help]')) $('[data-help]').onclick = () => $('[data-help-t]').classList.toggle('hidden');
     // A redraw while someone is typing in a list's search box keeps what they typed since (the old box still holds

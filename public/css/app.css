@@ -2880,7 +2880,7 @@ a.pipe-step { text-decoration: none; cursor: pointer; } a.pipe-step:hover { bord
 
 /* Agreement editor: the Word file's paragraphs in order */
 .ag-paras { display: flex; flex-direction: column; gap: 6px; max-height: 62vh; overflow: auto; padding-right: 4px; }
-.ag-p { width: 100%; resize: none; overflow: hidden; border: 1px solid transparent; border-radius: 8px; padding: 6px 8px; font: 14px/1.5 var(--font); background: var(--surface-2, #F6F8FB); min-height: 0; }
+.ag-p { flex: none; width: 100%; resize: none; overflow: hidden; border: 1px solid transparent; border-radius: 8px; padding: 6px 8px; font: 14px/1.5 var(--font); background: var(--surface-2, #F6F8FB); min-height: 0; }
 .ag-p:hover, .ag-p:focus { border-color: var(--border); background: var(--surface); }
 .ag-p.ag-h { font-weight: 700; }
 .ag-p.ag-ch { border-color: var(--mustard, #D4A017); background: color-mix(in srgb, var(--mustard, #D4A017) 8%, var(--surface)); }
@@ -2944,3 +2944,18 @@ a.pipe-step { text-decoration: none; cursor: pointer; } a.pipe-step:hover { bord
 
 /* filter chips: long values stay on one line, cut with … (full text in the tooltip) */
 .fchip { max-width: 100%; min-width: 0; } .fchip .fchip-t { max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Meta ads for admins and sub admins: numbers only, no buttons that spend money */
+.ads-view-only .tbl .btn, .ads-view-only [data-aflip], .ads-view-only [data-anew] { display: none; }
+
+/* AI creatives: three steps */
+.ai-steps { display: flex; gap: 6px; margin-bottom: 16px; flex-wrap: wrap; }
+.ai-step { display: inline-flex; align-items: center; gap: 8px; height: 34px; padding: 0 14px 0 6px; border: 1px solid var(--border); border-radius: 999px; background: var(--surface); color: var(--muted); font: 600 13px var(--font); cursor: pointer; }
+.ai-step span { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; background: var(--surface-2, #F1F3F7); font-size: 12px; }
+.ai-step.on { color: var(--ink); border-color: var(--navy, #0F1D3C); } .ai-step.on span { background: var(--navy, #0F1D3C); color: #fff; }
+.ai-step.done span { background: #10B981; color: #fff; }
+.ai-hl { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; min-height: 30px; align-items: center; }
+.ai-jd { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; } .ai-jd summary { cursor: pointer; } .ai-jd textarea { margin: 10px 0 8px; width: 100%; }
+.ai-card-wrap { display: flex; flex-direction: column; gap: 4px; } .ai-wait, .ai-fail { min-height: 160px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; border: 1px dashed var(--border); border-radius: 10px; padding: 12px; }
+.ai-spin { width: 28px; height: 28px; border-radius: 50%; border: 3px solid var(--border); border-top-color: var(--navy, #0F1D3C); animation: aispin 0.9s linear infinite; } @keyframes aispin { to { transform: rotate(360deg); } }
+.ai-old { margin-top: 16px; } .ai-old summary { cursor: pointer; margin-bottom: 8px; }

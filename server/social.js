@@ -320,18 +320,37 @@ CREATE TABLE IF NOT EXISTS creative_refs (media_key TEXT PRIMARY KEY, by TEXT, a
 CREATE TABLE IF NOT EXISTS social_job_story (job_id TEXT PRIMARY KEY, media_key TEXT, by TEXT, at TEXT);`);
 const SIZES = { square: { label: 'Square 1:1', ai: '1024x1024', what: 'a square 1:1 Instagram and Facebook feed post' }, portrait: { label: 'Portrait 4:5', ai: '1024x1536', what: 'a portrait Instagram feed post (it will be trimmed to 4:5, so keep about 9% empty at the top and bottom)' }, story: { label: 'Story 9:16', ai: '1024x1536', what: 'a vertical 9:16 Instagram, Facebook and WhatsApp story (the sides will be trimmed, so keep everything in the middle 80% of the width, and the top and bottom 12% free of text)' } };
 const DEFAULT_PROMPT = `Design {format} for a job opening, for BrillBrains Hiring Solutions (recruitment for India's jewellery industry).
-Big headline: "We're Hiring". Role: "{job}". Location: "{city}".{experience}{salary}
-Call to action: "Apply now" and the line "{apply}".
-Look: premium and clean, deep navy with gold accents, subtle jewellery motifs, bold modern type, strong contrast, easy to read on a phone. No people's faces, no made-up logos, no extra text.
+Put exactly this text on it, and nothing else:
+- Big headline: "We're Hiring"
+- Role: "{job}"
+- Location: "{city}"
+{details}- Call to action: "Apply now" and the line "{apply}"
+Show the details as short, easy-to-scan lines with small icons. Leave out any line that is not given above.
+Look: premium and clean, deep navy with gold accents, subtle jewellery motifs, bold modern type, strong contrast, easy to read on a phone. No made-up logos, no extra text.
 Spell every word exactly as given above. Keep all text inside a 10% margin from every edge.`;
 const creativePrompt = () => D.settings().creative_ai_prompt || DEFAULT_PROMPT;
 const aiReady = () => !!process.env.OPENAI_API_KEY;
-function fillPrompt(tpl, j, size, refs, extra) {
-  const v = V.jobView(j); const sal = v.salary_text && !/hidden|not shown/i.test(v.salary_text) ? v.salary_text : '';
-  const exp = j.exp_from !== null && j.exp_from !== undefined ? `${j.exp_from}${j.exp_to !== null && j.exp_to !== undefined ? `–${j.exp_to}` : '+'} years` : '';
+const arr = (v) => { try { const x = typeof v === 'string' ? JSON.parse(v || '[]') : v; return Array.isArray(x) ? x : []; } catch { return []; } };
+const clip = (v, n) => String(v || '').replace(/\s+/g, ' ').trim().slice(0, n);
+// What the job itself says: role, city, experience, salary, and the skills / tools it asks for.
+function jobFacts(j) {
+  const L = require('./logic');
+  const exp = j.exp_from !== null && j.exp_from !== undefined ? `${j.exp_from}${j.exp_to !== null && j.exp_to !== undefined && j.exp_to !== j.exp_from ? `–${j.exp_to}` : '+'} years` : '';
+  const r1k = (y) => Math.round(y / 12 / 1000) * 1000; const lo = r1k(j.sal_from || j.sal_to); const hi = r1k(j.sal_to || j.sal_from); // a month, to the nearest thousand
+  const salary = j.sal_from || j.sal_to ? (lo === hi ? `${L.inr(lo)} a month` : `${L.inr(lo)}–${L.inr(hi)} a month`) : '';
+  const highlights = [...arr(j.tools), ...arr(j.skills)].map((x) => clip(typeof x === 'string' ? x : x && (x.name || x.label), 40)).filter(Boolean).slice(0, 4);
+  return { job: j.title, city: j.city || '', experience: exp, salary, highlights };
+}
+const jdText = (j) => { const jd = typeof j.jd === 'string' ? (() => { try { return JSON.parse(j.jd || '{}'); } catch { return {}; } })() : (j.jd || {}); return Object.values(jd).map((x) => (Array.isArray(x) ? x.join('\n') : typeof x === 'string' ? x : '')).filter(Boolean).join('\n'); };
+const cleanBrief = (b, j) => { const f = jobFacts(j); b = b || {}; return { job: clip(b.job ?? f.job, 70) || j.title, city: clip(b.city ?? f.city, 40), experience: clip(b.experience ?? f.experience, 40), salary: clip(b.salary ?? f.salary, 50), highlights: (Array.isArray(b.highlights) ? b.highlights : f.highlights).map((x) => clip(x, 60)).filter(Boolean).slice(0, 5) }; };
+function fillPrompt(tpl, j, size, refs, extra, brief) {
+  const b = cleanBrief(brief, j);
   const site = String(D.settings().business.base_url || 'hire.brillbrainsconsultants.com').replace(/^https?:\/\//, '').replace(/\/$/, '');
-  const vars = { format: SIZES[size].what, job: j.title, city: j.city || 'India', experience: exp ? ` Experience: "${exp}".` : '', salary: sal ? ` Salary: "${sal}".` : '', apply: `${site}/apply · Job ${j.id}`, company: 'BrillBrains Hiring Solutions' };
+  const details = [b.experience && `- Experience: "${b.experience}"`, b.salary && `- Salary: "${b.salary}"`, ...b.highlights.map((h) => `- "${h}"`)].filter(Boolean).map((x) => `${x}\n`).join('');
+  const vars = { format: SIZES[size].what, job: b.job, city: b.city || 'India', details, experience: b.experience ? ` Experience: "${b.experience}".` : '', salary: b.salary ? ` Salary: "${b.salary}".` : '', apply: `${site}/apply · Job ${j.id}`, company: 'BrillBrains Hiring Solutions' };
   let p = String(tpl).replace(/\{(\w+)\}/g, (m, k) => (vars[k] !== undefined ? vars[k] : m));
+  // an older saved prompt without {details}: the requirements still go on the creative
+  if (!/\{details\}/.test(tpl) && b.highlights.length) p += `\nAlso show these requirements, word for word, as short lines: ${b.highlights.map((h) => `"${h}"`).join(', ')}.`;
   if (refs) p += '\nMatch the style of the reference creatives: their colours, layout, type and overall feel. Do not copy their wording; use the text above.';
   if (extra) p += `\nAlso: ${String(extra).slice(0, 600)}`;
   return p.slice(0, 3800);
@@ -368,7 +387,7 @@ async function makeCreatives(runId) {
   const r = get('SELECT * FROM creative_runs WHERE id=?', runId); const j = get('SELECT * FROM jobs WHERE id=?', r.job_id); const o = JSON.parse(r.sizes || '{}'); const out = [];
   await Promise.all(o.sizes.map(async (size) => {
     try {
-      const prompt = fillPrompt(o.prompt, j, size, o.refs.length, o.extra); const buf = await openaiImage(prompt, size, o.refs);
+      const prompt = fillPrompt(o.prompt, j, size, o.refs.length, o.extra, o.brief); const buf = await openaiImage(prompt, size, o.refs);
       const key = keepImage(buf, `${j.id}-${size}.png`, r.by, j.id);
       insert('social_creatives', { job_id: j.id, size, media_key: key, prompt, by: r.by, at: now() }); out.push({ size, key });
     } catch (e) { out.push({ size, error: e.message }); }
@@ -383,7 +402,7 @@ route('GET', '/api/social/ai/:job', CH, (ctx) => {
   const refs = all('SELECT media_key FROM creative_refs ORDER BY at DESC LIMIT 30').map((x) => ({ key: x.media_key, url: `/api/public/studio-media/${x.media_key}`, kind: 'reference' }));
   const past = all("SELECT media_key, job_id FROM social_job_image WHERE job_id != ? ORDER BY at DESC LIMIT 12", j.id).map((x) => ({ key: x.media_key, url: `/api/public/studio-media/${x.media_key}`, kind: `used for ${x.job_id}` }));
   const st = get('SELECT * FROM social_job_story WHERE job_id=?', j.id);
-  return { ready: aiReady(), sizes: Object.entries(SIZES).map(([k, v]) => ({ key: k, label: v.label })), prompt: creativePrompt(), standard: DEFAULT_PROMPT, refs: [...refs, ...past], made: all('SELECT * FROM social_creatives WHERE job_id=? ORDER BY id DESC LIMIT 24', j.id).map(creativeRow), story_key: st ? st.media_key : null };
+  return { ready: aiReady(), sizes: Object.entries(SIZES).map(([k, v]) => ({ key: k, label: v.label })), prompt: creativePrompt(), standard: DEFAULT_PROMPT, facts: jobFacts(j), has_jd: !!jdText(j), last_brief: (() => { const r = get('SELECT sizes FROM creative_runs WHERE job_id=? ORDER BY at DESC LIMIT 1', j.id); try { return r ? JSON.parse(r.sizes).brief || null : null; } catch { return null; } })(), refs: [...refs, ...past], made: all('SELECT * FROM social_creatives WHERE job_id=? ORDER BY id DESC LIMIT 24', j.id).map(creativeRow), story_key: st ? st.media_key : null };
 });
 route('POST', '/api/social/ai/run', CH, (ctx) => {
   const b = ctx.body || {}; const j = loadJob(b.job_id);
@@ -393,11 +412,23 @@ route('POST', '/api/social/ai/run', CH, (ctx) => {
   const prompt = String(b.prompt || '').trim() || creativePrompt(); if (b.save_prompt) D.setSetting('creative_ai_prompt', prompt);
   if (get("SELECT 1 FROM creative_runs WHERE job_id=? AND status='Making' AND at > ?", j.id, new Date(Date.now() - 6 * 60000).toISOString())) throw httpError(409, 'Creatives for this job are being made already. Wait a minute.');
   const id = crypto.randomBytes(8).toString('hex');
-  insert('creative_runs', { id, job_id: j.id, status: 'Making', sizes: JSON.stringify({ sizes, refs, prompt, extra: String(b.extra || '').trim() }), out: '[]', by: ctx.actor.label, at: now() });
+  insert('creative_runs', { id, job_id: j.id, status: 'Making', sizes: JSON.stringify({ sizes, refs, prompt, extra: String(b.extra || '').trim(), brief: cleanBrief(b.brief, j) }), out: '[]', by: ctx.actor.label, at: now() });
   setImmediate(() => makeCreatives(id).catch((e) => update('creative_runs', id, { status: 'Failed', error: e.message })));
   return { id, sizes };
 });
 route('GET', '/api/social/ai/run/:id', CH, (ctx) => { const r = get('SELECT * FROM creative_runs WHERE id=?', ctx.params.id); if (!r) throw httpError(404, 'Not found'); return { status: r.status, error: r.error, out: JSON.parse(r.out || '[]').map((x) => (x.key ? { ...x, url: `/api/public/studio-media/${x.key}`, label: SIZES[x.size].label } : { ...x, label: SIZES[x.size].label })) }; });
+route('POST', '/api/social/ai/brief', { ...CH, rate: { key: 'aibrief', max: 60, minutes: 60 } }, async (ctx) => {
+  const b = ctx.body || {}; const j = loadJob(b.job_id); const f = jobFacts(j);
+  const jd = clip(String(b.jd || '').trim() || jdText(j), 6000);
+  if (!jd || !require('./llm').available()) return { ...f, from_jd: false };
+  const r = await require('./llm').json({
+    name: 'creative_brief', maxTokens: 600,
+    system: 'You pick the few facts a job-ad image must show. Reply in JSON. Use only what the job description says; never invent. Each highlight is at most 6 words, plain, in title case, e.g. "Matrix & Rhino 3D", "Female candidates only", "Gujarati speaking", "Graduate", "Night shift". Pick up to 4: required software or tools, key skills, gender, language, qualification, shift or other must-haves. Leave experience or salary empty if the text does not state them.',
+    user: `Job title: ${j.title}\nCity: ${j.city || ''}\nJob description:\n${jd}`,
+    schema: { type: 'object', additionalProperties: false, required: ['experience', 'salary', 'highlights'], properties: { experience: { type: 'string' }, salary: { type: 'string' }, highlights: { type: 'array', items: { type: 'string' } } } },
+  });
+  return { job: f.job, city: f.city, experience: f.experience || clip(r.experience, 40), salary: f.salary || clip(r.salary, 50), highlights: [...new Set([...(r.highlights || []).map((x) => clip(x, 60)), ...f.highlights])].filter(Boolean).slice(0, 5), from_jd: true };
+});
 // An earlier creative kept as a style reference (any job's creative, or one uploaded here).
 route('POST', '/api/social/ai/refs', CH, (ctx) => {
   const b = ctx.body || {};

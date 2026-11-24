@@ -143,7 +143,7 @@ function daily() {
   fetchMeta(istAgo(3), istAgo(1), { label: 'Daily fetch' }).catch((e) => { D.setHealth('meta_spend_error', `${now()} ${e.message}`); require('./alerts').devAlert('Meta ad spend fetch failed', e.message); });
 }
 const health = (k) => (get('SELECT value FROM health WHERE key=?', k) || {}).value || '';
-route('GET', '/api/adspend/meta', SUPER, () => {
+route('GET', '/api/adspend/meta', { auth: 'team' }, () => {
   const cfg = metaCfg(); const v = health('meta_spend_last'); let last = typeof v === 'object' ? v : null; if (typeof v === 'string' && v) try { last = JSON.parse(v); } catch { /* none */ }
   return { connected: !!cfg, account: cfg ? `act_…${cfg.account.slice(-4)}` : '', last, error: health('meta_spend_error') };
 });
@@ -160,7 +160,7 @@ function spendRows() {
   return all('SELECT * FROM ad_spend').filter((r) => !covered(r));
 }
 module.exports.spendRows = spendRows;
-route('GET', '/api/adspend/report', SUPER, () => {
+route('GET', '/api/adspend/report', { auth: 'team' }, () => {
   // An uploaded Meta export is left out for any ad set and day the API already fetched.
   const fetched = new Set(); for (const r of all('SELECT adset, day_from FROM ad_spend WHERE upload_id=?', API)) fetched.add(`${norm(r.adset)}|${r.day_from}`);
   const covered = (r) => { if (r.upload_id === API || r.platform !== 'Meta' || !fetched.size || !isoDay(r.day_from) || !isoDay(r.day_to)) return false; for (let d = new Date(`${r.day_from}T00:00:00Z`), k = 0; d.toISOString().slice(0, 10) <= r.day_to && k < 400; d.setUTCDate(d.getUTCDate() + 1), k++) if (fetched.has(`${norm(r.adset)}|${d.toISOString().slice(0, 10)}`)) return true; return false; };
