@@ -2941,3 +2941,6 @@ a.pipe-step { text-decoration: none; cursor: pointer; } a.pipe-step:hover { bord
 @media (max-width: 640px) { .rep-groups { grid-template-columns: 1fr; } }
 
 .fb-prev { width: 100%; height: 70vh; border: 1px solid var(--border); border-radius: 12px; background: #f6f7fb; }
+
+/* filter chips: long values stay on one line, cut with … (full text in the tooltip) */
+.fchip { max-width: 100%; min-width: 0; } .fchip .fchip-t { max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

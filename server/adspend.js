@@ -178,7 +178,10 @@ route('GET', '/api/adspend/report', SUPER, () => {
     const job = get('SELECT * FROM jobs WHERE id=?', jid); if (!job) return null; const v = V.jobView(job);
     const fromAds = apps.filter((a) => a.job_id === jid); const hires = fromAds.filter((a) => a.result === 'Hired').length;
     const allApps = get('SELECT COUNT(*) n FROM applications WHERE job_id=?', jid).n;
-    return { job_id: jid, code: job.old_code || jid, title: job.title, city: job.city, client: v.client_name, status: v.status, spend: Math.round(j.spend), ad_apps: fromAds.length, all_apps: allApps, hires, per_app: fromAds.length ? Math.round(j.spend / fromAds.length) : null, per_hire: hires ? Math.round(j.spend / hires) : null };
+    // how far the ad applicants got: screened, telephonic round (our interview), client round, offer made, joined
+    const L = require('./logic'); const reached = (x, st) => x.result === 'Hired' || x.step === 'Joined' || !!x.joined_at || L.stepIdx(x.step) >= L.stepIdx(st);
+    const funnel = { screened: fromAds.filter((x) => x.screen === 'Accepted' || reached(x, 'Our interview')).length, phone: fromAds.filter((x) => reached(x, 'Our interview')).length, client_round: fromAds.filter((x) => reached(x, 'Client interview')).length, offers: fromAds.filter((x) => reached(x, 'Offer made')).length, joined: fromAds.filter((x) => x.result === 'Hired' || x.step === 'Joined' || x.joined_at).length };
+    return { job_id: jid, code: job.old_code || jid, title: job.title, city: job.city, client: v.client_name, status: v.status, spend: Math.round(j.spend), ad_apps: fromAds.length, all_apps: allApps, hires, ...funnel, per_app: fromAds.length ? Math.round(j.spend / fromAds.length) : null, per_hire: hires ? Math.round(j.spend / hires) : null };
   }).filter(Boolean).sort((a, b) => b.spend - a.spend);
   const total = rows.reduce((t, r) => t + r.spend, 0); const matched = out.reduce((t, j) => t + j.spend, 0);
   const adApps = out.reduce((t, j) => t + j.ad_apps, 0); const hires = out.reduce((t, j) => t + j.hires, 0);
