@@ -1,0 +1,32 @@
+keyword,audience,intent,cluster,funnel,volume,difficulty,geo,business_relevance,conversion_potential,current_rank,target_url,content_type,priority
+jewellery recruitment agency,employer,commercial,recruitment service,decision,unknown,unknown,India,high,high,unknown,/jewellery-recruitment,service hub,P1
+jewellery recruitment consultants,employer,commercial,recruitment service,decision,unknown,unknown,India,high,high,unknown,/jewellery-recruitment,service hub,P1
+jewellery placement consultancy,employer,commercial,recruitment service,decision,unknown,unknown,India,high,high,unknown,/jewellery-recruitment,service hub,P1
+jewellery manpower agency,employer,commercial,recruitment service,decision,unknown,unknown,India,high,high,unknown,/jewellery-recruitment,service hub,P2
+jewellery staffing agency,employer,commercial,recruitment service,decision,unknown,unknown,India,high,high,unknown,/jewellery-recruitment,service hub,P2
+gems and jewellery recruitment agency,employer,commercial,recruitment service,decision,unknown,unknown,India,high,high,unknown,/jewellery-recruitment,service hub,P1
+jewellery recruitment agency mumbai,employer,commercial,recruitment service + location,decision,unknown,unknown,Mumbai,high,high,unknown,/jewellery-recruitment (city page later if demand proven),service hub,P1
+jewellery recruitment agency surat,employer,commercial,recruitment service + location,decision,unknown,unknown,Surat,high,high,unknown,/jewellery-recruitment,service hub,P2
+jewellery bulk hiring,employer,commercial,bulk hiring,decision,unknown,unknown,India,high,high,unknown,/bulk-hiring,form + hub section,P2
+staff for new jewellery showroom,employer,commercial,bulk hiring,decision,unknown,unknown,India,high,high,unknown,/bulk-hiring,form + hub section,P2
+hire jewellery sales executive,employer,transactional,role: retail sales,decision,unknown,unknown,India,high,high,unknown,/jewellery-recruitment/jewellery-sales-staff,role family page,P1
+jewellery showroom sales staff,employer,commercial,role: retail sales,consideration,unknown,unknown,India,high,high,unknown,/jewellery-recruitment/jewellery-sales-staff,role family page,P1
+hire jewellery store manager,employer,transactional,role: store management,decision,unknown,unknown,India,high,high,unknown,/jewellery-recruitment/jewellery-store-managers,role family page,P1
+hire jewellery cad designer,employer,transactional,role: design & CAD,decision,unknown,unknown,India,high,high,unknown,/jewellery-recruitment/jewellery-cad-designers,role family page,P1
+matrix cad designer for jewellery,employer,commercial,role: design & CAD,consideration,unknown,unknown,India,high,high,unknown,/jewellery-recruitment/jewellery-cad-designers,role family page,P2
+hire jewellery karigar,employer,transactional,role: production,decision,unknown,unknown,India,high,high,unknown,/jewellery-recruitment/jewellery-karigars-and-production-staff,role family page,P1
+skilled goldsmith workers,employer,commercial,role: production,consideration,unknown,unknown,India,high,medium,unknown,/jewellery-recruitment/jewellery-karigars-and-production-staff,role family page,P2
+hire gemologist,employer,transactional,role: quality & gemology,decision,unknown,unknown,India,high,high,unknown,/jewellery-recruitment/gemologists-and-quality-staff,role family page,P2
+diamond grader jobs recruitment,employer,commercial,role: quality & gemology,consideration,unknown,unknown,India,high,medium,unknown,/jewellery-recruitment/gemologists-and-quality-staff,role family page,P2
+jewellery b2b sales executive hiring,employer,transactional,role: B2B sales,decision,unknown,unknown,India,high,high,unknown,/jewellery-recruitment/jewellery-b2b-sales-and-business-development,role family page,P2
+jewellery merchandiser recruitment,employer,transactional,role: merchandising & purchase,decision,unknown,unknown,India,high,high,unknown,/jewellery-recruitment/jewellery-merchandising-purchase-and-inventory,role family page,P2
+jewellery accountant / jewellery marketing executive hiring,employer,transactional,role: corporate,decision,unknown,unknown,India,medium,medium,unknown,/jewellery-recruitment/jewellery-corporate-and-support-roles,role family page,P3
+how to hire jewellery sales staff,employer,informational,problem,awareness,unknown,unknown,India,high,medium,unknown,(guide) /jewellery-recruitment/guides/hire-jewellery-sales-staff,guide,P2
+how to recruit a jewellery cad designer,employer,informational,problem,awareness,unknown,unknown,India,high,medium,unknown,(guide),guide,P2
+how to reduce attrition in jewellery showroom,employer,informational,problem,awareness,unknown,unknown,India,medium,low,unknown,(guide),guide,P3
+jewellery recruitment cost / fees,employer,commercial,cost,consideration,unknown,unknown,India,high,high,unknown,/jewellery-recruitment#faq,FAQ,P2
+jewellery store manager skills,employer,informational,problem,awareness,unknown,unknown,India,medium,low,unknown,(guide),guide,P3
+jewellery jobs,candidate,navigational,jobs,—,unknown,unknown,India,medium (database),n/a,unknown,/open-roles,job list,P2
+jewellery jobs in mumbai,candidate,transactional,jobs + location,—,unknown,unknown,Mumbai,medium,n/a,unknown,/open-roles + /jd/*,job pages,P2
+jewellery cad designer jobs,candidate,transactional,jobs: design,—,unknown,unknown,India,medium,n/a,unknown,/jd/* (Google for Jobs),job pages,P2
+jewellery sales executive jobs,candidate,transactional,jobs: sales,—,unknown,unknown,India,medium,n/a,unknown,/jd/* (Google for Jobs),job pages,P2
