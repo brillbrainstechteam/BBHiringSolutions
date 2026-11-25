@@ -1773,7 +1773,7 @@ route('POST', '/api/tieups', T, (ctx) => {
 // ---------- segments (saved candidate searches) ----------
 // A segment is a named set of resume-bank filters. Its owner sees it; shared ones are seen by the whole team.
 // The list of people is worked out again each time, so counts and downloads are always current.
-const SEG_KEYS = ['q', 'ufrom', 'uto', 'industry', 'domain', 'skills', 'skillgroup', 'worked', 'biz', 'cv', 'company', 'dept', 'job', 'city', 'state', 'ad', 'jewellery', 'from', 'to', 'exp_min', 'exp_max', 'sal_min', 'sal_max', 'looking', 'status', 'source', 'updated', 'notice', 'stale', 'archived'];
+const SEG_KEYS = ['q', 'ufrom', 'uto', 'industry', 'domain', 'skills', 'skillgroup', 'worked', 'biz', 'cv', 'company', 'dept', 'job', 'city', 'state', 'ad', 'jewellery', 'from', 'to', 'exp_min', 'exp_max', 'sal_min', 'sal_max', 'looking', 'status', 'source', 'updated', 'notice', 'stale', 'archived', 'new', 'agency'];
 const segQuery = (raw) => { const q = typeof raw === 'string' ? JSON.parse(raw || '{}') : raw || {}; return Object.fromEntries(SEG_KEYS.filter((k) => q[k] !== undefined && q[k] !== null && q[k] !== '').map((k) => [k, String(q[k])])); };
 const segVisible = (u) => all('SELECT s.*, us.name AS owner_name FROM saved_searches s LEFT JOIN users us ON us.id=s.user_id WHERE s.user_id=? OR s.shared=1 ORDER BY s.name COLLATE NOCASE', u.id);
 function segOwn(ctx) {

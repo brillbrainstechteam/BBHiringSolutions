@@ -2957,3 +2957,20 @@ a.pipe-step { text-decoration: none; cursor: pointer; } a.pipe-step:hover { bord
 .ai-card-wrap { display: flex; flex-direction: column; gap: 4px; } .ai-wait, .ai-fail { min-height: 160px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; border: 1px dashed var(--border); border-radius: 10px; padding: 12px; }
 .ai-spin { width: 28px; height: 28px; border-radius: 50%; border: 3px solid var(--border); border-top-color: var(--navy, #0F1D3C); animation: aispin 0.9s linear infinite; } @keyframes aispin { to { transform: rotate(360deg); } }
 .ai-old { margin-top: 16px; } .ai-old summary { cursor: pointer; margin-bottom: 8px; }
+
+/* Candidates result row: count, view chips and actions wrap onto a second line instead of squeezing or overflowing */
+.cand-result, .seg-head .cand-result { flex-wrap: wrap !important; }
+.cand-views { flex-wrap: wrap !important; min-width: 0; }
+.cand-views .chip { flex: none; }
+.cand-seg { flex-wrap: wrap !important; justify-content: flex-end; margin-left: auto; min-width: 0; }
+.cand-seg .btn, .cand-seg .cand-clear { flex: none; }
+
+/* Skill groups on the apply form: each heading folds open */
+details.skill-grp { border: 1px solid var(--border); border-radius: 12px; padding: 0 12px; background: var(--surface); }
+details.skill-grp > summary.skill-grp-h { list-style: none; cursor: pointer; display: flex; align-items: center; gap: 6px; margin: 0; padding: 11px 0; }
+details.skill-grp > summary.skill-grp-h::-webkit-details-marker { display: none; }
+details.skill-grp > summary.skill-grp-h::before { content: '\25B8'; font-size: 12px; transition: transform .15s; }
+details.skill-grp[open] > summary.skill-grp-h::before { transform: rotate(90deg); }
+details.skill-grp .skill-n { text-transform: none; letter-spacing: 0; color: var(--navy); font-weight: 600; }
+details.skill-grp[open] > .skill-chips { padding-bottom: 12px; }
+.skill-groups { gap: 8px; } .skill-more details.skill-grp { margin-bottom: 8px; }

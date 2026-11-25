@@ -80,17 +80,18 @@
     };
     $$('[data-mode]', card).forEach((b) => (b.onclick = () => { mode = b.dataset.mode; apply(); }));
     // Skills, grouped: the groups this job needs first, the rest folded under "More skills". Picks survive a job change.
-    const picked = new Set();
+    const picked = new Set(); const opened = new Set(); // skill groups start folded; the ones opened stay open after a job change
     const drawSkills = () => {
       const box = $('[data-skillbox]', card); if (!box) return; const sg = BB.boot.skill_groups; if (!sg) { box.closest('[data-f]').classList.add('hidden'); return; }
       const jw = $('[name=job_wanted]', card).value; const dept = ((BB.boot.jobs || []).find((j) => j.title === jw) || {}).dept;
       const first = (sg.by_dept || {})[dept] || ['Soft skills', 'Computer & office', 'Languages'];
       const chip = (x) => `<button type="button" class="skill-chip ${picked.has(x) ? 'on' : ''}" data-sk="${esc(x)}" aria-pressed="${picked.has(x)}">${esc(x)}</button>`;
-      const grp = (g) => `<div class="skill-grp"><div class="skill-grp-h">${esc(g.name)}</div><div class="skill-chips">${g.skills.map(chip).join('')}</div></div>`;
+      const grp = (g, open) => { const n = g.skills.filter((x) => picked.has(x)).length; return `<details class="skill-grp" data-sg="${esc(g.name)}" ${open || opened.has(g.name) ? 'open' : ''}><summary class="skill-grp-h">${esc(g.name)} <span class="skill-n" data-sgn>${n ? `· ${n} picked` : ''}</span></summary><div class="skill-chips">${g.skills.map(chip).join('')}</div></details>`; };
       const main = first.map((n) => sg.groups.find((g) => g.name === n)).filter(Boolean); const rest = sg.groups.filter((g) => !first.includes(g.name));
       const extra = [...picked].filter((x) => !sg.groups.some((g) => g.skills.includes(x)));
-      box.innerHTML = `${main.map(grp).join('')}${extra.length ? grp({ name: 'Added by you', skills: extra }) : ''}<details class="skill-more"><summary>More skills</summary>${rest.map(grp).join('')}</details>`;
-      $$('[data-sk]', box).forEach((b) => (b.onclick = () => { const x = b.dataset.sk; if (picked.has(x)) picked.delete(x); else picked.add(x); $$(`[data-sk="${CSS.escape(x)}"]`, box).forEach((c) => { c.classList.toggle('on', picked.has(x)); c.setAttribute('aria-pressed', picked.has(x)); }); }));
+      box.innerHTML = `${main.map((g) => grp(g)).join('')}${extra.length ? grp({ name: 'Added by you', skills: extra }, true) : ''}<details class="skill-more"><summary>More skills</summary>${rest.map((g) => grp(g)).join('')}</details>`;
+      $$('[data-sk]', box).forEach((b) => (b.onclick = () => { const x = b.dataset.sk; if (picked.has(x)) picked.delete(x); else picked.add(x); $$(`[data-sk="${CSS.escape(x)}"]`, box).forEach((c) => { c.classList.toggle('on', picked.has(x)); c.setAttribute('aria-pressed', picked.has(x)); }); $$('[data-sg]', box).forEach((d) => { const k = $$('[data-sk]', d).filter((c) => picked.has(c.dataset.sk)).length; $('[data-sgn]', d).textContent = k ? `· ${k} picked` : ''; }); }));
+      $$('[data-sg]', box).forEach((d) => (d.ontoggle = () => { if (d.open) opened.add(d.dataset.sg); else opened.delete(d.dataset.sg); }));
     };
     const addSkill = () => { const i = $('[data-skillnew]', card); const v = i.value.replace(/\s+/g, ' ').trim(); if (v.length < 2) return; const known = (BB.boot.skills || []).find((x) => x.toLowerCase() === v.toLowerCase()); picked.add(known || v); i.value = ''; drawSkills(); };
     if ($('[data-skilladd]', card)) { $('[data-skilladd]', card).onclick = addSkill; $('[data-skillnew]', card).onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); addSkill(); } }; }
