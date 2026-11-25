@@ -26,11 +26,11 @@ const PAGES = ['/', '/hire', '/bulk-hiring', '/apply', '/partners', '/open-roles
 // The page with its title and link-preview tags (WhatsApp, Facebook, Google read these, not the app's script).
 // The preview always says the business name; the line under it says what this link is for.
 const META = {
-  '/': ['BrillBrains Hiring Solutions', 'Hiring for the jewellery business: hire screened staff, or find your next jewellery job.'],
-  '/apply': ['Jewellery jobs · BrillBrains Hiring Solutions', 'Apply for jewellery jobs in a minute: sales, purchase, cashier, karigar, CAD and more. Free for job seekers.'],
-  '/bulk-hiring': ['Bulk hiring · BrillBrains Hiring Solutions', 'Hiring for many roles at once, or staffing a new showroom? Tell us the roles, how many people and the salary range.'],
-  '/hire': ['Hire jewellery staff · BrillBrains Hiring Solutions', 'Tell us who you need. We send screened, interviewed candidates for your jewellery business.'],
-  '/open-roles': ['All open roles · BrillBrains Hiring Solutions', 'Every jewellery job we are hiring for right now: sales, design, CAD, karigars, accounts and more. Apply in a minute.'],
+  '/': ['Jewellery Recruitment & Jewellery Jobs in India | BrillBrains Hiring Solutions', 'Recruitment for jewellery retailers, manufacturers and wholesalers: screened, interviewed candidates, pay only on joining. Job seekers: apply free for jewellery jobs.'],
+  '/apply': ['Apply for Jewellery Jobs in India | BrillBrains Hiring Solutions', 'Apply for jewellery jobs in a minute: sales, purchase, cashier, karigar, CAD and more. Free for job seekers.'],
+  '/bulk-hiring': ['Bulk Hiring & New Showroom Staffing for Jewellers | BrillBrains Hiring Solutions', 'Hiring for many roles at once, or staffing a new showroom? Tell us the roles, how many people and the salary range.'],
+  '/hire': ['Hire Jewellery Staff: Submit a Hiring Requirement | BrillBrains Hiring Solutions', 'Tell us who you need: sales staff, CAD designers, karigars, gemologists, managers. We send screened, interviewed candidates. Pay only when they join.'],
+  '/open-roles': ['Open Jewellery Jobs in India | BrillBrains Hiring Solutions', 'Every jewellery job we are hiring for right now: sales, design, CAD, karigars, accounts and more. Apply in a minute.'],
   '/partners': ['Partner with us · BrillBrains Hiring Solutions', 'Placement agencies, training institutes and industry bodies: grow with India\'s jewellery-only hiring platform.'],
   '/my-account': ['Client login · BrillBrains Hiring Solutions', 'Log in to see your job openings, shortlisted candidates, interviews and bills.'],
   '/my-profile': ['Job seeker login · BrillBrains Hiring Solutions', 'Log in to see matching jobs, your interviews and your offers.'],
@@ -43,10 +43,10 @@ function pageHtml(page) {
   const [title, desc] = META[page] || META['/'];
   const url = base + (page === '/' ? '/' : page);
   const tags = [`<title>${escAttr(title)}</title>`, `<meta name="description" content="${escAttr(desc)}">`,
-    `<meta property="og:site_name" content="${escAttr(name)}">`, `<meta property="og:title" content="${escAttr(name)}">`, `<meta property="og:description" content="${escAttr(desc)}">`,
+    `<meta property="og:site_name" content="${escAttr(name)}">`, `<meta property="og:title" content="${escAttr(title)}">`, `<meta property="og:description" content="${escAttr(desc)}">`,
     `<meta property="og:type" content="website">`, `<meta property="og:url" content="${escAttr(url)}">`,
     ...(/^https?:\/\//.test(base) ? [`<meta property="og:image" content="${escAttr(base)}/img/icon.png">`, '<meta property="og:image:width" content="192">', '<meta property="og:image:height" content="192">'] : []),
-    `<meta name="twitter:card" content="summary">`, `<meta name="twitter:title" content="${escAttr(name)}">`, `<meta name="twitter:description" content="${escAttr(desc)}">`];
+    `<meta name="twitter:card" content="summary">`, `<meta name="twitter:title" content="${escAttr(title)}">`, `<meta name="twitter:description" content="${escAttr(desc)}">`];
   const SEO = require('./seo'); const pre = SEO.prerender(page);
   return fs.readFileSync(path.join(PUBLIC, 'index.html'), 'utf8').replace('<!--META-->', [...tags, SEO.headTags(page), metaPixel(page)].filter(Boolean).join('\n  '))
     .replace('<div class="boot">Loading…</div>', pre ? `<style>.seo-pre{max-width:960px;margin:0 auto;padding:24px 16px;font:16px/1.6 system-ui,sans-serif}.seo-pre table{border-collapse:collapse}.seo-pre td,.seo-pre th{padding:4px 10px;text-align:left}</style>${pre}` : '<div class="boot">Loading…</div>').replace(/(src|href)="(\/(?:js|css)\/[\w.-]+\.(?:js|css))"/g, `$1="$2?v=${APP_VER}"`);

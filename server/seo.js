@@ -186,7 +186,7 @@ function prerender(page) {
 <h2>Open jobs</h2>${jobsTable(openJobs(), 15)}
 ${faqHtml()}</main>`;
   }
-  if (page === '/open-roles') return `<main class="seo-pre"><h1>All open jewellery jobs</h1><p>Every jewellery job we are hiring for right now. Free for job seekers. <a href="/apply">Apply in a minute</a>.</p>${jobsTable(openJobs(), 300)}</main>`;
+  if (page === '/open-roles') return `<main class="seo-pre"><h1>All open jewellery jobs</h1><p>Every jewellery job we are hiring for right now: sales, design and CAD, karigars, quality and gemology, purchase, accounts, marketing and more. Free for job seekers. <a href="/apply">Apply in a minute</a>; if your role is not listed, apply anyway and we will match you to new openings.</p>${jobsTable(openJobs(), 300)}<h2>Jobs by area</h2><ul>${FAMILIES.map((f) => `<li>${e(f.name)}: ${e(rolesOf(f).slice(0, 5).join(', '))}</li>`).join('')}</ul><p>Employers: <a href="/jewellery-recruitment">see our jewellery recruitment services</a>.</p></main>`;
   if (page === '/hire') return `<main class="seo-pre"><h1>Hire jewellery staff</h1><p>Tell us who you need: role, city, number of people and salary range. We send screened, interviewed candidates and you pay only when someone joins.</p><p><a href="/jewellery-recruitment">See the roles we recruit and how it works</a></p></main>`;
   return '';
 }
