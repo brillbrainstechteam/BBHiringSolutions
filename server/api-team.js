@@ -1276,9 +1276,10 @@ function jdHtml(id, src) {
   const secs = ((o) => { const i = o.findIndex(([k]) => k === 'duties'); o.splice(i >= 0 ? i + 1 : o.length, 0, ['jewel_text', 'Jewellery industry experience']); return o; })(jdSections().filter((x) => x.public !== false && x.key !== 'location').map((x) => [x.key, x.key === 'summary' ? 'About the role' : x.key === 'duties' ? 'What you will do' : x.label]))
     .filter(([k]) => jd[k]).map(([k, l]) => `<section><h2>${l}</h2>${list(jd[k])}</section>`).join('');
   const facts = [['Location', j.city], ['Experience', j.exp_from != null ? `${j.exp_from}${j.exp_to != null ? `–${j.exp_to}` : '+'} years` : ''], ['Openings', j.openings]].filter(([, x]) => x);
+  const bodyHtml = ((own, doc) => (own ? secs : doc ? `<section class="doc">${docHtml(doc)}</section>` : secs || '<section><p>Apply to hear more about this job.</p></section>'))(['summary', 'duties', 'must', 'good', 'education'].some((k) => String((j.jd || {})[k] || '').trim()), docText());
   const title = `${j.title} · ${j.city}`;
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${e(title)} · ${e(b.name)}</title>
-<meta name="description" content="${e(String(jd.summary || `${j.title} job in ${j.city}`).slice(0, 160))}"><meta property="og:title" content="${e(title)}"><meta property="og:description" content="${e(String(jd.summary || '').slice(0, 200))}"><meta name="robots" content="noindex">
+<meta name="description" content="${e(String(jd.summary || `${j.title} job in ${j.city}`).slice(0, 160))}"><meta property="og:title" content="${e(title)}"><meta property="og:description" content="${e(String(jd.summary || '').slice(0, 200))}">${open ? `<meta name="robots" content="index,follow"><link rel="canonical" href="${e(L.link(`jd/${j.id}`))}"><script type="application/ld+json">${JSON.stringify(require('./seo').jobPosting(j, v, jd, bodyHtml)).replace(/</g, '\\u003c')}</script>` : '<meta name="robots" content="noindex">'}
 <style>:root{--navy:#101a3a;--gold:#d4a017;--ink:#1d2433;--muted:#5d6577;--line:#e6e8ef;--bg:#f6f7fb}*{box-sizing:border-box}body{margin:0;font:16px/1.6 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:var(--ink);background:var(--bg)}
 header{background:var(--navy);color:#fff;padding:18px 16px}header .in,main{max-width:760px;margin:0 auto}header b{font-size:15px;letter-spacing:.02em}header span{display:block;font-size:12px;opacity:.7}
 main{padding:20px 16px 90px}.card{background:#fff;border:1px solid var(--line);border-radius:16px;padding:22px}h1{font-size:26px;line-height:1.25;margin:0 0 6px}.where{color:var(--muted);margin:0 0 16px}
@@ -1289,7 +1290,7 @@ section{margin-top:22px}.doc h2{margin-top:20px}.doc p{margin:0 0 8px}h2{font-si
 <body><header><div class="in"><b>${e(b.name)}</b><span>Jobs in jewellery</span></div></header><main><div class="card">
 ${open ? '' : '<div class="closed">This job is no longer taking applications. <a href="/">See open jobs</a></div>'}
 <h1>${e(j.title)}</h1><p class="where">${e(j.city)}${j.department ? ` · ${e(j.department)}` : ''}</p><div class="facts">${facts.map(([l, x]) => `<span>${l}: <b>${e(x)}</b></span>`).join('')}</div>
-${((own, doc) => (own ? secs : doc ? `<section class="doc">${docHtml(doc)}</section>` : secs || '<section><p>Apply to hear more about this job.</p></section>'))(['summary', 'duties', 'must', 'good', 'education'].some((k) => String((j.jd || {})[k] || '').trim()), docText())}
+${bodyHtml}
 </div></main>${open ? `<div class="apply"><a href="${e(apply)}">Apply for this job</a></div>` : ''}</body></html>`;
 }
 module.exports.jdHtml = jdHtml;

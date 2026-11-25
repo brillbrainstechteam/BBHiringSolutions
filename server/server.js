@@ -47,7 +47,9 @@ function pageHtml(page) {
     `<meta property="og:type" content="website">`, `<meta property="og:url" content="${escAttr(url)}">`,
     ...(/^https?:\/\//.test(base) ? [`<meta property="og:image" content="${escAttr(base)}/img/icon.png">`, '<meta property="og:image:width" content="192">', '<meta property="og:image:height" content="192">'] : []),
     `<meta name="twitter:card" content="summary">`, `<meta name="twitter:title" content="${escAttr(name)}">`, `<meta name="twitter:description" content="${escAttr(desc)}">`];
-  return fs.readFileSync(path.join(PUBLIC, 'index.html'), 'utf8').replace('<!--META-->', [...tags, metaPixel(page)].filter(Boolean).join('\n  ')).replace(/(src|href)="(\/(?:js|css)\/[\w.-]+\.(?:js|css))"/g, `$1="$2?v=${APP_VER}"`);
+  const SEO = require('./seo'); const pre = SEO.prerender(page);
+  return fs.readFileSync(path.join(PUBLIC, 'index.html'), 'utf8').replace('<!--META-->', [...tags, SEO.headTags(page), metaPixel(page)].filter(Boolean).join('\n  '))
+    .replace('<div class="boot">Loading…</div>', pre ? `<style>.seo-pre{max-width:960px;margin:0 auto;padding:24px 16px;font:16px/1.6 system-ui,sans-serif}.seo-pre table{border-collapse:collapse}.seo-pre td,.seo-pre th{padding:4px 10px;text-align:left}</style>${pre}` : '<div class="boot">Loading…</div>').replace(/(src|href)="(\/(?:js|css)\/[\w.-]+\.(?:js|css))"/g, `$1="$2?v=${APP_VER}"`);
 }
 // Meta Pixel (base code, in <head> of every page people outside the team see). The live site loads Meta's code;
 // test copies get a stand-in that only records the calls (window.__fbqCalls), so testing never sends visits or
@@ -123,6 +125,12 @@ const server = http.createServer(async (req, res) => {
     // A client rating our recruiters, from the WhatsApp link: /rate/<code>.
     const rtm = /^\/rate\/([\w-]{8,40})\/?$/.exec(p);
     if (rtm) { const h = require('./care').rateHtml(rtm[1]); return send(res, h ? 200 : 404, h || 'This link is not valid any more.', { 'Content-Type': h ? TYPES['.html'] : 'text/plain', 'Cache-Control': 'no-store', 'X-Robots-Tag': 'noindex' }); }
+    // Search: robots.txt, the sitemap, llms.txt, and the server-rendered employer pages (server/seo.js).
+    if (p === '/robots.txt') return send(res, 200, require('./seo').robots(), { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'public, max-age=3600' });
+    if (p === '/sitemap.xml') return send(res, 200, require('./seo').sitemap(), { 'Content-Type': 'application/xml; charset=utf-8', 'Cache-Control': 'public, max-age=3600' });
+    if (p === '/llms.txt') return send(res, 200, require('./seo').llms(), { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'public, max-age=3600' });
+    if (p === '/favicon.ico') { res.writeHead(301, { Location: '/img/favicon.png' }); return res.end(); }
+    if (p.startsWith('/jewellery-recruitment')) { const h = require('./seo').landing(p); if (h) return send(res, 200, h.replace('</head>', `${metaPixel('/jewellery-recruitment')}</head>`), { 'Content-Type': TYPES['.html'], 'Cache-Control': 'no-cache' }); }
     const page = '/' + (p.split('/')[1] || '');
     if (PAGES.includes(page) || p === '/index.html') return send(res, 200, pageHtml(PAGES.includes(page) ? page : '/'), { 'Content-Type': TYPES['.html'], 'Cache-Control': 'no-cache' }); // the app's own pages, e.g. /my-account/jobs
     const file = path.normalize(path.join(PUBLIC, p));

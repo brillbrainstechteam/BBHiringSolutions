@@ -42,7 +42,7 @@
     return `<footer class="lp-foot"><div class="lp-foot-in">
       <div class="lp-foot-brand">${BB.brand('')}<p>Hiring for the jewellery trade, since 2011.</p></div>
       <div><b>Job seekers</b><a href="/apply">Apply</a><a href="/my-profile">Job seeker login</a><a href="/open-roles">See all open jobs</a></div>
-      <div><b>Employers</b><a href="/hire">Hire with us</a><a href="/my-account">Client login</a><a href="/partners">Partners</a></div>
+      <div><b>Employers</b><a href="/hire">Hire with us</a><a href="/jewellery-recruitment">Jewellery recruitment services</a><a href="/my-account">Client login</a><a href="/partners">Partners</a></div>
       <div><b>Talk to us</b>${(c.phones || []).map((p) => `<a href="tel:${esc(p.replace(/\s/g, ''))}" data-no-i18n>${esc(p)}</a>`).join('')}${c.email ? `<a href="mailto:${esc(c.email)}" data-no-i18n>${esc(c.email)}</a>` : ''}<a href="https://wa.me/91${esc(BB.boot.business.support_phone)}" target="_blank" rel="noopener">WhatsApp</a></div>
     </div><div class="lp-legal"><span>© ${new Date().getFullYear()} ${esc(BB.boot.business.name)}</span>${c.site ? `<a href="${esc(c.site)}" target="_blank" rel="noopener">brillbrainsconsultants.com</a>` : ''}${g.terms ? `<a href="${esc(g.terms)}" target="_blank" rel="noopener">Terms</a>` : ''}${g.privacy ? `<a href="${esc(g.privacy)}" target="_blank" rel="noopener">Privacy</a>` : ''}${g.refund ? `<a href="${esc(g.refund)}" target="_blank" rel="noopener">Refunds</a>` : ''}</div></footer>`;
   };
