@@ -940,6 +940,13 @@ route('GET', '/api/files/:id', {}, (ctx) => {
     ok = rid === cid || !!get('SELECT 1 FROM applications WHERE id=? AND candidate_id=?', rid, cid);
   }
   if (!ok) throw httpError(403, 'You cannot open this file.');
+  // Resumes download as "Person Name_Role": the job of the application when one is given (?app=AP-…), else the job they want.
+  if (['cv', 'short_cv'].includes(f.type) && rid.startsWith('CA-')) {
+    const c = get('SELECT id, name, job_wanted FROM candidates WHERE id=?', rid);
+    const ap = ctx.query.app ? get('SELECT j.title FROM applications a JOIN jobs j ON j.id=a.job_id WHERE a.id=? AND a.candidate_id=?', String(ctx.query.app), rid) : null;
+    const last = !ap && !(c && c.job_wanted) ? get('SELECT j.title FROM applications a JOIN jobs j ON j.id=a.job_id WHERE a.candidate_id=? ORDER BY a.created_at DESC LIMIT 1', rid) : null;
+    if (c) f.name = L.resumeFileName(c, (/\.[a-z0-9]{2,5}$/i.exec(f.name || '') || ['.pdf'])[0], (ap || last || {}).title);
+  }
   // ?view=1 on a Word file: its text as a PDF, so it opens in the browser tab instead of downloading
   if (ctx.query.view && /\.docx?$/i.test(f.name || '')) {
     const buf = F.readStored(f); let text = ''; try { text = require('./cvparse').cvText(f.name, buf) || ''; } catch { text = ''; }

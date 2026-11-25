@@ -240,6 +240,12 @@ function alertUser(userId, text, recordId, sendTask = true) {
   if (typeof sendTask === 'string') { const r = settings().auto_rules.find((x) => x.key === `task_${sendTask}`); if (r && !r.on) return; }
   if (sendTask) sendWA({ ptype: 'user', pid: userId, format: 'bbhs_team_task_alert', vars: { task: text, record_id: recordId || '', link: link('team') }, auto: true, rule: 'team_task_alert', dedupe: `task:${userId}:${text}:${recordId}:${istDay()}` });
 }
+// A resume's download name: "Person Name_Role.pdf" (role: the job applied for if given, else the job they want).
+function resumeFileName(c, ext, role) {
+  const clean = (v) => String(v || '').normalize('NFKD').replace(/[^\w .&()-]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 60);
+  const r = clean(role || (c && c.job_wanted)) || 'Candidate';
+  return `${clean(c && c.name) || (c && c.id) || 'Candidate'}_${r}${ext || '.pdf'}`;
+}
 const link = (part, q = '') => `${settings().business.base_url}/${part}${q}`;
 function agencyAdmin(agencyId) { return get("SELECT * FROM users WHERE agency_id=? AND level='admin' AND status='On' ORDER BY id LIMIT 1", agencyId); }
 function superAdmins() { return all("SELECT * FROM users WHERE level='super' AND status='On'"); }
@@ -1622,7 +1628,7 @@ function sendSystemText(ptype, pid, text) {
   insert('messages', { id: nextId('WA'), person_type: ptype, person_id: pid, phone: p.phone, direction: 'out', text, buttons: [], sent_by: 'Auto', status: settings().crm.enabled ? 'sending' : 'would send', read_by_us: 1, auto: 1, at: now() });
 }
 
-module.exports = { stageStateOf, ownersOfJob, ownerMap, ownsApp, STAGES, stageOfApp, nextStageOf, reopenRefilled, adPlanFor, openAdApplications, placedOn, closePlacedApps, adLabel,
+module.exports = { resumeFileName, stageStateOf, ownersOfJob, ownerMap, ownsApp, STAGES, stageOfApp, nextStageOf, reopenRefilled, adPlanFor, openAdApplications, placedOn, closePlacedApps, adLabel,
   STEPS, deptByWords, refreshMatchCounts, recalcClientJobs, openBlockers, billReadyOn, billNotYet, stepIdx, digits10, validPhone, inr, istDay, istFmt, istTime, istHour, inQuiet, next9am, daysBetween, addDays, hashPassword, checkPassword, newPassword, sha,
   activationState, checkActivation, waHeld, TEAMS, IV_MODES, clientSeesIv, addIvNote, CALL_OUTCOMES, logCall, jobList, deptOf, stateOf, person, fillFormat, windowOpenUntil, sendWA, setDispatcher, alertUser, link, agencyAdmin, superAdmins,
   quickClient, AUTO_WEIGHTS, agencyScores, autoAssignOn, autoAssignClient, EMAIL_RE, needEmail, okHrEmail, cleanPoc, saveClientExtras, pocOf, CLIENT_MAIN, CLIENT_SIDE, ONBOARD_STEPS, clientFacts, onboardDone, earnedStage, syncClientStage, computeJobStatus, jobStatusReason, recalcJob, filledCount, appsOfJob, matchScore, jobsFor, cleanBusiness, BUSINESS_TYPES, EXP_YEARS, JEW_YEARS, LOOKING, NOT_LOOKING, JOB_STATUSES, LOOK_FRESH, appStates, appStateOf, jobStatusOf, setLooking, ratingOf, bestMatches, isPlaced, salaryText, autoJobAlert,

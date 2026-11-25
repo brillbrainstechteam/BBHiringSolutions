@@ -1508,7 +1508,8 @@ route('GET', '/api/candidates/cvs.zip', { auth: 'team', levels: ['super'] }, (ct
     let buf; try { buf = F.readStored(fl); } catch { skipped++; continue; }
     if (size + buf.length > 200 * 1024 * 1024 || Object.keys(files).length >= 1000) { skipped++; continue; }
     const ext = (/\.[a-z0-9]{2,5}$/i.exec(fl.name || '') || ['.pdf'])[0];
-    files[`CVs/${c.id} ${safe(c.name)}${ext}`] = buf; size += buf.length;
+    let nm = L.resumeFileName(c, ext); for (let k = 2; files[`CVs/${nm}`]; k++) nm = L.resumeFileName(c, ` (${k})${ext}`); // same name twice: numbered
+    files[`CVs/${nm}`] = buf; size += buf.length;
   }
   files['candidates.xlsx'] = F.toXLSX([['ID', 'Name', 'WhatsApp', 'Email', 'Job wanted', 'Department', 'City', 'Experience (yrs)', 'Jewellery (yrs)', 'Status', 'Source', 'CV in zip'], ...rows.map((c) => [c.id, c.name, c.whatsapp, c.email, c.job_wanted, c.department, c.city, c.exp_total ?? '', c.exp_jewellery ?? '', c.status, c.source, Object.keys(files).some((k) => k.startsWith(`CVs/${c.id} `)) ? 'Yes' : 'No'])], 'candidates');
   D.history(ctx.actor.label, 'download', null, 'candidate CVs', null, `${rows.length} candidates, ${Object.keys(files).length - 1} CVs${skipped ? `, ${skipped} left out` : ''}`, null, ctx.ip);

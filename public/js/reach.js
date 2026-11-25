@@ -255,7 +255,7 @@
     $('[data-aihladd]', m).onclick = addHl; $('[data-aihlnew]', m).onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); addHl(); } };
     $('[data-aijdgo]', m).onclick = async (e) => {
       const b = e.currentTarget; b.disabled = true; b.textContent = 'Reading…';
-      try { const r = await BB.post('/api/social/ai/brief', { job_id: jobId, jd: $('[data-aijd]', m).value }); for (const k of ['experience', 'salary']) if (r[k] && !brief[k]) brief[k] = r[k]; brief.highlights = [...new Set([...(r.highlights || []), ...brief.highlights])].slice(0, 5); // what the JD asks for first $$('[data-bf]', m).forEach((x) => { x.value = brief[x.dataset.bf] || ''; }); drawHl(); BB.toast(r.from_jd ? 'Read the JD: check the lines above' : 'No JD to read: filled in from the job'); } catch (er) { BB.fail(er); }
+      try { const r = await BB.post('/api/social/ai/brief', { job_id: jobId, jd: $('[data-aijd]', m).value }); for (const k of ['experience', 'salary']) if (r[k] && !brief[k]) brief[k] = r[k]; brief.highlights = [...new Set([...(r.highlights || []), ...brief.highlights])].slice(0, 5); /* what the JD asks for first */ $$('[data-bf]', m).forEach((x) => { x.value = brief[x.dataset.bf] || ''; }); drawHl(); BB.toast(r.from_jd ? 'Read the JD: check the lines above' : 'No JD to read: filled in from the job'); } catch (er) { BB.fail(er); }
       b.disabled = false; b.textContent = 'Read again';
     };
     // step 2: look
