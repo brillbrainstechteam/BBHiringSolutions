@@ -316,8 +316,7 @@
   S.ads = async (el, actions) => {
     el.innerHTML = '<div class="empty">Checking the Meta connection…</div>';
     const [st, d] = await Promise.all([BB.api('/api/ads/meta/status'), BB.api('/api/ads/meta')]);
-    actions.innerHTML = `<button class="btn" data-afresh title="${d.live_at ? `Numbers from ${BB.fmtDT ? BB.fmtDT(d.live_at) : d.live_at}` : ''}">Refresh from Meta</button>${BB.me.user.level === 'super' ? `<button class="btn primary" data-anew ${st.ready ? '' : 'disabled title="Finish the Meta setup first"'}>+ New ad</button>` : ''}`;
-    if (BB.me.user.level !== 'super') el.classList.add('ads-view-only');
+    actions.innerHTML = `<button class="btn" data-afresh title="${d.live_at ? `Numbers from ${BB.fmtDT ? BB.fmtDT(d.live_at) : d.live_at}` : ''}">Refresh from Meta</button><button class="btn primary" data-anew ${st.ready ? '' : 'disabled title="Finish the Meta setup first"'}>+ New ad</button>`;
     $('[data-afresh]', actions).onclick = async (e) => { e.target.disabled = true; e.target.textContent = 'Refreshing…'; try { await Promise.all([BB.api('/api/ads/meta/status?fresh=1'), BB.api('/api/ads/meta?fresh=1')]); } catch (er) { BB.fail(er); } BB.refreshPage(); };
     const setup = !st.connected ? `<div class="notice">${esc(st.note)}</div>`
       : st.ready ? ''

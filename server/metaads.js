@@ -61,7 +61,7 @@ route('GET', '/api/ads/meta/geo', { auth: 'team' }, async (ctx) => {
 
 const CTA = { apply: 'APPLY_NOW', learn: 'LEARN_MORE', signup: 'SIGN_UP' };
 // One ad end to end: campaign → ad set (who, where, budget) → picture or video → creative → ad, all paused.
-route('POST', '/api/ads/meta', SUPER, async (ctx) => {
+route('POST', '/api/ads/meta', { auth: 'team' }, async (ctx) => {
   const b = ctx.body || {}; const c = need(); const bad = (m, f) => { throw httpError(400, m, f); };
   const goal = b.goal === 'whatsapp' ? 'whatsapp' : 'apply';
   const job = b.job_id ? get('SELECT * FROM jobs WHERE id=?', String(b.job_id)) : null; if (goal === 'apply' && !job) bad('Pick the job opening the ad is for', 'job_id');
@@ -115,7 +115,7 @@ route('POST', '/api/ads/meta', SUPER, async (ctx) => {
   return { id, status: 'PAUSED' };
 });
 const adOf = (ctx) => { const r = get('SELECT * FROM meta_ads WHERE id=?', Number(ctx.params.id) || 0); if (!r) throw httpError(404, 'Ad not found'); return r; };
-route('POST', '/api/ads/meta/:id/status', SUPER, async (ctx) => {
+route('POST', '/api/ads/meta/:id/status', { auth: 'team' }, async (ctx) => {
   const r = adOf(ctx); const st = ctx.body.status === 'ACTIVE' ? 'ACTIVE' : 'PAUSED'; if (!r.ad_id) throw httpError(400, 'This ad was not finished. Make it again.');
   // On: campaign, then ad set, then ad. Off: the campaign alone stops all spending.
   for (const obj of st === 'ACTIVE' ? [r.campaign_id, r.adset_id, r.ad_id] : [r.campaign_id]) await graph(obj, { method: 'POST', params: { status: st } });

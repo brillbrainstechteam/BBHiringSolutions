@@ -2945,8 +2945,6 @@ a.pipe-step { text-decoration: none; cursor: pointer; } a.pipe-step:hover { bord
 /* filter chips: long values stay on one line, cut with … (full text in the tooltip) */
 .fchip { max-width: 100%; min-width: 0; } .fchip .fchip-t { max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-/* Meta ads for admins and sub admins: numbers only, no buttons that spend money */
-.ads-view-only .tbl .btn, .ads-view-only [data-aflip], .ads-view-only [data-anew] { display: none; }
 
 /* AI creatives: three steps */
 .ai-steps { display: flex; gap: 6px; margin-bottom: 16px; flex-wrap: wrap; }

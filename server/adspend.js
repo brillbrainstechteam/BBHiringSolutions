@@ -66,7 +66,7 @@ function allocate(r, apps) {
   return { shares: Object.fromEntries(ids.map((j) => [j, 1 / ids.length])), how: saved.length ? 'ad names saved on the job' : 'role in the ad set name' };
 }
 
-route('POST', '/api/adspend/upload', SUPER, (ctx) => {
+route('POST', '/api/adspend/upload', { auth: 'team' }, (ctx) => {
   const b = ctx.body || {}; if (!b.name || !b.base64) throw httpError(400, 'Pick the exported file');
   const p = parse(b.name, b.base64);
   if (!p.rows.length) throw httpError(400, 'The file has no ad rows.');
@@ -147,7 +147,7 @@ route('GET', '/api/adspend/meta', { auth: 'team' }, () => {
   const cfg = metaCfg(); const v = health('meta_spend_last'); let last = typeof v === 'object' ? v : null; if (typeof v === 'string' && v) try { last = JSON.parse(v); } catch { /* none */ }
   return { connected: !!cfg, account: cfg ? `act_…${cfg.account.slice(-4)}` : '', last, error: health('meta_spend_error') };
 });
-route('POST', '/api/adspend/meta/fetch', { ...SUPER, rate: { key: 'metaspend', max: 30, minutes: 60 } }, async (ctx) => {
+route('POST', '/api/adspend/meta/fetch', { auth: 'team', rate: { key: 'metaspend', max: 30, minutes: 60 } }, async (ctx) => {
   const r = await fetchMeta(String(ctx.body.from || ''), String(ctx.body.to || ''), ctx.actor);
   D.history(ctx.actor.label, 'ad spend fetched', null, 'Meta', null, `${r.from} to ${r.to}: ${r.rows} rows, ${r.spent} spent`, null, ctx.ip);
   return r;
